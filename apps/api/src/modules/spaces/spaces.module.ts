@@ -1,5 +1,17 @@
 import { Module } from '@nestjs/common';
+import { DatabaseModule } from '../../platform/database/database.module.js';
+import { SpacesRepository } from './infrastructure/spaces.repository.js';
+import { SpacesService } from './application/spaces.service.js';
+import { SpacePolicyService } from '../../platform/authorization/space-policy.service.js';
+import { SPACES_REPOSITORY } from './application/spaces.port.js';
 
-// P0-01 establishes the approved module boundary; ownership behavior starts in P0-02.
-@Module({})
+@Module({
+  imports: [DatabaseModule],
+  providers: [
+    { provide: SPACES_REPOSITORY, useClass: SpacesRepository },
+    SpacesService,
+    SpacePolicyService,
+  ],
+  exports: [SpacesService],
+})
 export class SpacesModule {}

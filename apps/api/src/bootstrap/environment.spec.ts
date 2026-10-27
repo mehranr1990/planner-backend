@@ -3,17 +3,58 @@ import { parseEnvironment } from './environment.js';
 import { isolatedTestDatabaseUrl } from '../../../../tooling/testing/test-database.js';
 
 describe('configuration safety', () => {
+  it('requires a strong identity secret and rejects unsafe production origins/mail configuration', () => {
+    const valid = {
+      DATABASE_URL: 'postgresql://localhost/mehran_dev',
+      BETTER_AUTH_URL: 'http://localhost:3000',
+      BETTER_AUTH_SECRET: 'unit-test-only-secret-at-least-32-characters',
+    };
+    for (const override of [
+      { BETTER_AUTH_SECRET: 'short' },
+      {
+        BETTER_AUTH_SECRET: 'REPLACE_WITH_RANDOM_SECRET_AT_LEAST_32_CHARACTERS',
+      },
+      { CORS_ORIGINS: '*' },
+      { NODE_ENV: 'production' },
+      { MAIL_MODE: 'smtp' },
+    ])
+      expect(() => parseEnvironment({ ...valid, ...override })).toThrow(
+        'Invalid configuration',
+      );
+    const production = parseEnvironment({
+      ...valid,
+      NODE_ENV: 'production',
+      BETTER_AUTH_URL: 'https://api.example.invalid',
+      MAIL_MODE: 'smtp',
+      SMTP_HOST: 'smtp.example.invalid',
+      SMTP_USER: 'test-only',
+      SMTP_PASSWORD: 'test-only',
+    });
+    expect(production.NODE_ENV).toBe('production');
+  });
   it('requires DATABASE_URL with a useful safe error', () => {
-    expect(() => parseEnvironment({})).toThrow(
-      'Invalid configuration: DATABASE_URL',
-    );
+    expect(() =>
+      parseEnvironment({
+        BETTER_AUTH_SECRET: 'unit-test-only-secret-at-least-32-characters',
+        BETTER_AUTH_URL: 'http://localhost:3000',
+      }),
+    ).toThrow('Invalid configuration: DATABASE_URL');
   });
   it('does not disclose rejected credentials', () => {
     expect(() =>
-      parseEnvironment({ DATABASE_URL: 'secret-password', PORT: 'invalid' }),
+      parseEnvironment({
+        BETTER_AUTH_SECRET: 'unit-test-only-secret-at-least-32-characters',
+        BETTER_AUTH_URL: 'http://localhost:3000',
+        DATABASE_URL: 'secret-password',
+        PORT: 'invalid',
+      }),
     ).toThrow('Invalid configuration:');
     try {
-      parseEnvironment({ DATABASE_URL: 'secret-password' });
+      parseEnvironment({
+        BETTER_AUTH_SECRET: 'unit-test-only-secret-at-least-32-characters',
+        BETTER_AUTH_URL: 'http://localhost:3000',
+        DATABASE_URL: 'secret-password',
+      });
     } catch (error) {
       expect(String(error)).not.toContain('secret-password');
     }
@@ -27,6 +68,8 @@ describe('configuration safety', () => {
     ]) {
       expect(() =>
         parseEnvironment({
+          BETTER_AUTH_SECRET: 'unit-test-only-secret-at-least-32-characters',
+          BETTER_AUTH_URL: 'http://localhost:3000',
           DATABASE_URL: 'postgresql://localhost/mehran_dev',
           ...override,
         }),
@@ -35,6 +78,8 @@ describe('configuration safety', () => {
   });
   it('coerces known settings without retaining unrelated environment secrets', () => {
     const result = parseEnvironment({
+      BETTER_AUTH_SECRET: 'unit-test-only-secret-at-least-32-characters',
+      BETTER_AUTH_URL: 'http://localhost:3000',
       DATABASE_URL: 'postgresql://localhost/mehran_dev',
       PORT: '4000',
       UNRELATED_SECRET: 'private',

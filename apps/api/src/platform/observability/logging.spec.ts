@@ -8,6 +8,8 @@ describe('structured log privacy', () => {
   it('omits sensitive HTTP data, error content and configured secret fields', () => {
     let output = '';
     const config = parseEnvironment({
+      BETTER_AUTH_SECRET: 'unit-test-only-secret-at-least-32-characters',
+      BETTER_AUTH_URL: 'http://localhost:3000',
       DATABASE_URL: 'postgresql://localhost/unused_test',
     });
     const logger = pino(loggingOptions(config).pinoHttp as LoggerOptions, {

@@ -1,5 +1,17 @@
 import { Module } from '@nestjs/common';
+import { DatabaseModule } from '../../platform/database/database.module.js';
+import { SpacesModule } from '../spaces/public/index.js';
+import { SettingsRepository } from './infrastructure/settings.repository.js';
+import { AccountService } from './application/account.service.js';
+import { MeController } from './http/me.controller.js';
+import { SETTINGS_REPOSITORY } from './application/settings.port.js';
 
-// P0-01 establishes the approved module boundary; account behavior starts in P0-02.
-@Module({})
+@Module({
+  imports: [DatabaseModule, SpacesModule],
+  providers: [
+    { provide: SETTINGS_REPOSITORY, useClass: SettingsRepository },
+    AccountService,
+  ],
+  controllers: [MeController],
+})
 export class AccountModule {}

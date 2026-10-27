@@ -39,6 +39,7 @@ export default defineConfig({
         extends: true,
         test: {
           name: 'integration',
+          globalSetup: ['tooling/testing/integration-setup.ts'],
           include: ['apps/api/test/integration/**/*.spec.ts'],
           fileParallelism: false,
           testTimeout: 15000,

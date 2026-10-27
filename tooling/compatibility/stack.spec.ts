@@ -10,6 +10,7 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import { createOpenApiDocument } from '../../packages/api-contracts/src/openapi.js';
 import request from 'supertest';
 import type { NestExpressApplication } from '@nestjs/platform-express';
+import { authSchemaOptions } from '../../apps/api/src/platform/auth/auth-options.js';
 
 @Injectable()
 class Dependency {
@@ -34,7 +35,7 @@ describe('bounded stack compatibility spike', () => {
       await fixture.close();
     }
   });
-  it('constructs Better Auth with the Prisma adapter and its Node handler without auth routes or tables', async () => {
+  it('validates generated Better Auth schema metadata and mounts its Node handler', async () => {
     const prisma = new PrismaClient({
       adapter: new PrismaPg({
         connectionString: 'postgresql://localhost/unused_test',
@@ -42,12 +43,10 @@ describe('bounded stack compatibility spike', () => {
     });
     try {
       const auth = betterAuth({
+        ...authSchemaOptions,
         database: prismaAdapter(prisma, { provider: 'postgresql' }),
         secret: 'compatibility-probe-only-secret-at-least-32-characters',
         baseURL: 'http://localhost:3000',
-        // Only the test-only transport health probe runs in P0-01. No auth
-        // models exist yet; P0-02 must enable schema checks with its real schema.
-        advanced: { database: { validateSchema: false } },
       });
       const fixture = await Test.createTestingModule({}).compile();
       const app = fixture.createNestApplication<NestExpressApplication>({

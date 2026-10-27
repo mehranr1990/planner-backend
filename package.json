@@ -30,7 +30,9 @@
     "db:migrate:deploy": "node --env-file=.env node_modules/prisma/build/index.js migrate deploy --config prisma.config.ts",
     "openapi:generate": "node tooling/scripts/openapi.ts --write",
     "openapi:check": "node tooling/scripts/openapi.ts --check",
-    "quality": "node tooling/scripts/quality.ts"
+    "quality": "node tooling/scripts/quality.ts",
+    "auth:schema:check": "node tooling/scripts/auth-schema-check.ts",
+    "db:migrations:check": "node --env-file-if-exists=.env.test.local tooling/scripts/migrations-check.ts"
   },
   "devDependencies": {
     "@nestjs/cli": "12.0.11",
@@ -56,6 +58,8 @@
     "@nestjs/platform-express": "12.3.2",
     "@nestjs/core": "12.3.2",
     "reflect-metadata": "0.2.2",
-    "rxjs": "7.8.2"
+    "rxjs": "7.8.2",
+    "auth": "1.7.14",
+    "@types/nodemailer": "8.0.2"
   }
 }

@@ -21,6 +21,8 @@ export function loggingOptions(config: AppConfig): Params {
           'token',
           'secret',
           'DATABASE_URL',
+          'BETTER_AUTH_SECRET',
+          'SMTP_PASSWORD',
           '*.password',
           '*.token',
           '*.secret',

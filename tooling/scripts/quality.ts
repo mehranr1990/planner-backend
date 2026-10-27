@@ -4,6 +4,7 @@ import { pnpm } from './run.ts';
 const steps = [
   'config:check',
   'db:generate',
+  'auth:schema:check',
   'db:validate',
   'build',
   'typecheck',
@@ -13,10 +14,11 @@ const steps = [
   'test',
   'openapi:check',
   'test:integration',
+  'db:migrations:check',
 ];
 let failed = false;
 for (const step of steps) {
-  process.stdout.write(`\nP0-01 gate: ${step}\n`);
+  process.stdout.write(`\nPhase 0 gate: ${step}\n`);
   const status = pnpm([step]);
   if (status !== 0) failed = true;
 }

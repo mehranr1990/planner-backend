@@ -32,6 +32,15 @@ services:
       PORT: '3000'
       LOG_LEVEL: info
       DATABASE_URL: ${DOCKER_DATABASE_URL:?Set DOCKER_DATABASE_URL with postgres as host}
+      BETTER_AUTH_URL: ${BETTER_AUTH_URL:?Set public HTTPS API origin}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?Set strong auth secret}
+      CORS_ORIGINS: ${CORS_ORIGINS:-}
+      MAIL_MODE: smtp
+      MAIL_FROM: ${MAIL_FROM:?Set verified sender}
+      SMTP_HOST: ${SMTP_HOST:?Set SMTP host}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:?Set SMTP user}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:?Set SMTP password}
     ports:
       - 127.0.0.1:3000:3000
     networks: [database, edge]

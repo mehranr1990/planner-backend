@@ -36,6 +36,7 @@ pnpm config:check
 pnpm db:generate
 pnpm db:validate
 pnpm build
+pnpm db:migrate:deploy
 pnpm db:check
 pnpm start
 ```
@@ -56,13 +57,17 @@ During development run targeted checks; run the full applicable quality gate
 once at submission, with focused reruns only after failures or changes. The
 quality command records any failure and continues through remaining gates.
 Missing TEST_DATABASE_URL is a failing prerequisite, never a silently skipped
-integration success. Integration tests are read-only: SELECT 1 and HTTP health
-checks, including a connection failure against loopback port 1. They never stop
-the local PostgreSQL service or reset a database.
+integration success. P0-02 integration tests deploy additive migrations and create
+isolated fixture identities in the explicitly selected test database. Cleanup
+deletes only IDs/emails created by that test run. Health tests also exercise a
+connection failure against loopback port 1. Tests never stop PostgreSQL, touch a
+production database or reset a schema.
 
-P0-01 has no models or migrations. Prisma Client is generated without creating
-a dummy model; no schema push or migration reset is used. Migration-from-empty
-and upgrade verification begins with actual P0-02 schemas and P0-03 safety work.
+P0-01 had no models. P0-02 adds a single reviewed additive identity/ownership
+migration. `pnpm db:migrate:deploy` targets the configured development database;
+test setup targets only TEST_DATABASE_URL. `pnpm db:migrations:check` replays deploy
+as a no-op, checks status and rejects destructive migration statements. No schema
+push or migration reset is used. P0-03 adds its separately assigned safety helpers.
 Production schema changes must be reviewed and deployed as a one-off operation,
 not on API startup.
 
@@ -71,3 +76,9 @@ Readiness 503 means PostgreSQL is unavailable or credentials/database are wrong;
 verify the local service and ignored configuration without posting credentials
 in logs/chat. Pino logs are newline JSON on stdout; collect them with the process
 supervisor chosen for future deployment.
+
+P0-02 also requires BETTER_AUTH_URL (canonical API origin without a trailing slash)
+and a random BETTER_AUTH_SECRET of at least 32 characters in ignored .env. The
+implementation ensured local values without replacing any existing settings.
+Production additionally requires HTTPS origins and authenticated TLS SMTP.
+See [authentication](./authentication.md) for the private development mail sink.

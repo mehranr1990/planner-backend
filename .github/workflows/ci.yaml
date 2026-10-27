@@ -1,4 +1,4 @@
-name: P0-01 quality
+name: Phase 0 quality
 on:
   pull_request:
   push:
@@ -24,6 +24,8 @@ jobs:
       NODE_ENV: test
       DATABASE_URL: postgresql://planner_test:isolated_ci_only@127.0.0.1:5432/mehran_ci_config
       TEST_DATABASE_URL: postgresql://planner_test:isolated_ci_only@127.0.0.1:5432/mehran_test
+      BETTER_AUTH_URL: http://localhost:3000
+      BETTER_AUTH_SECRET: ci-test-only-secret-never-a-production-credential
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -37,7 +39,6 @@ jobs:
         env:
           DATABASE_URL: postgresql://planner_test:isolated_ci_only@127.0.0.1:5432/mehran_test
         run: pnpm config:check
-      - name: Applicable P0-01 gates
+      - name: Applicable Phase 0 gates
         run: pnpm quality
       # Docker build/start/persistence is a mandatory future deployment gate.
-      # No migrations exist in P0-01. Migration gates start with actual schemas.

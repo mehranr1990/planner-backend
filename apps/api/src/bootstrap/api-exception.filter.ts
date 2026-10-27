@@ -12,6 +12,7 @@ const errors: Record<number, [ErrorCode, string]> = {
   409: ['CONFLICT', 'Resource conflict'],
   413: ['PAYLOAD_TOO_LARGE', 'Request payload too large'],
   415: ['UNSUPPORTED_MEDIA_TYPE', 'Unsupported media type'],
+  422: ['VALIDATION_ERROR', 'Invalid request'],
   429: ['RATE_LIMITED', 'Too many requests'],
   503: ['SERVICE_UNAVAILABLE', 'Service temporarily unavailable'],
 };

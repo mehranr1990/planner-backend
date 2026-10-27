@@ -6,8 +6,15 @@ import type { AppConfig } from './bootstrap/environment.js';
 import { DatabaseModule } from './platform/database/database.module.js';
 import { loggingOptions } from './platform/observability/logging.js';
 import { HealthController } from './platform/observability/health.controller.js';
-import { AccountModule } from './modules/account/public/index.js';
-import { SpacesModule } from './modules/spaces/public/index.js';
+import {
+  AccountModule,
+  initialAccountRelations,
+} from './modules/account/public/index.js';
+import {
+  SpacesModule,
+  initialSpaceRelations,
+} from './modules/spaces/public/index.js';
+import { AuthModule } from './platform/auth/auth.module.js';
 
 @Module({})
 export class AppModule {
@@ -18,6 +25,10 @@ export class AppModule {
         ConfigurationModule.register(config),
         DatabaseModule,
         LoggerModule.forRoot(loggingOptions(config)),
+        AuthModule.register(() => ({
+          ...initialAccountRelations(),
+          ...initialSpaceRelations(),
+        })),
         AccountModule,
         SpacesModule,
       ],

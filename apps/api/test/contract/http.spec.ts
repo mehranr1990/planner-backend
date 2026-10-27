@@ -70,6 +70,7 @@ describe('HTTP foundation contracts', () => {
   it('rejects strict-schema overposting and unrecognized health query parameters', async () => {
     const payload = await request(app.getHttpServer())
       .post('/api/v1/test-probe')
+      .set('Origin', 'http://localhost:3000')
       .send({ title: 'hello', ownerId: 'secret-owner' })
       .expect(400);
     expect(ApiErrorSchema.parse(payload.body).error.code).toBe(
@@ -87,11 +88,13 @@ describe('HTTP foundation contracts', () => {
   it('normalizes valid input and keeps fixture routes under api/v1', async () => {
     const result = await request(app.getHttpServer())
       .post('/api/v1/test-probe')
+      .set('Origin', 'http://localhost:3000')
       .send({ title: ' hello ' })
       .expect(201);
     expect(result.body).toEqual({ title: 'hello' });
     await request(app.getHttpServer())
       .post('/test-probe')
+      .set('Origin', 'http://localhost:3000')
       .send({ title: 'hello' })
       .expect(404);
   });
@@ -108,6 +111,7 @@ describe('HTTP foundation contracts', () => {
     ] as const) {
       const result = await request(app.getHttpServer())
         [method](path)
+        .set('Origin', 'http://localhost:3000')
         .set('Content-Type', 'application/json')
         .send(payload)
         .expect(status);

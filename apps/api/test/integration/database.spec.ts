@@ -17,6 +17,10 @@ describe('isolated local PostgreSQL', () => {
   });
 
   it('executes a real Prisma SELECT 1 without migrations or data changes', async () => {
+    const zone = await app.get(DatabaseService).client.$queryRaw<
+      { timezone: string }[]
+    >`SELECT current_setting('TimeZone') AS timezone`;
+    expect(zone[0]?.timezone).toBe('UTC');
     await expect(
       app.get(DatabaseService).checkConnection(),
     ).resolves.toBeUndefined();
