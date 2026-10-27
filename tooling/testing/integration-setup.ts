@@ -1,8 +1,10 @@
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { isolatedTestDatabaseUrl } from './test-database.ts';
+import { reviewMigrations } from './migration-safety.ts';
 
 export default function setup() {
+  reviewMigrations();
   const databaseUrl = isolatedTestDatabaseUrl(process.env);
   const result = spawnSync(
     process.execPath,

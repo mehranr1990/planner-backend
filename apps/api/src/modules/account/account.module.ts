@@ -5,9 +5,10 @@ import { SettingsRepository } from './infrastructure/settings.repository.js';
 import { AccountService } from './application/account.service.js';
 import { MeController } from './http/me.controller.js';
 import { SETTINGS_REPOSITORY } from './application/settings.port.js';
+import { AuditModule } from '../../platform/audit/audit.service.js';
 
 @Module({
-  imports: [DatabaseModule, SpacesModule],
+  imports: [DatabaseModule, SpacesModule, AuditModule],
   providers: [
     { provide: SETTINGS_REPOSITORY, useClass: SettingsRepository },
     AccountService,

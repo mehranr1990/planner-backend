@@ -35,6 +35,7 @@
     "db:migrations:check": "node --env-file-if-exists=.env.test.local tooling/scripts/migrations-check.ts"
   },
   "devDependencies": {
+    "pg": "8.23.1",
     "@nestjs/cli": "12.0.11",
     "@nestjs/schematics": "12.0.11",
     "@nestjs/testing": "12.3.2",

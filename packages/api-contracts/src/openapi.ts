@@ -12,6 +12,8 @@ import {
   SettingsSchema,
   SettingsPatchSchema,
   PersonalSpacesSchema,
+  IfMatchSchema,
+  CursorQuerySchema,
 } from './index.js';
 
 // Zod is authoritative for runtime and OpenAPI boundary schemas.
@@ -89,6 +91,32 @@ export function createOpenApiDocument() {
       SettingsPatchSchema,
     ),
   };
+  const settings = extraPaths['/api/v1/me/settings'] as Record<
+    string,
+    Record<string, unknown>
+  >;
+  for (const method of ['get', 'patch']) {
+    const op = settings[method]!;
+    const responses = op.responses as Record<string, Record<string, unknown>>;
+    responses['200']!.headers = {
+      ETag: {
+        description: 'Quoted positive settings revision',
+        schema: IfMatchSchema.toJSONSchema(),
+      },
+    };
+  }
+  (settings.patch!.parameters as unknown[]).push({
+    in: 'header',
+    name: 'If-Match',
+    required: false,
+    description:
+      'Optional for compatibility; supply the last ETag to reject stale writes with 409.',
+    schema: json(IfMatchSchema),
+  });
+  (settings.patch!.responses as Record<string, unknown>)['409'] = response(
+    'ApiError',
+    'Stale or concurrent settings revision',
+  );
   extraPaths['/api/v1/me/spaces'] = {
     get: protectedOperation('listMyPersonalSpaces', PersonalSpacesSchema),
   };
@@ -200,6 +228,7 @@ export function createOpenApiDocument() {
         ApiError: json(ApiErrorSchema),
         LiveHealth: json(LiveHealthSchema),
         ReadyHealth: json(ReadyHealthSchema),
+        CursorQuery: json(CursorQuerySchema),
       },
     },
   };

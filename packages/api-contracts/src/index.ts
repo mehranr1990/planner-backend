@@ -38,3 +38,4 @@ export type ApiError = z.infer<typeof ApiErrorSchema>;
 export type ErrorCode = z.infer<typeof ErrorCodeSchema>;
 export * from './account.js';
 export * from './auth.js';
+export * from './foundation.js';

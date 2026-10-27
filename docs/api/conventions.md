@@ -1,4 +1,4 @@
-# API conventions through P0-02
+# API conventions through P0-03
 
 Endpoints use `/api/v1`; public health remains at `GET /health/live` and
 `GET /health/ready`. Authentication uses `/api/v1/auth` and verified account
@@ -45,5 +45,43 @@ must resolve to one of the same origins. Auth uses Better Auth's native handler
 inside a strict Nest/Express HTTP adapter; provider error bodies are replaced by
 the shared error envelope. See the identity runbook for provider route semantics.
 
-Pagination, generic idempotency/audit/outbox storage, concurrency helpers and
-business-domain routes remain deferred to their assigned batches.
+P0-03 preserves all existing request/response bodies and session-security contracts.
+CI compares canonical hashes of the approved P0-02 operation contracts as well as
+the complete current snapshot. Removing an operation, weakening its session
+requirement, changing existing parameters/body/response schemas, or changing the
+health/error schemas fails the compatibility gate. New optional headers, response
+codes and components are additive. Baseline changes require explicit contract review.
+
+GET/PATCH /me/settings additionally return a strong ETag such as `"3"`. PATCH
+accepts optional `If-Match: "3"`; a stale revision or racing write returns safe
+409 CONFLICT. Malformed/weak/list/wildcard tags return 400. Existing clients may
+omit the header; all writes still use a database compare-and-increment operation.
+Clients needing protection against edits since their last read must send If-Match.
+The settings JSON body is unchanged. Better Auth owns profile/session schemas;
+no revision columns were added to its models. CORS permits If-Match and
+Idempotency-Key and exposes ETag; allowing a header does not activate a capability.
+
+The reusable authenticated context contains frozen actor/request/correlation IDs,
+set only after authoritative session verification. Ownership is separately checked
+by the spaces facade, which issues a server-only authorized scope. Neither caller
+correlation IDs nor cursor fields confer access.
+
+Cursor helpers implement stable ascending `(createdAt,id)` keysets, limit default
+25/max 100 and strict bounded base64url cursors bound to actor, space and canonical
+filter identity. Repositories apply the timestamp column explicitly (for example
+outbox occurredAt), scope with AND, fetch limit+1 and return a nullable nextCursor.
+Cursors are positions, not credentials or snapshot guarantees; edits/new rows can
+change subsequent results. There is no new public list endpoint in this batch.
+
+Real Prisma unique/concurrency failures map to 409, missing rows to 404, invalid
+foreign references to generic 400, pool/connectivity failures to 503 and unexpected
+failures to 500. No ORM message, SQL, metadata, key value or constraint name is
+serialized. Public inaccessible resources remain 404 through ownership policy.
+
+Idempotency storage is available for the later explicitly high-risk POSTs; no
+current auth route is wrapped. The caller must bind a distinct operation to method,
+canonical route and validated request. Receipts bind actor+space+operation+hashed
+key, expire after 24 hours and store only a result UUID/status plus a fingerprint.
+Replays must resolve current authorized data through the owner facade, never return
+unvalidated stale private payload. See the database/event runbook for transaction,
+crash, expiry and security semantics. Business routes remain out of scope.

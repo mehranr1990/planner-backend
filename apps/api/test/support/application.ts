@@ -2,6 +2,7 @@ import 'reflect-metadata';
 import { Test } from '@nestjs/testing';
 import { Body, Controller, Get, Post } from '@nestjs/common';
 import type { NestExpressApplication } from '@nestjs/platform-express';
+import type { Request, Response } from 'express';
 import { z } from 'zod';
 import { AppModule } from '../../src/app.module.js';
 import { parseEnvironment } from '../../src/bootstrap/environment.js';
@@ -63,6 +64,32 @@ export async function testApplication(
     bodyParser: false,
     bufferLogs: true,
   });
+  // Audit evidence from this fixture's exact HTTP requests is fixture data too.
+  // Never clean by action, timestamp, user prefix or an unbounded delete.
+  const auditRequests = new Set<string>();
+  app.use((req: Request, res: Response, next: () => void) => {
+    res.on('finish', () => {
+      const id = res.getHeader('X-Request-Id');
+      if (
+        typeof id === 'string' &&
+        /^\/api\/v1\/(?:auth\/|me(?:\/|\?|$))/.test(req.originalUrl)
+      )
+        auditRequests.add(id);
+    });
+    next();
+  });
   await configureApp(app);
+  const close = app.close.bind(app);
+  app.close = async () => {
+    try {
+      const database = app.get(DatabaseService);
+      if (database.client && auditRequests.size)
+        await database.client.securityAuditEvent.deleteMany({
+          where: { requestId: { in: [...auditRequests] } },
+        });
+    } finally {
+      await close();
+    }
+  };
   return app;
 }

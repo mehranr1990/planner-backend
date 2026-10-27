@@ -1,8 +1,10 @@
 # Mehran Planner backend
 
-Phase 0 through batch P0-02: NestJS/Express foundation, Better Auth database-backed
+Phase 0 through batch P0-03: NestJS/Express foundation, Better Auth database-backed
 sessions, verified account/profile/settings APIs, one private personal space per
 identity, strict Zod contracts, Pino logging and enforced module boundaries.
+Database/API foundations include scoped persistence, revisions, cursor helpers,
+metadata-only audits, transactional outbox storage and idempotency receipts.
 
 Read [AGENTS.md](./AGENTS.md), [PROJECT_INSTRUCTIONS.md](./PROJECT_INSTRUCTIONS.md)
 and [PHASE_0_1_IMPLEMENTATION.md](./PHASE_0_1_IMPLEMENTATION.md) before changes.
@@ -43,14 +45,18 @@ pnpm quality
 
 Vitest is the sole test runner; Supertest exercises HTTP. Integration tests require
 an explicitly isolated local database with a name ending in _test. They never
-fall back to application credentials or reset schemas. The quality gate runs
+fall back to application credentials or reset existing schemas. The quality gate runs
 Prisma generation/validation, build/typecheck, format, ESLint, architecture,
-unit/contract/compatibility tests, OpenAPI snapshot checks and PostgreSQL integration.
+unit/contract/compatibility tests, OpenAPI snapshot/compatibility checks, PostgreSQL
+integration and empty/prior-schema migration replay in disposable test namespaces.
 
 P0-02 adds one additive migration for the provider-owned identity tables,
 UserSettings and Space. Apply it explicitly; API startup never migrates. Integration
 tests deploy migrations only to the guarded test database and remove only their
-own fixture identities. There is no schema reset or development seed identity.
+own fixture identities. P0-03 adds a second additive migration for platform storage
+and settings revisions. The migration harness can reset only its newly-created,
+random fixture schema; it never resets a database or the existing public schema.
+There is no development seed identity.
 
 ## Structure and API
 
@@ -77,5 +83,7 @@ have **DEFERRED** image/startup/persistence checks. They are not locally verifie
 All applicable checks in the [Docker release runbook](./docs/runbooks/docker-release.md)
 remain mandatory before Docker-based release.
 
-P0-03 is not implemented. No outbox, audit table, generic idempotency store,
-business-domain table, worker, file endpoint or resource CRUD is prebuilt.
+See the [P0-03 reliability contract](./docs/runbooks/database-api-events.md) and
+[traceability](./docs/p0-03-traceability.md). Outbox dispatch, consumers and jobs
+remain inactive until their assigned batch. P0-04 and Phase 1 are not started;
+there are no file endpoints or personal business-domain tables.

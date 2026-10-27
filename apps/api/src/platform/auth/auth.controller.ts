@@ -21,16 +21,89 @@ import { APP_CONFIG } from '../../bootstrap/configuration.module.js';
 import type { AppConfig } from '../../bootstrap/environment.js';
 import { trustedOrigins } from '../../bootstrap/environment.js';
 import { AuthService } from './auth.service.js';
+import { AuditService } from '../audit/audit.service.js';
+import type { AuditAction } from '../audit/audit.service.js';
+import type { ContextRequest } from '../../bootstrap/request-context.js';
+
+const auditActions: Record<string, AuditAction> = {
+  'POST /sign-up/email': 'AUTH_SIGN_UP',
+  'POST /sign-in/email': 'AUTH_SIGN_IN',
+  'POST /sign-out': 'AUTH_SIGN_OUT',
+  'GET /verify-email': 'AUTH_VERIFY_EMAIL',
+  'POST /send-verification-email': 'AUTH_VERIFICATION_REQUEST',
+  'POST /request-password-reset': 'AUTH_RECOVERY_REQUEST',
+  'POST /reset-password': 'AUTH_PASSWORD_RESET',
+  'POST /change-password': 'AUTH_PASSWORD_CHANGE',
+  'POST /change-email': 'AUTH_EMAIL_CHANGE',
+  'GET /list-sessions': 'AUTH_SESSION_LIST',
+  'POST /revoke-session': 'AUTH_SESSION_REVOKE',
+  'POST /revoke-sessions': 'AUTH_SESSION_REVOKE',
+  'POST /revoke-other-sessions': 'AUTH_SESSION_REVOKE',
+};
 
 @Controller('auth')
 export class AuthController {
   constructor(
     @Inject(AuthService) private readonly identity: AuthService,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
+    @Inject(AuditService) private readonly audit: AuditService,
   ) {}
 
   @All('*path')
-  async handle(@Req() req: Request, @Res() res: Response): Promise<void> {
+  async handle(
+    @Req() req: ContextRequest,
+    @Res() res: Response,
+  ): Promise<void> {
+    const route = new URL(
+      req.originalUrl,
+      this.config.BETTER_AUTH_URL,
+    ).pathname.slice('/api/v1/auth'.length);
+    const key = `${req.method} ${route}`;
+    const action = auditActions[key];
+    if (!action) return this.dispatch(req, res);
+    const actor = await this.identity.auditActor(req.headers);
+    const event = await this.audit.record({
+      action,
+      outcome: 'ATTEMPTED',
+      actorUserId: actor,
+      requestId: req.id,
+      correlationId: req.correlationId,
+    });
+    try {
+      await this.dispatch(req, res, async (body, outcome = 'SUCCEEDED') => {
+        const loginActor =
+          key === 'POST /sign-in/email' &&
+          typeof body === 'object' &&
+          body !== null &&
+          'user' in body &&
+          typeof body.user === 'object' &&
+          body.user !== null &&
+          'id' in body.user &&
+          typeof body.user.id === 'string'
+            ? body.user.id
+            : actor;
+        await this.audit.outcome(event.id, outcome, loginActor);
+      });
+    } catch (error) {
+      await this.audit.outcome(
+        event.id,
+        error instanceof HttpException && error.getStatus() < 500
+          ? 'DENIED'
+          : 'FAILED',
+        actor,
+      );
+      throw error;
+    }
+  }
+
+  private async dispatch(
+    req: Request,
+    res: Response,
+    succeeded?: (
+      body: unknown,
+      outcome?: 'SUCCEEDED' | 'DENIED',
+    ) => Promise<void>,
+  ): Promise<void> {
     const url = new URL(req.originalUrl, this.config.BETTER_AUTH_URL);
     const route = url.pathname.slice('/api/v1/auth'.length);
     const key = `${req.method} ${route}`;
@@ -89,13 +162,22 @@ export class AuthController {
         result.status === 422 ? 400 : result.status,
       );
     if (result.status >= 300 && result.status < 400) {
+      // The provider redirects invalid/expired verification tokens with ?error=.
+      // A redirect status alone must never be recorded as verified success.
+      const location = result.headers.get('location');
+      const failed =
+        location !== null &&
+        new URL(location, this.config.BETTER_AUTH_URL).searchParams.has(
+          'error',
+        );
+      await succeeded?.(null, failed ? 'DENIED' : 'SUCCEEDED');
       res.status(result.status).end();
       return;
     }
     const body: unknown = await result.json();
     const responseSchema = authResponseSchemas[key];
-    res
-      .status(result.status)
-      .json(responseSchema ? responseSchema.parse(body) : body);
+    const output = responseSchema ? responseSchema.parse(body) : body;
+    await succeeded?.(output);
+    res.status(result.status).json(output);
   }
 }

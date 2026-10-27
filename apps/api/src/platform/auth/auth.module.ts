@@ -7,6 +7,7 @@ import { IdentityMailService } from './mail.service.js';
 import { VerifiedSessionGuard } from './session.guard.js';
 import { INITIAL_IDENTITY_RELATIONS } from './identity-relations.js';
 import type { InitialIdentityRelations } from './identity-relations.js';
+import { AuditModule } from '../audit/audit.service.js';
 
 @Global()
 @Module({})
@@ -14,7 +15,7 @@ export class AuthModule {
   static register(relations: InitialIdentityRelations): DynamicModule {
     return {
       module: AuthModule,
-      imports: [DatabaseModule],
+      imports: [DatabaseModule, AuditModule],
       controllers: [AuthController],
       providers: [
         AuthService,

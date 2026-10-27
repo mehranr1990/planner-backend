@@ -3,6 +3,8 @@ import { PersonalSpaceSchema } from '@mehran/api-contracts';
 import { SPACES_REPOSITORY } from './spaces.port.js';
 import type { SpacesPort } from './spaces.port.js';
 import { SpacePolicyService } from '../../../platform/authorization/space-policy.service.js';
+import { AuthorizedSpace } from '../../../platform/authorization/authorized-space.js';
+import type { RequestActor } from '../../../platform/auth/request-actor.js';
 
 @Injectable()
 export class SpacesService {
@@ -23,5 +25,10 @@ export class SpacesService {
     const space = await this.repository.findOwned(userId, spaceId);
     this.policy.assertOwner(userId, space);
     return space.id;
+  }
+  async authorizePersonal(actor: RequestActor) {
+    const space = await this.repository.personalFor(actor.userId);
+    this.policy.assertOwner(actor.userId, space);
+    return AuthorizedSpace.personal(actor, space);
   }
 }

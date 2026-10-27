@@ -61,13 +61,19 @@ integration success. P0-02 integration tests deploy additive migrations and crea
 isolated fixture identities in the explicitly selected test database. Cleanup
 deletes only IDs/emails created by that test run. Health tests also exercise a
 connection failure against loopback port 1. Tests never stop PostgreSQL, touch a
-production database or reset a schema.
+production database or reset existing schemas. P0-03's migration gate creates and
+resets only its own random disposable namespace inside the guarded test database;
+the existing public schema and its data are preserved.
 
 P0-01 had no models. P0-02 adds a single reviewed additive identity/ownership
 migration. `pnpm db:migrate:deploy` targets the configured development database;
-test setup targets only TEST_DATABASE_URL. `pnpm db:migrations:check` replays deploy
-as a no-op, checks status and rejects destructive migration statements. No schema
-push or migration reset is used. P0-03 adds its separately assigned safety helpers.
+test setup targets only TEST_DATABASE_URL. P0-03 adds platform audit/outbox/receipt
+tables and a revision column on settings, preserving the original auth scalars.
+`pnpm db:migrations:check` checks additive SQL, deploy/status, empty-schema replay,
+prior-schema upgrade with preserved preferences, and repeat deploy. The harness
+requires CREATE SCHEMA permission in the isolated test database. Its reset helper
+has no configurable target and accepts only the schema it just created. No schema
+push, Prisma migrate reset, existing-schema reset or database reset is used.
 Production schema changes must be reviewed and deployed as a one-off operation,
 not on API startup.
 

@@ -1,7 +1,14 @@
 import fs from 'node:fs';
 import { createOpenApiDocument } from '../../packages/api-contracts/dist/openapi.js';
+import { assertApiCompatible } from '../compatibility/openapi-compatibility.ts';
 
 const file = 'docs/api/openapi.json';
+assertApiCompatible(
+  createOpenApiDocument(),
+  JSON.parse(
+    fs.readFileSync('tooling/compatibility/p0-02-api-signatures.json', 'utf8'),
+  ) as Record<string, string>,
+);
 const generated = `${JSON.stringify(createOpenApiDocument(), null, 2)}\n`;
 if (process.argv.includes('--write')) {
   fs.mkdirSync('docs/api', { recursive: true });

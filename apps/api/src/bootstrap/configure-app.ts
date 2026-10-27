@@ -24,8 +24,14 @@ export async function configureApp(app: NestExpressApplication): Promise<void> {
     origin: origins,
     credentials: true,
     methods: ['GET', 'POST', 'PATCH', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'X-Request-Id', 'X-Correlation-Id'],
-    exposedHeaders: ['X-Request-Id', 'X-Correlation-Id'],
+    allowedHeaders: [
+      'Content-Type',
+      'X-Request-Id',
+      'X-Correlation-Id',
+      'If-Match',
+      'Idempotency-Key',
+    ],
+    exposedHeaders: ['X-Request-Id', 'X-Correlation-Id', 'ETag'],
   });
   app.use((req: Request, res: Response, next: NextFunction) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');

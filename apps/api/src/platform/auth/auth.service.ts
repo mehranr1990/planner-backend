@@ -49,6 +49,14 @@ export class AuthService {
     for (const cookie of result.headers.getSetCookie()) setCookie?.(cookie);
     return result.response;
   }
+  async auditActor(headers: IncomingHttpHeaders): Promise<string | null> {
+    if (!headers.cookie) return null;
+    const session = await this.auth.api.getSession({
+      headers: fromNodeHeaders(headers),
+      query: { disableCookieCache: true, disableRefresh: true },
+    });
+    return session?.user.id ?? null;
+  }
   async updateProfile(
     headers: IncomingHttpHeaders,
     body: { name?: string; image?: string | null },

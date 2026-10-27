@@ -3,6 +3,7 @@ import type { ArgumentsHost, ExceptionFilter } from '@nestjs/common';
 import type { Response } from 'express';
 import type { ApiError, ErrorCode } from '@mehran/api-contracts';
 import type { ContextRequest } from './request-context.js';
+import { persistenceStatus } from '../platform/database/persistence-error.js';
 
 const errors: Record<number, [ErrorCode, string]> = {
   400: ['BAD_REQUEST', 'Invalid request'],
@@ -41,7 +42,7 @@ export class ApiExceptionFilter implements ExceptionFilter {
             'status' in exception &&
             typeof exception.status === 'number'
           ? exception.status
-          : 500;
+          : (persistenceStatus(exception) ?? 500);
     const [code, message] = errors[status] ?? [
       'INTERNAL_ERROR',
       'An unexpected error occurred',

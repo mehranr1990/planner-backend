@@ -363,6 +363,16 @@
                   "additionalProperties": false
                 }
               }
+            },
+            "headers": {
+              "ETag": {
+                "description": "Quoted positive settings revision",
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "type": "string",
+                  "pattern": "^\"[1-9][0-9]{0,9}\"$"
+                }
+              }
             }
           },
           "400": {
@@ -443,6 +453,17 @@
               "type": "string",
               "format": "uri"
             }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "description": "Optional for compatibility; supply the last ETag to reject stale writes with 409.",
+            "schema": {
+              "$schema": "https://json-schema.org/draft/2020-12/schema",
+              "type": "string",
+              "pattern": "^\"[1-9][0-9]{0,9}\"$"
+            }
           }
         ],
         "requestBody": {
@@ -522,6 +543,16 @@
                   "additionalProperties": false
                 }
               }
+            },
+            "headers": {
+              "ETag": {
+                "description": "Quoted positive settings revision",
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "type": "string",
+                  "pattern": "^\"[1-9][0-9]{0,9}\"$"
+                }
+              }
             }
           },
           "400": {
@@ -564,6 +595,25 @@
           },
           "403": {
             "description": "Verification or trusted origin required",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Server request UUID",
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Stale or concurrent settings revision",
             "headers": {
               "X-Request-Id": {
                 "description": "Server request UUID",
@@ -3386,6 +3436,23 @@
           "status",
           "checks"
         ],
+        "additionalProperties": false
+      },
+      "CursorQuery": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "string",
+            "pattern": "^(?:[1-9]|[1-9][0-9]|100)$"
+          },
+          "cursor": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024,
+            "pattern": "^[A-Za-z0-9_-]+$"
+          }
+        },
         "additionalProperties": false
       }
     }

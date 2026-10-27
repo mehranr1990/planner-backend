@@ -2,6 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { ProfileSchema, SettingsSchema } from '@mehran/api-contracts';
 import type { SettingsPatch } from '@mehran/api-contracts';
 import type { VerifiedIdentity } from '../../../platform/auth/identity.js';
+import type { AuthorizedSpace } from '../../../platform/authorization/authorized-space.js';
 import { SETTINGS_REPOSITORY } from './settings.port.js';
 import type { SettingsPort } from './settings.port.js';
 
@@ -22,10 +23,16 @@ export class AccountService {
     });
   }
   async preferences(userId: string) {
-    return this.mapSettings(await this.settings.forUser(userId));
+    const value = await this.settings.forUser(userId);
+    return { data: this.mapSettings(value), revision: value.revision };
   }
-  async updatePreferences(userId: string, patch: SettingsPatch) {
-    return this.mapSettings(await this.settings.update(userId, patch));
+  async updatePreferences(
+    scope: AuthorizedSpace,
+    patch: SettingsPatch,
+    revision: number | undefined,
+  ) {
+    const value = await this.settings.update(scope, patch, revision);
+    return { data: this.mapSettings(value), revision: value.revision };
   }
   private mapSettings(value: {
     locale: string;
