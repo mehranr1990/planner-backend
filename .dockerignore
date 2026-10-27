@@ -1,0 +1,9 @@
+.git
+.tools
+**/node_modules
+**/dist
+**/coverage
+**/generated
+.env
+.env.*
+*.log

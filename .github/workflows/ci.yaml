@@ -1,0 +1,43 @@
+name: P0-01 quality
+on:
+  pull_request:
+  push:
+    branches: [master, main]
+permissions:
+  contents: read
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:18.6-bookworm
+        env:
+          POSTGRES_USER: planner_test
+          POSTGRES_PASSWORD: isolated_ci_only
+          POSTGRES_DB: mehran_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U planner_test -d mehran_test"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://planner_test:isolated_ci_only@127.0.0.1:5432/mehran_ci_config
+      TEST_DATABASE_URL: postgresql://planner_test:isolated_ci_only@127.0.0.1:5432/mehran_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+      - name: Enable pinned pnpm
+        run: corepack enable && corepack prepare pnpm@10.20.0 --activate
+      - name: Frozen install
+        run: pnpm install --frozen-lockfile
+      - name: Validate CI configuration
+        env:
+          DATABASE_URL: postgresql://planner_test:isolated_ci_only@127.0.0.1:5432/mehran_test
+        run: pnpm config:check
+      - name: Applicable P0-01 gates
+        run: pnpm quality
+      # Docker build/start/persistence is a mandatory future deployment gate.
+      # No migrations exist in P0-01. Migration gates start with actual schemas.

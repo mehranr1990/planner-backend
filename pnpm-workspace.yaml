@@ -1,0 +1,13 @@
+packages:
+  - apps/*
+  - packages/*
+onlyBuiltDependencies:
+  - '@nestjs/core'
+  - '@prisma/engines'
+  - prisma
+peerDependencyRules:
+  # These are UI-only peers of Prisma Studio and optional Better Auth clients.
+  # This backend never imports those entry points; do not add a React frontend.
+  ignoreMissing:
+    - react
+    - react-dom

@@ -1,0 +1,13 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../apps/api/src/generated/prisma"
+  moduleFormat = "esm"
+  importFileExtension = "js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// Intentionally no models or migrations in P0-01.
+// Better Auth-owned schema and personal ownership are introduced only in P0-02.
