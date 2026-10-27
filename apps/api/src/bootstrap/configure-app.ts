@@ -23,7 +23,7 @@ export async function configureApp(app: NestExpressApplication): Promise<void> {
   app.enableCors({
     origin: origins,
     credentials: true,
-    methods: ['GET', 'POST', 'PATCH', 'OPTIONS'],
+    methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: [
       'Content-Type',
       'X-Request-Id',
@@ -31,7 +31,12 @@ export async function configureApp(app: NestExpressApplication): Promise<void> {
       'If-Match',
       'Idempotency-Key',
     ],
-    exposedHeaders: ['X-Request-Id', 'X-Correlation-Id', 'ETag'],
+    exposedHeaders: [
+      'X-Request-Id',
+      'X-Correlation-Id',
+      'ETag',
+      'Content-Disposition',
+    ],
   });
   app.use((req: Request, res: Response, next: NextFunction) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');

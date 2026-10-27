@@ -14,6 +14,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-cert
 ENV NODE_ENV=production HOST=0.0.0.0 PORT=3000
 WORKDIR /app
 COPY --from=build --chown=node:node /prod/api /app
+RUN mkdir -p /var/lib/mehran/files && chown node:node /var/lib/mehran/files && chmod 700 /var/lib/mehran/files
 USER node
 EXPOSE 3000
 CMD ["node", "dist/main.js"]

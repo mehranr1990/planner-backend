@@ -1,10 +1,12 @@
 # Mehran Planner backend
 
-Phase 0 through batch P0-03: NestJS/Express foundation, Better Auth database-backed
+Phase 0 through batch P0-04: NestJS/Express foundation, Better Auth database-backed
 sessions, verified account/profile/settings APIs, one private personal space per
 identity, strict Zod contracts, Pino logging and enforced module boundaries.
 Database/API foundations include scoped persistence, revisions, cursor helpers,
 metadata-only audits, transactional outbox storage and idempotency receipts.
+Private streamed files use a StoragePort filesystem adapter, server-verified
+content/size/hash, owner-only signed downloads and recoverable cleanup.
 
 Read [AGENTS.md](./AGENTS.md), [PROJECT_INSTRUCTIONS.md](./PROJECT_INSTRUCTIONS.md)
 and [PHASE_0_1_IMPLEMENTATION.md](./PHASE_0_1_IMPLEMENTATION.md) before changes.
@@ -57,6 +59,10 @@ own fixture identities. P0-03 adds a second additive migration for platform stor
 and settings revisions. The migration harness can reset only its newly-created,
 random fixture schema; it never resets a database or the existing public schema.
 There is no development seed identity.
+P0-04 adds StoredFile and a nullable audit resource UUID in a third additive
+migration. Configure the private STORAGE_ROOT/limits from .env.example; relative
+local paths resolve from repository root for both start and dev commands. Never
+publish the storage directory through a static server or reverse proxy.
 
 ## Structure and API
 
@@ -71,6 +77,10 @@ Account routes are GET/PATCH /api/v1/me, GET/PATCH /api/v1/me/settings and
 GET /api/v1/me/spaces. Better Auth routes live under /api/v1/auth. See the
 [identity runbook](./docs/runbooks/authentication.md) for verification, sign-in,
 sessions, recovery, email changes, required Origin headers and private mail sinks.
+File routes are POST /api/v1/files/uploads, POST /api/v1/files/{id}/complete,
+GET /api/v1/files/{id}/download and DELETE /api/v1/files/{id}. See
+[private file operations](./docs/runbooks/private-files.md) for streamed completion,
+short-lived authenticated links, expiry/renewal, limits and cleanup semantics.
 Test-only validation/ownership probes are never mounted by the application.
 Errors use a uniform safe envelope and UUID request IDs. Pino logs omit request
 content, URLs and credentials. Domain/module imports may cross ownership only
@@ -83,7 +93,8 @@ have **DEFERRED** image/startup/persistence checks. They are not locally verifie
 All applicable checks in the [Docker release runbook](./docs/runbooks/docker-release.md)
 remain mandatory before Docker-based release.
 
-See the [P0-03 reliability contract](./docs/runbooks/database-api-events.md) and
-[traceability](./docs/p0-03-traceability.md). Outbox dispatch, consumers and jobs
-remain inactive until their assigned batch. P0-04 and Phase 1 are not started;
-there are no file endpoints or personal business-domain tables.
+See the [P0-03 reliability contract](./docs/runbooks/database-api-events.md),
+[P0-04 traceability](./docs/p0-04-traceability.md) and coordinated
+[backup/restore requirements](./docs/runbooks/backup-restore.md). Outbox dispatch,
+consumers and jobs remain inactive until their assigned batch. Phase 1 is not
+started; there are no personal business-domain tables or attachment links.

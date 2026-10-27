@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const DatabaseUrlSchema = z
   .string()
@@ -58,6 +60,26 @@ const EnvironmentSchema = z.object({
   SMTP_PORT: z.coerce.number().int().min(1).max(65535).default(587),
   SMTP_USER: z.string().optional(),
   SMTP_PASSWORD: z.string().optional(),
+  STORAGE_ROOT: z.string().min(1).default('.tools/private-files'),
+  FILE_MAX_BYTES: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(104857600)
+    .default(10485760),
+  FILE_UPLOAD_TIMEOUT_MS: z.coerce
+    .number()
+    .int()
+    .min(1000)
+    .max(300000)
+    .default(120000),
+  FILE_UPLOAD_TTL_SECONDS: z.coerce
+    .number()
+    .int()
+    .min(600)
+    .max(86400)
+    .default(3600),
+  FILE_LINK_TTL_SECONDS: z.coerce.number().int().min(30).max(900).default(300),
 });
 export type AppConfig = Readonly<z.infer<typeof EnvironmentSchema>>;
 
@@ -73,6 +95,19 @@ export function parseEnvironment(environment: NodeJS.ProcessEnv): AppConfig {
     );
   }
   const config = result.data;
+  // Source and compiled bootstrap have the same workspace depth. Relative local
+  // roots must not move when pnpm dev changes cwd to apps/api.
+  const storageRoot = path.resolve(
+    fileURLToPath(new URL('../../../../', import.meta.url)),
+    config.STORAGE_ROOT,
+  );
+  if (
+    storageRoot === path.parse(storageRoot).root ||
+    (config.NODE_ENV === 'production' && !path.isAbsolute(config.STORAGE_ROOT))
+  )
+    throw new Error(
+      'Invalid configuration: STORAGE_ROOT must be a private directory (absolute in production).',
+    );
   const origins = config.CORS_ORIGINS.split(',')
     .map((value) => value.trim())
     .filter(Boolean);
@@ -105,7 +140,7 @@ export function parseEnvironment(environment: NodeJS.ProcessEnv): AppConfig {
     throw new Error(
       'Invalid configuration: SMTP_HOST, SMTP_USER, SMTP_PASSWORD. See .env.example.',
     );
-  return Object.freeze(result.data);
+  return Object.freeze({ ...result.data, STORAGE_ROOT: storageRoot });
 }
 
 export function trustedOrigins(config: AppConfig): string[] {

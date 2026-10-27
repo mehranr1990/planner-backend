@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { filePaths } from './files-openapi.js';
 import {
   ApiErrorSchema,
   LiveHealthSchema,
@@ -210,6 +211,7 @@ export function createOpenApiDocument() {
     openapi: '3.1.0',
     info: { title: 'Mehran Planner API', version: '0.0.1' },
     paths: {
+      ...filePaths(),
       ...extraPaths,
       [healthRoutes.live]: { get: operation('healthLive', 'LiveHealth') },
       [healthRoutes.ready]: { get: operation('healthReady', 'ReadyHealth') },

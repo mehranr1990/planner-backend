@@ -3,6 +3,8 @@ import { Test } from '@nestjs/testing';
 import { Body, Controller, Get, Post } from '@nestjs/common';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import type { Request, Response } from 'express';
+import fs from 'node:fs';
+import path from 'node:path';
 import { z } from 'zod';
 import { AppModule } from '../../src/app.module.js';
 import { parseEnvironment } from '../../src/bootstrap/environment.js';
@@ -37,6 +39,11 @@ export async function testApplication(
     environment?: NodeJS.ProcessEnv;
   } = {},
 ) {
+  fs.mkdirSync('.tools', { recursive: true });
+  const ownStorage = options.environment?.STORAGE_ROOT === undefined;
+  const storageRoot =
+    options.environment?.STORAGE_ROOT ??
+    fs.mkdtempSync(path.resolve('.tools/storage-test-'));
   const config = parseEnvironment({
     NODE_ENV: 'test',
     DATABASE_URL: options.databaseUrl ?? 'postgresql://localhost/unused_test',
@@ -45,6 +52,7 @@ export async function testApplication(
     BETTER_AUTH_SECRET:
       'test-only-secret-for-foundation-contracts-at-least-32-characters',
     BETTER_AUTH_URL: 'http://localhost:3000',
+    STORAGE_ROOT: storageRoot,
     ...options.environment,
   });
   const builder = Test.createTestingModule({
@@ -72,7 +80,9 @@ export async function testApplication(
       const id = res.getHeader('X-Request-Id');
       if (
         typeof id === 'string' &&
-        /^\/api\/v1\/(?:auth\/|me(?:\/|\?|$))/.test(req.originalUrl)
+        /^\/api\/v1\/(?:auth\/|files(?:\/|\?|$)|me(?:\/|\?|$))/.test(
+          req.originalUrl,
+        )
       )
         auditRequests.add(id);
     });
@@ -89,6 +99,15 @@ export async function testApplication(
         });
     } finally {
       await close();
+      if (ownStorage) {
+        const resolved = path.resolve(storageRoot);
+        if (
+          !resolved.startsWith(path.resolve('.tools') + path.sep) ||
+          !path.basename(resolved).startsWith('storage-test-')
+        )
+          throw new Error('Refusing unsafe fixture cleanup.');
+        fs.rmSync(resolved, { recursive: true, force: true });
+      }
     }
   };
   return app;

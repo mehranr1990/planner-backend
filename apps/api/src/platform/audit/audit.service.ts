@@ -19,6 +19,12 @@ const ActionSchema = z.enum([
   'ACCOUNT_PROFILE_UPDATE',
   'ACCOUNT_SETTINGS_UPDATE',
   'ACCESS_DENIED',
+  'FILE_INITIATE',
+  'FILE_COMPLETE',
+  'FILE_DOWNLOAD',
+  'FILE_DELETE',
+  'FILE_CLEANUP',
+  'FILE_ACCESS_DENIED',
 ]);
 const AuditSchema = z.strictObject({
   action: ActionSchema,
@@ -26,6 +32,7 @@ const AuditSchema = z.strictObject({
   actorUserId: z.string().uuid().nullable().default(null),
   requestId: z.string().uuid(),
   correlationId: z.string().uuid(),
+  resourceId: z.string().uuid().nullable().default(null),
   changedFields: z
     .array(
       z.enum([

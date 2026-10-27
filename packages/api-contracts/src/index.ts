@@ -39,3 +39,4 @@ export type ErrorCode = z.infer<typeof ErrorCodeSchema>;
 export * from './account.js';
 export * from './auth.js';
 export * from './foundation.js';
+export * from './files.js';

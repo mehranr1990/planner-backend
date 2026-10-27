@@ -28,6 +28,12 @@ export class ApiExceptionFilter implements ExceptionFilter {
   }
 
   reply(exception: unknown, request: ContextRequest, response: Response): void {
+    if (response.destroyed) return;
+    if (response.headersSent) {
+      request.log?.error({ statusCode: 500 }, 'Stream request failed');
+      if (!response.destroyed) response.destroy();
+      return;
+    }
     // Express JSON parser errors carry a status but are not Nest HttpExceptions.
     const parserError =
       exception instanceof Error &&

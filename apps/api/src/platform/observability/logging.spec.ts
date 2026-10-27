@@ -33,13 +33,17 @@ describe('structured log privacy', () => {
         res: { statusCode: 200, headers: { 'set-cookie': 'private-session' } },
         err: new Error('private-exception'),
         password: 'private-password',
+        filename: 'private-filename',
+        objectKey: 'private-object-key',
+        fileUrl: 'private-file-link',
+        signature: 'private-link-signature',
         nested: { token: 'private-nested-token', content: 'private-content' },
       },
       'Safe message',
     );
     expect(JSON.parse(output).req).toEqual({ id: 'safe-id', method: 'POST' });
     expect(output).not.toMatch(
-      /secret-file|private-token|secret-bearer|private-cookie|private-journal|private-mood|private-finance|private-session|private-exception|private-password|private-nested-token|private-content/,
+      /secret-file|private-token|secret-bearer|private-cookie|private-journal|private-mood|private-finance|private-session|private-exception|private-password|private-nested-token|private-content|private-filename|private-object-key|private-file-link|private-link-signature/,
     );
     expect(JSON.parse(output).msg).toBe('Safe message');
   });

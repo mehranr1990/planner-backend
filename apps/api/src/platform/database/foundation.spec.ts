@@ -167,7 +167,7 @@ describe('scoped persistence and API conventions', () => {
     expect(JSON.stringify(json.mock.calls)).not.toMatch(/private|password|SQL/);
   });
   it('blocks destructive or procedural migration forms without rejecting FK actions', () => {
-    expect(reviewMigrations()).toHaveLength(2);
+    expect(reviewMigrations()).toHaveLength(3);
     for (const sql of [
       '',
       '-- comment',

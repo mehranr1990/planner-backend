@@ -1,4 +1,4 @@
-# API conventions through P0-03
+# API conventions through P0-04
 
 Endpoints use `/api/v1`; public health remains at `GET /health/live` and
 `GET /health/ready`. Authentication uses `/api/v1/auth` and verified account
@@ -85,3 +85,19 @@ key, expire after 24 hours and store only a result UUID/status plus a fingerprin
 Replays must resolve current authorized data through the owner facade, never return
 unvalidated stale private payload. See the database/event runbook for transaction,
 crash, expiry and security semantics. Business routes remain out of scope.
+
+P0-04 adds only the four file operations documented in OpenAPI. Initiation is
+strict JSON metadata; completion streams bounded application/octet-stream bytes.
+JSON `{}` completion retries/renews links only for an already READY owned file.
+Downloads require both a current verified session and a short-lived actor/space/
+file-bound signature. Missing/foreign resources use 404; rejected completion,
+stale claims and expired initiation fail safely. No volume path/object key is a
+transport field. Responses force attachment/no-store/nosniff/sandbox behavior.
+
+Upload caps apply independently to chunked and Content-Length requests; global
+JSON caps remain unchanged. Native file rate limits use the verified principal,
+never spoofable forwarding headers. CORS adds DELETE/Content-Disposition. Audit
+adds only nullable resource UUID metadata; filenames/content/URLs/paths/keys and
+signature values are redacted or omitted from logs. Existing request/error/body
+contracts remain compatible against both P0-02 and P0-03 baselines. See
+[private files](../runbooks/private-files.md) for state, failure and recovery rules.

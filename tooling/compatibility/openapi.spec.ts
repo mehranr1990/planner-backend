@@ -6,9 +6,20 @@ const baseline = JSON.parse(
   fs.readFileSync('tooling/compatibility/p0-02-api-signatures.json', 'utf8'),
 ) as Record<string, string>;
 describe('approved API compatibility', () => {
-  it('retains every P0-01/P0-02 request, response, session-security and error contract', () => {
+  it('retains every P0-01/P0-02/P0-03 request, response, session-security and error contract', () => {
     expect(() =>
       assertApiCompatible(createOpenApiDocument(), baseline),
+    ).not.toThrow();
+    expect(() =>
+      assertApiCompatible(
+        createOpenApiDocument(),
+        JSON.parse(
+          fs.readFileSync(
+            'tooling/compatibility/p0-03-api-signatures.json',
+            'utf8',
+          ),
+        ) as Record<string, string>,
+      ),
     ).not.toThrow();
   });
   it('blocks removed routes and changed response or permission semantics', () => {

@@ -64,6 +64,7 @@ describe('identity email transport', () => {
       parseEnvironment({
         ...base,
         NODE_ENV: 'production',
+        STORAGE_ROOT: process.cwd(),
         BETTER_AUTH_URL: 'https://api.example.invalid',
         MAIL_MODE: 'smtp',
         SMTP_HOST: 'smtp.example.invalid',

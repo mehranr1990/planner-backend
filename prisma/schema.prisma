@@ -102,6 +102,7 @@ model Space {
   updatedAt          DateTime            @updatedAt
   outboxEvents       OutboxEvent[]
   idempotencyRecords IdempotencyRecord[]
+  storedFiles        StoredFile[]
 
   @@unique([kind, ownerUserId])
   @@unique([id, ownerUserId])
@@ -123,6 +124,7 @@ model SecurityAuditEvent {
   actor         User?        @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
   requestId     String       @db.Uuid
   correlationId String       @db.Uuid
+  resourceId    String?      @db.Uuid
   changedFields String[]     @default([])
   occurredAt    DateTime     @default(now()) @db.Timestamptz(3)
 
@@ -159,4 +161,38 @@ model IdempotencyRecord {
 
   @@unique([actorUserId, spaceId, operation, keyHash])
   @@index([expiresAt])
+}
+
+enum StoredFileStatus {
+  INITIATED
+  READY
+  REJECTED
+  DELETED
+}
+
+model StoredFile {
+  id              String           @id @default(uuid()) @db.Uuid
+  spaceId         String           @db.Uuid
+  ownerUserId     String           @db.Uuid
+  space           Space            @relation(fields: [spaceId, ownerUserId], references: [id, ownerUserId], onDelete: Cascade)
+  objectKey       String           @unique @db.Uuid
+  filename        String           @db.VarChar(180)
+  mimeType        String           @db.VarChar(100)
+  expectedSize    Int
+  expectedSha256  String?          @db.Char(64)
+  actualSize      Int?
+  sha256          String?          @db.Char(64)
+  status          StoredFileStatus @default(INITIATED)
+  revision        Int              @default(1)
+  uploadAttemptId String?          @db.Uuid
+  uploadStartedAt DateTime?        @db.Timestamptz(3)
+  uploadExpiresAt DateTime         @db.Timestamptz(3)
+  createdAt       DateTime         @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime         @updatedAt @db.Timestamptz(3)
+  completedAt     DateTime?        @db.Timestamptz(3)
+  deletedAt       DateTime?        @db.Timestamptz(3)
+  purgedAt        DateTime?        @db.Timestamptz(3)
+
+  @@unique([spaceId, id])
+  @@index([spaceId, status, createdAt, id])
 }

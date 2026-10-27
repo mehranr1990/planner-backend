@@ -41,6 +41,13 @@ services:
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_USER: ${SMTP_USER:?Set SMTP user}
       SMTP_PASSWORD: ${SMTP_PASSWORD:?Set SMTP password}
+      STORAGE_ROOT: /var/lib/mehran/files
+      FILE_MAX_BYTES: ${FILE_MAX_BYTES:-10485760}
+      FILE_UPLOAD_TIMEOUT_MS: ${FILE_UPLOAD_TIMEOUT_MS:-120000}
+      FILE_UPLOAD_TTL_SECONDS: ${FILE_UPLOAD_TTL_SECONDS:-3600}
+      FILE_LINK_TTL_SECONDS: ${FILE_LINK_TTL_SECONDS:-300}
+    volumes:
+      - private_files:/var/lib/mehran/files
     ports:
       - 127.0.0.1:3000:3000
     networks: [database, edge]
@@ -74,3 +81,4 @@ networks:
   edge: {}
 volumes:
   postgres_data: {}
+  private_files: {}

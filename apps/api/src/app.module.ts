@@ -13,8 +13,12 @@ import {
 import {
   SpacesModule,
   initialSpaceRelations,
+  SpacesService,
 } from './modules/spaces/public/index.js';
 import { AuthModule } from './platform/auth/auth.module.js';
+import { StorageModule } from './platform/storage/storage.module.js';
+import { FILE_SCOPE_RESOLVER } from './platform/storage/files.controller.js';
+import type { FileScopeResolver } from './platform/storage/files.controller.js';
 
 @Module({})
 export class AppModule {
@@ -31,6 +35,14 @@ export class AppModule {
         })),
         AccountModule,
         SpacesModule,
+        StorageModule.register([SpacesModule], {
+          provide: FILE_SCOPE_RESOLVER,
+          inject: [SpacesService],
+          useFactory:
+            (spaces: SpacesService): FileScopeResolver =>
+            (actor) =>
+              spaces.authorizePersonal(actor),
+        }),
       ],
       controllers: [HealthController],
     };

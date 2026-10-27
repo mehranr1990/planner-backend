@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { parseEnvironment } from './environment.js';
 import { isolatedTestDatabaseUrl } from '../../../../tooling/testing/test-database.js';
 
@@ -29,8 +29,27 @@ describe('configuration safety', () => {
       SMTP_HOST: 'smtp.example.invalid',
       SMTP_USER: 'test-only',
       SMTP_PASSWORD: 'test-only',
+      STORAGE_ROOT: process.cwd(),
     });
     expect(production.NODE_ENV).toBe('production');
+  });
+  it('bounds file configuration and requires a private absolute production storage path', () => {
+    const valid = {
+      DATABASE_URL: 'postgresql://localhost/mehran_dev',
+      BETTER_AUTH_URL: 'http://localhost:3000',
+      BETTER_AUTH_SECRET: 'unit-test-only-secret-at-least-32-characters',
+    };
+    for (const override of [
+      { FILE_MAX_BYTES: '0' },
+      { FILE_MAX_BYTES: '104857601' },
+      { FILE_UPLOAD_TIMEOUT_MS: '300001' },
+      { FILE_LINK_TTL_SECONDS: '901' },
+      { FILE_UPLOAD_TTL_SECONDS: '1' },
+      { STORAGE_ROOT: '/' },
+    ])
+      expect(() => parseEnvironment({ ...valid, ...override })).toThrow(
+        'Invalid configuration',
+      );
   });
   it('requires DATABASE_URL with a useful safe error', () => {
     expect(() =>
@@ -39,6 +58,22 @@ describe('configuration safety', () => {
         BETTER_AUTH_URL: 'http://localhost:3000',
       }),
     ).toThrow('Invalid configuration: DATABASE_URL');
+  });
+  it('keeps relative private storage stable when the development command changes cwd', () => {
+    const environment = {
+      DATABASE_URL: 'postgresql://localhost/mehran_dev',
+      BETTER_AUTH_URL: 'http://localhost:3000',
+      BETTER_AUTH_SECRET: 'unit-test-only-secret-at-least-32-characters',
+    };
+    const root = parseEnvironment(environment).STORAGE_ROOT;
+    const cwd = vi
+      .spyOn(process, 'cwd')
+      .mockReturnValue(process.cwd() + '/apps/api');
+    try {
+      expect(parseEnvironment(environment).STORAGE_ROOT).toBe(root);
+    } finally {
+      cwd.mockRestore();
+    }
   });
   it('does not disclose rejected credentials', () => {
     expect(() =>

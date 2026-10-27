@@ -1,7 +1,7 @@
 # Mandatory future Docker deployment gate — DEFERRED
 
 Docker files are portable deployment preparation, not a requirement to develop
-or complete local P0-01. No Docker commands were run for this implementation.
+or complete the approved local Phase 0 scope. No Docker commands were run for this implementation.
 Do not interpret static source review or passing local tests as Docker evidence.
 
 Before Docker release, an operator must verify the following on the chosen host:
@@ -25,9 +25,20 @@ Before Docker release, an operator must verify the following on the chosen host:
 - Configure external HTTPS reverse proxy, host firewall, securely provisioned
   secrets, disk-capacity alerts and restart policies. API port binds loopback.
 - Complete encrypted off-host backup/restore drills, monitoring and operational
-  SMTP setup at their applicable release gates. File-volume verification belongs
-  to P0-04; the current image has no file storage API or mount.
+  SMTP setup at their applicable release gates. Follow the coordinated
+  [database/file backup and restore drill](./backup-restore.md).
+- Verify private_files is mounted only into the API, owned by the non-root API
+  user and never mapped through the reverse proxy or a static web server.
+- With disposable verification users/files, complete upload/download/delete,
+  signature expiry/renewal, foreign-owner denial and corrupted-content rejection.
+  Recreate only the API container and confirm identical size/hash/readability.
+  Confirm the dedicated file volume is retained. Never remove existing volumes.
+- Confirm Linux permissions, hard-link publication, directory fsync, request
+  timeout/body limits, actual proxy session/CSRF/rate behavior and disk alerts.
+  See [private file operations](./private-files.md). These checks remain DEFERRED
+  until run on the real deployment topology.
 
 Compose provides `api` and `postgres` only. No worker, queue service, reverse
-proxy package, auth initialization, or business schema is prebuilt. This is not
+proxy package or business schema is added. Identity and private file infrastructure
+exist; the outbox remains passive. This is not
 a production-ready release until the applicable deployment gates pass.

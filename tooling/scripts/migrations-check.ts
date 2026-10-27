@@ -41,7 +41,7 @@ try {
       `SELECT tablename FROM pg_tables WHERE schemaname = current_schema() ORDER BY tablename`,
     )
   ).rows;
-  assert.equal(emptyTables.length, 10); // nine application/provider tables plus Prisma's ledger
+  assert.equal(emptyTables.length, 11); // ten application/provider tables plus Prisma's ledger
   // Required reset capability is restricted to this disposable, newly-created namespace.
   await sandbox.resetOwnedSchema();
   const folder = path.resolve('.tools/migration-check-' + randomUUID());
@@ -68,8 +68,27 @@ try {
     `INSERT INTO "User" (id,name,email,"emailVerified","updatedAt") VALUES ($1,'Migration fixture','migration@example.test',true,now());`,
     [id],
   );
+  const spaceId = randomUUID();
+  const eventId = randomUUID();
+  const auditId = randomUUID();
   await sandbox.query(
-    `INSERT INTO "UserSettings" ("userId",locale,timezone,"updatedAt") VALUES ($1,'fa','Asia/Tehran',now())`,
+    `INSERT INTO "Space" (id,"ownerUserId","updatedAt") VALUES ($1,$2,now())`,
+    [spaceId, id],
+  );
+  await sandbox.query(
+    `INSERT INTO "OutboxEvent" (id,type,version,"aggregateId","spaceId",payload,"correlationId") VALUES ($1,'account.timezone_changed',1,$2,$3,'{}',$4)`,
+    [eventId, id, spaceId, randomUUID()],
+  );
+  await sandbox.query(
+    `INSERT INTO "SecurityAuditEvent" (id,action,outcome,"actorUserId","requestId","correlationId") VALUES ($1,'ACCOUNT_SETTINGS_UPDATE','SUCCEEDED',$2,$3,$4)`,
+    [auditId, id, randomUUID(), randomUUID()],
+  );
+  await sandbox.query(
+    `INSERT INTO "IdempotencyRecord" (id,"actorUserId","spaceId",operation,"keyHash",fingerprint,"resultId","statusCode","expiresAt") VALUES ($1,$2,$3,'migration.fixture',$4,$5,$6,200,now()+interval '1 day')`,
+    [randomUUID(), id, spaceId, 'a'.repeat(64), 'b'.repeat(64), eventId],
+  );
+  await sandbox.query(
+    `INSERT INTO "UserSettings" ("userId",locale,timezone,revision,"updatedAt") VALUES ($1,'fa','Asia/Tehran',7,now())`,
     [id],
   );
   migrate(sandbox.url, 'deploy');
@@ -82,8 +101,31 @@ try {
     )
   ).rows;
   assert.deepEqual(settings, [
-    { locale: 'fa', timezone: 'Asia/Tehran', revision: 1 },
+    { locale: 'fa', timezone: 'Asia/Tehran', revision: 7 },
   ]);
+  assert.equal(
+    (await sandbox.query(`SELECT id FROM "OutboxEvent" WHERE id=$1`, [eventId]))
+      .rows[0].id,
+    eventId,
+  );
+  assert.equal(
+    (
+      await sandbox.query(
+        `SELECT "resourceId" FROM "SecurityAuditEvent" WHERE id=$1`,
+        [auditId],
+      )
+    ).rows[0].resourceId,
+    null,
+  );
+  assert.equal(
+    (
+      await sandbox.query(
+        `SELECT "resultId" FROM "IdempotencyRecord" WHERE "actorUserId"=$1`,
+        [id],
+      )
+    ).rows[0].resultId,
+    eventId,
+  );
   assert.deepEqual(
     (
       await sandbox.query(

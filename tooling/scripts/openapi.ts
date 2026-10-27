@@ -3,12 +3,16 @@ import { createOpenApiDocument } from '../../packages/api-contracts/dist/openapi
 import { assertApiCompatible } from '../compatibility/openapi-compatibility.ts';
 
 const file = 'docs/api/openapi.json';
-assertApiCompatible(
-  createOpenApiDocument(),
-  JSON.parse(
-    fs.readFileSync('tooling/compatibility/p0-02-api-signatures.json', 'utf8'),
-  ) as Record<string, string>,
-);
+for (const batch of ['p0-02', 'p0-03'])
+  assertApiCompatible(
+    createOpenApiDocument(),
+    JSON.parse(
+      fs.readFileSync(
+        `tooling/compatibility/${batch}-api-signatures.json`,
+        'utf8',
+      ),
+    ) as Record<string, string>,
+  );
 const generated = `${JSON.stringify(createOpenApiDocument(), null, 2)}\n`;
 if (process.argv.includes('--write')) {
   fs.mkdirSync('docs/api', { recursive: true });

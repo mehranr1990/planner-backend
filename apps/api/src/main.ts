@@ -1,13 +1,16 @@
 import 'reflect-metadata';
-import { NestFactory } from '@nestjs/core';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { pino } from 'pino';
-import { AppModule } from './app.module.js';
 import { parseEnvironment } from './bootstrap/environment.js';
-import { configureApp } from './bootstrap/configure-app.js';
 
 try {
   const config = parseEnvironment(process.env);
+  // Reject invalid deployment settings before loading the full application graph.
+  const [{ NestFactory }, { AppModule }, { configureApp }] = await Promise.all([
+    import('@nestjs/core'),
+    import('./app.module.js'),
+    import('./bootstrap/configure-app.js'),
+  ]);
   const app = await NestFactory.create<NestExpressApplication>(
     AppModule.register(config),
     { bufferLogs: true, bodyParser: false, abortOnError: false },

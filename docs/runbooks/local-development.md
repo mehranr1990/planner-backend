@@ -88,3 +88,17 @@ and a random BETTER_AUTH_SECRET of at least 32 characters in ignored .env. The
 implementation ensured local values without replacing any existing settings.
 Production additionally requires HTTPS origins and authenticated TLS SMTP.
 See [authentication](./authentication.md) for the private development mail sink.
+
+P0-04 stores private blobs through StoragePort, with PostgreSQL metadata. Relative
+STORAGE_ROOT (default .tools/private-files) resolves from repository root even
+when pnpm dev changes cwd to apps/api. Use private NTFS ACLs; never point a public
+web server at this folder. File limits/TTLs are validated and optional in local
+.env; production requires an absolute mounted private root. Existing .env values
+are preserved. File tests use individual temporary roots with exact fixture
+cleanup, never development files. No file volume, DB or existing data is reset.
+
+The third additive migration introduces StoredFile and audit target UUIDs.
+The migration gate now verifies prior settings revisions, outbox/audit evidence
+and idempotency receipts survive upgrade. Existing applied migrations are unchanged.
+See [private files](./private-files.md) for the four-route protocol and explicit
+reconciliation contract; no worker/scheduled cleanup is active yet.
