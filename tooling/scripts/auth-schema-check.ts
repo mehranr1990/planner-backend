@@ -30,7 +30,10 @@ function model(source: string, name: string): string {
   return match[1]!
     .split('\n')
     .filter(
-      (line) => !/^\s*(?:settings|spaces|securityAuditEvents)\s/.test(line),
+      (line) =>
+        !/^\s*(?:settings|spaces|securityAuditEvents|createdTasks|taskChanges)\s/.test(
+          line,
+        ),
     )
     .join('\n')
     .replace(/\s+/g, '');

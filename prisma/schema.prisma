@@ -23,6 +23,8 @@ model User {
   settings            UserSettings?
   spaces              Space[]
   securityAuditEvents SecurityAuditEvent[]
+  createdTasks        Task[]               @relation("TaskCreator")
+  taskChanges         TaskChange[]         @relation("TaskActor")
 
   @@unique([email])
   @@map("User")
@@ -76,7 +78,7 @@ model AuthVerification {
   @@map("AuthVerification")
 }
 
-// Application-owned models. No business-domain or future batch tables.
+// Application-owned account foundation; business models are added only in their approved batches.
 model UserSettings {
   userId            String   @id @db.Uuid
   user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -103,6 +105,8 @@ model Space {
   outboxEvents       OutboxEvent[]
   idempotencyRecords IdempotencyRecord[]
   storedFiles        StoredFile[]
+  tasks              Task[]
+  labels             Label[]
 
   @@unique([kind, ownerUserId])
   @@unique([id, ownerUserId])
@@ -192,7 +196,134 @@ model StoredFile {
   completedAt     DateTime?        @db.Timestamptz(3)
   deletedAt       DateTime?        @db.Timestamptz(3)
   purgedAt        DateTime?        @db.Timestamptz(3)
+  taskAttachments TaskAttachment[]
 
   @@unique([spaceId, id])
   @@index([spaceId, status, createdAt, id])
+}
+
+enum TaskStatus {
+  OPEN
+  IN_PROGRESS
+  DONE
+  CANCELED
+}
+
+enum TaskPriority {
+  NONE
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+model Task {
+  id                 String              @id @default(uuid()) @db.Uuid
+  spaceId            String              @db.Uuid
+  space              Space               @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  createdByUserId    String              @db.Uuid
+  creator            User                @relation("TaskCreator", fields: [createdByUserId], references: [id], onDelete: NoAction)
+  title              String              @db.VarChar(300)
+  descriptionContent String?
+  descriptionFormat  String              @default("MARKDOWN") @db.VarChar(20)
+  descriptionVersion Int                 @default(1)
+  status             TaskStatus          @default(OPEN)
+  priority           TaskPriority        @default(NONE)
+  parentTaskId       String?             @db.Uuid
+  parent             Task?               @relation("TaskTree", fields: [spaceId, parentTaskId], references: [spaceId, id], onDelete: NoAction, onUpdate: NoAction)
+  subtasks           Task[]              @relation("TaskTree")
+  plannedStartAt     DateTime?           @db.Timestamptz(3)
+  dueAt              DateTime?           @db.Timestamptz(3)
+  scheduledDate      DateTime?           @db.Date
+  completedAt        DateTime?           @db.Timestamptz(3)
+  revision           Int                 @default(1)
+  createdAt          DateTime            @default(now()) @db.Timestamptz(3)
+  updatedAt          DateTime            @updatedAt @db.Timestamptz(3)
+  deletedAt          DateTime?           @db.Timestamptz(3)
+  deletionBatchId    String?             @db.Uuid
+  checklistItems     TaskChecklistItem[]
+  labels             TaskLabel[]
+  attachments        TaskAttachment[]
+  changes            TaskChange[]
+
+  @@unique([spaceId, id])
+  @@index([spaceId, deletedAt, createdAt, id])
+  @@index([spaceId, parentTaskId, deletedAt, createdAt, id])
+  @@index([spaceId, status, deletedAt, createdAt, id])
+  @@index([spaceId, dueAt])
+}
+
+model TaskChecklistItem {
+  id        String   @id @default(uuid()) @db.Uuid
+  spaceId   String   @db.Uuid
+  taskId    String   @db.Uuid
+  task      Task     @relation(fields: [spaceId, taskId], references: [spaceId, id], onDelete: Cascade)
+  title     String   @db.VarChar(300)
+  completed Boolean  @default(false)
+  position  Int
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  @@unique([spaceId, id])
+  @@index([spaceId, taskId, position, id])
+}
+
+model Label {
+  id        String      @id @default(uuid()) @db.Uuid
+  spaceId   String      @db.Uuid
+  space     Space       @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  name      String      @db.VarChar(100)
+  revision  Int         @default(1)
+  createdAt DateTime    @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime    @updatedAt @db.Timestamptz(3)
+  tasks     TaskLabel[]
+
+  @@unique([spaceId, id])
+  @@index([spaceId, createdAt, id])
+}
+
+model TaskLabel {
+  spaceId   String   @db.Uuid
+  taskId    String   @db.Uuid
+  labelId   String   @db.Uuid
+  task      Task     @relation(fields: [spaceId, taskId], references: [spaceId, id], onDelete: Cascade)
+  label     Label    @relation(fields: [spaceId, labelId], references: [spaceId, id], onDelete: Cascade)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  @@id([spaceId, taskId, labelId])
+  @@index([spaceId, labelId, taskId])
+}
+
+model TaskAttachment {
+  spaceId   String     @db.Uuid
+  taskId    String     @db.Uuid
+  fileId    String     @db.Uuid
+  task      Task       @relation(fields: [spaceId, taskId], references: [spaceId, id], onDelete: Cascade)
+  file      StoredFile @relation(fields: [spaceId, fileId], references: [spaceId, id], onDelete: Cascade)
+  createdAt DateTime   @default(now()) @db.Timestamptz(3)
+
+  @@id([spaceId, taskId, fileId])
+  @@index([spaceId, taskId, createdAt, fileId])
+}
+
+model TaskChange {
+  id               String        @id @default(uuid()) @db.Uuid
+  spaceId          String        @db.Uuid
+  taskId           String        @db.Uuid
+  task             Task          @relation(fields: [spaceId, taskId], references: [spaceId, id], onDelete: Cascade)
+  actorUserId      String        @db.Uuid
+  actor            User          @relation("TaskActor", fields: [actorUserId], references: [id], onDelete: NoAction)
+  kind             String        @db.VarChar(40)
+  fields           String[]
+  previousRevision Int
+  revision         Int
+  beforeStatus     TaskStatus?
+  afterStatus      TaskStatus
+  beforePriority   TaskPriority?
+  afterPriority    TaskPriority
+  relatedId        String?       @db.Uuid
+  createdAt        DateTime      @default(now()) @db.Timestamptz(3)
+
+  @@unique([spaceId, taskId, revision])
+  @@index([spaceId, taskId, revision, id])
 }

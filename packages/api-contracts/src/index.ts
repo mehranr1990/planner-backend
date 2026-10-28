@@ -40,3 +40,4 @@ export * from './account.js';
 export * from './auth.js';
 export * from './foundation.js';
 export * from './files.js';
+export * from './tasks.js';

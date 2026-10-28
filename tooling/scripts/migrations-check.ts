@@ -41,7 +41,7 @@ try {
       `SELECT tablename FROM pg_tables WHERE schemaname = current_schema() ORDER BY tablename`,
     )
   ).rows;
-  assert.equal(emptyTables.length, 11); // ten application/provider tables plus Prisma's ledger
+  assert.equal(emptyTables.length, 17); // sixteen application/provider tables plus Prisma's ledger
   // Required reset capability is restricted to this disposable, newly-created namespace.
   await sandbox.resetOwnedSchema();
   const folder = path.resolve('.tools/migration-check-' + randomUUID());
@@ -91,6 +91,11 @@ try {
     `INSERT INTO "UserSettings" ("userId",locale,timezone,revision,"updatedAt") VALUES ($1,'fa','Asia/Tehran',7,now())`,
     [id],
   );
+  const storedFileId = randomUUID();
+  await sandbox.query(
+    `INSERT INTO "StoredFile" (id,"spaceId","ownerUserId","objectKey",filename,"mimeType","expectedSize","actualSize",sha256,status,revision,"uploadExpiresAt","updatedAt","completedAt") VALUES ($1,$2,$3,$4,'upgrade fixture.txt','text/plain',7,7,$5,'READY',4,now()+interval '1 day',now(),now())`,
+    [storedFileId, spaceId, id, randomUUID(), 'c'.repeat(64)],
+  );
   migrate(sandbox.url, 'deploy');
   migrate(sandbox.url, 'status');
   migrate(sandbox.url, 'deploy');
@@ -125,6 +130,15 @@ try {
       )
     ).rows[0].resultId,
     eventId,
+  );
+  assert.deepEqual(
+    (
+      await sandbox.query(
+        `SELECT status,revision,"actualSize" FROM "StoredFile" WHERE id=$1`,
+        [storedFileId],
+      )
+    ).rows,
+    [{ status: 'READY', revision: 4, actualSize: 7 }],
   );
   assert.deepEqual(
     (

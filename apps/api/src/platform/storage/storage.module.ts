@@ -1,3 +1,4 @@
+import { FileCatalog } from './public/file-catalog.js';
 import { Module } from '@nestjs/common';
 import type { DynamicModule, ModuleMetadata, Provider } from '@nestjs/common';
 import { ThrottlerModule } from '@nestjs/throttler';
@@ -28,12 +29,13 @@ export class StorageModule {
       controllers: [FilesController],
       providers: [
         scopeProvider,
+        FileCatalog,
         FileThrottleGuard,
         FilesRepository,
         FilesService,
         { provide: STORAGE_PORT, useClass: LocalFileStorage },
       ],
-      exports: [FilesService, STORAGE_PORT],
+      exports: [FilesService, STORAGE_PORT, FileCatalog],
     };
   }
 }

@@ -80,7 +80,7 @@ export async function testApplication(
       const id = res.getHeader('X-Request-Id');
       if (
         typeof id === 'string' &&
-        /^\/api\/v1\/(?:auth\/|files(?:\/|\?|$)|me(?:\/|\?|$))/.test(
+        /^\/api\/v1\/(?:auth\/|tasks(?:\/|\?|$)|labels(?:\/|\?|$)|files(?:\/|\?|$)|me(?:\/|\?|$))/.test(
           req.originalUrl,
         )
       )

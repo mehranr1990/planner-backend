@@ -1,4 +1,4 @@
-name: Phase 0 quality
+name: Backend quality
 on:
   pull_request:
   push:
@@ -39,6 +39,6 @@ jobs:
         env:
           DATABASE_URL: postgresql://planner_test:isolated_ci_only@127.0.0.1:5432/mehran_test
         run: pnpm config:check
-      - name: Applicable Phase 0 gates
+      - name: Applicable backend gates
         run: pnpm quality
       # Docker build/start/persistence is a mandatory future deployment gate.

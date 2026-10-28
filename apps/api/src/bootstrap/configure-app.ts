@@ -23,7 +23,7 @@ export async function configureApp(app: NestExpressApplication): Promise<void> {
   app.enableCors({
     origin: origins,
     credentials: true,
-    methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+    methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: [
       'Content-Type',
       'X-Request-Id',

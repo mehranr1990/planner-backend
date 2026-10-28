@@ -18,7 +18,7 @@ const steps = [
 ];
 let failed = false;
 for (const step of steps) {
-  process.stdout.write(`\nPhase 0 gate: ${step}\n`);
+  process.stdout.write(`\nBackend quality gate: ${step}\n`);
   const status = pnpm([step]);
   if (status !== 0) failed = true;
 }

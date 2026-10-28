@@ -66,7 +66,7 @@ publish the storage directory through a static server or reverse proxy.
 
 ## Structure and API
 
-- apps/api: bootstrap, shared technical services, account/spaces module boundaries.
+- apps/api: bootstrap, shared technical services, account/spaces/tasks module boundaries.
 - packages/api-contracts: transport-only Zod schemas; no DB or framework client.
 - prisma: one schema and explicit Prisma configuration.
 - tooling: ESLint, architecture regression probes, compatibility spike and scripts.
@@ -96,5 +96,8 @@ remain mandatory before Docker-based release.
 See the [P0-03 reliability contract](./docs/runbooks/database-api-events.md),
 [P0-04 traceability](./docs/p0-04-traceability.md) and coordinated
 [backup/restore requirements](./docs/runbooks/backup-restore.md). Outbox dispatch,
-consumers and jobs remain inactive until their assigned batch. Phase 1 is not
-started; there are no personal business-domain tables or attachment links.
+consumers and jobs remain inactive until their assigned batch. P1-01 adds the
+unified Task aggregate, checklists, labels, recovery, safe history and private
+attachment links. See [task operations](./docs/runbooks/tasks.md) and
+[P1-01 traceability](./docs/p1-01-traceability.md). Its fourth additive migration
+preserves all Phase 0 tables and records. P1-02 is not started.

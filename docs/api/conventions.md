@@ -1,4 +1,4 @@
-# API conventions through P0-04
+# API conventions through P1-01
 
 Endpoints use `/api/v1`; public health remains at `GET /health/live` and
 `GET /health/ready`. Authentication uses `/api/v1/auth` and verified account
@@ -71,7 +71,7 @@ Cursor helpers implement stable ascending `(createdAt,id)` keysets, limit defaul
 filter identity. Repositories apply the timestamp column explicitly (for example
 outbox occurredAt), scope with AND, fetch limit+1 and return a nullable nextCursor.
 Cursors are positions, not credentials or snapshot guarantees; edits/new rows can
-change subsequent results. There is no new public list endpoint in this batch.
+change subsequent results. P0-03 introduced helpers only; P1-01 uses them for scoped Task/Label lists.
 
 Real Prisma unique/concurrency failures map to 409, missing rows to 404, invalid
 foreign references to generic 400, pool/connectivity failures to 503 and unexpected
@@ -84,7 +84,7 @@ canonical route and validated request. Receipts bind actor+space+operation+hashe
 key, expire after 24 hours and store only a result UUID/status plus a fingerprint.
 Replays must resolve current authorized data through the owner facade, never return
 unvalidated stale private payload. See the database/event runbook for transaction,
-crash, expiry and security semantics. Business routes remain out of scope.
+crash, expiry and security semantics. P0-03 introduced this foundation; P1-01 activates it for optional Task creation retries.
 
 P0-04 adds only the four file operations documented in OpenAPI. Initiation is
 strict JSON metadata; completion streams bounded application/octet-stream bytes.
@@ -101,3 +101,12 @@ adds only nullable resource UUID metadata; filenames/content/URLs/paths/keys and
 signature values are redacted or omitted from logs. Existing request/error/body
 contracts remain compatible against both P0-02 and P0-03 baselines. See
 [private files](../runbooks/private-files.md) for state, failure and recovery rules.
+
+P1-01 adds the Task, Label and nested checklist/subtask/history/attachment routes
+described in [task operations](../runbooks/tasks.md). Existing Task and Label
+mutations require strong If-Match; child checkbox/association edits use the
+Task revision. Trusted CORS includes PUT. New objects return 201; Task deletion
+returns recoverable metadata; Label deletion returns 204. All list responses
+are bounded keysets. No opaque cursor can authorize another owner's resource.
+P0-04 signatures additionally lock the existing file protocol in the compatibility
+gate. Existing settings optional If-Match semantics remain unchanged.
