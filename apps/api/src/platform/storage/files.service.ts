@@ -9,8 +9,12 @@ import {
 } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import type { Readable } from 'node:stream';
-import { StoredFileSchema } from '@mehran/api-contracts';
-import type { FileUpload, FileDownloadQuery } from '@mehran/api-contracts';
+import { StoredFileSchema, VoiceStoredFileSchema } from '@mehran/api-contracts';
+import type {
+  FileUpload,
+  VoiceFileUpload,
+  FileDownloadQuery,
+} from '@mehran/api-contracts';
 import type { StoredFile } from '../../generated/prisma/client.js';
 import { APP_CONFIG } from '../../bootstrap/configuration.module.js';
 import type { AppConfig } from '../../bootstrap/environment.js';
@@ -39,8 +43,18 @@ export class FilesService {
     @Inject(APP_CONFIG) private readonly config: AppConfig,
     @Inject(AuditService) private readonly audit: AuditService,
   ) {}
-  private view(scope: AuthorizedSpace, file: StoredFile) {
-    return StoredFileSchema.parse({
+  private family(file: StoredFile, voice: boolean) {
+    if ((file.mimeType === 'audio/wav') !== voice)
+      throw new NotFoundException();
+  }
+  private view(scope: AuthorizedSpace, file: StoredFile, voice = false) {
+    this.family(file, voice);
+    const link =
+      file.status === 'READY'
+        ? fileDownloadLink(this.config, scope, file.id)
+        : null;
+    if (voice && link) link.url = link.url.replace('/files/', '/files/voice/');
+    return (voice ? VoiceStoredFileSchema : StoredFileSchema).parse({
       id: file.id,
       status: file.status,
       filename: file.filename,
@@ -51,13 +65,17 @@ export class FilesService {
       createdAt: file.createdAt.toISOString(),
       uploadExpiresAt: file.uploadExpiresAt.toISOString(),
       completedAt: file.completedAt?.toISOString() ?? null,
-      download:
-        file.status === 'READY'
-          ? fileDownloadLink(this.config, scope, file.id)
-          : null,
+      download: link,
     });
   }
-  async initiate(scope: AuthorizedSpace, input: FileUpload, key?: string) {
+  async initiate(
+    scope: AuthorizedSpace,
+    input: FileUpload | VoiceFileUpload,
+    key?: string,
+    voice = false,
+  ) {
+    if ((input.mimeType === 'audio/wav') !== voice)
+      throw new BadRequestException();
     if (input.expectedSize > this.config.FILE_MAX_BYTES)
       throw new PayloadTooLargeException();
     return this.view(
@@ -68,10 +86,12 @@ export class FilesService {
         new Date(Date.now() + this.config.FILE_UPLOAD_TTL_SECONDS * 1000),
         key,
       ),
+      voice,
     );
   }
-  async retryComplete(scope: AuthorizedSpace, id: string) {
+  async retryComplete(scope: AuthorizedSpace, id: string, voice = false) {
     const file = await this.repository.owned(scope, id);
+    this.family(file, voice);
     if (file.status !== 'READY') throw new ConflictException();
     await this.audit.record({
       action: 'FILE_COMPLETE',
@@ -81,14 +101,16 @@ export class FilesService {
       requestId: scope.actor.requestId,
       correlationId: scope.actor.correlationId,
     });
-    return this.view(scope, file);
+    return this.view(scope, file, voice);
   }
   async complete(
     scope: AuthorizedSpace,
     id: string,
     source: Readable,
     contentLength?: string,
+    voice = false,
   ) {
+    this.family(await this.repository.owned(scope, id), voice);
     const attempt = randomUUID();
     const { file, auditId } = await this.repository.claim(scope, id, attempt);
     const abort = new AbortController();
@@ -130,7 +152,7 @@ export class FilesService {
         evidence,
         auditId,
       );
-      return this.view(scope, ready);
+      return this.view(scope, ready, voice);
     } catch (error) {
       // Decide from authoritative state before deleting bytes. On DB uncertainty,
       // retain the private blob/attempt for reconciliation, never guess rollback.
@@ -149,7 +171,12 @@ export class FilesService {
       finished();
     }
   }
-  async download(scope: AuthorizedSpace, id: string, query: FileDownloadQuery) {
+  async download(
+    scope: AuthorizedSpace,
+    id: string,
+    query: FileDownloadQuery,
+    voice = false,
+  ) {
     const file = await this.repository.owned(scope, id);
     if (
       file.status !== 'READY' ||
@@ -157,6 +184,7 @@ export class FilesService {
       file.sha256 === null
     )
       throw new NotFoundException();
+    this.family(file, voice);
     verifyFileLink(this.config, scope, id, query);
     const audit = await this.audit.record({
       action: 'FILE_DOWNLOAD',
@@ -180,7 +208,8 @@ export class FilesService {
       throw mapped(error);
     }
   }
-  async delete(scope: AuthorizedSpace, id: string) {
+  async delete(scope: AuthorizedSpace, id: string, voice = false) {
+    this.family(await this.repository.owned(scope, id, true), voice);
     const { file, auditId } = await this.repository.markDeleted(scope, id);
     try {
       const active = this.active.get(id);

@@ -97,6 +97,11 @@ enum SpaceKind {
 }
 
 model Space {
+  notes              Note[]
+  noteFolders        NoteFolder[]
+  journalEntries     JournalEntry[]
+  moodEntries        MoodEntry[]
+  captureItems       CaptureItem[]
   focusSessions      FocusSession[]
   timeEntries        TimeEntry[]
   id                 String              @id @default(uuid()) @db.Uuid
@@ -194,6 +199,7 @@ enum StoredFileStatus {
 }
 
 model StoredFile {
+  voiceCaptures   CaptureItem[]
   id              String           @id @default(uuid()) @db.Uuid
   spaceId         String           @db.Uuid
   ownerUserId     String           @db.Uuid
@@ -237,6 +243,8 @@ enum TaskPriority {
 }
 
 model Task {
+  noteReferences     Note[]
+  captureTargets     CaptureItem[]
   estimatedMinutes   Int?
   important          Boolean?
   urgent             Boolean?
@@ -611,6 +619,7 @@ model TimeBlock {
 }
 
 model Habit {
+  captureTargets  CaptureItem[]
   goalLinks       GoalHabitLink[]
   id              String          @id @default(uuid()) @db.Uuid
   spaceId         String          @db.Uuid
@@ -652,6 +661,7 @@ model HabitSchedule {
 }
 
 model HabitEntry {
+  captureTargets   CaptureItem[]
   id               String        @id @db.Uuid
   spaceId          String        @db.Uuid
   habitId          String        @db.Uuid
@@ -731,6 +741,7 @@ model LifeArea {
 }
 
 model Goal {
+  noteReferences  Note[]
   id              String   @id @default(uuid()) @db.Uuid
   spaceId         String   @db.Uuid
   createdByUserId String   @db.Uuid
@@ -942,4 +953,167 @@ model TimeEntry {
   @@index([spaceId, current, startAt, endAt])
   @@index([spaceId, logicalId, revision])
   @@index([spaceId, taskId])
+}
+
+model NoteFolder {
+  id              String       @id @default(uuid()) @db.Uuid
+  spaceId         String       @db.Uuid
+  createdByUserId String       @db.Uuid
+  space           Space        @relation(fields: [spaceId, createdByUserId], references: [id, ownerUserId], onDelete: Cascade)
+  title           String       @db.VarChar(300)
+  parentId        String?      @db.Uuid
+  parent          NoteFolder?  @relation("FolderParent", fields: [spaceId, parentId], references: [spaceId, id], onDelete: NoAction, onUpdate: NoAction)
+  children        NoteFolder[] @relation("FolderParent")
+  notes           Note[]
+  position        Int          @default(0)
+  state           String       @default("ACTIVE") @db.VarChar(10)
+  revision        Int          @default(1)
+  createdAt       DateTime     @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime     @updatedAt @db.Timestamptz(3)
+
+  @@unique([spaceId, id])
+  @@index([spaceId, createdAt, id])
+  @@index([spaceId, parentId])
+}
+
+model Note {
+  id              String   @id @db.Uuid
+  logicalId       String   @db.Uuid
+  spaceId         String   @db.Uuid
+  createdByUserId String   @db.Uuid
+  space           Space    @relation(fields: [spaceId, createdByUserId], references: [id, ownerUserId], onDelete: Cascade)
+  revision        Int      @default(1)
+  current         Boolean  @default(true)
+  previousId      String?  @unique @db.Uuid
+  createdAt       DateTime @default(now()) @db.Timestamptz(3)
+  recordedAt      DateTime @db.Timestamptz(3)
+
+  title          String        @db.VarChar(300)
+  content        String
+  contentFormat  String        @default("MARKDOWN") @db.VarChar(10)
+  contentVersion Int           @default(1)
+  state          String        @default("ACTIVE") @db.VarChar(10)
+  folderId       String?       @db.Uuid
+  folder         NoteFolder?   @relation(fields: [spaceId, folderId], references: [spaceId, id], onDelete: NoAction, onUpdate: NoAction)
+  taskId         String?       @db.Uuid
+  task           Task?         @relation(fields: [spaceId, taskId], references: [spaceId, id], onDelete: NoAction, onUpdate: NoAction)
+  goalId         String?       @db.Uuid
+  goal           Goal?         @relation(fields: [spaceId, goalId], references: [spaceId, id], onDelete: NoAction, onUpdate: NoAction)
+  captureTargets CaptureItem[]
+
+  root      Note   @relation("NoteRoot", fields: [spaceId, logicalId], references: [spaceId, id], onDelete: NoAction, onUpdate: NoAction)
+  versions  Note[] @relation("NoteRoot")
+  previous  Note?  @relation("NotePrevious", fields: [spaceId, logicalId, previousId], references: [spaceId, logicalId, id], onDelete: NoAction, onUpdate: NoAction)
+  successor Note?  @relation("NotePrevious")
+
+  @@unique([spaceId, id])
+  @@unique([spaceId, logicalId, id])
+  @@unique([spaceId, logicalId, previousId])
+  @@unique([logicalId, revision])
+  @@index([spaceId, current, createdAt, logicalId])
+  @@index([spaceId, logicalId, revision])
+  @@index([spaceId, folderId, current])
+  @@index([spaceId, taskId])
+  @@index([spaceId, goalId])
+}
+
+model JournalEntry {
+  id              String   @id @db.Uuid
+  logicalId       String   @db.Uuid
+  spaceId         String   @db.Uuid
+  createdByUserId String   @db.Uuid
+  space           Space    @relation(fields: [spaceId, createdByUserId], references: [id, ownerUserId], onDelete: Cascade)
+  revision        Int      @default(1)
+  current         Boolean  @default(true)
+  previousId      String?  @unique @db.Uuid
+  createdAt       DateTime @default(now()) @db.Timestamptz(3)
+  recordedAt      DateTime @db.Timestamptz(3)
+
+  title          String?       @db.VarChar(300)
+  content        String
+  contentFormat  String        @default("MARKDOWN") @db.VarChar(10)
+  contentVersion Int           @default(1)
+  kind           String        @db.VarChar(10)
+  localDate      DateTime      @db.Date
+  timezone       String        @db.VarChar(100)
+  deleted        Boolean       @default(false)
+  moodEntries    MoodEntry[]
+  captureTargets CaptureItem[]
+
+  root      JournalEntry   @relation("JournalEntryRoot", fields: [spaceId, logicalId], references: [spaceId, id], onDelete: NoAction, onUpdate: NoAction)
+  versions  JournalEntry[] @relation("JournalEntryRoot")
+  previous  JournalEntry?  @relation("JournalEntryPrevious", fields: [spaceId, logicalId, previousId], references: [spaceId, logicalId, id], onDelete: NoAction, onUpdate: NoAction)
+  successor JournalEntry?  @relation("JournalEntryPrevious")
+
+  @@unique([spaceId, id])
+  @@unique([spaceId, logicalId, id])
+  @@unique([spaceId, logicalId, previousId])
+  @@unique([logicalId, revision])
+  @@index([spaceId, current, createdAt, logicalId])
+  @@index([spaceId, logicalId, revision])
+  @@index([spaceId, current, localDate])
+}
+
+model MoodEntry {
+  id              String   @id @db.Uuid
+  logicalId       String   @db.Uuid
+  spaceId         String   @db.Uuid
+  createdByUserId String   @db.Uuid
+  space           Space    @relation(fields: [spaceId, createdByUserId], references: [id, ownerUserId], onDelete: Cascade)
+  revision        Int      @default(1)
+  current         Boolean  @default(true)
+  previousId      String?  @unique @db.Uuid
+  createdAt       DateTime @default(now()) @db.Timestamptz(3)
+  recordedAt      DateTime @db.Timestamptz(3)
+
+  mood           Int
+  energy         Int?
+  note           String?
+  localDate      DateTime      @db.Date
+  timezone       String        @db.VarChar(100)
+  state          String        @default("RECORDED") @db.VarChar(10)
+  journalEntryId String?       @db.Uuid
+  journalEntry   JournalEntry? @relation(fields: [spaceId, journalEntryId], references: [spaceId, id], onDelete: NoAction, onUpdate: NoAction)
+
+  root      MoodEntry   @relation("MoodEntryRoot", fields: [spaceId, logicalId], references: [spaceId, id], onDelete: NoAction, onUpdate: NoAction)
+  versions  MoodEntry[] @relation("MoodEntryRoot")
+  previous  MoodEntry?  @relation("MoodEntryPrevious", fields: [spaceId, logicalId, previousId], references: [spaceId, logicalId, id], onDelete: NoAction, onUpdate: NoAction)
+  successor MoodEntry?  @relation("MoodEntryPrevious")
+
+  @@unique([spaceId, id])
+  @@unique([spaceId, logicalId, id])
+  @@unique([spaceId, logicalId, previousId])
+  @@unique([logicalId, revision])
+  @@index([spaceId, current, createdAt, logicalId])
+  @@index([spaceId, logicalId, revision])
+  @@index([spaceId, current, localDate])
+  @@index([spaceId, journalEntryId])
+}
+
+model CaptureItem {
+  id                 String        @id @default(uuid()) @db.Uuid
+  spaceId            String        @db.Uuid
+  createdByUserId    String        @db.Uuid
+  space              Space         @relation(fields: [spaceId, createdByUserId], references: [id, ownerUserId], onDelete: Cascade)
+  type               String        @db.VarChar(12)
+  text               String
+  voiceFileId        String?       @db.Uuid
+  voiceFile          StoredFile?   @relation(fields: [spaceId, voiceFileId], references: [spaceId, id], onDelete: NoAction, onUpdate: NoAction)
+  state              String        @default("INBOX") @db.VarChar(10)
+  targetTaskId       String?       @db.Uuid
+  targetTask         Task?         @relation(fields: [spaceId, targetTaskId], references: [spaceId, id], onDelete: NoAction, onUpdate: NoAction)
+  targetNoteId       String?       @db.Uuid
+  targetNote         Note?         @relation(fields: [spaceId, targetNoteId], references: [spaceId, id], onDelete: NoAction, onUpdate: NoAction)
+  targetJournalId    String?       @db.Uuid
+  targetJournal      JournalEntry? @relation(fields: [spaceId, targetJournalId], references: [spaceId, id], onDelete: NoAction, onUpdate: NoAction)
+  targetHabitId      String?       @db.Uuid
+  targetHabit        Habit?        @relation(fields: [spaceId, targetHabitId], references: [spaceId, id], onDelete: NoAction, onUpdate: NoAction)
+  targetHabitEntryId String?       @db.Uuid
+  targetHabitEntry   HabitEntry?   @relation(fields: [spaceId, targetHabitId, targetHabitEntryId], references: [spaceId, habitId, id], onDelete: NoAction, onUpdate: NoAction)
+  revision           Int           @default(1)
+  createdAt          DateTime      @default(now()) @db.Timestamptz(3)
+  updatedAt          DateTime      @updatedAt @db.Timestamptz(3)
+
+  @@unique([spaceId, id])
+  @@index([spaceId, state, createdAt, id])
 }

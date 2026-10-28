@@ -1,12 +1,16 @@
+import { validWav } from './wav-policy.js';
 /** Signature/type checks, not an antivirus or full document decoder. All downloads are attachments. */
 export function validContent(
   mime: string,
   head: Uint8Array,
   tail: Uint8Array,
+  size?: number,
 ): boolean {
   const hex = (bytes: Uint8Array) =>
     Array.from(bytes, (value) => value.toString(16).padStart(2, '0')).join('');
   switch (mime) {
+    case 'audio/wav':
+      return validWav(head, size);
     case 'image/png':
       return (
         hex(head.slice(0, 8)) === '89504e470d0a1a0a' &&

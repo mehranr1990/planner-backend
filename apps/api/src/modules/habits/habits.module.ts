@@ -1,3 +1,5 @@
+import { CaptureHabits } from './public/capture-habits.js';
+import { CaptureHabitsRepository } from './infrastructure/habits.repository.js';
 import { Module } from '@nestjs/common';
 import { DatabaseModule } from '../../platform/database/database.module.js';
 import { AuditModule } from '../../platform/audit/audit.service.js';
@@ -18,10 +20,11 @@ import { GoalHabits } from './public/goal-habits.js';
   imports: [DatabaseModule, AuditModule, SpacesModule, AccountModule],
   providers: [
     HabitsService,
+    { provide: CaptureHabits, useClass: CaptureHabitsRepository },
     { provide: GoalHabits, useClass: GoalHabitsRepository },
     { provide: HABITS_REPOSITORY, useClass: HabitsRepository },
   ],
   controllers: [HabitsController, RoutinesController],
-  exports: [GoalHabits],
+  exports: [GoalHabits, CaptureHabits],
 })
 export class HabitsModule {}

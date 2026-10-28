@@ -60,6 +60,17 @@ const ActionSchema = z.enum([
   'TIME_ENTRY_CREATE',
   'TIME_ENTRY_CORRECT',
   'TASK_PRODUCTIVITY_UPDATE',
+  'NOTE_CREATE',
+  'NOTE_UPDATE',
+  'NOTE_FOLDER_CREATE',
+  'NOTE_FOLDER_UPDATE',
+  'JOURNAL_CREATE',
+  'JOURNAL_UPDATE',
+  'MOOD_CREATE',
+  'MOOD_UPDATE',
+  'CAPTURE_CREATE',
+  'CAPTURE_UPDATE',
+  'CAPTURE_TRIAGE',
 ]);
 const AuditSchema = z.strictObject({
   action: ActionSchema,

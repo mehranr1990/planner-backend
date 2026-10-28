@@ -41,13 +41,16 @@ try {
       `SELECT tablename FROM pg_tables WHERE schemaname = current_schema() ORDER BY tablename`,
     )
   ).rows;
-  assert.equal(emptyTables.length, 42); // forty-one application/provider tables plus Prisma's ledger
+  assert.equal(emptyTables.length, 47); // forty-six application/provider tables plus Prisma's ledger
   // Required reset capability is restricted to this disposable, newly-created namespace.
   await sandbox.resetOwnedSchema();
   const folder = path.resolve('.tools/migration-check-' + randomUUID());
   const migrations = path.join(folder, 'migrations');
   fs.mkdirSync(migrations, { recursive: true });
-  for (const name of names.slice(0, names.indexOf('202610280009_p1_07_focus')))
+  for (const name of names.slice(
+    0,
+    names.indexOf('202610280011_p1_08_private_writing'),
+  ))
     fs.cpSync(
       path.join('prisma/migrations', name),
       path.join(migrations, name),
@@ -298,6 +301,16 @@ try {
       }),
     ],
   );
+  const focusId = randomUUID(),
+    timeId = randomUUID();
+  await sandbox.query(
+    `INSERT INTO "FocusSession" (id,"logicalId","spaceId","createdByUserId",revision,current,"recordedAt",timezone,title,mode,state,action,"taskId","selectedTaskRevision") VALUES ($1,$1,$2,$3,1,true,now(),'UTC','Preserved focus','STOPWATCH','IDLE','CREATE',$4,3)`,
+    [focusId, spaceId, id, taskId],
+  );
+  await sandbox.query(
+    `INSERT INTO "TimeEntry" (id,"logicalId","spaceId","createdByUserId",revision,current,"recordedAt",timezone,kind,state,"startAt","endAt",note,"taskId","selectedTaskRevision") VALUES ($1,$1,$2,$3,1,true,now(),'UTC','MANUAL','RECORDED','2024-01-01T10:00Z','2024-01-01T11:00Z','Preserved work',$4,3)`,
+    [timeId, spaceId, id, taskId],
+  );
   const preservedTables = [
     'User',
     'AuthAccount',
@@ -335,6 +348,8 @@ try {
     'GoalTaskLink',
     'GoalHabitLink',
     'GoalReview',
+    'FocusSession',
+    'TimeEntry',
     'SecurityAuditEvent',
     'OutboxEvent',
     'IdempotencyRecord',
@@ -345,7 +360,7 @@ try {
       table,
       (
         await sandbox.query(
-          `SELECT (to_jsonb(t) - ARRAY['estimatedMinutes','important','urgent','productivityFields']::text[]) AS row FROM "${table}" t ORDER BY to_jsonb(t)::text`,
+          `SELECT to_jsonb(t) AS row FROM "${table}" t ORDER BY to_jsonb(t)::text`,
         )
       ).rows,
     );
@@ -356,7 +371,7 @@ try {
     assert.deepEqual(
       (
         await sandbox.query(
-          `SELECT (to_jsonb(t) - ARRAY['estimatedMinutes','important','urgent','productivityFields']::text[]) AS row FROM "${table}" t ORDER BY to_jsonb(t)::text`,
+          `SELECT to_jsonb(t) AS row FROM "${table}" t ORDER BY to_jsonb(t)::text`,
         )
       ).rows,
       beforeSnapshots.get(table),

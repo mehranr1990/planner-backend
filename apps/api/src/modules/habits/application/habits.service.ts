@@ -208,38 +208,43 @@ export class HabitsService {
       'post.habits.entries',
       key,
       { habitId: id, input },
-      async (tx) => {
-        const h = await tx.habit(id);
-        this.revision(h, input.habitRevision);
-        const versions = await tx.schedules(id),
-          now = new Date(),
-          active = currentSchedule(versions, now);
-        if (!active) invalid('HABIT_NOT_STARTED');
-        if (active.status === 'ARCHIVED') invalid('HABIT_ARCHIVED');
-        const date = input.localDate ?? localDate(now, active.timezone),
-          kind = input.action === 'SKIP' ? 'SKIP' : h.type,
-          value =
-            kind === 'SKIP'
-              ? null
-              : (input.value ??
-                (kind === 'CHECKBOX' ? '1' : invalid('VALUE_REQUIRED')));
-        const v = await this.entryChecks(tx, h, versions, date, kind, value),
-          prefs = await tx.preferences();
-        const entry = await tx.appendEntry({
-          habitId: id,
-          scheduleId: v.id,
-          kind,
-          state: 'RECORDED',
-          localDate: date,
-          value,
-          timezone: v.timezone,
-          recordedTimezone: prefs.timezone,
-        });
-        await tx.audit('HABIT_ENTRY_RECORD', entry.id);
-        await tx.event('habit.entry_recorded', id);
-        return entry;
-      },
+      (tx) => this.recordInside(tx, id, input),
     );
+  }
+  async recordInside(
+    tx: HabitsTransaction,
+    id: string,
+    input: c.HabitEntryCreate,
+  ) {
+    const h = await tx.habit(id);
+    this.revision(h, input.habitRevision);
+    const versions = await tx.schedules(id),
+      now = new Date(),
+      active = currentSchedule(versions, now);
+    if (!active) invalid('HABIT_NOT_STARTED');
+    if (active.status === 'ARCHIVED') invalid('HABIT_ARCHIVED');
+    const date = input.localDate ?? localDate(now, active.timezone),
+      kind = input.action === 'SKIP' ? 'SKIP' : h.type,
+      value =
+        kind === 'SKIP'
+          ? null
+          : (input.value ??
+            (kind === 'CHECKBOX' ? '1' : invalid('VALUE_REQUIRED')));
+    const v = await this.entryChecks(tx, h, versions, date, kind, value),
+      prefs = await tx.preferences();
+    const entry = await tx.appendEntry({
+      habitId: id,
+      scheduleId: v.id,
+      kind,
+      state: 'RECORDED',
+      localDate: date,
+      value,
+      timezone: v.timezone,
+      recordedTimezone: prefs.timezone,
+    });
+    await tx.audit('HABIT_ENTRY_RECORD', entry.id);
+    await tx.event('habit.entry_recorded', id);
+    return entry;
   }
   correct(
     scope: AuthorizedSpace,

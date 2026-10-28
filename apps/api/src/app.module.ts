@@ -1,3 +1,6 @@
+import { NotesModule } from './modules/notes/public/index.js';
+import { JournalModule } from './modules/journal/public/index.js';
+import { CaptureModule } from './modules/capture/public/index.js';
 import { FocusModule } from './modules/focus/public/index.js';
 import { GoalsModule } from './modules/goals/public/index.js';
 import { TasksModule } from './modules/tasks/public/index.js';
@@ -38,6 +41,8 @@ export class AppModule {
           spaces.authorizePersonal(actor),
     });
     const tasks = TasksModule.register(storage);
+    const goals = GoalsModule.register(tasks);
+    const notes = NotesModule.register(tasks, goals);
     return {
       module: AppModule,
       imports: [
@@ -55,7 +60,10 @@ export class AppModule {
         PlanningModule.register(tasks),
         CalendarModule.register(tasks),
         HabitsModule,
-        GoalsModule.register(tasks),
+        goals,
+        notes,
+        JournalModule,
+        CaptureModule.register(tasks, goals, notes, storage),
         FocusModule.register(tasks),
       ],
       controllers: [HealthController],

@@ -1,3 +1,7 @@
+import {
+  reviewedVoiceMigrationName,
+  assertReviewedVoiceMigration,
+} from './reviewed-voice-migration.ts';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -47,9 +51,14 @@ export function reviewMigrations(directory = 'prisma/migrations'): string[] {
     .map((entry) => entry.name)
     .sort();
   if (!names.length) throw new Error('No reviewed migrations found.');
-  for (const name of names)
-    assertAdditiveMigration(
-      fs.readFileSync(path.join(directory, name, 'migration.sql'), 'utf8'),
+  for (const name of names) {
+    const sql = fs.readFileSync(
+      path.join(directory, name, 'migration.sql'),
+      'utf8',
     );
+    if (name === reviewedVoiceMigrationName)
+      assertReviewedVoiceMigration(name, sql);
+    else assertAdditiveMigration(sql);
+  }
   return names;
 }

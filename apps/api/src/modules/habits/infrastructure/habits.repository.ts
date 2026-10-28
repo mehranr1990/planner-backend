@@ -1,3 +1,6 @@
+import { CaptureHabits } from '../public/capture-habits.js';
+import { HabitsService } from '../application/habits.service.js';
+import type { HabitEntryCreate } from '@mehran/api-contracts';
 import {
   Inject,
   Injectable,
@@ -471,6 +474,34 @@ export class GoalHabitsRepository extends GoalHabits {
       scheduleIds: versions.map((v) => v.id),
       entries: entries.map((e) => ({ id: e.revisionId, revision: e.revision })),
       ...result.completionRate,
+    };
+  }
+}
+
+@Injectable()
+export class CaptureHabitsRepository extends CaptureHabits {
+  constructor(
+    @Inject(HabitsService) private readonly service: HabitsService,
+    @Inject(PlanningPreferences) private readonly account: PlanningPreferences,
+  ) {
+    super();
+  }
+  async record(
+    tx: Prisma.TransactionClient,
+    scope: AuthorizedSpace,
+    id: string,
+    input: HabitEntryCreate,
+  ) {
+    await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`habits:${scope.spaceId}`},0))::text`;
+    const result = await this.service.recordInside(
+      new Store(tx, scope, this.account),
+      id,
+      input,
+    );
+    return {
+      id: result.id,
+      habitId: result.habitId,
+      revision: result.revision,
     };
   }
 }

@@ -170,3 +170,14 @@ history. Summary raw totals and interval-union distinct totals are explicitly
 different when entries overlap; live work remains separate. Task estimate/quadrant
 edits use the Task revision through its owner endpoint. See
 [ADR0013](../adr/0013-focus-timers-and-time-accounting.md).
+
+## P1-08 private writing and capture
+
+Notes, folders, Journal, check-ins, moods, capture and personal search use strict
+contracts and the verified Personal Space. Creates require Idempotency-Key;
+mutations require If-Match. Capture triage requires both. Parsing preview is
+read-only. Typed writing history retains stable logical IDs across corrections.
+Journal/Mood search needs explicit per-request opt-in; private providers are
+otherwise not invoked. Dedicated WAV file contracts preserve old file schemas.
+See [private writing operations](../runbooks/private-writing.md) and the generated
+OpenAPI snapshot for route schemas, lifecycle responses and bounded pagination.

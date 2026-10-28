@@ -1,3 +1,4 @@
+import { writingPaths } from './writing-openapi.js';
 import { focusPaths } from './focus-openapi.js';
 import { goalPaths } from './goals-openapi.js';
 import { taskPaths } from './tasks-openapi.js';
@@ -226,6 +227,7 @@ export function createOpenApiDocument() {
       ...habitPaths(),
       ...goalPaths(),
       ...focusPaths(),
+      ...writingPaths(),
       ...extraPaths,
       [healthRoutes.live]: { get: operation('healthLive', 'LiveHealth') },
       [healthRoutes.ready]: { get: operation('healthReady', 'ReadyHealth') },

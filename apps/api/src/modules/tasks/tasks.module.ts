@@ -1,3 +1,5 @@
+import { CaptureTasks } from './public/capture-tasks.js';
+import { CaptureTasksRepository } from './infrastructure/tasks.repository.js';
 import { TaskProductivityController } from './http/productivity.controller.js';
 import { TaskProductivityService } from './application/productivity.service.js';
 import { TASK_PRODUCTIVITY } from './application/productivity.port.js';
@@ -29,6 +31,7 @@ export class TasksModule {
       imports: [DatabaseModule, AuditModule, SpacesModule, storage],
       providers: [
         TasksService,
+        { provide: CaptureTasks, useClass: CaptureTasksRepository },
         TaskProductivityService,
         TaskProductivityRepository,
         { provide: TASK_PRODUCTIVITY, useExisting: TaskProductivityRepository },
@@ -45,7 +48,7 @@ export class TasksModule {
         TaskProductivityController,
         LabelsController,
       ],
-      exports: [PlanningTasks, ProductivityTasks],
+      exports: [PlanningTasks, ProductivityTasks, CaptureTasks],
     };
   }
 }

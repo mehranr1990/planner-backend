@@ -1,3 +1,11 @@
+import { CaptureTasks } from '../public/capture-tasks.js';
+import { TasksService } from '../application/tasks.service.js';
+import {
+  searchAfter,
+  literalSearch,
+  searchSnippet,
+} from '../../../platform/database/personal-search.js';
+import type { SearchRequest, PersonalSearchHit } from '@mehran/api-contracts';
 import {
   Inject,
   Injectable,
@@ -729,5 +737,57 @@ export class TasksRepository implements TasksPort {
       }),
     );
     return this.read(scope).task(receipt.resultId);
+  }
+}
+
+@Injectable()
+export class CaptureTasksRepository extends CaptureTasks {
+  constructor(
+    @Inject(TasksService) private readonly service: TasksService,
+    @Inject(FileCatalog) private readonly files: FileCatalog,
+  ) {
+    super();
+  }
+  async create(
+    tx: Prisma.TransactionClient,
+    scope: AuthorizedSpace,
+    input: TaskCreate,
+  ) {
+    await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`tasks:${scope.spaceId}`},0))::text`;
+    const result = await this.service.create(
+      scope,
+      input,
+      undefined,
+      new ScopedTasksStore(tx, scope, this.files),
+    );
+    return { id: result.id, revision: result.revision };
+  }
+  async search(
+    tx: Prisma.TransactionClient,
+    scope: AuthorizedSpace,
+    r: SearchRequest,
+  ): Promise<PersonalSearchHit[]> {
+    const text = { contains: literalSearch(r.q), mode: 'insensitive' as const };
+    const rows = await tx.task.findMany({
+      where: {
+        spaceId: scope.spaceId,
+        deletedAt: null,
+        masterRecurrence: null,
+        AND: [
+          { OR: [{ title: text }, { descriptionContent: text }] },
+          searchAfter(r, 'TASK', false),
+        ],
+      },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+      take: r.limit,
+    });
+    return rows.map((v) => ({
+      kind: 'TASK',
+      id: v.id,
+      revision: v.revision,
+      title: v.title,
+      snippet: searchSnippet(v.descriptionContent ?? v.title),
+      createdAt: v.createdAt.toISOString(),
+    }));
   }
 }

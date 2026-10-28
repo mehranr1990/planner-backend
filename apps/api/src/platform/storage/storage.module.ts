@@ -1,3 +1,4 @@
+import { VoiceFilesController } from './voice-files.controller.js';
 import { FileCatalog } from './public/file-catalog.js';
 import { Module } from '@nestjs/common';
 import type { DynamicModule, ModuleMetadata, Provider } from '@nestjs/common';
@@ -26,7 +27,7 @@ export class StorageModule {
           throttlers: [{ name: 'files', ttl: 60000, limit: 60 }],
         }),
       ],
-      controllers: [FilesController],
+      controllers: [FilesController, VoiceFilesController],
       providers: [
         scopeProvider,
         FileCatalog,

@@ -70,7 +70,7 @@ describe('P1-03 OpenAPI and prior API compatibility', () => {
         ) as Record<string, string>,
       ),
     ).not.toThrow();
-    for (const path of ['/journal/entries', '/reminders', '/sync/push'])
+    for (const path of ['/finance/budgets', '/reminders', '/sync/push'])
       expect(paths).not.toHaveProperty('/api/v1' + path);
   });
 });

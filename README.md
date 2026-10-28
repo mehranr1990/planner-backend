@@ -149,3 +149,14 @@ estimates and explicit quadrants preserve prior Task contracts. See
 [ADR0013](docs/adr/0013-focus-timers-and-time-accounting.md),
 [traceability](docs/p1-07-traceability.md), [runbook](docs/runbooks/focus.md)
 and [report](docs/p1-07-report.md). Run `pnpm smoke:p1-07` after building.
+
+## P1-08 private writing and capture
+
+Personal Notes and folders, immutable Journal/Mood history, daily check-ins,
+explicit atomic capture triage, deterministic parsing previews and private WAV
+attachments are documented in the [runbook](docs/runbooks/private-writing.md).
+See approved [ADR 0014](docs/adr/0014-private-writing-capture-and-search.md),
+[ADR 0015](docs/adr/0015-private-voice-file-compatibility.md),
+[traceability](docs/p1-08-traceability.md) and [report](docs/p1-08-report.md).
+Journal and Mood are excluded from personal search without per-request opt-in.
+Run `pnpm smoke:p1-08` after building for compiled restart/replay verification.

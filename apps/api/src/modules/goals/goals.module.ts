@@ -1,3 +1,5 @@
+import { PersonalGoals } from './public/personal-goals.js';
+import { PersonalGoalsRepository } from './infrastructure/personal-goals.repository.js';
 import { Module } from '@nestjs/common';
 import type { DynamicModule } from '@nestjs/common';
 import { DatabaseModule } from '../../platform/database/database.module.js';
@@ -27,9 +29,11 @@ export class GoalsModule {
       ],
       providers: [
         GoalsService,
+        { provide: PersonalGoals, useClass: PersonalGoalsRepository },
         { provide: GOALS_REPOSITORY, useClass: GoalsRepository },
       ],
       controllers: [GoalsController, LifeAreasController],
+      exports: [PersonalGoals],
     };
   }
 }

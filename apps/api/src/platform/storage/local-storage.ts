@@ -141,7 +141,7 @@ export class LocalFileStorage implements StoragePort, OnModuleInit {
       const sha256 = hash.digest('hex');
       if (
         size !== expected.size ||
-        !validContent(expected.mimeType, head, tail) ||
+        !validContent(expected.mimeType, head, tail, size) ||
         (expected.sha256 && expected.sha256 !== sha256)
       )
         throw new StorageFailure('INVALID');

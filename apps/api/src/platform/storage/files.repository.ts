@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
-import type { FileUpload } from '@mehran/api-contracts';
+import type { FileUpload, VoiceFileUpload } from '@mehran/api-contracts';
 import type { Prisma, StoredFile } from '../../generated/prisma/client.js';
 import { DatabaseService } from '../database/database.service.js';
 import { idempotent } from '../database/idempotency.js';
@@ -62,7 +62,7 @@ export class FilesRepository {
   }
   async initiate(
     scope: AuthorizedSpace,
-    input: FileUpload,
+    input: FileUpload | VoiceFileUpload,
     expiresAt: Date,
     key?: string,
   ) {
