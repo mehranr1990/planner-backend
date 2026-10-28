@@ -1,5 +1,6 @@
 import { taskPaths } from './tasks-openapi.js';
 import { taskToolPaths } from './task-tools-openapi.js';
+import { planningPaths } from './planning-openapi.js';
 import { z } from 'zod';
 import { filePaths } from './files-openapi.js';
 import {
@@ -216,6 +217,7 @@ export function createOpenApiDocument() {
       ...filePaths(),
       ...taskPaths(),
       ...taskToolPaths(),
+      ...planningPaths(),
       ...extraPaths,
       [healthRoutes.live]: { get: operation('healthLive', 'LiveHealth') },
       [healthRoutes.ready]: { get: operation('healthReady', 'ReadyHealth') },

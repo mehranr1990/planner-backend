@@ -1,4 +1,5 @@
 import { TasksModule } from './modules/tasks/public/index.js';
+import { PlanningModule } from './modules/planning/public/index.js';
 import { Module } from '@nestjs/common';
 import type { DynamicModule } from '@nestjs/common';
 import { LoggerModule } from 'nestjs-pino';
@@ -32,6 +33,7 @@ export class AppModule {
         (actor) =>
           spaces.authorizePersonal(actor),
     });
+    const tasks = TasksModule.register(storage);
     return {
       module: AppModule,
       imports: [
@@ -45,7 +47,8 @@ export class AppModule {
         AccountModule,
         SpacesModule,
         storage,
-        TasksModule.register(storage),
+        tasks,
+        PlanningModule.register(tasks),
       ],
       controllers: [HealthController],
     };

@@ -80,15 +80,16 @@ model AuthVerification {
 
 // Application-owned account foundation; business models are added only in their approved batches.
 model UserSettings {
-  userId            String   @id @db.Uuid
-  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  locale            String   @default("en")
-  timezone          String   @default("UTC")
-  preferredCalendar String   @default("GREGORIAN")
-  firstDayOfWeek    Int      @default(1)
-  revision          Int      @default(1)
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  userId               String   @id @db.Uuid
+  user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  locale               String   @default("en")
+  timezone             String   @default("UTC")
+  preferredCalendar    String   @default("GREGORIAN")
+  firstDayOfWeek       Int      @default(1)
+  planningAvailability Json?    @db.JsonB
+  revision             Int      @default(1)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
 }
 
 enum SpaceKind {
@@ -110,6 +111,9 @@ model Space {
   taskTemplates      TaskTemplate[]
   savedTaskFilters   SavedTaskFilter[]
   taskRecurrences    TaskRecurrence[]
+  dailyPlans         DailyPlan[]
+  weeklyPlans        WeeklyPlan[]
+  planningReviews    PlanningReview[]
 
   @@unique([kind, ownerUserId])
   @@unique([id, ownerUserId])
@@ -251,6 +255,7 @@ model Task {
   changes            TaskChange[]
   masterRecurrence   TaskRecurrence?     @relation("RecurrenceMaster")
   occurrence         TaskOccurrence?     @relation("OccurrenceTask")
+  dailyPlanItems     DailyPlanItem[]
 
   @@unique([spaceId, id])
   @@index([spaceId, deletedAt, createdAt, id])
@@ -418,4 +423,73 @@ model TaskOccurrence {
   @@unique([seriesId, recurrenceKey])
   @@index([spaceId, seriesId, createdAt, id])
   @@index([spaceId, state, localDate, id])
+}
+
+model DailyPlan {
+  id              String          @id @default(uuid()) @db.Uuid
+  spaceId         String          @db.Uuid
+  createdByUserId String          @db.Uuid
+  space           Space           @relation(fields: [spaceId, createdByUserId], references: [id, ownerUserId], onDelete: Cascade)
+  localDate       DateTime        @db.Date
+  timezone        String          @db.VarChar(100)
+  revision        Int             @default(1)
+  createdAt       DateTime        @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime        @updatedAt @db.Timestamptz(3)
+  items           DailyPlanItem[]
+
+  @@unique([spaceId, localDate])
+  @@unique([spaceId, id, localDate])
+}
+
+model DailyPlanItem {
+  id                   String    @id @default(uuid()) @db.Uuid
+  spaceId              String    @db.Uuid
+  planId               String    @db.Uuid
+  localDate            DateTime  @db.Date
+  plan                 DailyPlan @relation(fields: [spaceId, planId, localDate], references: [spaceId, id, localDate], onDelete: Cascade)
+  taskId               String    @db.Uuid
+  task                 Task      @relation(fields: [spaceId, taskId], references: [spaceId, id], onDelete: Cascade)
+  position             Int
+  plannedMinutes       Int?
+  selectedTaskRevision Int
+  revision             Int       @default(1)
+  createdAt            DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt            DateTime  @updatedAt @db.Timestamptz(3)
+
+  @@unique([spaceId, localDate, taskId])
+  @@unique([spaceId, planId, position])
+  @@index([spaceId, taskId])
+}
+
+model WeeklyPlan {
+  id              String   @id @default(uuid()) @db.Uuid
+  spaceId         String   @db.Uuid
+  createdByUserId String   @db.Uuid
+  space           Space    @relation(fields: [spaceId, createdByUserId], references: [id, ownerUserId], onDelete: Cascade)
+  weekStartDate   DateTime @db.Date
+  timezone        String   @db.VarChar(100)
+  firstDayOfWeek  Int
+  revision        Int      @default(1)
+  createdAt       DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime @updatedAt @db.Timestamptz(3)
+
+  @@unique([spaceId, weekStartDate])
+}
+
+model PlanningReview {
+  id              String   @id @default(uuid()) @db.Uuid
+  spaceId         String   @db.Uuid
+  createdByUserId String   @db.Uuid
+  space           Space    @relation(fields: [spaceId, createdByUserId], references: [id, ownerUserId], onDelete: Cascade)
+  localDate       DateTime @db.Date
+  kind            String   @db.VarChar(10)
+  timezone        String   @db.VarChar(100)
+  firstDayOfWeek  Int
+  reflection      String
+  revision        Int      @default(1)
+  createdAt       DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime @updatedAt @db.Timestamptz(3)
+
+  @@unique([spaceId, localDate, kind])
+  @@index([spaceId, createdAt, id])
 }

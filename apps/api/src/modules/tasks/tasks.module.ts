@@ -12,6 +12,8 @@ import {
 } from './http/task-tools.controller.js';
 import { TASKS_REPOSITORY } from './application/tasks.port.js';
 import { TasksRepository } from './infrastructure/tasks.repository.js';
+import { PlanningTasks } from './public/planning-tasks.js';
+import { PlanningTasksRepository } from './infrastructure/planning-tasks.repository.js';
 import { TasksController, LabelsController } from './http/tasks.controller.js';
 
 @Module({})
@@ -24,6 +26,7 @@ export class TasksModule {
         TasksService,
         TaskToolsService,
         RecurrenceService,
+        { provide: PlanningTasks, useClass: PlanningTasksRepository },
         { provide: TASKS_REPOSITORY, useClass: TasksRepository },
       ],
       controllers: [
@@ -32,6 +35,7 @@ export class TasksModule {
         TasksController,
         LabelsController,
       ],
+      exports: [PlanningTasks],
     };
   }
 }

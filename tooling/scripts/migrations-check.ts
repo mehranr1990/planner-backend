@@ -41,7 +41,7 @@ try {
       `SELECT tablename FROM pg_tables WHERE schemaname = current_schema() ORDER BY tablename`,
     )
   ).rows;
-  assert.equal(emptyTables.length, 21); // twenty application/provider tables plus Prisma's ledger
+  assert.equal(emptyTables.length, 25); // twenty-four application/provider tables plus Prisma's ledger
   // Required reset capability is restricted to this disposable, newly-created namespace.
   await sandbox.resetOwnedSchema();
   const folder = path.resolve('.tools/migration-check-' + randomUUID());
@@ -84,7 +84,7 @@ try {
     [auditId, id, randomUUID(), randomUUID()],
   );
   await sandbox.query(
-    `INSERT INTO "IdempotencyRecord" (id,"actorUserId","spaceId",operation,"keyHash",fingerprint,"resultId","statusCode","expiresAt") VALUES ($1,$2,$3,'migration.fixture',$4,$5,$6,200,now()+interval '1 day')`,
+    `INSERT INTO "IdempotencyRecord" (id,"actorUserId","spaceId",operation,"keyHash",fingerprint,"resultId","statusCode","expiresAt",result) VALUES ($1,$2,$3,'migration.fixture',$4,$5,$6,200,now()+interval '1 day','{"fixture":true}')`,
     [randomUUID(), id, spaceId, 'a'.repeat(64), 'b'.repeat(64), eventId],
   );
   await sandbox.query(
@@ -110,6 +110,46 @@ try {
     `INSERT INTO "TaskAttachment" ("spaceId","taskId","fileId") VALUES ($1,$2,$3)`,
     [spaceId, taskId, storedFileId],
   );
+  const masterId = randomUUID(),
+    seriesId = randomUUID(),
+    occurrenceId = randomUUID(),
+    templateId = randomUUID(),
+    filterId = randomUUID();
+  const definition = {
+    version: 1,
+    startDate: '2026-10-28',
+    endDate: null,
+    localTime: '09:00',
+    timezone: 'UTC',
+    rule: { kind: 'DAILY', interval: 1 },
+    exclusionDates: [],
+  };
+  const template = {
+      version: 1,
+      task: { title: 'Upgrade template' },
+      checklist: [],
+    },
+    filter = { version: 1, where: { status: 'OPEN' } };
+  await sandbox.query(
+    `INSERT INTO "Task" (id,"spaceId","createdByUserId",title,"updatedAt") VALUES ($1,$2,$3,'Master fixture',now())`,
+    [masterId, spaceId, id],
+  );
+  await sandbox.query(
+    `INSERT INTO "TaskRecurrence" (id,"spaceId","createdByUserId","masterTaskId",definition,"identityTime",revision,"updatedAt") VALUES ($1,$2,$3,$4,$5,'09:00',4,now())`,
+    [seriesId, spaceId, id, masterId, JSON.stringify(definition)],
+  );
+  await sandbox.query(
+    `INSERT INTO "TaskOccurrence" (id,"spaceId","seriesId","taskId","recurrenceKey","localDate","localTime",timezone,"scheduledAt",state,revision,"updatedAt") VALUES ($1,$2,$3,$4,'2026-10-28T09:00:00','2026-10-28','09:00','UTC','2026-10-28T09:00:00Z','PENDING',2,now())`,
+    [occurrenceId, spaceId, seriesId, taskId],
+  );
+  await sandbox.query(
+    `INSERT INTO "TaskTemplate" (id,"spaceId","createdByUserId",name,"values",revision,"updatedAt") VALUES ($1,$2,$3,'Template fixture',$4,3,now())`,
+    [templateId, spaceId, id, JSON.stringify(template)],
+  );
+  await sandbox.query(
+    `INSERT INTO "SavedTaskFilter" (id,"spaceId","createdByUserId",name,query,revision,"updatedAt") VALUES ($1,$2,$3,'Filter fixture',$4,5,now())`,
+    [filterId, spaceId, id, JSON.stringify(filter)],
+  );
   migrate(sandbox.url, 'deploy');
   migrate(sandbox.url, 'status');
   migrate(sandbox.url, 'deploy');
@@ -122,6 +162,60 @@ try {
   assert.deepEqual(settings, [
     { locale: 'fa', timezone: 'Asia/Tehran', revision: 7 },
   ]);
+  assert.equal(
+    (
+      await sandbox.query(
+        `SELECT "planningAvailability" FROM "UserSettings" WHERE "userId"=$1`,
+        [id],
+      )
+    ).rows[0].planningAvailability,
+    null,
+  );
+  assert.deepEqual(
+    (
+      await sandbox.query(
+        `SELECT definition,revision FROM "TaskRecurrence" WHERE id=$1`,
+        [seriesId],
+      )
+    ).rows,
+    [{ definition, revision: 4 }],
+  );
+  assert.deepEqual(
+    (
+      await sandbox.query(
+        `SELECT "taskId",state,revision FROM "TaskOccurrence" WHERE id=$1`,
+        [occurrenceId],
+      )
+    ).rows,
+    [{ taskId, state: 'PENDING', revision: 2 }],
+  );
+  assert.deepEqual(
+    (
+      await sandbox.query(
+        `SELECT "values",revision FROM "TaskTemplate" WHERE id=$1`,
+        [templateId],
+      )
+    ).rows,
+    [{ values: template, revision: 3 }],
+  );
+  assert.deepEqual(
+    (
+      await sandbox.query(
+        `SELECT query,revision FROM "SavedTaskFilter" WHERE id=$1`,
+        [filterId],
+      )
+    ).rows,
+    [{ query: filter, revision: 5 }],
+  );
+  assert.deepEqual(
+    (
+      await sandbox.query(
+        `SELECT result FROM "IdempotencyRecord" WHERE "actorUserId"=$1`,
+        [id],
+      )
+    ).rows,
+    [{ result: { fixture: true } }],
+  );
   assert.deepEqual(
     (
       await sandbox.query(

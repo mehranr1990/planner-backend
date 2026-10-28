@@ -121,3 +121,14 @@ For bulk only, the existing receipt table additionally retains validated private
 per-item response JSON so replay can return an exact partial result. No receipt
 read endpoint exists; current authenticated scope is revalidated on every request.
 The 24-hour retention remains unchanged. Receipts never enter logs or outbox.
+
+P1-03 adds the planning route families documented in
+[planning operations](../runbooks/planning.md). Plans and reviews have their own
+revisions; Task revisions remain independent. Day ordering/selection/removal
+uses the Day If-Match; rollover uses explicit plan/settings/item/Task snapshots
+and a required Idempotency-Key with the existing 24-hour result receipt contract.
+Account-owned availability configuration shares the UserSettings revision while
+retaining every existing /me/settings request/response shape. P1-02 signatures
+are also frozen in the compatibility gate. A plan's ETag versions its stored
+aggregate; enriched Task dispositions are revalidated on every request. All
+records preserve local-date/timezone context; preference changes never move them.

@@ -107,4 +107,10 @@ templates, independent bulk operations and normalized saved filters. See
 [P1-02 traceability](./docs/p1-02-traceability.md). Its fifth additive migration
 preserves existing Tasks and private links. Catch-up is explicit; no worker is
 activated. Use `pnpm smoke:p1-02` after building for the isolated compiled API smoke.
-P1-03 is not started.
+P1-03 adds My Day and weekly composition, private planning reviews, explicit
+rollover and configured capacity. Planning references existing Tasks through
+their public contract and never changes Task dates/state. See
+[planning operations](./docs/runbooks/planning.md),
+[approved planning policy](./docs/adr/0009-personal-planning-semantics.md) and
+[P1-03 traceability](./docs/p1-03-traceability.md). Run `pnpm smoke:p1-03`
+after building for the isolated compiled restart smoke. P1-04 is not started.

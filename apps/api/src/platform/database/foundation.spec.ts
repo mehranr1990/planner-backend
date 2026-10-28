@@ -173,6 +173,7 @@ describe('scoped persistence and API conventions', () => {
       '202610270003_p0_04_private_files',
       '202610280001_p1_01_tasks',
       '202610280002_p1_02_task_recurrence_tools',
+      '202610280003_p1_03_personal_planning',
     ]);
     for (const sql of [
       '',

@@ -28,6 +28,7 @@ describe('structured log privacy', () => {
             journal: 'private-journal',
             mood: 'private-mood',
             finance: 'private-finance',
+            reflection: 'private-reflection',
           },
         },
         res: { statusCode: 200, headers: { 'set-cookie': 'private-session' } },
@@ -43,7 +44,7 @@ describe('structured log privacy', () => {
     );
     expect(JSON.parse(output).req).toEqual({ id: 'safe-id', method: 'POST' });
     expect(output).not.toMatch(
-      /secret-file|private-token|secret-bearer|private-cookie|private-journal|private-mood|private-finance|private-session|private-exception|private-password|private-nested-token|private-content|private-filename|private-object-key|private-file-link|private-link-signature/,
+      /secret-file|private-token|secret-bearer|private-cookie|private-journal|private-mood|private-finance|private-reflection|private-session|private-exception|private-password|private-nested-token|private-content|private-filename|private-object-key|private-file-link|private-link-signature/,
     );
     expect(JSON.parse(output).msg).toBe('Safe message');
   });
