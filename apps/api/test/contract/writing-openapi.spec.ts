@@ -85,8 +85,8 @@ describe('P1-08 writing/search/voice contracts and previous API compatibility', 
       ),
     ).not.toThrow();
     for (const path of [
-      '/finance/accounts',
-      '/finance/transactions',
+      '/notifications/preferences',
+      '/notifications/test',
       '/reminders',
       '/insights/overview',
       '/sync/push',

@@ -1,3 +1,5 @@
+import { FinanceCaptures } from './public/finance-captures.js';
+import { FinanceCapturesRepository } from './infrastructure/capture.repository.js';
 import { Module } from '@nestjs/common';
 import type { DynamicModule } from '@nestjs/common';
 import { DatabaseModule } from '../../platform/database/database.module.js';
@@ -37,9 +39,12 @@ export class CaptureModule {
       ],
       providers: [
         CaptureService,
-        { provide: CAPTURE_REPOSITORY, useClass: CaptureRepository },
+        CaptureRepository,
+        { provide: FinanceCaptures, useClass: FinanceCapturesRepository },
+        { provide: CAPTURE_REPOSITORY, useExisting: CaptureRepository },
       ],
       controllers: [CaptureController, PersonalSearchController],
+      exports: [FinanceCaptures],
     };
   }
 }

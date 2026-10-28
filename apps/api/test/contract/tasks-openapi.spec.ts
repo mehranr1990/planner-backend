@@ -70,7 +70,7 @@ describe('P1-01 API coverage and Phase 0 compatibility', () => {
         ) as Record<string, string>,
       ),
     ).not.toThrow();
-    for (const path of ['/calendar', '/finance/transfers'])
+    for (const path of ['/calendar', '/rewards/achievements'])
       expect(paths).not.toHaveProperty('/api/v1' + path);
   });
 });

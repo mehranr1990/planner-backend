@@ -18,6 +18,8 @@ export const EventSchema = z.strictObject({
     'habit.entry_corrected',
     'goal.progress_changed',
     'capture.triaged',
+    'finance.transaction_posted',
+    'finance.transaction_reversed',
   ]),
   version: z.literal(1),
   aggregateId: z.string().uuid(),

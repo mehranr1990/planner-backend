@@ -160,3 +160,15 @@ See approved [ADR 0014](docs/adr/0014-private-writing-capture-and-search.md),
 [traceability](docs/p1-08-traceability.md) and [report](docs/p1-08-report.md).
 Journal and Mood are excluded from personal search without per-request opt-in.
 Run `pnpm smoke:p1-08` after building for compiled restart/replay verification.
+
+## P1-09 personal finance
+
+Exact personal accounts and signed ledger postings support income, expenses,
+atomic transfers with recorded-rate FX/fees, reversal/correction history, saved
+Gregorian/Jalali budget periods, explicit recurring bill payments, exclusive
+savings sources and private JSON/CSV reports. Retained expense drafts convert
+atomically without changing P1-08 Capture contracts. See approved
+[ADR 0016](docs/adr/0016-personal-finance-ledger-and-period-semantics.md),
+[ADR 0017](docs/adr/0017-iso-currency-minor-unit-authority.md),
+[runbook](docs/runbooks/finance.md), [traceability](docs/p1-09-traceability.md) and
+[report](docs/p1-09-report.md). Run `pnpm smoke:p1-09` after building.

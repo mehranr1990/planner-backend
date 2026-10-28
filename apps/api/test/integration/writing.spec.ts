@@ -721,7 +721,7 @@ describe('P1-08 private writing, capture and personal search', () => {
       ).value,
     ).toBe('1');
   });
-  it('keeps expense drafts in Inbox without future finance posting and archives explicitly', async () => {
+  it('keeps expense drafts in Inbox without implicit posting and archives explicitly', async () => {
     const item = await capture({ type: 'EXPENSE' });
     await call(a, 'post', '/capture/' + item.id + '/triage', item.revision)
       .set('Idempotency-Key', randomUUID())
@@ -736,7 +736,14 @@ describe('P1-08 private writing, capture and personal search', () => {
       targetTaskId: null,
       targetNoteId: null,
     });
-    await call(a, 'get', '/finance/accounts').expect(404);
+    expect(
+      c.FinanceAccountPageSchema.parse(
+        (await call(a, 'get', '/finance/accounts').expect(200)).body,
+      ).items,
+    ).toEqual([]);
+    expect(
+      await db.client.transaction.count({ where: { spaceId: a.spaceId } }),
+    ).toBe(0);
   });
   it('previews bounded parsing without writes, classification or due-date side effects', async () => {
     const count = await db.client.captureItem.count({

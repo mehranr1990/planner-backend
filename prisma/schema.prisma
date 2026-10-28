@@ -97,38 +97,47 @@ enum SpaceKind {
 }
 
 model Space {
-  notes              Note[]
-  noteFolders        NoteFolder[]
-  journalEntries     JournalEntry[]
-  moodEntries        MoodEntry[]
-  captureItems       CaptureItem[]
-  focusSessions      FocusSession[]
-  timeEntries        TimeEntry[]
-  id                 String              @id @default(uuid()) @db.Uuid
-  kind               SpaceKind           @default(PERSONAL)
-  ownerUserId        String              @db.Uuid
-  owner              User                @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
-  createdAt          DateTime            @default(now())
-  updatedAt          DateTime            @updatedAt
-  outboxEvents       OutboxEvent[]
-  idempotencyRecords IdempotencyRecord[]
-  storedFiles        StoredFile[]
-  tasks              Task[]
-  labels             Label[]
-  taskTemplates      TaskTemplate[]
-  savedTaskFilters   SavedTaskFilter[]
-  taskRecurrences    TaskRecurrence[]
-  dailyPlans         DailyPlan[]
-  weeklyPlans        WeeklyPlan[]
-  planningReviews    PlanningReview[]
-  calendarEvents     CalendarEvent[]
-  eventRecurrences   EventRecurrence[]
-  timeBlocks         TimeBlock[]
-  habits             Habit[]
-  habitEntryActors   HabitEntry[]
-  routines           Routine[]
-  lifeAreas          LifeArea[]
-  goals              Goal[]
+  financialAccounts   FinancialAccount[]
+  financeCategories   FinanceCategory[]
+  transactions        Transaction[]
+  transactionPostings TransactionPosting[]
+  budgets             Budget[]
+  budgetPeriods       BudgetPeriod[]
+  bills               Bill[]
+  savingsGoals        SavingsGoal[]
+  exchangeRates       ExchangeRateSnapshot[]
+  notes               Note[]
+  noteFolders         NoteFolder[]
+  journalEntries      JournalEntry[]
+  moodEntries         MoodEntry[]
+  captureItems        CaptureItem[]
+  focusSessions       FocusSession[]
+  timeEntries         TimeEntry[]
+  id                  String                 @id @default(uuid()) @db.Uuid
+  kind                SpaceKind              @default(PERSONAL)
+  ownerUserId         String                 @db.Uuid
+  owner               User                   @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
+  createdAt           DateTime               @default(now())
+  updatedAt           DateTime               @updatedAt
+  outboxEvents        OutboxEvent[]
+  idempotencyRecords  IdempotencyRecord[]
+  storedFiles         StoredFile[]
+  tasks               Task[]
+  labels              Label[]
+  taskTemplates       TaskTemplate[]
+  savedTaskFilters    SavedTaskFilter[]
+  taskRecurrences     TaskRecurrence[]
+  dailyPlans          DailyPlan[]
+  weeklyPlans         WeeklyPlan[]
+  planningReviews     PlanningReview[]
+  calendarEvents      CalendarEvent[]
+  eventRecurrences    EventRecurrence[]
+  timeBlocks          TimeBlock[]
+  habits              Habit[]
+  habitEntryActors    HabitEntry[]
+  routines            Routine[]
+  lifeAreas           LifeArea[]
+  goals               Goal[]
 
   @@unique([kind, ownerUserId])
   @@unique([id, ownerUserId])
@@ -1091,29 +1100,275 @@ model MoodEntry {
 }
 
 model CaptureItem {
-  id                 String        @id @default(uuid()) @db.Uuid
-  spaceId            String        @db.Uuid
-  createdByUserId    String        @db.Uuid
-  space              Space         @relation(fields: [spaceId, createdByUserId], references: [id, ownerUserId], onDelete: Cascade)
-  type               String        @db.VarChar(12)
-  text               String
-  voiceFileId        String?       @db.Uuid
-  voiceFile          StoredFile?   @relation(fields: [spaceId, voiceFileId], references: [spaceId, id], onDelete: NoAction, onUpdate: NoAction)
-  state              String        @default("INBOX") @db.VarChar(10)
-  targetTaskId       String?       @db.Uuid
-  targetTask         Task?         @relation(fields: [spaceId, targetTaskId], references: [spaceId, id], onDelete: NoAction, onUpdate: NoAction)
-  targetNoteId       String?       @db.Uuid
-  targetNote         Note?         @relation(fields: [spaceId, targetNoteId], references: [spaceId, id], onDelete: NoAction, onUpdate: NoAction)
-  targetJournalId    String?       @db.Uuid
-  targetJournal      JournalEntry? @relation(fields: [spaceId, targetJournalId], references: [spaceId, id], onDelete: NoAction, onUpdate: NoAction)
-  targetHabitId      String?       @db.Uuid
-  targetHabit        Habit?        @relation(fields: [spaceId, targetHabitId], references: [spaceId, id], onDelete: NoAction, onUpdate: NoAction)
-  targetHabitEntryId String?       @db.Uuid
-  targetHabitEntry   HabitEntry?   @relation(fields: [spaceId, targetHabitId, targetHabitEntryId], references: [spaceId, habitId, id], onDelete: NoAction, onUpdate: NoAction)
-  revision           Int           @default(1)
-  createdAt          DateTime      @default(now()) @db.Timestamptz(3)
-  updatedAt          DateTime      @updatedAt @db.Timestamptz(3)
+  targetTransactionId String?       @unique @db.Uuid
+  targetTransaction   Transaction?  @relation("CaptureFinanceTarget", fields: [spaceId, targetTransactionId], references: [spaceId, id], onDelete: NoAction)
+  financeSource       Transaction?  @relation("FinanceCaptureSource")
+  id                  String        @id @default(uuid()) @db.Uuid
+  spaceId             String        @db.Uuid
+  createdByUserId     String        @db.Uuid
+  space               Space         @relation(fields: [spaceId, createdByUserId], references: [id, ownerUserId], onDelete: Cascade)
+  type                String        @db.VarChar(12)
+  text                String
+  voiceFileId         String?       @db.Uuid
+  voiceFile           StoredFile?   @relation(fields: [spaceId, voiceFileId], references: [spaceId, id], onDelete: NoAction, onUpdate: NoAction)
+  state               String        @default("INBOX") @db.VarChar(10)
+  targetTaskId        String?       @db.Uuid
+  targetTask          Task?         @relation(fields: [spaceId, targetTaskId], references: [spaceId, id], onDelete: NoAction, onUpdate: NoAction)
+  targetNoteId        String?       @db.Uuid
+  targetNote          Note?         @relation(fields: [spaceId, targetNoteId], references: [spaceId, id], onDelete: NoAction, onUpdate: NoAction)
+  targetJournalId     String?       @db.Uuid
+  targetJournal       JournalEntry? @relation(fields: [spaceId, targetJournalId], references: [spaceId, id], onDelete: NoAction, onUpdate: NoAction)
+  targetHabitId       String?       @db.Uuid
+  targetHabit         Habit?        @relation(fields: [spaceId, targetHabitId], references: [spaceId, id], onDelete: NoAction, onUpdate: NoAction)
+  targetHabitEntryId  String?       @db.Uuid
+  targetHabitEntry    HabitEntry?   @relation(fields: [spaceId, targetHabitId, targetHabitEntryId], references: [spaceId, habitId, id], onDelete: NoAction, onUpdate: NoAction)
+  revision            Int           @default(1)
+  createdAt           DateTime      @default(now()) @db.Timestamptz(3)
+  updatedAt           DateTime      @updatedAt @db.Timestamptz(3)
 
   @@unique([spaceId, id])
+  @@unique([spaceId, targetTransactionId])
   @@index([spaceId, state, createdAt, id])
+}
+
+model FinancialAccount {
+  id              String   @id @default(uuid()) @db.Uuid
+  spaceId         String   @db.Uuid
+  space           Space    @relation(fields: [spaceId, createdByUserId], references: [id, ownerUserId], onDelete: Cascade)
+  createdByUserId String   @db.Uuid
+  revision        Int      @default(1)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  name     String               @db.VarChar(300)
+  currency String               @db.VarChar(3)
+  scale    Int
+  archived Boolean              @default(false)
+  postings TransactionPosting[]
+  bills    Bill[]
+  savings  SavingsGoal[]
+
+  @@unique([spaceId, id])
+  @@unique([spaceId, id, currency, scale])
+  @@index([spaceId, createdAt, id])
+}
+
+model FinanceCategory {
+  id              String   @id @default(uuid()) @db.Uuid
+  spaceId         String   @db.Uuid
+  space           Space    @relation(fields: [spaceId, createdByUserId], references: [id, ownerUserId], onDelete: Cascade)
+  createdByUserId String   @db.Uuid
+  revision        Int      @default(1)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  name     String               @db.VarChar(300)
+  kind     String               @db.VarChar(10)
+  position Int                  @default(0)
+  archived Boolean              @default(false)
+  postings TransactionPosting[]
+  budgets  Budget[]
+  periods  BudgetPeriod[]
+  bills    Bill[]
+
+  @@unique([spaceId, id])
+  @@index([spaceId, createdAt, id])
+}
+
+model Transaction {
+  id              String   @id @default(uuid()) @db.Uuid
+  spaceId         String   @db.Uuid
+  space           Space    @relation(fields: [spaceId, createdByUserId], references: [id, ownerUserId], onDelete: Cascade)
+  createdByUserId String   @db.Uuid
+  revision        Int      @default(1)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  type            String                @db.VarChar(12)
+  effect          String                @default("POSTED") @db.VarChar(10)
+  state           String                @default("POSTED") @db.VarChar(10)
+  occurredAt      DateTime              @db.Timestamptz(3)
+  localDate       DateTime              @db.Date
+  timezone        String                @db.VarChar(100)
+  note            String?               @db.VarChar(4000)
+  originalId      String?               @unique @db.Uuid
+  original        Transaction?          @relation("FinanceReversal", fields: [spaceId, originalId], references: [spaceId, id], onDelete: NoAction)
+  reversal        Transaction?          @relation("FinanceReversal")
+  replacesId      String?               @unique @db.Uuid
+  replaces        Transaction?          @relation("FinanceReplacement", fields: [spaceId, replacesId], references: [spaceId, id], onDelete: NoAction)
+  replacement     Transaction?          @relation("FinanceReplacement")
+  sourceCaptureId String?               @unique @db.Uuid
+  sourceCapture   CaptureItem?          @relation("FinanceCaptureSource", fields: [spaceId, sourceCaptureId], references: [spaceId, id], onDelete: NoAction)
+  captureTarget   CaptureItem?          @relation("CaptureFinanceTarget")
+  billId          String?               @db.Uuid
+  bill            Bill?                 @relation(fields: [spaceId, billId], references: [spaceId, id], onDelete: NoAction)
+  occurrenceKey   String?               @db.VarChar(10)
+  postings        TransactionPosting[]
+  exchangeRate    ExchangeRateSnapshot?
+
+  @@unique([spaceId, id])
+  @@unique([billId, occurrenceKey])
+  @@unique([spaceId, originalId])
+  @@unique([spaceId, replacesId])
+  @@unique([spaceId, sourceCaptureId])
+  @@index([spaceId, occurredAt, id])
+  @@index([spaceId, createdAt, id])
+}
+
+model TransactionPosting {
+  id            String           @id @default(uuid()) @db.Uuid
+  spaceId       String           @db.Uuid
+  space         Space            @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  transactionId String           @db.Uuid
+  transaction   Transaction      @relation(fields: [spaceId, transactionId], references: [spaceId, id], onDelete: Cascade)
+  accountId     String           @db.Uuid
+  currency      String           @db.VarChar(3)
+  scale         Int
+  account       FinancialAccount @relation(fields: [spaceId, accountId, currency, scale], references: [spaceId, id, currency, scale], onDelete: NoAction)
+  amount        Decimal          @db.Decimal(28, 4)
+  role          String           @db.VarChar(16)
+  categoryId    String?          @db.Uuid
+  category      FinanceCategory? @relation(fields: [spaceId, categoryId], references: [spaceId, id], onDelete: NoAction)
+  createdAt     DateTime         @default(now())
+
+  @@unique([spaceId, id])
+  @@unique([transactionId, role])
+  @@index([spaceId, accountId, transactionId])
+  @@index([spaceId, categoryId, transactionId])
+}
+
+model ExchangeRateSnapshot {
+  id                  String      @id @default(uuid()) @db.Uuid
+  spaceId             String      @db.Uuid
+  space               Space       @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  transactionId       String      @unique @db.Uuid
+  transaction         Transaction @relation(fields: [spaceId, transactionId], references: [spaceId, id], onDelete: Cascade)
+  sourceCurrency      String      @db.VarChar(3)
+  destinationCurrency String      @db.VarChar(3)
+  rate                Decimal     @db.Decimal(30, 12)
+  conversionDate      DateTime    @db.Date
+  rounding            String      @default("HALF_UP") @db.VarChar(10)
+  createdAt           DateTime    @default(now())
+
+  @@unique([spaceId, id])
+  @@unique([spaceId, transactionId])
+}
+
+model Budget {
+  id              String   @id @default(uuid()) @db.Uuid
+  spaceId         String   @db.Uuid
+  space           Space    @relation(fields: [spaceId, createdByUserId], references: [id, ownerUserId], onDelete: Cascade)
+  createdByUserId String   @db.Uuid
+  revision        Int      @default(1)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  name           String           @db.VarChar(300)
+  currency       String           @db.VarChar(3)
+  scale          Int
+  limit          Decimal          @db.Decimal(28, 4)
+  categoryId     String?          @db.Uuid
+  category       FinanceCategory? @relation(fields: [spaceId, categoryId], references: [spaceId, id], onDelete: NoAction)
+  period         String           @db.VarChar(10)
+  timezone       String           @db.VarChar(100)
+  calendar       String           @db.VarChar(10)
+  firstDayOfWeek Int
+  archived       Boolean          @default(false)
+  periods        BudgetPeriod[]
+
+  @@unique([spaceId, id])
+  @@index([spaceId, createdAt, id])
+}
+
+model BudgetPeriod {
+  id              String   @id @default(uuid()) @db.Uuid
+  spaceId         String   @db.Uuid
+  space           Space    @relation(fields: [spaceId, createdByUserId], references: [id, ownerUserId], onDelete: Cascade)
+  createdByUserId String   @db.Uuid
+  revision        Int      @default(1)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  budgetId       String           @db.Uuid
+  budget         Budget           @relation(fields: [spaceId, budgetId], references: [spaceId, id], onDelete: Cascade)
+  startDate      DateTime         @db.Date
+  endDate        DateTime         @db.Date
+  startAt        DateTime         @db.Timestamptz(3)
+  endAt          DateTime         @db.Timestamptz(3)
+  timezone       String           @db.VarChar(100)
+  calendar       String           @db.VarChar(10)
+  firstDayOfWeek Int
+  currency       String           @db.VarChar(3)
+  scale          Int
+  limit          Decimal          @db.Decimal(28, 4)
+  categoryId     String?          @db.Uuid
+  category       FinanceCategory? @relation(fields: [spaceId, categoryId], references: [spaceId, id], onDelete: NoAction)
+
+  @@unique([spaceId, id])
+  @@unique([budgetId, startDate])
+  @@index([spaceId, createdAt, id])
+}
+
+model Bill {
+  id              String   @id @default(uuid()) @db.Uuid
+  spaceId         String   @db.Uuid
+  space           Space    @relation(fields: [spaceId, createdByUserId], references: [id, ownerUserId], onDelete: Cascade)
+  createdByUserId String   @db.Uuid
+  revision        Int      @default(1)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  logicalId     String           @db.Uuid
+  rootId        String?          @db.Uuid
+  root          Bill?            @relation("BillVersions", fields: [spaceId, rootId], references: [spaceId, id], onDelete: NoAction)
+  versions      Bill[]           @relation("BillVersions")
+  current       Boolean          @default(true)
+  effectiveFrom DateTime         @db.Date
+  name          String           @db.VarChar(300)
+  accountId     String           @db.Uuid
+  account       FinancialAccount @relation(fields: [spaceId, accountId, currency, scale], references: [spaceId, id, currency, scale], onDelete: NoAction)
+  categoryId    String?          @db.Uuid
+  category      FinanceCategory? @relation(fields: [spaceId, categoryId], references: [spaceId, id], onDelete: NoAction)
+  type          String           @db.VarChar(10)
+  amount        Decimal          @db.Decimal(28, 4)
+  currency      String           @db.VarChar(3)
+  scale         Int
+  dueDate       DateTime         @db.Date
+  timezone      String           @db.VarChar(100)
+  schedule      Json?            @db.JsonB
+  archived      Boolean          @default(false)
+  transactions  Transaction[]
+
+  @@unique([spaceId, id])
+  @@unique([logicalId, revision])
+  @@index([spaceId, current, createdAt, logicalId])
+}
+
+model SavingsGoal {
+  id              String   @id @default(uuid()) @db.Uuid
+  spaceId         String   @db.Uuid
+  space           Space    @relation(fields: [spaceId, createdByUserId], references: [id, ownerUserId], onDelete: Cascade)
+  createdByUserId String   @db.Uuid
+  revision        Int      @default(1)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  logicalId    String            @db.Uuid
+  rootId       String?           @db.Uuid
+  root         SavingsGoal?      @relation("SavingsVersions", fields: [spaceId, rootId], references: [spaceId, id], onDelete: NoAction)
+  versions     SavingsGoal[]     @relation("SavingsVersions")
+  current      Boolean           @default(true)
+  name         String            @db.VarChar(300)
+  currency     String            @db.VarChar(3)
+  scale        Int
+  target       Decimal           @db.Decimal(28, 4)
+  mode         String            @db.VarChar(10)
+  accountId    String?           @db.Uuid
+  account      FinancialAccount? @relation(fields: [spaceId, accountId, currency, scale], references: [spaceId, id, currency, scale], onDelete: NoAction)
+  manualAmount Decimal?          @db.Decimal(28, 4)
+  archived     Boolean           @default(false)
+
+  @@unique([spaceId, id])
+  @@unique([logicalId, revision])
+  @@index([spaceId, current, createdAt, logicalId])
 }

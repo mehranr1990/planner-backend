@@ -181,3 +181,16 @@ Journal/Mood search needs explicit per-request opt-in; private providers are
 otherwise not invoked. Dedicated WAV file contracts preserve old file schemas.
 See [private writing operations](../runbooks/private-writing.md) and the generated
 OpenAPI snapshot for route schemas, lifecycle responses and bounded pagination.
+
+## P1-09 personal finance
+
+Finance monetary inputs are positive decimal strings with frozen official ISO
+minor units; outputs preserve currency and canonical scale. Creates/actions use
+Idempotency-Key and existing-resource mutations use If-Match. Balances derive
+from signed postings; corrections append reversal/replacement effects. Reports
+use explicit half-open timezone windows and independent currency groups. Private
+JSON/CSV export authorizes all filters and never exposes public URLs. Expense
+conversion uses the Capture owner transaction and typed source/target links while
+preserving all prior Capture/triage response and input contracts. See the
+[Finance runbook](../runbooks/finance.md) for exact rounding, period, recurring
+payment, history and privacy definitions.

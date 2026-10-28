@@ -1,3 +1,5 @@
+import { FinancePreferences } from './public/finance-preferences.js';
+import { FinancePreferencesRepository } from './infrastructure/finance-preferences.repository.js';
 import { Module } from '@nestjs/common';
 import { DatabaseModule } from '../../platform/database/database.module.js';
 import { SpacesModule } from '../spaces/public/index.js';
@@ -14,9 +16,10 @@ import { PlanningPreferencesRepository } from './infrastructure/planning-prefere
   providers: [
     { provide: SETTINGS_REPOSITORY, useClass: SettingsRepository },
     AccountService,
+    { provide: FinancePreferences, useClass: FinancePreferencesRepository },
     { provide: PlanningPreferences, useClass: PlanningPreferencesRepository },
   ],
   controllers: [MeController],
-  exports: [PlanningPreferences],
+  exports: [PlanningPreferences, FinancePreferences],
 })
 export class AccountModule {}

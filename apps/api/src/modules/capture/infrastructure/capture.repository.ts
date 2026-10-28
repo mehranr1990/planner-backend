@@ -1,3 +1,4 @@
+import { FinanceCaptures } from '../public/finance-captures.js';
 import {
   Inject,
   Injectable,
@@ -212,7 +213,7 @@ export class CaptureRepository implements CapturePort {
     @Inject(PlanningPreferences) private readonly account: PlanningPreferences,
     @Inject(FileCatalog) private readonly files: FileCatalog,
   ) {}
-  private async store(tx: Prisma.TransactionClient, scope: AuthorizedSpace) {
+  async store(tx: Prisma.TransactionClient, scope: AuthorizedSpace) {
     await this.taskLock.lock(tx, scope);
     await this.habitLock.lock(tx, scope);
     await this.notes.lock(tx, scope);
@@ -261,5 +262,64 @@ export class CaptureRepository implements CapturePort {
       },
     );
     return receipt.result as T;
+  }
+}
+
+@Injectable()
+export class FinanceCapturesRepository extends FinanceCaptures {
+  constructor(
+    @Inject(CaptureRepository) private readonly repo: CaptureRepository,
+  ) {
+    super();
+  }
+  async lock(tx: Prisma.TransactionClient, scope: AuthorizedSpace) {
+    await this.repo.store(tx, scope);
+  }
+  async requireExpense(
+    tx: Prisma.TransactionClient,
+    scope: AuthorizedSpace,
+    id: string,
+    revision: number,
+  ) {
+    const r = await tx.captureItem.findFirst({
+      where: { spaceId: scope.spaceId, id },
+    });
+    if (!r) throw new NotFoundException();
+    if (r.revision !== revision || r.state !== 'INBOX')
+      throw new ConflictException();
+    if (r.type !== 'EXPENSE') throw new BadRequestException();
+  }
+  async finish(
+    tx: Prisma.TransactionClient,
+    scope: AuthorizedSpace,
+    id: string,
+    revision: number,
+    transactionId: string,
+  ) {
+    await this.requireExpense(tx, scope, id, revision);
+    const r = await tx.captureItem.updateMany({
+      where: { spaceId: scope.spaceId, id, revision, state: 'INBOX' },
+      data: {
+        targetTransactionId: transactionId,
+        state: 'TRIAGED',
+        revision: { increment: 1 },
+      },
+    });
+    if (r.count !== 1) throw new ConflictException();
+    await writeAudit(tx, {
+      action: 'CAPTURE_TRIAGE',
+      outcome: 'SUCCEEDED',
+      actorUserId: scope.actor.userId,
+      resourceId: id,
+      requestId: scope.actor.requestId,
+      correlationId: scope.actor.correlationId,
+    });
+    await appendOutbox(tx, scope, {
+      type: 'capture.triaged',
+      version: 1,
+      aggregateId: id,
+      payload: {},
+    });
+    return { revision: revision + 1 };
   }
 }

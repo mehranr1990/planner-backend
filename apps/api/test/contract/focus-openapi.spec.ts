@@ -67,9 +67,9 @@ describe('P1-07 route contracts and previous compatibility', () => {
       ),
     ).not.toThrow();
     for (const path of [
-      '/finance/transfers',
-      '/finance/budgets',
-      '/finance/accounts',
+      '/rewards/achievements',
+      '/push/subscriptions',
+      '/notifications/preferences',
       '/reminders',
       '/sync/push',
       '/teams',

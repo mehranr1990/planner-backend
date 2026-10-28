@@ -1,4 +1,8 @@
 import {
+  reviewedFinanceMigrationName,
+  assertReviewedFinanceMigration,
+} from './reviewed-finance-migration.ts';
+import {
   reviewedVoiceMigrationName,
   assertReviewedVoiceMigration,
 } from './reviewed-voice-migration.ts';
@@ -58,6 +62,8 @@ export function reviewMigrations(directory = 'prisma/migrations'): string[] {
     );
     if (name === reviewedVoiceMigrationName)
       assertReviewedVoiceMigration(name, sql);
+    else if (name === reviewedFinanceMigrationName)
+      assertReviewedFinanceMigration(name, sql);
     else assertAdditiveMigration(sql);
   }
   return names;

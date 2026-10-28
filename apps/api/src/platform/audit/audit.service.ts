@@ -71,6 +71,14 @@ const ActionSchema = z.enum([
   'CAPTURE_CREATE',
   'CAPTURE_UPDATE',
   'CAPTURE_TRIAGE',
+  'FINANCE_ACCOUNT_CHANGE',
+  'FINANCE_CATEGORY_CHANGE',
+  'FINANCE_POST',
+  'FINANCE_REVERSE',
+  'FINANCE_BUDGET_CHANGE',
+  'FINANCE_BILL_CHANGE',
+  'FINANCE_SAVINGS_CHANGE',
+  'FINANCE_EXPORT',
 ]);
 const AuditSchema = z.strictObject({
   action: ActionSchema,

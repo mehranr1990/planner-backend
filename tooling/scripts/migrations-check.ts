@@ -41,7 +41,7 @@ try {
       `SELECT tablename FROM pg_tables WHERE schemaname = current_schema() ORDER BY tablename`,
     )
   ).rows;
-  assert.equal(emptyTables.length, 47); // forty-six application/provider tables plus Prisma's ledger
+  assert.equal(emptyTables.length, 56); // fifty-five application/provider tables plus Prisma's ledger
   // Required reset capability is restricted to this disposable, newly-created namespace.
   await sandbox.resetOwnedSchema();
   const folder = path.resolve('.tools/migration-check-' + randomUUID());
@@ -49,7 +49,7 @@ try {
   fs.mkdirSync(migrations, { recursive: true });
   for (const name of names.slice(
     0,
-    names.indexOf('202610280011_p1_08_private_writing'),
+    names.indexOf('202610280013_p1_09_finance'),
   ))
     fs.cpSync(
       path.join('prisma/migrations', name),
@@ -311,6 +311,33 @@ try {
     `INSERT INTO "TimeEntry" (id,"logicalId","spaceId","createdByUserId",revision,current,"recordedAt",timezone,kind,state,"startAt","endAt",note,"taskId","selectedTaskRevision") VALUES ($1,$1,$2,$3,1,true,now(),'UTC','MANUAL','RECORDED','2024-01-01T10:00Z','2024-01-01T11:00Z','Preserved work',$4,3)`,
     [timeId, spaceId, id, taskId],
   );
+
+  const folderId = randomUUID(),
+    noteId = randomUUID(),
+    journalId = randomUUID(),
+    moodId = randomUUID(),
+    captureId = randomUUID();
+  await sandbox.query(
+    `INSERT INTO "NoteFolder" (id,"spaceId","createdByUserId",title,"updatedAt") VALUES ($1,$2,$3,'Preserved private folder',now())`,
+    [folderId, spaceId, id],
+  );
+  await sandbox.query(
+    `INSERT INTO "Note" (id,"logicalId","spaceId","createdByUserId",title,content,"recordedAt","folderId","taskId","goalId") VALUES ($1,$1,$2,$3,'Preserved note','Private source text',now(),$4,$5,$6)`,
+    [noteId, spaceId, id, folderId, taskId, goalId],
+  );
+  await sandbox.query(
+    `INSERT INTO "JournalEntry" (id,"logicalId","spaceId","createdByUserId",title,content,"recordedAt",kind,"localDate",timezone) VALUES ($1,$1,$2,$3,'Preserved journal','Private reflection',now(),'CHECK_IN','2024-02-29','America/New_York')`,
+    [journalId, spaceId, id],
+  );
+  await sandbox.query(
+    `INSERT INTO "MoodEntry" (id,"logicalId","spaceId","createdByUserId",mood,energy,note,"recordedAt","localDate",timezone,"journalEntryId") VALUES ($1,$1,$2,$3,4,3,'Private subjective entry',now(),'2024-02-29','America/New_York',$4)`,
+    [moodId, spaceId, id, journalId],
+  );
+  await sandbox.query(
+    `INSERT INTO "CaptureItem" (id,"spaceId","createdByUserId",type,text,"updatedAt") VALUES ($1,$2,$3,'EXPENSE','Retained private expense draft',now())`,
+    [captureId, spaceId, id],
+  );
+
   const preservedTables = [
     'User',
     'AuthAccount',
@@ -350,6 +377,11 @@ try {
     'GoalReview',
     'FocusSession',
     'TimeEntry',
+    'Note',
+    'NoteFolder',
+    'JournalEntry',
+    'MoodEntry',
+    'CaptureItem',
     'SecurityAuditEvent',
     'OutboxEvent',
     'IdempotencyRecord',
@@ -360,7 +392,7 @@ try {
       table,
       (
         await sandbox.query(
-          `SELECT to_jsonb(t) AS row FROM "${table}" t ORDER BY to_jsonb(t)::text`,
+          `SELECT ${table === 'CaptureItem' ? "to_jsonb(t) - 'targetTransactionId'" : 'to_jsonb(t)'} AS row FROM "${table}" t ORDER BY to_jsonb(t)::text`,
         )
       ).rows,
     );
@@ -371,7 +403,7 @@ try {
     assert.deepEqual(
       (
         await sandbox.query(
-          `SELECT to_jsonb(t) AS row FROM "${table}" t ORDER BY to_jsonb(t)::text`,
+          `SELECT ${table === 'CaptureItem' ? "to_jsonb(t) - 'targetTransactionId'" : 'to_jsonb(t)'} AS row FROM "${table}" t ORDER BY to_jsonb(t)::text`,
         )
       ).rows,
       beforeSnapshots.get(table),
