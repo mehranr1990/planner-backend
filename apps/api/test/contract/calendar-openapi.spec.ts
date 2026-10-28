@@ -60,7 +60,7 @@ describe('P1-04 calendar OpenAPI and P1-03 compatibility', () => {
       ),
     ).not.toThrow();
     for (const path of [
-      '/habits',
+      '/goals',
       '/focus/sessions',
       '/reminders',
       '/sync/push',

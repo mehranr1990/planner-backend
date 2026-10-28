@@ -122,3 +122,11 @@ conflicts are documented in [the calendar runbook](docs/runbooks/calendar.md).
 See [requirements traceability](docs/p1-04-traceability.md) and approved
 [ADR 0010](docs/adr/0010-calendar-temporal-semantics.md). After `pnpm quality`,
 run `pnpm smoke:p1-04` for compiled API restart/persistence checks.
+
+## P1-05 habits, routines and water
+
+Habits support exact checkbox/quantity/duration logs, versioned date schedules,
+typed correction history, range-scoped streaks, ordered routines and canonical ML
+water totals. See [ADR 0011](docs/adr/0011-habit-history-and-streak-semantics.md),
+[traceability](docs/p1-05-traceability.md) and the [runbook](docs/runbooks/habits.md).
+Run `pnpm smoke:p1-05` after compilation for restart/persistence evidence.

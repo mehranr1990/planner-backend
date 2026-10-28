@@ -176,6 +176,8 @@ describe('scoped persistence and API conventions', () => {
       '202610280003_p1_03_personal_planning',
       '202610280004_p1_04_calendar',
       '202610280005_p1_04_calendar_integrity',
+      '202610280006_p1_05_habits',
+      '202610280007_p1_05_habit_config_integrity',
     ]);
     for (const sql of [
       '',

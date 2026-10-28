@@ -41,16 +41,13 @@ try {
       `SELECT tablename FROM pg_tables WHERE schemaname = current_schema() ORDER BY tablename`,
     )
   ).rows;
-  assert.equal(emptyTables.length, 28); // twenty-seven application/provider tables plus Prisma's ledger
+  assert.equal(emptyTables.length, 33); // thirty-two application/provider tables plus Prisma's ledger
   // Required reset capability is restricted to this disposable, newly-created namespace.
   await sandbox.resetOwnedSchema();
   const folder = path.resolve('.tools/migration-check-' + randomUUID());
   const migrations = path.join(folder, 'migrations');
   fs.mkdirSync(migrations, { recursive: true });
-  for (const name of names.slice(
-    0,
-    names.indexOf('202610280004_p1_04_calendar'),
-  ))
+  for (const name of names.slice(0, names.indexOf('202610280006_p1_05_habits')))
     fs.cpSync(
       path.join('prisma/migrations', name),
       path.join(migrations, name),
@@ -194,6 +191,32 @@ try {
     `INSERT INTO "PlanningReview" (id,"spaceId","createdByUserId","localDate",kind,timezone,"firstDayOfWeek",reflection,revision,"updatedAt") VALUES ($1,$2,$3,'2026-10-28','EVENING','Asia/Tehran',1,'Preserve private review',3,now())`,
     [reviewId, spaceId, id],
   );
+  const calendarId = randomUUID(),
+    calendarExceptionId = randomUUID(),
+    calendarVersionId = randomUUID(),
+    blockId = randomUUID();
+  await sandbox.query(
+    `INSERT INTO "CalendarEvent" (id,"spaceId","createdByUserId",title,kind,timezone,"startDate","endDate",revision,"updatedAt") VALUES ($1,$2,$3,'Preserved calendar','ALL_DAY','UTC','2026-10-28','2026-10-29',3,now())`,
+    [calendarId, spaceId, id],
+  );
+  await sandbox.query(
+    `INSERT INTO "CalendarEvent" (id,"spaceId","createdByUserId",title,kind,timezone,"startDate","endDate",status,"seriesId","recurrenceKey","updatedAt") VALUES ($1,$2,$3,'Preserved exception','ALL_DAY','UTC','2026-10-29','2026-10-30','CANCELED',$4,'2026-10-29T00:00',now())`,
+    [calendarExceptionId, spaceId, id, calendarId],
+  );
+  await sandbox.query(
+    `INSERT INTO "EventRecurrence" (id,"spaceId","createdByUserId",title,kind,timezone,"startDate","endDate",revision,"eventId",definition,"identityTime","fromKey","updatedAt") VALUES ($1,$2,$3,'Preserved schedule','ALL_DAY','UTC','2026-10-28','2026-10-29',3,$4,$5,'00:00','2026-10-28T00:00',now())`,
+    [
+      calendarVersionId,
+      spaceId,
+      id,
+      calendarId,
+      JSON.stringify({ ...definition, localTime: '00:00' }),
+    ],
+  );
+  await sandbox.query(
+    `INSERT INTO "TimeBlock" (id,"spaceId","createdByUserId",title,kind,timezone,"localStart","localEnd","startAt","endAt","taskId","selectedTaskRevision",revision,"updatedAt") VALUES ($1,$2,$3,'Preserved block','TIMED','UTC','2026-10-28T09:00','2026-10-28T10:00','2026-10-28T09:00Z','2026-10-28T10:00Z',$4,3,2,now())`,
+    [blockId, spaceId, id, taskId],
+  );
   const preservedTables = [
     'User',
     'AuthAccount',
@@ -216,6 +239,9 @@ try {
     'DailyPlanItem',
     'WeeklyPlan',
     'PlanningReview',
+    'CalendarEvent',
+    'EventRecurrence',
+    'TimeBlock',
     'SecurityAuditEvent',
     'OutboxEvent',
     'IdempotencyRecord',

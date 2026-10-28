@@ -79,7 +79,7 @@ describe('P1-02 OpenAPI and prior-contract preservation', () => {
     for (const path of [
       '/planning',
       '/calendar',
-      '/habits',
+      '/goals',
       '/reminders',
       '/sync',
     ])

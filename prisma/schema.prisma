@@ -117,6 +117,9 @@ model Space {
   calendarEvents     CalendarEvent[]
   eventRecurrences   EventRecurrence[]
   timeBlocks         TimeBlock[]
+  habits             Habit[]
+  habitEntryActors   HabitEntry[]
+  routines           Routine[]
 
   @@unique([kind, ownerUserId])
   @@unique([id, ownerUserId])
@@ -594,4 +597,105 @@ model TimeBlock {
   @@index([spaceId, deletedAt, createdAt, id])
   @@index([spaceId, startAt, endAt])
   @@index([spaceId, taskId])
+}
+
+model Habit {
+  id              String          @id @default(uuid()) @db.Uuid
+  spaceId         String          @db.Uuid
+  createdByUserId String          @db.Uuid
+  space           Space           @relation(fields: [spaceId, createdByUserId], references: [id, ownerUserId], onDelete: Cascade)
+  title           String          @db.VarChar(300)
+  type            String          @db.VarChar(10)
+  unit            String          @db.VarChar(30)
+  purpose         String          @default("GENERIC") @db.VarChar(10)
+  revision        Int             @default(1)
+  createdAt       DateTime        @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime        @updatedAt @db.Timestamptz(3)
+  schedules       HabitSchedule[]
+  entries         HabitEntry[]
+  routines        RoutineHabit[]
+
+  @@unique([spaceId, id])
+  @@index([spaceId, createdAt, id])
+  @@index([spaceId, purpose, createdAt, id])
+}
+
+model HabitSchedule {
+  id            String       @id @default(uuid()) @db.Uuid
+  spaceId       String       @db.Uuid
+  habitId       String       @db.Uuid
+  habit         Habit        @relation(fields: [spaceId, habitId], references: [spaceId, id], onDelete: Cascade)
+  revision      Int
+  effectiveFrom DateTime     @db.Date
+  timezone      String       @db.VarChar(100)
+  target        Decimal      @db.Decimal(12, 3)
+  status        String       @db.VarChar(10)
+  definition    Json         @db.JsonB
+  createdAt     DateTime     @default(now()) @db.Timestamptz(3)
+  entries       HabitEntry[]
+
+  @@unique([spaceId, habitId, id])
+  @@unique([habitId, revision])
+  @@index([spaceId, habitId, effectiveFrom, revision])
+}
+
+model HabitEntry {
+  id               String        @id @db.Uuid
+  spaceId          String        @db.Uuid
+  habitId          String        @db.Uuid
+  habit            Habit         @relation(fields: [spaceId, habitId], references: [spaceId, id], onDelete: Cascade)
+  scheduleId       String        @db.Uuid
+  schedule         HabitSchedule @relation(fields: [spaceId, habitId, scheduleId], references: [spaceId, habitId, id], onDelete: NoAction, onUpdate: NoAction)
+  logicalId        String        @db.Uuid
+  root             HabitEntry    @relation("HabitEntryRoot", fields: [spaceId, habitId, logicalId], references: [spaceId, habitId, id], onDelete: NoAction, onUpdate: NoAction)
+  revisions        HabitEntry[]  @relation("HabitEntryRoot")
+  previousId       String?       @unique @db.Uuid
+  previous         HabitEntry?   @relation("HabitEntryPrevious", fields: [spaceId, habitId, previousId], references: [spaceId, habitId, id], onDelete: NoAction, onUpdate: NoAction)
+  successor        HabitEntry?   @relation("HabitEntryPrevious")
+  actorUserId      String        @db.Uuid
+  actorSpace       Space         @relation(fields: [spaceId, actorUserId], references: [id, ownerUserId], onDelete: Cascade)
+  kind             String        @db.VarChar(10)
+  state            String        @default("RECORDED") @db.VarChar(10)
+  localDate        DateTime      @db.Date
+  value            Decimal?      @db.Decimal(12, 3)
+  timezone         String        @db.VarChar(100)
+  recordedTimezone String        @db.VarChar(100)
+  revision         Int           @default(1)
+  current          Boolean       @default(true)
+  createdAt        DateTime      @default(now()) @db.Timestamptz(3)
+
+  @@unique([spaceId, habitId, id])
+  @@unique([spaceId, habitId, previousId])
+  @@index([spaceId, habitId, localDate, current])
+  @@index([spaceId, habitId, logicalId, createdAt, id])
+  @@index([spaceId, habitId, current, createdAt, id])
+}
+
+model Routine {
+  id              String         @id @default(uuid()) @db.Uuid
+  spaceId         String         @db.Uuid
+  createdByUserId String         @db.Uuid
+  space           Space          @relation(fields: [spaceId, createdByUserId], references: [id, ownerUserId], onDelete: Cascade)
+  title           String         @db.VarChar(300)
+  status          String         @default("ACTIVE") @db.VarChar(10)
+  revision        Int            @default(1)
+  createdAt       DateTime       @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime       @updatedAt @db.Timestamptz(3)
+  habits          RoutineHabit[]
+
+  @@unique([spaceId, id])
+  @@index([spaceId, createdAt, id])
+}
+
+model RoutineHabit {
+  spaceId   String  @db.Uuid
+  routineId String  @db.Uuid
+  habitId   String  @db.Uuid
+  position  Int
+  routine   Routine @relation(fields: [spaceId, routineId], references: [spaceId, id], onDelete: Cascade)
+  habit     Habit   @relation(fields: [spaceId, habitId], references: [spaceId, id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@id([spaceId, routineId, habitId])
+  @@unique([spaceId, routineId, position])
+  @@index([spaceId, habitId])
 }

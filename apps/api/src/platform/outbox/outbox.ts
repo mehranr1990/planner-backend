@@ -14,6 +14,8 @@ export const EventSchema = z.strictObject({
     'task.due_changed',
     'calendar_event.changed',
     'time_block.changed',
+    'habit.entry_recorded',
+    'habit.entry_corrected',
   ]),
   version: z.literal(1),
   aggregateId: z.string().uuid(),

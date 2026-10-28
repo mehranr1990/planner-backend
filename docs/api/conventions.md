@@ -140,3 +140,12 @@ zones and DST policies. Event/block creation and series splitting use 24-hour
 scoped idempotency receipts; mutations require strong revisions. Views have
 half-open bounded date ranges and scoped cursors; conflicts are advisory. See
 [calendar semantics and examples](../runbooks/calendar.md) and approved ADR 0010.
+
+## Habits (P1-05)
+
+Habit quantities use normalized exact decimal strings; durations use integer
+seconds and water uses canonical ML. Stable logical entry UUIDs are separate from
+immutable revision UUIDs; PATCH uses both entry and owning habit revisions.
+Date ranges are half-open and bounded, statistics explicitly RANGE-scoped, and
+configuration history is never silently rewritten. See the
+[habit runbook](../runbooks/habits.md) and approved ADR 0011.

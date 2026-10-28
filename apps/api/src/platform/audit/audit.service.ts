@@ -43,6 +43,12 @@ const ActionSchema = z.enum([
   'PLANNING_ROLLOVER',
   'CALENDAR_EVENT_CHANGE',
   'TIME_BLOCK_CHANGE',
+  'HABIT_CREATE',
+  'HABIT_UPDATE',
+  'HABIT_ENTRY_RECORD',
+  'HABIT_ENTRY_CORRECT',
+  'ROUTINE_CREATE',
+  'ROUTINE_UPDATE',
 ]);
 const AuditSchema = z.strictObject({
   action: ActionSchema,
