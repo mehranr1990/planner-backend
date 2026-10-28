@@ -34,7 +34,8 @@
     "auth:schema:check": "node tooling/scripts/auth-schema-check.ts",
     "db:migrations:check": "node --env-file-if-exists=.env.test.local tooling/scripts/migrations-check.ts",
     "smoke:p1-02": "node --env-file-if-exists=.env.test.local tooling/scripts/p1-02-smoke.ts",
-    "smoke:p1-03": "node --env-file-if-exists=.env.test.local tooling/scripts/p1-03-smoke.ts"
+    "smoke:p1-03": "node --env-file-if-exists=.env.test.local tooling/scripts/p1-03-smoke.ts",
+    "smoke:p1-04": "node --env-file-if-exists=.env.test.local tooling/scripts/p1-04-smoke.ts"
   },
   "devDependencies": {
     "@nestjs/throttler": "6.7.1",

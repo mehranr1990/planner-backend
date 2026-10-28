@@ -114,3 +114,11 @@ their public contract and never changes Task dates/state. See
 [approved planning policy](./docs/adr/0009-personal-planning-semantics.md) and
 [P1-03 traceability](./docs/p1-03-traceability.md). Run `pnpm smoke:p1-03`
 after building for the isolated compiled restart smoke. P1-04 is not started.
+
+# P1-04 calendar
+
+Calendar events, recurring schedules, Time Blocks, range views and advisory
+conflicts are documented in [the calendar runbook](docs/runbooks/calendar.md).
+See [requirements traceability](docs/p1-04-traceability.md) and approved
+[ADR 0010](docs/adr/0010-calendar-temporal-semantics.md). After `pnpm quality`,
+run `pnpm smoke:p1-04` for compiled API restart/persistence checks.

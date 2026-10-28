@@ -44,3 +44,4 @@ export * from './tasks.js';
 export * from './task-tools.js';
 export * from './recurrence.js';
 export * from './planning.js';
+export * from './calendar.js';

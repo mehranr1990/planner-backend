@@ -3,7 +3,7 @@ import { createOpenApiDocument } from '../../packages/api-contracts/dist/openapi
 import { assertApiCompatible } from '../compatibility/openapi-compatibility.ts';
 
 const file = 'docs/api/openapi.json';
-for (const batch of ['p0-02', 'p0-03', 'p0-04', 'p1-01', 'p1-02'])
+for (const batch of ['p0-02', 'p0-03', 'p0-04', 'p1-01', 'p1-02', 'p1-03'])
   assertApiCompatible(
     createOpenApiDocument(),
     JSON.parse(

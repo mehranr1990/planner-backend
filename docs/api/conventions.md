@@ -132,3 +132,11 @@ retaining every existing /me/settings request/response shape. P1-02 signatures
 are also frozen in the compatibility gate. A plan's ETag versions its stored
 aggregate; enriched Task dispositions are revalidated on every request. All
 records preserve local-date/timezone context; preference changes never move them.
+
+## Calendar (P1-04)
+
+Calendar routes preserve date-only versus timed schedule identity, explicit IANA
+zones and DST policies. Event/block creation and series splitting use 24-hour
+scoped idempotency receipts; mutations require strong revisions. Views have
+half-open bounded date ranges and scoped cursors; conflicts are advisory. See
+[calendar semantics and examples](../runbooks/calendar.md) and approved ADR 0010.

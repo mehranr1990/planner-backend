@@ -41,13 +41,16 @@ try {
       `SELECT tablename FROM pg_tables WHERE schemaname = current_schema() ORDER BY tablename`,
     )
   ).rows;
-  assert.equal(emptyTables.length, 25); // twenty-four application/provider tables plus Prisma's ledger
+  assert.equal(emptyTables.length, 28); // twenty-seven application/provider tables plus Prisma's ledger
   // Required reset capability is restricted to this disposable, newly-created namespace.
   await sandbox.resetOwnedSchema();
   const folder = path.resolve('.tools/migration-check-' + randomUUID());
   const migrations = path.join(folder, 'migrations');
   fs.mkdirSync(migrations, { recursive: true });
-  for (const name of names.slice(0, -1))
+  for (const name of names.slice(
+    0,
+    names.indexOf('202610280004_p1_04_calendar'),
+  ))
     fs.cpSync(
       path.join('prisma/migrations', name),
       path.join(migrations, name),
@@ -110,6 +113,19 @@ try {
     `INSERT INTO "TaskAttachment" ("spaceId","taskId","fileId") VALUES ($1,$2,$3)`,
     [spaceId, taskId, storedFileId],
   );
+  await sandbox.query(
+    `INSERT INTO "TaskChange" (id,"spaceId","taskId","actorUserId",kind,fields,"previousRevision",revision,"beforeStatus","afterStatus","beforePriority","afterPriority") VALUES ($1,$2,$3,$4,'UPDATED',ARRAY['title'],2,3,'OPEN','OPEN','NONE','NONE')`,
+    [randomUUID(), spaceId, taskId, id],
+  );
+  const labelId = randomUUID();
+  await sandbox.query(
+    `INSERT INTO "Label" (id,"spaceId",name,revision,"updatedAt") VALUES ($1,$2,'Preserved label',2,now())`,
+    [labelId, spaceId],
+  );
+  await sandbox.query(
+    `INSERT INTO "TaskLabel" ("spaceId","taskId","labelId") VALUES ($1,$2,$3)`,
+    [spaceId, taskId, labelId],
+  );
   const masterId = randomUUID(),
     seriesId = randomUUID(),
     occurrenceId = randomUUID(),
@@ -150,9 +166,83 @@ try {
     `INSERT INTO "SavedTaskFilter" (id,"spaceId","createdByUserId",name,query,revision,"updatedAt") VALUES ($1,$2,$3,'Filter fixture',$4,5,now())`,
     [filterId, spaceId, id, JSON.stringify(filter)],
   );
+  const dayId = randomUUID(),
+    weekId = randomUUID(),
+    reviewId = randomUUID(),
+    selectionId = randomUUID();
+  const availability = {
+    version: 1,
+    minutesByWeekday: [0, 240, 300, 360, 420, 480, 0],
+  };
+  await sandbox.query(
+    `UPDATE "UserSettings" SET "planningAvailability"=$2 WHERE "userId"=$1`,
+    [id, JSON.stringify(availability)],
+  );
+  await sandbox.query(
+    `INSERT INTO "DailyPlan" (id,"spaceId","createdByUserId","localDate",timezone,revision,"updatedAt") VALUES ($1,$2,$3,'2026-10-28','Asia/Tehran',5,now())`,
+    [dayId, spaceId, id],
+  );
+  await sandbox.query(
+    `INSERT INTO "DailyPlanItem" (id,"spaceId","planId","localDate","taskId",position,"plannedMinutes","selectedTaskRevision",revision,"updatedAt") VALUES ($1,$2,$3,'2026-10-28',$4,0,45,3,2,now())`,
+    [selectionId, spaceId, dayId, taskId],
+  );
+  await sandbox.query(
+    `INSERT INTO "WeeklyPlan" (id,"spaceId","createdByUserId","weekStartDate",timezone,"firstDayOfWeek",revision,"updatedAt") VALUES ($1,$2,$3,'2026-10-26','Asia/Tehran',1,4,now())`,
+    [weekId, spaceId, id],
+  );
+  await sandbox.query(
+    `INSERT INTO "PlanningReview" (id,"spaceId","createdByUserId","localDate",kind,timezone,"firstDayOfWeek",reflection,revision,"updatedAt") VALUES ($1,$2,$3,'2026-10-28','EVENING','Asia/Tehran',1,'Preserve private review',3,now())`,
+    [reviewId, spaceId, id],
+  );
+  const preservedTables = [
+    'User',
+    'AuthAccount',
+    'AuthSession',
+    'AuthVerification',
+    'Space',
+    'UserSettings',
+    'StoredFile',
+    'Task',
+    'TaskChecklistItem',
+    'TaskAttachment',
+    'TaskChange',
+    'Label',
+    'TaskLabel',
+    'TaskRecurrence',
+    'TaskOccurrence',
+    'TaskTemplate',
+    'SavedTaskFilter',
+    'DailyPlan',
+    'DailyPlanItem',
+    'WeeklyPlan',
+    'PlanningReview',
+    'SecurityAuditEvent',
+    'OutboxEvent',
+    'IdempotencyRecord',
+  ];
+  const beforeSnapshots = new Map<string, unknown>();
+  for (const table of preservedTables)
+    beforeSnapshots.set(
+      table,
+      (
+        await sandbox.query(
+          `SELECT to_jsonb(t) AS row FROM "${table}" t ORDER BY to_jsonb(t)::text`,
+        )
+      ).rows,
+    );
   migrate(sandbox.url, 'deploy');
   migrate(sandbox.url, 'status');
   migrate(sandbox.url, 'deploy');
+  for (const table of preservedTables)
+    assert.deepEqual(
+      (
+        await sandbox.query(
+          `SELECT to_jsonb(t) AS row FROM "${table}" t ORDER BY to_jsonb(t)::text`,
+        )
+      ).rows,
+      beforeSnapshots.get(table),
+      `Preserved ${table} rows`,
+    );
   const settings = (
     await sandbox.query(
       `SELECT locale,timezone,revision FROM "UserSettings" WHERE "userId"=$1`,
@@ -162,14 +252,14 @@ try {
   assert.deepEqual(settings, [
     { locale: 'fa', timezone: 'Asia/Tehran', revision: 7 },
   ]);
-  assert.equal(
+  assert.deepEqual(
     (
       await sandbox.query(
         `SELECT "planningAvailability" FROM "UserSettings" WHERE "userId"=$1`,
         [id],
       )
     ).rows[0].planningAvailability,
-    null,
+    availability,
   );
   assert.deepEqual(
     (

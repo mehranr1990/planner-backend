@@ -114,6 +114,9 @@ model Space {
   dailyPlans         DailyPlan[]
   weeklyPlans        WeeklyPlan[]
   planningReviews    PlanningReview[]
+  calendarEvents     CalendarEvent[]
+  eventRecurrences   EventRecurrence[]
+  timeBlocks         TimeBlock[]
 
   @@unique([kind, ownerUserId])
   @@unique([id, ownerUserId])
@@ -256,6 +259,7 @@ model Task {
   masterRecurrence   TaskRecurrence?     @relation("RecurrenceMaster")
   occurrence         TaskOccurrence?     @relation("OccurrenceTask")
   dailyPlanItems     DailyPlanItem[]
+  timeBlocks         TimeBlock[]
 
   @@unique([spaceId, id])
   @@index([spaceId, deletedAt, createdAt, id])
@@ -492,4 +496,102 @@ model PlanningReview {
 
   @@unique([spaceId, localDate, kind])
   @@index([spaceId, createdAt, id])
+}
+
+model CalendarEvent {
+  id               String            @id @default(uuid()) @db.Uuid
+  spaceId          String            @db.Uuid
+  createdByUserId  String            @db.Uuid
+  title            String            @db.VarChar(300)
+  status           String            @default("ACTIVE") @db.VarChar(10)
+  kind             String            @db.VarChar(10)
+  timezone         String            @db.VarChar(100)
+  startDate        DateTime?         @db.Date
+  endDate          DateTime?         @db.Date
+  localStart       String?           @db.VarChar(16)
+  localEnd         String?           @db.VarChar(16)
+  startAt          DateTime?         @db.Timestamptz(3)
+  endAt            DateTime?         @db.Timestamptz(3)
+  revision         Int               @default(1)
+  createdAt        DateTime          @default(now()) @db.Timestamptz(3)
+  updatedAt        DateTime          @updatedAt @db.Timestamptz(3)
+  space            Space             @relation(fields: [spaceId, createdByUserId], references: [id, ownerUserId], onDelete: Cascade)
+  description      String?
+  deletedAt        DateTime?         @db.Timestamptz(3)
+  seriesId         String?           @db.Uuid
+  recurrenceKey    String?           @db.VarChar(16)
+  series           CalendarEvent?    @relation("EventExceptions", fields: [spaceId, seriesId], references: [spaceId, id], onDelete: NoAction, onUpdate: NoAction)
+  exceptions       CalendarEvent[]   @relation("EventExceptions")
+  previousSeriesId String?           @db.Uuid
+  previous         CalendarEvent?    @relation("EventLineage", fields: [spaceId, previousSeriesId], references: [spaceId, id], onDelete: NoAction, onUpdate: NoAction)
+  successors       CalendarEvent[]   @relation("EventLineage")
+  splitBefore      String?           @db.VarChar(16)
+  versions         EventRecurrence[]
+
+  @@unique([spaceId, id])
+  @@unique([seriesId, recurrenceKey])
+  @@unique([spaceId, previousSeriesId])
+  @@index([spaceId, seriesId, deletedAt, createdAt, id])
+  @@index([spaceId, startAt, endAt])
+  @@index([spaceId, startDate, endDate])
+}
+
+model EventRecurrence {
+  space           Space         @relation(fields: [spaceId, createdByUserId], references: [id, ownerUserId], onDelete: Cascade)
+  id              String        @id @default(uuid()) @db.Uuid
+  spaceId         String        @db.Uuid
+  createdByUserId String        @db.Uuid
+  title           String        @db.VarChar(300)
+  status          String        @default("ACTIVE") @db.VarChar(10)
+  kind            String        @db.VarChar(10)
+  timezone        String        @db.VarChar(100)
+  startDate       DateTime?     @db.Date
+  endDate         DateTime?     @db.Date
+  localStart      String?       @db.VarChar(16)
+  localEnd        String?       @db.VarChar(16)
+  startAt         DateTime?     @db.Timestamptz(3)
+  endAt           DateTime?     @db.Timestamptz(3)
+  revision        Int           @default(1)
+  createdAt       DateTime      @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime      @updatedAt @db.Timestamptz(3)
+  eventId         String        @db.Uuid
+  event           CalendarEvent @relation(fields: [spaceId, eventId], references: [spaceId, id], onDelete: Cascade)
+  description     String?
+  definition      Json          @db.JsonB
+  identityTime    String        @db.VarChar(5)
+  fromKey         String        @db.VarChar(16)
+  untilKey        String?       @db.VarChar(16)
+
+  @@unique([spaceId, id])
+  @@unique([eventId, revision])
+  @@index([spaceId, eventId, fromKey, untilKey])
+}
+
+model TimeBlock {
+  id                   String    @id @default(uuid()) @db.Uuid
+  spaceId              String    @db.Uuid
+  createdByUserId      String    @db.Uuid
+  title                String    @db.VarChar(300)
+  status               String    @default("ACTIVE") @db.VarChar(10)
+  kind                 String    @db.VarChar(10)
+  timezone             String    @db.VarChar(100)
+  startDate            DateTime? @db.Date
+  endDate              DateTime? @db.Date
+  localStart           String?   @db.VarChar(16)
+  localEnd             String?   @db.VarChar(16)
+  startAt              DateTime? @db.Timestamptz(3)
+  endAt                DateTime? @db.Timestamptz(3)
+  revision             Int       @default(1)
+  createdAt            DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt            DateTime  @updatedAt @db.Timestamptz(3)
+  space                Space     @relation(fields: [spaceId, createdByUserId], references: [id, ownerUserId], onDelete: Cascade)
+  deletedAt            DateTime? @db.Timestamptz(3)
+  taskId               String?   @db.Uuid
+  task                 Task?     @relation(fields: [spaceId, taskId], references: [spaceId, id], onDelete: NoAction, onUpdate: NoAction)
+  selectedTaskRevision Int?
+
+  @@unique([spaceId, id])
+  @@index([spaceId, deletedAt, createdAt, id])
+  @@index([spaceId, startAt, endAt])
+  @@index([spaceId, taskId])
 }

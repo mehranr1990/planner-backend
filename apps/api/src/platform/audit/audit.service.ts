@@ -41,6 +41,8 @@ const ActionSchema = z.enum([
   'PLANNING_REVIEW_UPDATE',
   'PLANNING_REVIEW_DELETE',
   'PLANNING_ROLLOVER',
+  'CALENDAR_EVENT_CHANGE',
+  'TIME_BLOCK_CHANGE',
 ]);
 const AuditSchema = z.strictObject({
   action: ActionSchema,

@@ -12,6 +12,8 @@ export const EventSchema = z.strictObject({
     'task.reopened',
     'task.deleted',
     'task.due_changed',
+    'calendar_event.changed',
+    'time_block.changed',
   ]),
   version: z.literal(1),
   aggregateId: z.string().uuid(),

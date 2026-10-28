@@ -71,8 +71,6 @@ describe('P1-03 OpenAPI and prior API compatibility', () => {
       ),
     ).not.toThrow();
     for (const path of [
-      '/calendar/events',
-      '/calendar/time-blocks',
       '/habits',
       '/journal/entries',
       '/reminders',
