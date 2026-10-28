@@ -64,7 +64,7 @@ describe('P1-05 habit/routine contracts and previous API compatibility', () => {
       ),
     ).not.toThrow();
     for (const path of [
-      '/focus/sessions',
+      '/notes',
       '/journal/entries',
       '/reminders',
       '/sync/push',

@@ -55,6 +55,11 @@ const ActionSchema = z.enum([
   'GOAL_UPDATE',
   'GOAL_LINK_CHANGE',
   'GOAL_REVIEW_CREATE',
+  'FOCUS_CREATE',
+  'FOCUS_CHANGE',
+  'TIME_ENTRY_CREATE',
+  'TIME_ENTRY_CORRECT',
+  'TASK_PRODUCTIVITY_UPDATE',
 ]);
 const AuditSchema = z.strictObject({
   action: ActionSchema,
@@ -63,6 +68,10 @@ const AuditSchema = z.strictObject({
   requestId: z.string().uuid(),
   correlationId: z.string().uuid(),
   resourceId: z.string().uuid().nullable().default(null),
+  productivityFields: z
+    .array(z.enum(['estimatedMinutes', 'important', 'urgent']))
+    .max(3)
+    .default([]),
   changedFields: z
     .array(
       z.enum([

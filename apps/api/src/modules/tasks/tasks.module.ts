@@ -1,3 +1,8 @@
+import { TaskProductivityController } from './http/productivity.controller.js';
+import { TaskProductivityService } from './application/productivity.service.js';
+import { TASK_PRODUCTIVITY } from './application/productivity.port.js';
+import { TaskProductivityRepository } from './infrastructure/productivity.repository.js';
+import { ProductivityTasks } from './public/productivity-tasks.js';
 import { Module } from '@nestjs/common';
 import type { DynamicModule } from '@nestjs/common';
 import { DatabaseModule } from '../../platform/database/database.module.js';
@@ -24,6 +29,10 @@ export class TasksModule {
       imports: [DatabaseModule, AuditModule, SpacesModule, storage],
       providers: [
         TasksService,
+        TaskProductivityService,
+        TaskProductivityRepository,
+        { provide: TASK_PRODUCTIVITY, useExisting: TaskProductivityRepository },
+        { provide: ProductivityTasks, useExisting: TaskProductivityRepository },
         TaskToolsService,
         RecurrenceService,
         { provide: PlanningTasks, useClass: PlanningTasksRepository },
@@ -33,9 +42,10 @@ export class TasksModule {
         TaskToolsController,
         RecurrenceController,
         TasksController,
+        TaskProductivityController,
         LabelsController,
       ],
-      exports: [PlanningTasks],
+      exports: [PlanningTasks, ProductivityTasks],
     };
   }
 }

@@ -51,4 +51,6 @@ jobs:
         run: pnpm smoke:p1-05
       - name: Compiled P1-06 functional smoke
         run: pnpm smoke:p1-06
+      - name: Compiled P1-07 functional smoke
+        run: pnpm smoke:p1-07
       # Docker build/start/persistence is a mandatory future deployment gate.

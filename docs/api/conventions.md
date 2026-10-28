@@ -159,3 +159,14 @@ GET progress is read-only; POST progress and reviews explicitly capture immutabl
 rule-versioned snapshots, using Idempotency-Key and Goal If-Match. Values and weights
 are exact decimal strings; visible progress clamps to 0..100 while raw values remain.
 See [ADR 0012](../adr/0012-goal-progress-and-history-semantics.md).
+
+## Focus timers and actual work
+
+P1-07 transitions require session If-Match and Idempotency-Key. The PostgreSQL clock
+is authoritative; no client elapsed values or transition timestamps are accepted.
+RUNNING/PAUSED reserves one timer per owner. Finish/stop atomically records unique
+tracked work segments; breaks/pauses do not count. Manual corrections append typed
+history. Summary raw totals and interval-union distinct totals are explicitly
+different when entries overlap; live work remains separate. Task estimate/quadrant
+edits use the Task revision through its owner endpoint. See
+[ADR0013](../adr/0013-focus-timers-and-time-accounting.md).

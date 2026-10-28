@@ -97,6 +97,8 @@ enum SpaceKind {
 }
 
 model Space {
+  focusSessions      FocusSession[]
+  timeEntries        TimeEntry[]
   id                 String              @id @default(uuid()) @db.Uuid
   kind               SpaceKind           @default(PERSONAL)
   ownerUserId        String              @db.Uuid
@@ -136,16 +138,17 @@ enum AuditOutcome {
 }
 
 model SecurityAuditEvent {
-  id            String       @id @default(uuid()) @db.Uuid
-  action        String       @db.VarChar(40)
-  outcome       AuditOutcome
-  actorUserId   String?      @db.Uuid
-  actor         User?        @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
-  requestId     String       @db.Uuid
-  correlationId String       @db.Uuid
-  resourceId    String?      @db.Uuid
-  changedFields String[]     @default([])
-  occurredAt    DateTime     @default(now()) @db.Timestamptz(3)
+  productivityFields String[]     @default([])
+  id                 String       @id @default(uuid()) @db.Uuid
+  action             String       @db.VarChar(40)
+  outcome            AuditOutcome
+  actorUserId        String?      @db.Uuid
+  actor              User?        @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+  requestId          String       @db.Uuid
+  correlationId      String       @db.Uuid
+  resourceId         String?      @db.Uuid
+  changedFields      String[]     @default([])
+  occurredAt         DateTime     @default(now()) @db.Timestamptz(3)
 
   @@index([actorUserId, occurredAt, id])
   @@index([requestId])
@@ -234,6 +237,11 @@ enum TaskPriority {
 }
 
 model Task {
+  estimatedMinutes   Int?
+  important          Boolean?
+  urgent             Boolean?
+  focusSessions      FocusSession[]
+  timeEntries        TimeEntry[]
   goalLinks          GoalTaskLink[]
   id                 String              @id @default(uuid()) @db.Uuid
   spaceId            String              @db.Uuid
@@ -851,4 +859,87 @@ model GoalReview {
   createdAt  DateTime @default(now()) @db.Timestamptz(3)
 
   @@index([spaceId, goalId, createdAt, id])
+}
+
+model FocusSession {
+  id                   String   @id @db.Uuid
+  logicalId            String   @db.Uuid
+  spaceId              String   @db.Uuid
+  createdByUserId      String   @db.Uuid
+  space                Space    @relation(fields: [spaceId, createdByUserId], references: [id, ownerUserId], onDelete: Cascade)
+  revision             Int      @default(1)
+  current              Boolean  @default(true)
+  createdAt            DateTime @default(now()) @db.Timestamptz(3)
+  recordedAt           DateTime @db.Timestamptz(3)
+  timezone             String   @db.VarChar(100)
+  taskId               String?  @db.Uuid
+  task                 Task?    @relation(fields: [spaceId, taskId], references: [spaceId, id], onDelete: NoAction, onUpdate: NoAction)
+  selectedTaskRevision Int?
+  previousId           String?  @unique @db.Uuid
+
+  root              FocusSession   @relation("FocusRoot", fields: [spaceId, logicalId], references: [spaceId, id], onDelete: NoAction, onUpdate: NoAction)
+  versions          FocusSession[] @relation("FocusRoot")
+  previous          FocusSession?  @relation("FocusPrevious", fields: [spaceId, logicalId, previousId], references: [spaceId, logicalId, id], onDelete: NoAction, onUpdate: NoAction)
+  successor         FocusSession?  @relation("FocusPrevious")
+  title             String         @db.VarChar(300)
+  mode              String         @db.VarChar(10)
+  state             String         @default("IDLE") @db.VarChar(10)
+  action            String         @db.VarChar(10)
+  elapsedMs         BigInt         @default(0)
+  runningSince      DateTime?      @db.Timestamptz(3)
+  clockAdjusted     Boolean        @default(false)
+  workMinutes       Int?
+  shortBreakMinutes Int?
+  longBreakMinutes  Int?
+  longBreakEvery    Int?
+  workIntervals     Int?
+  entries           TimeEntry[]
+
+  @@unique([spaceId, id])
+  @@unique([spaceId, logicalId, id])
+  @@unique([spaceId, logicalId, previousId])
+  @@unique([logicalId, revision])
+  @@index([spaceId, current, createdAt, id])
+  @@index([spaceId, logicalId, revision])
+  @@index([spaceId, taskId])
+}
+
+model TimeEntry {
+  id                   String   @id @db.Uuid
+  logicalId            String   @db.Uuid
+  spaceId              String   @db.Uuid
+  createdByUserId      String   @db.Uuid
+  space                Space    @relation(fields: [spaceId, createdByUserId], references: [id, ownerUserId], onDelete: Cascade)
+  revision             Int      @default(1)
+  current              Boolean  @default(true)
+  createdAt            DateTime @default(now()) @db.Timestamptz(3)
+  recordedAt           DateTime @db.Timestamptz(3)
+  timezone             String   @db.VarChar(100)
+  taskId               String?  @db.Uuid
+  task                 Task?    @relation(fields: [spaceId, taskId], references: [spaceId, id], onDelete: NoAction, onUpdate: NoAction)
+  selectedTaskRevision Int?
+  previousId           String?  @unique @db.Uuid
+
+  root           TimeEntry     @relation("TimeRoot", fields: [spaceId, logicalId], references: [spaceId, id], onDelete: NoAction, onUpdate: NoAction)
+  versions       TimeEntry[]   @relation("TimeRoot")
+  previous       TimeEntry?    @relation("TimePrevious", fields: [spaceId, logicalId, previousId], references: [spaceId, logicalId, id], onDelete: NoAction, onUpdate: NoAction)
+  successor      TimeEntry?    @relation("TimePrevious")
+  kind           String        @db.VarChar(10)
+  state          String        @default("RECORDED") @db.VarChar(10)
+  sessionId      String?       @db.Uuid
+  session        FocusSession? @relation(fields: [spaceId, sessionId], references: [spaceId, id], onDelete: NoAction, onUpdate: NoAction)
+  segmentOrdinal Int?
+  startAt        DateTime      @db.Timestamptz(3)
+  endAt          DateTime      @db.Timestamptz(3)
+  note           String?
+
+  @@unique([spaceId, id])
+  @@unique([spaceId, logicalId, id])
+  @@unique([spaceId, logicalId, previousId])
+  @@unique([logicalId, revision])
+  @@unique([sessionId, segmentOrdinal])
+  @@index([spaceId, current, createdAt, id])
+  @@index([spaceId, current, startAt, endAt])
+  @@index([spaceId, logicalId, revision])
+  @@index([spaceId, taskId])
 }

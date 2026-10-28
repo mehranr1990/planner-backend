@@ -72,7 +72,7 @@ describe('P1-06 contracts and prior compatibility', () => {
       ),
     ).not.toThrow();
     for (const path of [
-      '/focus/sessions',
+      '/notes',
       '/journal/entries',
       '/finance/accounts',
       '/reminders',

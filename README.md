@@ -139,3 +139,13 @@ private reviews. See [ADR 0012](docs/adr/0012-goal-progress-and-history-semantic
 [traceability](docs/p1-06-traceability.md), [runbook](docs/runbooks/goals.md)
 and [batch report](docs/p1-06-report.md). Run `pnpm smoke:p1-06` after building
 to verify compiled API restart persistence and idempotent review replay.
+
+## P1-07 focus, Pomodoro and time tracking
+
+Server-authoritative Focus Sessions retain typed transition history and recover
+across API restarts. Finite Pomodoro phases exclude breaks from actual work;
+manual corrections preserve history and summaries explain overlaps. Task-owned
+estimates and explicit quadrants preserve prior Task contracts. See
+[ADR0013](docs/adr/0013-focus-timers-and-time-accounting.md),
+[traceability](docs/p1-07-traceability.md), [runbook](docs/runbooks/focus.md)
+and [report](docs/p1-07-report.md). Run `pnpm smoke:p1-07` after building.

@@ -41,13 +41,13 @@ try {
       `SELECT tablename FROM pg_tables WHERE schemaname = current_schema() ORDER BY tablename`,
     )
   ).rows;
-  assert.equal(emptyTables.length, 40); // thirty-nine application/provider tables plus Prisma's ledger
+  assert.equal(emptyTables.length, 42); // forty-one application/provider tables plus Prisma's ledger
   // Required reset capability is restricted to this disposable, newly-created namespace.
   await sandbox.resetOwnedSchema();
   const folder = path.resolve('.tools/migration-check-' + randomUUID());
   const migrations = path.join(folder, 'migrations');
   fs.mkdirSync(migrations, { recursive: true });
-  for (const name of names.slice(0, names.indexOf('202610280008_p1_06_goals')))
+  for (const name of names.slice(0, names.indexOf('202610280009_p1_07_focus')))
     fs.cpSync(
       path.join('prisma/migrations', name),
       path.join(migrations, name),
@@ -250,6 +250,54 @@ try {
     `INSERT INTO "RoutineHabit" ("spaceId","routineId","habitId",position) VALUES ($1,$2,$3,0)`,
     [spaceId, routineId, habitId],
   );
+  const areaId = randomUUID(),
+    goalId = randomUUID(),
+    metricId = randomUUID();
+  await sandbox.query(
+    `INSERT INTO "LifeArea" (id,"spaceId","createdByUserId",title,"updatedAt") VALUES ($1,$2,$3,'Preserved area',now())`,
+    [areaId, spaceId, id],
+  );
+  await sandbox.query(
+    `INSERT INTO "Goal" (id,"spaceId","createdByUserId",title,horizon,timezone,"lifeAreaId","progressMode","updatedAt") VALUES ($1,$2,$3,'Preserved goal','LONG_TERM','Asia/Tehran',$4,'WEIGHTED',now())`,
+    [goalId, spaceId, id, areaId],
+  );
+  await sandbox.query(
+    `INSERT INTO "GoalMilestone" (id,"spaceId","goalId",title,position,"updatedAt") VALUES ($1,$2,$3,'Preserved milestone',1,now())`,
+    [randomUUID(), spaceId, goalId],
+  );
+  await sandbox.query(
+    `INSERT INTO "GoalMetric" (id,"spaceId","goalId",title,unit,baseline,target,current,contributes,weight,"updatedAt") VALUES ($1,$2,$3,'Preserved measure','COUNT',0,10,5,true,2,now())`,
+    [metricId, spaceId, goalId],
+  );
+  await sandbox.query(
+    `INSERT INTO "GoalTaskLink" (id,"spaceId","goalId","taskId","selectedSourceRevision","updatedAt") VALUES ($1,$2,$3,$4,3,now())`,
+    [randomUUID(), spaceId, goalId, taskId],
+  );
+  await sandbox.query(
+    `INSERT INTO "GoalHabitLink" (id,"spaceId","goalId","habitId","selectedSourceRevision","from","to","updatedAt") VALUES ($1,$2,$3,$4,2,'2024-01-01','2024-01-02',now())`,
+    [randomUUID(), spaceId, goalId, habitId],
+  );
+  await sandbox.query(
+    `INSERT INTO "GoalReview" (id,"spaceId","goalId",kind,reflection,snapshot) VALUES ($1,$2,$3,'SNAPSHOT',null,$4)`,
+    [
+      randomUUID(),
+      spaceId,
+      goalId,
+      JSON.stringify({
+        ruleVersion: 1,
+        goalId,
+        goalRevision: 1,
+        mode: 'WEIGHTED',
+        timezone: 'Asia/Tehran',
+        computedAt: '2026-10-28T00:00:00Z',
+        rawPercentage: '50',
+        percentage: '50',
+        weightSum: '2',
+        reason: 'CALCULATED',
+        sources: [],
+      }),
+    ],
+  );
   const preservedTables = [
     'User',
     'AuthAccount',
@@ -280,6 +328,13 @@ try {
     'HabitEntry',
     'Routine',
     'RoutineHabit',
+    'LifeArea',
+    'Goal',
+    'GoalMilestone',
+    'GoalMetric',
+    'GoalTaskLink',
+    'GoalHabitLink',
+    'GoalReview',
     'SecurityAuditEvent',
     'OutboxEvent',
     'IdempotencyRecord',
@@ -290,7 +345,7 @@ try {
       table,
       (
         await sandbox.query(
-          `SELECT to_jsonb(t) AS row FROM "${table}" t ORDER BY to_jsonb(t)::text`,
+          `SELECT (to_jsonb(t) - ARRAY['estimatedMinutes','important','urgent','productivityFields']::text[]) AS row FROM "${table}" t ORDER BY to_jsonb(t)::text`,
         )
       ).rows,
     );
@@ -301,7 +356,7 @@ try {
     assert.deepEqual(
       (
         await sandbox.query(
-          `SELECT to_jsonb(t) AS row FROM "${table}" t ORDER BY to_jsonb(t)::text`,
+          `SELECT (to_jsonb(t) - ARRAY['estimatedMinutes','important','urgent','productivityFields']::text[]) AS row FROM "${table}" t ORDER BY to_jsonb(t)::text`,
         )
       ).rows,
       beforeSnapshots.get(table),
@@ -313,6 +368,24 @@ try {
       [id],
     )
   ).rows;
+  assert.deepEqual(
+    (
+      await sandbox.query(
+        `SELECT "estimatedMinutes",important,urgent FROM "Task" WHERE id=$1`,
+        [taskId],
+      )
+    ).rows,
+    [{ estimatedMinutes: null, important: null, urgent: null }],
+  );
+  assert.deepEqual(
+    (
+      await sandbox.query(
+        `SELECT "productivityFields" FROM "SecurityAuditEvent" WHERE id=$1`,
+        [auditId],
+      )
+    ).rows,
+    [{ productivityFields: [] }],
+  );
   assert.deepEqual(settings, [
     { locale: 'fa', timezone: 'Asia/Tehran', revision: 7 },
   ]);

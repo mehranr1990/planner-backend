@@ -1,3 +1,4 @@
+import { FocusModule } from './modules/focus/public/index.js';
 import { GoalsModule } from './modules/goals/public/index.js';
 import { TasksModule } from './modules/tasks/public/index.js';
 import { PlanningModule } from './modules/planning/public/index.js';
@@ -55,6 +56,7 @@ export class AppModule {
         CalendarModule.register(tasks),
         HabitsModule,
         GoalsModule.register(tasks),
+        FocusModule.register(tasks),
       ],
       controllers: [HealthController],
     };
