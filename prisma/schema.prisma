@@ -120,6 +120,8 @@ model Space {
   habits             Habit[]
   habitEntryActors   HabitEntry[]
   routines           Routine[]
+  lifeAreas          LifeArea[]
+  goals              Goal[]
 
   @@unique([kind, ownerUserId])
   @@unique([id, ownerUserId])
@@ -232,6 +234,7 @@ enum TaskPriority {
 }
 
 model Task {
+  goalLinks          GoalTaskLink[]
   id                 String              @id @default(uuid()) @db.Uuid
   spaceId            String              @db.Uuid
   space              Space               @relation(fields: [spaceId], references: [id], onDelete: Cascade)
@@ -600,6 +603,7 @@ model TimeBlock {
 }
 
 model Habit {
+  goalLinks       GoalHabitLink[]
   id              String          @id @default(uuid()) @db.Uuid
   spaceId         String          @db.Uuid
   createdByUserId String          @db.Uuid
@@ -698,4 +702,153 @@ model RoutineHabit {
   @@id([spaceId, routineId, habitId])
   @@unique([spaceId, routineId, position])
   @@index([spaceId, habitId])
+}
+
+model LifeArea {
+  id              String   @id @default(uuid()) @db.Uuid
+  spaceId         String   @db.Uuid
+  createdByUserId String   @db.Uuid
+  space           Space    @relation(fields: [spaceId, createdByUserId], references: [id, ownerUserId], onDelete: Cascade)
+  title           String   @db.VarChar(300)
+  revision        Int      @default(1)
+  createdAt       DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime @updatedAt @db.Timestamptz(3)
+
+  position Int    @default(0)
+  status   String @default("ACTIVE") @db.VarChar(10)
+  goals    Goal[]
+
+  @@unique([spaceId, id])
+  @@index([spaceId, createdAt, id])
+}
+
+model Goal {
+  id              String   @id @default(uuid()) @db.Uuid
+  spaceId         String   @db.Uuid
+  createdByUserId String   @db.Uuid
+  space           Space    @relation(fields: [spaceId, createdByUserId], references: [id, ownerUserId], onDelete: Cascade)
+  title           String   @db.VarChar(300)
+  revision        Int      @default(1)
+  createdAt       DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime @updatedAt @db.Timestamptz(3)
+
+  description    String?
+  horizon        String          @db.VarChar(10)
+  status         String          @default("PLANNED") @db.VarChar(10)
+  lifeAreaId     String?         @db.Uuid
+  lifeArea       LifeArea?       @relation(fields: [spaceId, lifeAreaId], references: [spaceId, id], onDelete: NoAction, onUpdate: NoAction)
+  parentGoalId   String?         @db.Uuid
+  parent         Goal?           @relation("GoalHierarchy", fields: [spaceId, parentGoalId], references: [spaceId, id], onDelete: NoAction, onUpdate: NoAction)
+  children       Goal[]          @relation("GoalHierarchy")
+  startDate      DateTime?       @db.Date
+  targetDate     DateTime?       @db.Date
+  timezone       String          @db.VarChar(100)
+  progressMode   String          @default("MANUAL") @db.VarChar(10)
+  manualProgress Decimal         @default(0) @db.Decimal(15, 6)
+  metricId       String?         @db.Uuid
+  selectedMetric GoalMetric?     @relation("SelectedGoalMetric", fields: [spaceId, id, metricId], references: [spaceId, goalId, id], onDelete: NoAction, onUpdate: NoAction)
+  milestones     GoalMilestone[]
+  metrics        GoalMetric[]    @relation("GoalMetrics")
+  taskLinks      GoalTaskLink[]
+  habitLinks     GoalHabitLink[]
+  reviews        GoalReview[]
+
+  @@unique([spaceId, id])
+  @@index([spaceId, createdAt, id])
+  @@index([spaceId, status, createdAt, id])
+  @@index([spaceId, lifeAreaId])
+  @@index([spaceId, parentGoalId])
+}
+
+model GoalMilestone {
+  id        String   @id @default(uuid()) @db.Uuid
+  spaceId   String   @db.Uuid
+  goalId    String   @db.Uuid
+  goal      Goal     @relation(fields: [spaceId, goalId], references: [spaceId, id], onDelete: Cascade)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  title       String    @db.VarChar(300)
+  position    Int       @default(0)
+  targetDate  DateTime? @db.Date
+  status      String    @default("OPEN") @db.VarChar(10)
+  completedAt DateTime? @db.Timestamptz(3)
+  contributes Boolean   @default(false)
+  weight      Decimal   @default(1) @db.Decimal(13, 6)
+
+  @@unique([spaceId, goalId, id])
+  @@index([spaceId, goalId, position, id])
+}
+
+model GoalMetric {
+  id          String   @id @default(uuid()) @db.Uuid
+  spaceId     String   @db.Uuid
+  goalId      String   @db.Uuid
+  goal        Goal     @relation("GoalMetrics", fields: [spaceId, goalId], references: [spaceId, id], onDelete: Cascade)
+  selectedBy  Goal[]   @relation("SelectedGoalMetric")
+  title       String   @db.VarChar(300)
+  unit        String   @db.VarChar(30)
+  baseline    Decimal  @db.Decimal(15, 6)
+  target      Decimal  @db.Decimal(15, 6)
+  current     Decimal  @db.Decimal(15, 6)
+  contributes Boolean  @default(false)
+  weight      Decimal  @default(1) @db.Decimal(13, 6)
+  createdAt   DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt @db.Timestamptz(3)
+
+  @@unique([spaceId, goalId, id])
+  @@index([spaceId, goalId, createdAt, id])
+}
+
+model GoalTaskLink {
+  id        String   @id @default(uuid()) @db.Uuid
+  spaceId   String   @db.Uuid
+  goalId    String   @db.Uuid
+  goal      Goal     @relation(fields: [spaceId, goalId], references: [spaceId, id], onDelete: Cascade)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  taskId                 String  @db.Uuid
+  task                   Task    @relation(fields: [spaceId, taskId], references: [spaceId, id], onDelete: NoAction, onUpdate: NoAction)
+  selectedSourceRevision Int
+  contributes            Boolean @default(false)
+  weight                 Decimal @default(1) @db.Decimal(13, 6)
+
+  @@unique([goalId, taskId])
+  @@index([spaceId, goalId, createdAt, id])
+  @@index([spaceId, taskId])
+}
+
+model GoalHabitLink {
+  id        String   @id @default(uuid()) @db.Uuid
+  spaceId   String   @db.Uuid
+  goalId    String   @db.Uuid
+  goal      Goal     @relation(fields: [spaceId, goalId], references: [spaceId, id], onDelete: Cascade)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  habitId                String   @db.Uuid
+  habit                  Habit    @relation(fields: [spaceId, habitId], references: [spaceId, id], onDelete: NoAction, onUpdate: NoAction)
+  selectedSourceRevision Int
+  from                   DateTime @db.Date
+  to                     DateTime @db.Date
+  contributes            Boolean  @default(false)
+  weight                 Decimal  @default(1) @db.Decimal(13, 6)
+
+  @@unique([goalId, habitId])
+  @@index([spaceId, goalId, createdAt, id])
+  @@index([spaceId, habitId])
+}
+
+model GoalReview {
+  id         String   @id @default(uuid()) @db.Uuid
+  spaceId    String   @db.Uuid
+  goalId     String   @db.Uuid
+  goal       Goal     @relation(fields: [spaceId, goalId], references: [spaceId, id], onDelete: Cascade)
+  kind       String   @db.VarChar(10)
+  reflection String?
+  snapshot   Json     @db.JsonB
+  createdAt  DateTime @default(now()) @db.Timestamptz(3)
+
+  @@index([spaceId, goalId, createdAt, id])
 }

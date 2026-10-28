@@ -1,3 +1,4 @@
+import { goalPaths } from './goals-openapi.js';
 import { taskPaths } from './tasks-openapi.js';
 import { taskToolPaths } from './task-tools-openapi.js';
 import { planningPaths } from './planning-openapi.js';
@@ -222,6 +223,7 @@ export function createOpenApiDocument() {
       ...planningPaths(),
       ...calendarPaths(),
       ...habitPaths(),
+      ...goalPaths(),
       ...extraPaths,
       [healthRoutes.live]: { get: operation('healthLive', 'LiveHealth') },
       [healthRoutes.ready]: { get: operation('healthReady', 'ReadyHealth') },

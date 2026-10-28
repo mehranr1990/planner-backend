@@ -41,13 +41,13 @@ try {
       `SELECT tablename FROM pg_tables WHERE schemaname = current_schema() ORDER BY tablename`,
     )
   ).rows;
-  assert.equal(emptyTables.length, 33); // thirty-two application/provider tables plus Prisma's ledger
+  assert.equal(emptyTables.length, 40); // thirty-nine application/provider tables plus Prisma's ledger
   // Required reset capability is restricted to this disposable, newly-created namespace.
   await sandbox.resetOwnedSchema();
   const folder = path.resolve('.tools/migration-check-' + randomUUID());
   const migrations = path.join(folder, 'migrations');
   fs.mkdirSync(migrations, { recursive: true });
-  for (const name of names.slice(0, names.indexOf('202610280006_p1_05_habits')))
+  for (const name of names.slice(0, names.indexOf('202610280008_p1_06_goals')))
     fs.cpSync(
       path.join('prisma/migrations', name),
       path.join(migrations, name),
@@ -217,6 +217,39 @@ try {
     `INSERT INTO "TimeBlock" (id,"spaceId","createdByUserId",title,kind,timezone,"localStart","localEnd","startAt","endAt","taskId","selectedTaskRevision",revision,"updatedAt") VALUES ($1,$2,$3,'Preserved block','TIMED','UTC','2026-10-28T09:00','2026-10-28T10:00','2026-10-28T09:00Z','2026-10-28T10:00Z',$4,3,2,now())`,
     [blockId, spaceId, id, taskId],
   );
+  const habitId = randomUUID(),
+    scheduleId = randomUUID(),
+    entryId = randomUUID(),
+    routineId = randomUUID();
+  await sandbox.query(
+    `INSERT INTO "Habit" (id,"spaceId","createdByUserId",title,type,unit,purpose,revision,"updatedAt") VALUES ($1,$2,$3,'Preserved habit','QUANTITY','ML','WATER',2,now())`,
+    [habitId, spaceId, id],
+  );
+  await sandbox.query(
+    `INSERT INTO "HabitSchedule" (id,"spaceId","habitId",revision,"effectiveFrom",timezone,target,status,definition) VALUES ($1,$2,$3,2,'2024-01-01','UTC',500,'ACTIVE',$4)`,
+    [
+      scheduleId,
+      spaceId,
+      habitId,
+      JSON.stringify({
+        version: 1,
+        startDate: '2024-01-01',
+        rule: { kind: 'DAILY' },
+      }),
+    ],
+  );
+  await sandbox.query(
+    `INSERT INTO "HabitEntry" (id,"spaceId","habitId","scheduleId","logicalId","actorUserId",kind,state,"localDate",value,timezone,"recordedTimezone") VALUES ($1,$2,$3,$4,$1,$5,'QUANTITY','RECORDED','2024-01-01',500,'UTC','Asia/Tehran')`,
+    [entryId, spaceId, habitId, scheduleId, id],
+  );
+  await sandbox.query(
+    `INSERT INTO "Routine" (id,"spaceId","createdByUserId",title,"updatedAt") VALUES ($1,$2,$3,'Preserved routine',now())`,
+    [routineId, spaceId, id],
+  );
+  await sandbox.query(
+    `INSERT INTO "RoutineHabit" ("spaceId","routineId","habitId",position) VALUES ($1,$2,$3,0)`,
+    [spaceId, routineId, habitId],
+  );
   const preservedTables = [
     'User',
     'AuthAccount',
@@ -242,6 +275,11 @@ try {
     'CalendarEvent',
     'EventRecurrence',
     'TimeBlock',
+    'Habit',
+    'HabitSchedule',
+    'HabitEntry',
+    'Routine',
+    'RoutineHabit',
     'SecurityAuditEvent',
     'OutboxEvent',
     'IdempotencyRecord',

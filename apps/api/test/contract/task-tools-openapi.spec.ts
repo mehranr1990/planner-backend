@@ -76,13 +76,7 @@ describe('P1-02 OpenAPI and prior-contract preservation', () => {
         ) as Record<string, string>,
       ),
     ).not.toThrow();
-    for (const path of [
-      '/planning',
-      '/calendar',
-      '/goals',
-      '/reminders',
-      '/sync',
-    ])
+    for (const path of ['/planning', '/calendar', '/reminders', '/sync'])
       expect(paths).not.toHaveProperty('/api/v1' + path);
   });
 });

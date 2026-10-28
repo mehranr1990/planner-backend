@@ -46,3 +46,5 @@ export * from './recurrence.js';
 export * from './planning.js';
 export * from './calendar.js';
 export * from './habits.js';
+
+export * from './goals.js';

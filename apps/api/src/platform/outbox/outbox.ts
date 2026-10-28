@@ -16,6 +16,7 @@ export const EventSchema = z.strictObject({
     'time_block.changed',
     'habit.entry_recorded',
     'habit.entry_corrected',
+    'goal.progress_changed',
   ]),
   version: z.literal(1),
   aggregateId: z.string().uuid(),

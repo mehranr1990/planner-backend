@@ -149,3 +149,13 @@ immutable revision UUIDs; PATCH uses both entry and owning habit revisions.
 Date ranges are half-open and bounded, statistics explicitly RANGE-scoped, and
 configuration history is never silently rewritten. See the
 [habit runbook](../runbooks/habits.md) and approved ADR 0011.
+
+## Goal revisions and historical progress
+
+P1-06 nested Goal mutations use the owning Goal If-Match/ETag and increment that
+revision. Link creation also checks the source Task/Habit revision; sources remain
+owned by their modules. Goal statuses never change from a computed percentage.
+GET progress is read-only; POST progress and reviews explicitly capture immutable
+rule-versioned snapshots, using Idempotency-Key and Goal If-Match. Values and weights
+are exact decimal strings; visible progress clamps to 0..100 while raw values remain.
+See [ADR 0012](../adr/0012-goal-progress-and-history-semantics.md).

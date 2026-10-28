@@ -130,3 +130,12 @@ typed correction history, range-scoped streaks, ordered routines and canonical M
 water totals. See [ADR 0011](docs/adr/0011-habit-history-and-streak-semantics.md),
 [traceability](docs/p1-05-traceability.md) and the [runbook](docs/runbooks/habits.md).
 Run `pnpm smoke:p1-05` after compilation for restart/persistence evidence.
+
+## P1-06 goals, milestones and life areas
+
+Personal short/long-term Goals support scoped hierarchy, explicit lifecycle,
+manual/metric/exact weighted progress, existing Task/Habit links and immutable
+private reviews. See [ADR 0012](docs/adr/0012-goal-progress-and-history-semantics.md),
+[traceability](docs/p1-06-traceability.md), [runbook](docs/runbooks/goals.md)
+and [batch report](docs/p1-06-report.md). Run `pnpm smoke:p1-06` after building
+to verify compiled API restart persistence and idempotent review replay.

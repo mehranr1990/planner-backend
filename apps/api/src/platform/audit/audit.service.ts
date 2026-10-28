@@ -49,6 +49,12 @@ const ActionSchema = z.enum([
   'HABIT_ENTRY_CORRECT',
   'ROUTINE_CREATE',
   'ROUTINE_UPDATE',
+  'LIFE_AREA_CREATE',
+  'LIFE_AREA_UPDATE',
+  'GOAL_CREATE',
+  'GOAL_UPDATE',
+  'GOAL_LINK_CHANGE',
+  'GOAL_REVIEW_CREATE',
 ]);
 const AuditSchema = z.strictObject({
   action: ActionSchema,

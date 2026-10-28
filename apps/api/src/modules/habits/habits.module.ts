@@ -9,13 +9,19 @@ import {
 } from './http/habits.controller.js';
 import { HabitsService } from './application/habits.service.js';
 import { HABITS_REPOSITORY } from './application/habits.port.js';
-import { HabitsRepository } from './infrastructure/habits.repository.js';
+import {
+  HabitsRepository,
+  GoalHabitsRepository,
+} from './infrastructure/habits.repository.js';
+import { GoalHabits } from './public/goal-habits.js';
 @Module({
   imports: [DatabaseModule, AuditModule, SpacesModule, AccountModule],
   providers: [
     HabitsService,
+    { provide: GoalHabits, useClass: GoalHabitsRepository },
     { provide: HABITS_REPOSITORY, useClass: HabitsRepository },
   ],
   controllers: [HabitsController, RoutinesController],
+  exports: [GoalHabits],
 })
 export class HabitsModule {}

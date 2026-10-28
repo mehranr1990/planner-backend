@@ -59,12 +59,7 @@ describe('P1-04 calendar OpenAPI and P1-03 compatibility', () => {
         ) as Record<string, string>,
       ),
     ).not.toThrow();
-    for (const path of [
-      '/goals',
-      '/focus/sessions',
-      '/reminders',
-      '/sync/push',
-    ])
+    for (const path of ['/focus/sessions', '/reminders', '/sync/push'])
       expect(paths).not.toHaveProperty('/api/v1' + path);
   });
 });

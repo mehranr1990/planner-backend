@@ -26,6 +26,8 @@ import { writeAudit } from '../../../platform/audit/audit.service.js';
 import { appendOutbox } from '../../../platform/outbox/outbox.js';
 import type { AuthorizedSpace } from '../../../platform/authorization/authorized-space.js';
 import { PlanningPreferences } from '../../account/public/index.js';
+import { GoalHabits } from '../public/goal-habits.js';
+import { currentSchedule, localDate, stats } from '../domain/habits.js';
 import type {
   HabitsPort,
   HabitsTransaction,
@@ -427,5 +429,48 @@ export class HabitsRepository implements HabitsPort {
       },
     );
     return receipt.result as T;
+  }
+}
+
+@Injectable()
+export class GoalHabitsRepository extends GoalHabits {
+  constructor(
+    @Inject(PlanningPreferences) private readonly account: PlanningPreferences,
+  ) {
+    super();
+  }
+  async lock(tx: Prisma.TransactionClient, scope: AuthorizedSpace) {
+    await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`habits:${scope.spaceId}`},0))::text`;
+  }
+  async describe(
+    tx: Prisma.TransactionClient,
+    scope: AuthorizedSpace,
+    habitId: string,
+    range: { from: string; to: string },
+    now: Date,
+  ) {
+    const store = new Store(tx, scope, this.account);
+    const habit = await store.habit(habitId);
+    const versions = await store.schedules(habitId);
+    const active = currentSchedule(versions, now) ?? versions.at(-1)!;
+    const asOfDate = localDate(now, active.timezone);
+    const entries = await store.entriesRange([habitId], range.from, range.to);
+    const result = stats(
+      habitId,
+      versions,
+      entries,
+      range.from,
+      range.to,
+      asOfDate,
+    );
+    return {
+      id: habit.id,
+      revision: habit.revision,
+      timezone: active.timezone,
+      asOfDate,
+      scheduleIds: versions.map((v) => v.id),
+      entries: entries.map((e) => ({ id: e.revisionId, revision: e.revision })),
+      ...result.completionRate,
+    };
   }
 }
