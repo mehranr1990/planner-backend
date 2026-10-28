@@ -52,7 +52,7 @@ import type {
 } from '../domain/tasks.js';
 
 const iso = (date: Date | null) => date?.toISOString() ?? null;
-function taskView(task: TaskRecord) {
+export function taskView(task: TaskRecord) {
   return TaskSchema.parse({
     id: task.id,
     spaceId: task.spaceId,
@@ -99,6 +99,18 @@ const revision = (value: { revision: number }, expected: number) => {
 
 @Injectable()
 export class TasksService {
+  private inTransaction<T>(
+    scope: AuthorizedSpace,
+    work: (tx: TaskTransaction) => Promise<T>,
+    tx?: TaskTransaction,
+  ) {
+    return tx ? work(tx) : this.repository.transaction(scope, work);
+  }
+  private async actionableParent(tx: TaskTransaction, id: string) {
+    const task = await tx.task(id);
+    if (task.isRecurrenceMaster) throw new ConflictException();
+    return task;
+  }
   constructor(
     @Inject(TASKS_REPOSITORY) private readonly repository: TasksPort,
     @Inject(AuditService) private readonly audit: AuditService,
@@ -135,6 +147,7 @@ export class TasksService {
     includeDeleted = false,
   ) {
     const task = await tx.task(id, includeDeleted);
+    if (task.isRecurrenceMaster) throw new ConflictException();
     revision(task, expected);
     return task;
   }
@@ -158,7 +171,12 @@ export class TasksService {
     );
     return after;
   }
-  create(scope: AuthorizedSpace, input: TaskCreate, key?: string) {
+  create(
+    scope: AuthorizedSpace,
+    input: TaskCreate,
+    key?: string,
+    transaction?: TaskTransaction,
+  ) {
     return this.operation(scope, input.parentTaskId ?? undefined, async () => {
       const normalized: TaskCreate = {
         ...input,
@@ -173,35 +191,39 @@ export class TasksService {
         dueAt: input.dueAt ? new Date(input.dueAt).toISOString() : null,
         scheduledDate: input.scheduledDate ?? null,
       };
-      const created = await this.repository.createTaskOnce(
-        scope,
-        normalized,
-        key,
-        async (tx) => {
-          const id = randomUUID();
-          let chain: TaskNode[] = [];
-          if (normalized.parentTaskId) {
-            await tx.task(normalized.parentTaskId);
-            chain = await tx.ancestors(normalized.parentTaskId);
-          }
-          validateHierarchy(id, chain, []);
-          const task = await tx.insertTask({ ...normalized, id });
-          await tx.record([
-            history(null, task, 'CREATED', [
-              'title',
-              'status',
-              'priority',
-              ...(task.description ? ['description' as const] : []),
-              ...(task.parentTaskId ? ['parentTaskId' as const] : []),
-              ...(task.plannedStartAt ? ['plannedStartAt' as const] : []),
-              ...(task.dueAt ? ['dueAt' as const] : []),
-              ...(task.scheduledDate ? ['scheduledDate' as const] : []),
-            ]),
-          ]);
-          await tx.events('task.created', [task.id]);
-          return task;
-        },
-      );
+      const createOnce = transaction
+        ? async (
+            _scope: AuthorizedSpace,
+            _input: TaskCreate,
+            _key: string | undefined,
+            work: (tx: TaskTransaction) => Promise<TaskRecord>,
+          ) => work(transaction)
+        : this.repository.createTaskOnce.bind(this.repository);
+      const created = await createOnce(scope, normalized, key, async (tx) => {
+        const id = randomUUID();
+        let chain: TaskNode[] = [];
+        if (normalized.parentTaskId) {
+          if ((await tx.task(normalized.parentTaskId)).isRecurrenceMaster)
+            throw new ConflictException();
+          chain = await tx.ancestors(normalized.parentTaskId);
+        }
+        validateHierarchy(id, chain, []);
+        const task = await tx.insertTask({ ...normalized, id });
+        await tx.record([
+          history(null, task, 'CREATED', [
+            'title',
+            'status',
+            'priority',
+            ...(task.description ? ['description' as const] : []),
+            ...(task.parentTaskId ? ['parentTaskId' as const] : []),
+            ...(task.plannedStartAt ? ['plannedStartAt' as const] : []),
+            ...(task.dueAt ? ['dueAt' as const] : []),
+            ...(task.scheduledDate ? ['scheduledDate' as const] : []),
+          ]),
+        ]);
+        await tx.events('task.created', [task.id]);
+        return task;
+      });
       return taskView(created);
     });
   }
@@ -233,45 +255,57 @@ export class TasksService {
     id: string,
     expected: number,
     input: TaskPatch,
+    transaction?: TaskTransaction,
   ) {
     return this.operation(scope, id, () =>
-      this.repository.transaction(scope, async (tx) => {
-        const before = await this.existing(tx, id, expected);
-        const patch: TaskWrite = {};
-        if (input.title !== undefined)
-          patch.title = normalizeTitle(input.title);
-        if (input.description !== undefined)
-          patch.description = input.description;
-        if (input.status !== undefined) {
-          if (before.status === 'DONE') throw new TaskRuleError('STATE');
-          patch.status = input.status;
-        }
-        if (input.priority !== undefined) patch.priority = input.priority;
-        if (
-          input.parentTaskId !== undefined &&
-          input.parentTaskId !== before.parentTaskId
-        ) {
-          const chain = input.parentTaskId
-            ? (await tx.task(input.parentTaskId),
-              await tx.ancestors(input.parentTaskId))
-            : [];
-          validateHierarchy(id, chain, await tx.subtree(id));
-          patch.parentTaskId = input.parentTaskId;
-        }
-        if (input.plannedStartAt !== undefined)
-          patch.plannedStartAt = input.plannedStartAt
-            ? new Date(input.plannedStartAt)
-            : null;
-        if (input.dueAt !== undefined)
-          patch.dueAt = input.dueAt ? new Date(input.dueAt) : null;
-        if (input.scheduledDate !== undefined)
-          patch.scheduledDate = input.scheduledDate;
-        const fields = changedFields(before, patch);
-        if (!fields.length) return taskView(before);
-        const after = await this.changed(tx, before, patch, 'UPDATED', fields);
-        if (fields.includes('dueAt')) await tx.events('task.due_changed', [id]);
-        return taskView(after);
-      }),
+      this.inTransaction(
+        scope,
+        async (tx) => {
+          const before = await this.existing(tx, id, expected);
+          const patch: TaskWrite = {};
+          if (input.title !== undefined)
+            patch.title = normalizeTitle(input.title);
+          if (input.description !== undefined)
+            patch.description = input.description;
+          if (input.status !== undefined) {
+            if (before.status === 'DONE') throw new TaskRuleError('STATE');
+            patch.status = input.status;
+          }
+          if (input.priority !== undefined) patch.priority = input.priority;
+          if (
+            input.parentTaskId !== undefined &&
+            input.parentTaskId !== before.parentTaskId
+          ) {
+            const chain = input.parentTaskId
+              ? (await this.actionableParent(tx, input.parentTaskId),
+                await tx.ancestors(input.parentTaskId))
+              : [];
+            validateHierarchy(id, chain, await tx.subtree(id));
+            patch.parentTaskId = input.parentTaskId;
+          }
+          if (input.plannedStartAt !== undefined)
+            patch.plannedStartAt = input.plannedStartAt
+              ? new Date(input.plannedStartAt)
+              : null;
+          if (input.dueAt !== undefined)
+            patch.dueAt = input.dueAt ? new Date(input.dueAt) : null;
+          if (input.scheduledDate !== undefined)
+            patch.scheduledDate = input.scheduledDate;
+          const fields = changedFields(before, patch);
+          if (!fields.length) return taskView(before);
+          const after = await this.changed(
+            tx,
+            before,
+            patch,
+            'UPDATED',
+            fields,
+          );
+          if (fields.includes('dueAt'))
+            await tx.events('task.due_changed', [id]);
+          return taskView(after);
+        },
+        transaction,
+      ),
     );
   }
   changeStatus(
@@ -279,74 +313,105 @@ export class TasksService {
     id: string,
     expected: number,
     action: 'complete' | 'reopen',
+    transaction?: TaskTransaction,
   ) {
     return this.operation(scope, id, () =>
-      this.repository.transaction(scope, async (tx) => {
-        const before = await this.existing(tx, id, expected),
-          patch = transition(before, action, new Date());
-        const fields = changedFields(before, patch);
-        return taskView(
-          fields.length
-            ? await this.changed(
-                tx,
-                before,
-                patch,
-                action === 'complete' ? 'COMPLETED' : 'REOPENED',
-                fields,
-              )
-            : before,
-        );
-      }),
+      this.inTransaction(
+        scope,
+        async (tx) => {
+          const before = await this.existing(tx, id, expected),
+            patch = transition(before, action, new Date());
+          const fields = changedFields(before, patch);
+          return taskView(
+            fields.length
+              ? await this.changed(
+                  tx,
+                  before,
+                  patch,
+                  action === 'complete' ? 'COMPLETED' : 'REOPENED',
+                  fields,
+                )
+              : before,
+          );
+        },
+        transaction,
+      ),
     );
   }
-  delete(scope: AuthorizedSpace, id: string, expected: number) {
+  delete(
+    scope: AuthorizedSpace,
+    id: string,
+    expected: number,
+    transaction?: TaskTransaction,
+  ) {
     return this.operation(scope, id, () =>
-      this.repository.transaction(scope, async (tx) => {
-        const root = await this.existing(tx, id, expected, true);
-        if (root.deletedAt) return taskView(root);
-        const before = (await tx.subtree(id)).filter((task) => !task.deletedAt),
-          patch = { deletedAt: new Date(), deletionBatchId: randomUUID() };
-        const after = await tx.updateTasks(before, patch);
-        const old = new Map(before.map((task) => [task.id, task]));
-        await tx.record(
-          after.map((task) =>
-            history(old.get(task.id)!, task, 'DELETED', ['deletedAt']),
-          ),
-        );
-        await tx.events(
-          'task.deleted',
-          after.map((task) => task.id),
-        );
-        return taskView({ ...root, ...after.find((task) => task.id === id)! });
-      }),
+      this.inTransaction(
+        scope,
+        async (tx) => {
+          const root = await this.existing(tx, id, expected, true);
+          if (root.deletedAt) return taskView(root);
+          const before = (await tx.subtree(id)).filter(
+              (task) => !task.deletedAt,
+            ),
+            patch = { deletedAt: new Date(), deletionBatchId: randomUUID() };
+          const after = await tx.updateTasks(before, patch);
+          const old = new Map(before.map((task) => [task.id, task]));
+          await tx.record(
+            after.map((task) =>
+              history(old.get(task.id)!, task, 'DELETED', ['deletedAt']),
+            ),
+          );
+          await tx.events(
+            'task.deleted',
+            after.map((task) => task.id),
+          );
+          return taskView({
+            ...root,
+            ...after.find((task) => task.id === id)!,
+          });
+        },
+        transaction,
+      ),
     );
   }
-  restore(scope: AuthorizedSpace, id: string, expected: number) {
+  restore(
+    scope: AuthorizedSpace,
+    id: string,
+    expected: number,
+    transaction?: TaskTransaction,
+  ) {
     return this.operation(scope, id, () =>
-      this.repository.transaction(scope, async (tx) => {
-        const root = await this.existing(tx, id, expected, true);
-        if (!root.deletedAt) return taskView(root);
-        requireRestorable(root, new Date());
-        const before = (await tx.subtree(id)).filter(
-          (task) =>
-            task.deletedAt && task.deletionBatchId === root.deletionBatchId,
-        );
-        const after = await tx.updateTasks(before, {
-          deletedAt: null,
-          deletionBatchId: null,
-        });
-        const old = new Map(before.map((task) => [task.id, task]));
-        await tx.record(
-          after.map((task) =>
-            history(old.get(task.id)!, task, 'RESTORED', ['deletedAt']),
-          ),
-        );
-        await tx.events(
-          'task.updated',
-          after.map((task) => task.id),
-        );
-        return taskView({ ...root, ...after.find((task) => task.id === id)! });
-      }),
+      this.inTransaction(
+        scope,
+        async (tx) => {
+          const root = await this.existing(tx, id, expected, true);
+          if (!root.deletedAt) return taskView(root);
+          requireRestorable(root, new Date());
+          const before = (await tx.subtree(id)).filter(
+            (task) =>
+              task.deletedAt && task.deletionBatchId === root.deletionBatchId,
+          );
+          const after = await tx.updateTasks(before, {
+            deletedAt: null,
+            deletionBatchId: null,
+          });
+          const old = new Map(before.map((task) => [task.id, task]));
+          await tx.record(
+            after.map((task) =>
+              history(old.get(task.id)!, task, 'RESTORED', ['deletedAt']),
+            ),
+          );
+          await tx.events(
+            'task.updated',
+            after.map((task) => task.id),
+          );
+          return taskView({
+            ...root,
+            ...after.find((task) => task.id === id)!,
+          });
+        },
+        transaction,
+      ),
     );
   }
   checklist(scope: AuthorizedSpace, id: string, query: TaskCursorQuery) {
@@ -510,24 +575,29 @@ export class TasksService {
     labelId: string,
     expected: number,
     present: boolean,
+    transaction?: TaskTransaction,
   ) {
     return this.operation(scope, id, () =>
-      this.repository.transaction(scope, async (tx) => {
-        const before = await this.existing(tx, id, expected);
-        await tx.label(labelId);
-        return taskView(
-          (await tx.setLabel(id, labelId, present))
-            ? await this.changed(
-                tx,
-                before,
-                {},
-                present ? 'LABEL_ADDED' : 'LABEL_REMOVED',
-                ['labels'],
-                labelId,
-              )
-            : before,
-        );
-      }),
+      this.inTransaction(
+        scope,
+        async (tx) => {
+          const before = await this.existing(tx, id, expected);
+          await tx.label(labelId);
+          return taskView(
+            (await tx.setLabel(id, labelId, present))
+              ? await this.changed(
+                  tx,
+                  before,
+                  {},
+                  present ? 'LABEL_ADDED' : 'LABEL_REMOVED',
+                  ['labels'],
+                  labelId,
+                )
+              : before,
+          );
+        },
+        transaction,
+      ),
     );
   }
   setAttachment(

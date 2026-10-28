@@ -41,7 +41,7 @@ try {
       `SELECT tablename FROM pg_tables WHERE schemaname = current_schema() ORDER BY tablename`,
     )
   ).rows;
-  assert.equal(emptyTables.length, 17); // sixteen application/provider tables plus Prisma's ledger
+  assert.equal(emptyTables.length, 21); // twenty application/provider tables plus Prisma's ledger
   // Required reset capability is restricted to this disposable, newly-created namespace.
   await sandbox.resetOwnedSchema();
   const folder = path.resolve('.tools/migration-check-' + randomUUID());
@@ -96,6 +96,20 @@ try {
     `INSERT INTO "StoredFile" (id,"spaceId","ownerUserId","objectKey",filename,"mimeType","expectedSize","actualSize",sha256,status,revision,"uploadExpiresAt","updatedAt","completedAt") VALUES ($1,$2,$3,$4,'upgrade fixture.txt','text/plain',7,7,$5,'READY',4,now()+interval '1 day',now(),now())`,
     [storedFileId, spaceId, id, randomUUID(), 'c'.repeat(64)],
   );
+  const taskId = randomUUID(),
+    checklistId = randomUUID();
+  await sandbox.query(
+    `INSERT INTO "Task" (id,"spaceId","createdByUserId",title,status,revision,"updatedAt") VALUES ($1,$2,$3,'Previous schema Task','OPEN',3,now())`,
+    [taskId, spaceId, id],
+  );
+  await sandbox.query(
+    `INSERT INTO "TaskChecklistItem" (id,"spaceId","taskId",title,position,"updatedAt") VALUES ($1,$2,$3,'Preserved checklist',0,now())`,
+    [checklistId, spaceId, taskId],
+  );
+  await sandbox.query(
+    `INSERT INTO "TaskAttachment" ("spaceId","taskId","fileId") VALUES ($1,$2,$3)`,
+    [spaceId, taskId, storedFileId],
+  );
   migrate(sandbox.url, 'deploy');
   migrate(sandbox.url, 'status');
   migrate(sandbox.url, 'deploy');
@@ -108,6 +122,32 @@ try {
   assert.deepEqual(settings, [
     { locale: 'fa', timezone: 'Asia/Tehran', revision: 7 },
   ]);
+  assert.deepEqual(
+    (
+      await sandbox.query(
+        `SELECT title,status,revision FROM "Task" WHERE id=$1`,
+        [taskId],
+      )
+    ).rows,
+    [{ title: 'Previous schema Task', status: 'OPEN', revision: 3 }],
+  );
+  assert.equal(
+    (
+      await sandbox.query(`SELECT title FROM "TaskChecklistItem" WHERE id=$1`, [
+        checklistId,
+      ])
+    ).rows[0].title,
+    'Preserved checklist',
+  );
+  assert.equal(
+    (
+      await sandbox.query(
+        `SELECT "fileId" FROM "TaskAttachment" WHERE "taskId"=$1`,
+        [taskId],
+      )
+    ).rows[0].fileId,
+    storedFileId,
+  );
   assert.equal(
     (await sandbox.query(`SELECT id FROM "OutboxEvent" WHERE id=$1`, [eventId]))
       .rows[0].id,

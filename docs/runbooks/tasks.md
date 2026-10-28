@@ -1,5 +1,10 @@
 # P1-01 task operations
 
+P1-02 extends this original contract with
+[recurrences, templates, bulk operations and saved filters](./task-recurrence-tools.md).
+Masters are non-actionable and excluded from ordinary Task lists; occurrence
+Tasks retain this unified lifecycle, history, revisions and file authorization.
+
 Tasks own Task, TaskChecklistItem, Label, TaskLabel, TaskChange and the typed
 TaskAttachment link. There is one Task aggregate for roots and subtasks. Goal,
 assignment, recurrence, bulk, template, calendar and job behavior is not activated.

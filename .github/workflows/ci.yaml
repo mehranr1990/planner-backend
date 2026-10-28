@@ -41,4 +41,6 @@ jobs:
         run: pnpm config:check
       - name: Applicable backend gates
         run: pnpm quality
+      - name: Compiled P1-02 functional smoke
+        run: pnpm smoke:p1-02
       # Docker build/start/persistence is a mandatory future deployment gate.

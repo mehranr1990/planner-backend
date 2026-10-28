@@ -36,6 +36,7 @@ const hash = (value: string) =>
 const ReceiptSchema = z.strictObject({
   resultId: z.string().uuid(),
   statusCode: z.number().int().min(200).max(299),
+  result: z.record(z.string(), z.json()).optional(),
 });
 export type MutationReceipt = z.infer<typeof ReceiptSchema>;
 
@@ -80,6 +81,7 @@ export async function idempotent(
           ...ReceiptSchema.parse({
             resultId: previous.resultId,
             statusCode: previous.statusCode,
+            ...(previous.result !== null ? { result: previous.result } : {}),
           }),
           replayed: true,
         };
@@ -90,13 +92,15 @@ export async function idempotent(
         data: {
           ...identity,
           fingerprint,
-          ...receipt,
+          resultId: receipt.resultId,
+          statusCode: receipt.statusCode,
+          ...(receipt.result !== undefined ? { result: receipt.result } : {}),
           createdAt: clock.now,
           expiresAt: new Date(clock.now.getTime() + 24 * 60 * 60 * 1000),
         },
       });
       return { ...receipt, replayed: false };
     },
-    { isolationLevel: 'ReadCommitted' },
+    { isolationLevel: 'ReadCommitted', timeout: 30000 },
   );
 }

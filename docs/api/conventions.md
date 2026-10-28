@@ -110,3 +110,14 @@ returns recoverable metadata; Label deletion returns 204. All list responses
 are bounded keysets. No opaque cursor can authorize another owner's resource.
 P0-04 signatures additionally lock the existing file protocol in the compatibility
 gate. Existing settings optional If-Match semantics remain unchanged.
+
+P1-02 adds recurrence/occurrence, template, bulk and saved-filter operations;
+see [their full contracts](../runbooks/task-recurrence-tools.md). Existing P1-01
+request/response/parameter signatures are now also frozen in compatibility tests.
+Series and occurrences have independent If-Match preconditions; ordinary Task
+mutations continue to use the Task revision. Master Tasks are non-actionable.
+Bulk and template application require actor/scope/request-bound Idempotency-Key.
+For bulk only, the existing receipt table additionally retains validated private
+per-item response JSON so replay can return an exact partial result. No receipt
+read endpoint exists; current authenticated scope is revalidated on every request.
+The 24-hour retention remains unchanged. Receipts never enter logs or outbox.

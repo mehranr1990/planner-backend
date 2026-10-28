@@ -100,4 +100,11 @@ consumers and jobs remain inactive until their assigned batch. P1-01 adds the
 unified Task aggregate, checklists, labels, recovery, safe history and private
 attachment links. See [task operations](./docs/runbooks/tasks.md) and
 [P1-01 traceability](./docs/p1-01-traceability.md). Its fourth additive migration
-preserves all Phase 0 tables and records. P1-02 is not started.
+preserves all Phase 0 tables and records. P1-02 adds recurring Tasks and occurrences,
+templates, independent bulk operations and normalized saved filters. See
+[recurrence/tool operations](./docs/runbooks/task-recurrence-tools.md),
+[approved recurrence policy](./docs/adr/0008-task-recurrence-semantics.md) and
+[P1-02 traceability](./docs/p1-02-traceability.md). Its fifth additive migration
+preserves existing Tasks and private links. Catch-up is explicit; no worker is
+activated. Use `pnpm smoke:p1-02` after building for the isolated compiled API smoke.
+P1-03 is not started.

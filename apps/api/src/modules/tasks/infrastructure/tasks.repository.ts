@@ -4,8 +4,13 @@ import {
   BadRequestException,
   ConflictException,
   NotFoundException,
+  HttpException,
 } from '@nestjs/common';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
+import { BulkTaskResultSchema } from '@mehran/api-contracts';
+import type { BulkTaskResult } from '@mehran/api-contracts';
+import { TaskToolsStore } from './task-tools.store.js';
+import { persistenceStatus } from '../../../platform/database/persistence-error.js';
 import { z } from 'zod';
 import { Prisma } from '../../../generated/prisma/client.js';
 import type { Task as DatabaseTask } from '../../../generated/prisma/client.js';
@@ -18,7 +23,6 @@ import type {
   ChecklistPatch,
 } from '@mehran/api-contracts';
 import { DatabaseService } from '../../../platform/database/database.service.js';
-import { scopedWhere } from '../../../platform/database/scoped-where.js';
 import {
   cursorPosition,
   cursorPage,
@@ -164,21 +168,24 @@ function orderedPage<T extends { id: string }>(
   };
 }
 
-class ScopedTasksStore implements TaskTransaction {
+class ScopedTasksStore extends TaskToolsStore implements TaskTransaction {
   constructor(
-    private readonly db: Prisma.TransactionClient,
-    private readonly scope: AuthorizedSpace,
+    db: Prisma.TransactionClient,
+    scope: AuthorizedSpace,
     private readonly files: FileCatalog,
-  ) {}
-  private where<T extends object>(where: T) {
-    return scopedWhere(this.scope, where);
+  ) {
+    super(db, scope);
   }
   async task(id: string, includeDeleted = false): Promise<TaskRecord> {
     const row = await this.db.task.findFirst({
       where: this.where({ id, ...(includeDeleted ? {} : { deletedAt: null }) }),
+      include: { masterRecurrence: { select: { id: true } } },
     });
     if (!row) throw new NotFoundException();
-    return taskRecord(row);
+    return {
+      ...taskRecord(row),
+      isRecurrenceMaster: row.masterRecurrence !== null,
+    };
   }
   private async walk(id: string, upward: boolean): Promise<TaskNode[]> {
     const edge = upward
@@ -215,6 +222,7 @@ class ScopedTasksStore implements TaskTransaction {
     const position = cursorPosition(this.scope, key, query.cursor),
       limit = Number(query.limit ?? 25);
     const conditions: Prisma.TaskWhereInput = {
+      masterRecurrence: { is: null },
       deletedAt:
         query.deleted === 'true'
           ? { gt: new Date(Date.now() - TASK_RESTORE_MS) }
@@ -460,6 +468,7 @@ class ScopedTasksStore implements TaskTransaction {
     return taskRecord(row);
   }
   async updateTask(task: TaskRecord, patch: TaskWrite): Promise<TaskRecord> {
+    await this.syncOccurrence(task.id, patch);
     const result = await this.db.task.updateMany({
       where: this.where({ id: task.id, revision: task.revision }),
       data: { ...taskData(patch), revision: { increment: 1 } },
@@ -469,6 +478,7 @@ class ScopedTasksStore implements TaskTransaction {
   }
   async updateTasks(tasks: TaskNode[], patch: TaskWrite): Promise<TaskNode[]> {
     if (!tasks.length) return [];
+    for (const task of tasks) await this.syncOccurrence(task.id, patch);
     const result = await this.db.task.updateMany({
       where: this.where({
         OR: tasks.map((task) => ({ id: task.id, revision: task.revision })),
@@ -621,9 +631,84 @@ export class TasksRepository implements TasksPort {
     scope: AuthorizedSpace,
     work: (tx: TaskTransaction) => Promise<T>,
   ): Promise<T> {
-    return this.database.client.$transaction(async (tx) =>
-      work(await this.locked(tx, scope)),
+    return this.database.client.$transaction(
+      async (tx) => work(await this.locked(tx, scope)),
+      { timeout: 30000 },
     );
+  }
+  async templateTaskOnce(
+    scope: AuthorizedSpace,
+    key: string,
+    request: unknown,
+    work: (tx: TaskTransaction) => Promise<TaskRecord>,
+  ) {
+    const receipt = await idempotent(
+      this.database.client,
+      scope,
+      'post.task-templates.apply',
+      key,
+      request,
+      async (tx) => ({
+        resultId: (await work(await this.locked(tx, scope))).id,
+        statusCode: 201,
+      }),
+    );
+    return this.read(scope).task(receipt.resultId, true);
+  }
+  async bulkItemOnce(
+    scope: AuthorizedSpace,
+    key: string,
+    request: { index: number; batch: unknown },
+    work: (tx: TaskTransaction) => Promise<BulkTaskResult>,
+  ) {
+    const receipt = await idempotent(
+      this.database.client,
+      scope,
+      'post.tasks.bulk-item',
+      key,
+      request,
+      async (tx) => {
+        const store = await this.locked(tx, scope);
+        await tx.$executeRawUnsafe('SAVEPOINT bulk_item');
+        let result: BulkTaskResult;
+        try {
+          result = await work(store);
+          await tx.$executeRawUnsafe('RELEASE SAVEPOINT bulk_item');
+        } catch (error) {
+          await tx.$executeRawUnsafe('ROLLBACK TO SAVEPOINT bulk_item');
+          const status =
+            error instanceof HttpException
+              ? error.getStatus()
+              : error instanceof TaskRuleError
+                ? ['HIERARCHY', 'POSITION'].includes(error.code)
+                  ? 400
+                  : 409
+                : persistenceStatus(error);
+          if (!status || ![400, 404, 409].includes(status)) throw error;
+          const code =
+            status === 404
+              ? 'NOT_FOUND'
+              : status === 409
+                ? 'CONFLICT'
+                : 'BAD_REQUEST';
+          result = {
+            index: request.index,
+            status: 'REJECTED',
+            error: {
+              code,
+              message:
+                status === 404
+                  ? 'Resource not found'
+                  : status === 409
+                    ? 'Resource conflict'
+                    : 'Invalid request',
+            },
+          };
+        }
+        return { resultId: randomUUID(), statusCode: 200, result };
+      },
+    );
+    return BulkTaskResultSchema.parse(receipt.result);
   }
   async createTaskOnce(
     scope: AuthorizedSpace,

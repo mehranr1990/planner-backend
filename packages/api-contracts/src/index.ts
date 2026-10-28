@@ -41,3 +41,5 @@ export * from './auth.js';
 export * from './foundation.js';
 export * from './files.js';
 export * from './tasks.js';
+export * from './task-tools.js';
+export * from './recurrence.js';

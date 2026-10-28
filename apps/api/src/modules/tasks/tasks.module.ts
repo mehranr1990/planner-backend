@@ -4,6 +4,12 @@ import { DatabaseModule } from '../../platform/database/database.module.js';
 import { AuditModule } from '../../platform/audit/audit.service.js';
 import { SpacesModule } from '../spaces/public/index.js';
 import { TasksService } from './application/tasks.service.js';
+import { TaskToolsService } from './application/task-tools.service.js';
+import { RecurrenceService } from './application/recurrence.service.js';
+import {
+  TaskToolsController,
+  RecurrenceController,
+} from './http/task-tools.controller.js';
 import { TASKS_REPOSITORY } from './application/tasks.port.js';
 import { TasksRepository } from './infrastructure/tasks.repository.js';
 import { TasksController, LabelsController } from './http/tasks.controller.js';
@@ -16,9 +22,16 @@ export class TasksModule {
       imports: [DatabaseModule, AuditModule, SpacesModule, storage],
       providers: [
         TasksService,
+        TaskToolsService,
+        RecurrenceService,
         { provide: TASKS_REPOSITORY, useClass: TasksRepository },
       ],
-      controllers: [TasksController, LabelsController],
+      controllers: [
+        TaskToolsController,
+        RecurrenceController,
+        TasksController,
+        LabelsController,
+      ],
     };
   }
 }

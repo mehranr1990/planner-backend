@@ -70,15 +70,7 @@ describe('P1-01 API coverage and Phase 0 compatibility', () => {
         ) as Record<string, string>,
       ),
     ).not.toThrow();
-    for (const path of [
-      '/task-recurrences',
-      '/task-templates',
-      '/saved-task-filters',
-      '/tasks/bulk',
-      '/goals',
-      '/calendar',
-      '/habits',
-    ])
+    for (const path of ['/goals', '/calendar', '/habits'])
       expect(paths).not.toHaveProperty('/api/v1' + path);
   });
 });

@@ -6,6 +6,7 @@ export type TaskDescription = {
   content: string;
 };
 export type TaskRecord = {
+  isRecurrenceMaster?: boolean;
   id: string;
   spaceId: string;
   createdByUserId: string;

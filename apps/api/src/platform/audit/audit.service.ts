@@ -25,6 +25,11 @@ const ActionSchema = z.enum([
   'FILE_DELETE',
   'FILE_CLEANUP',
   'FILE_ACCESS_DENIED',
+  'TASK_RECURRENCE_CREATE',
+  'TASK_RECURRENCE_EDIT',
+  'TASK_RECURRENCE_CANCEL',
+  'TASK_OCCURRENCE_SKIP',
+  'TASK_OCCURRENCE_CANCEL',
 ]);
 const AuditSchema = z.strictObject({
   action: ActionSchema,

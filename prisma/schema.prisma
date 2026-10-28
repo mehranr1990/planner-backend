@@ -107,6 +107,9 @@ model Space {
   storedFiles        StoredFile[]
   tasks              Task[]
   labels             Label[]
+  taskTemplates      TaskTemplate[]
+  savedTaskFilters   SavedTaskFilter[]
+  taskRecurrences    TaskRecurrence[]
 
   @@unique([kind, ownerUserId])
   @@unique([id, ownerUserId])
@@ -160,6 +163,7 @@ model IdempotencyRecord {
   fingerprint String   @db.Char(64)
   resultId    String   @db.Uuid
   statusCode  Int
+  result      Json?    @db.JsonB
   createdAt   DateTime @default(now()) @db.Timestamptz(3)
   expiresAt   DateTime @db.Timestamptz(3)
 
@@ -245,6 +249,8 @@ model Task {
   labels             TaskLabel[]
   attachments        TaskAttachment[]
   changes            TaskChange[]
+  masterRecurrence   TaskRecurrence?     @relation("RecurrenceMaster")
+  occurrence         TaskOccurrence?     @relation("OccurrenceTask")
 
   @@unique([spaceId, id])
   @@index([spaceId, deletedAt, createdAt, id])
@@ -326,4 +332,90 @@ model TaskChange {
 
   @@unique([spaceId, taskId, revision])
   @@index([spaceId, taskId, revision, id])
+}
+
+model TaskTemplate {
+  id              String   @id @default(uuid()) @db.Uuid
+  spaceId         String   @db.Uuid
+  createdByUserId String   @db.Uuid
+  space           Space    @relation(fields: [spaceId, createdByUserId], references: [id, ownerUserId], onDelete: Cascade)
+  name            String   @db.VarChar(100)
+  values          Json     @db.JsonB
+  revision        Int      @default(1)
+  createdAt       DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime @updatedAt @db.Timestamptz(3)
+
+  @@unique([spaceId, id])
+  @@index([spaceId, createdAt, id])
+}
+
+model SavedTaskFilter {
+  id              String   @id @default(uuid()) @db.Uuid
+  spaceId         String   @db.Uuid
+  createdByUserId String   @db.Uuid
+  space           Space    @relation(fields: [spaceId, createdByUserId], references: [id, ownerUserId], onDelete: Cascade)
+  name            String   @db.VarChar(100)
+  query           Json     @db.JsonB
+  revision        Int      @default(1)
+  createdAt       DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime @updatedAt @db.Timestamptz(3)
+
+  @@unique([spaceId, id])
+  @@index([spaceId, createdAt, id])
+}
+
+model TaskRecurrence {
+  id               String           @id @default(uuid()) @db.Uuid
+  spaceId          String           @db.Uuid
+  createdByUserId  String           @db.Uuid
+  space            Space            @relation(fields: [spaceId, createdByUserId], references: [id, ownerUserId], onDelete: Cascade)
+  masterTaskId     String           @unique @db.Uuid
+  master           Task             @relation("RecurrenceMaster", fields: [spaceId, masterTaskId], references: [spaceId, id], onDelete: Cascade)
+  previousSeriesId String?          @unique @db.Uuid
+  previous         TaskRecurrence?  @relation("SeriesLineage", fields: [spaceId, previousSeriesId], references: [spaceId, id], onDelete: NoAction, onUpdate: NoAction)
+  successor        TaskRecurrence?  @relation("SeriesLineage")
+  definition       Json             @db.JsonB
+  identityTime     String           @db.VarChar(5)
+  splitBefore      DateTime?        @db.Date
+  gapPolicy        String           @default("SKIP_WITH_REASON") @db.VarChar(30)
+  foldPolicy       String           @default("EARLIER") @db.VarChar(20)
+  shortMonthPolicy String           @default("SKIP") @db.VarChar(20)
+  leapDayPolicy    String           @default("SKIP") @db.VarChar(20)
+  revision         Int              @default(1)
+  scannedThrough   DateTime?        @db.Date
+  retiredAt        DateTime?        @db.Timestamptz(3)
+  createdAt        DateTime         @default(now()) @db.Timestamptz(3)
+  updatedAt        DateTime         @updatedAt @db.Timestamptz(3)
+  occurrences      TaskOccurrence[]
+
+  @@unique([spaceId, id])
+  @@unique([spaceId, masterTaskId])
+  @@unique([spaceId, previousSeriesId])
+  @@index([spaceId, createdAt, id])
+}
+
+model TaskOccurrence {
+  id            String         @id @default(uuid()) @db.Uuid
+  spaceId       String         @db.Uuid
+  seriesId      String         @db.Uuid
+  series        TaskRecurrence @relation(fields: [spaceId, seriesId], references: [spaceId, id], onDelete: Cascade)
+  taskId        String?        @unique @db.Uuid
+  task          Task?          @relation("OccurrenceTask", fields: [spaceId, taskId], references: [spaceId, id], onDelete: Cascade)
+  recurrenceKey String         @db.VarChar(19)
+  localDate     DateTime       @db.Date
+  localTime     String         @db.VarChar(5)
+  timezone      String         @db.VarChar(100)
+  scheduledAt   DateTime?      @db.Timestamptz(3)
+  state         String         @default("PENDING") @db.VarChar(20)
+  reason        String?        @db.VarChar(30)
+  exception     Boolean        @default(false)
+  revision      Int            @default(1)
+  createdAt     DateTime       @default(now()) @db.Timestamptz(3)
+  updatedAt     DateTime       @updatedAt @db.Timestamptz(3)
+
+  @@unique([spaceId, id])
+  @@unique([spaceId, taskId])
+  @@unique([seriesId, recurrenceKey])
+  @@index([spaceId, seriesId, createdAt, id])
+  @@index([spaceId, state, localDate, id])
 }

@@ -18,7 +18,7 @@ describe('P0-02 API contract coverage', () => {
     expect(paths['/api/v1/me/spaces']).toHaveProperty('get');
     expect(paths).not.toHaveProperty('/api/v1/me/export');
     expect(paths).not.toHaveProperty('/api/v1/auth/delete-user');
-    expect(paths).not.toHaveProperty('/api/v1/task-recurrences');
+    expect(paths).toHaveProperty('/api/v1/task-recurrences');
   });
   it('describes exactly the authenticated file protocol without exposing physical storage or future business routes', () => {
     const paths = createOpenApiDocument().paths as Record<
@@ -44,6 +44,6 @@ describe('P0-02 API contract coverage', () => {
       ]),
     );
     expect(paths).not.toHaveProperty('/api/v1/files');
-    expect(paths).not.toHaveProperty('/api/v1/task-recurrences');
+    expect(paths).toHaveProperty('/api/v1/task-recurrences');
   });
 });

@@ -167,7 +167,13 @@ describe('scoped persistence and API conventions', () => {
     expect(JSON.stringify(json.mock.calls)).not.toMatch(/private|password|SQL/);
   });
   it('blocks destructive or procedural migration forms without rejecting FK actions', () => {
-    expect(reviewMigrations()).toHaveLength(4);
+    expect(reviewMigrations()).toEqual([
+      '202610270001_p0_02_identity_ownership',
+      '202610270002_p0_03_data_api_events',
+      '202610270003_p0_04_private_files',
+      '202610280001_p1_01_tasks',
+      '202610280002_p1_02_task_recurrence_tools',
+    ]);
     for (const sql of [
       '',
       '-- comment',
