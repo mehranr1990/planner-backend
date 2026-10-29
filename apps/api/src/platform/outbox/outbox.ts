@@ -20,6 +20,7 @@ export const EventSchema = z.strictObject({
     'capture.triaged',
     'finance.transaction_posted',
     'finance.transaction_reversed',
+    'reminder.changed',
   ]),
   version: z.literal(1),
   aggregateId: z.string().uuid(),

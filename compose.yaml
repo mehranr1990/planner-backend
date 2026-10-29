@@ -26,7 +26,7 @@ services:
         max-file: '3'
   api:
     build: .
-    environment:
+    environment: &application-environment
       NODE_ENV: production
       HOST: 0.0.0.0
       PORT: '3000'
@@ -46,6 +46,12 @@ services:
       FILE_UPLOAD_TIMEOUT_MS: ${FILE_UPLOAD_TIMEOUT_MS:-120000}
       FILE_UPLOAD_TTL_SECONDS: ${FILE_UPLOAD_TTL_SECONDS:-3600}
       FILE_LINK_TTL_SECONDS: ${FILE_LINK_TTL_SECONDS:-300}
+      JOBS_SCHEMA: planner_jobs
+      NOTIFICATION_EMAIL_ENABLED: ${NOTIFICATION_EMAIL_ENABLED:-false}
+      PUSH_MODE: ${PUSH_MODE:-disabled}
+      PUSH_VAPID_PUBLIC_KEY: ${PUSH_VAPID_PUBLIC_KEY:-}
+      PUSH_VAPID_PRIVATE_KEY: ${PUSH_VAPID_PRIVATE_KEY:-}
+      PUSH_VAPID_SUBJECT: ${PUSH_VAPID_SUBJECT:-}
     volumes:
       - private_files:/var/lib/mehran/files
     ports:
@@ -74,6 +80,23 @@ services:
       timeout: 5s
       retries: 3
       start_period: 30s
+    logging: *bounded-logs
+  worker:
+    build: .
+    command: [node, dist/worker.js]
+    environment: *application-environment
+    networks: [database, edge]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    init: true
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 512m
+    cpus: 1.0
     logging: *bounded-logs
 networks:
   database:

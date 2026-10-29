@@ -38,7 +38,12 @@ Before Docker release, an operator must verify the following on the chosen host:
   See [private file operations](./private-files.md). These checks remain DEFERRED
   until run on the real deployment topology.
 
-Compose provides `api` and `postgres` only. No worker, queue service, reverse
-proxy package or business schema is added. Identity and private file infrastructure
-exist; the outbox remains passive. This is not
-a production-ready release until the applicable deployment gates pass.
+P1-10 Compose adds a separate `worker` using the API image and PostgreSQL-backed
+pg-boss; no extra broker/container is required. Apply reviewed Prisma migrations
+and the exact one-off queue setup before worker start. The runtime cannot install
+or upgrade either schema. Verify real worker shutdown/restart, missed-work sweep,
+quiet-hour delays, channel consent and privacy, live SMTP/browser Push delivery,
+no resend after uncertain acceptance, queue retention, registry/readiness and
+database downtime recovery before release. See [notification operations](notifications.md).
+All Docker and live external-channel checks remain DEFERRED. This is not a
+production-ready release until the applicable deployment gates pass.

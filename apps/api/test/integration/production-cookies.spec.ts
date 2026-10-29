@@ -1,3 +1,4 @@
+import { cleanupFixtureIdentities } from '../support/fixture-cleanup.js';
 import { describe, expect, it } from 'vitest';
 import request from 'supertest';
 import { randomUUID } from 'node:crypto';
@@ -5,7 +6,6 @@ import { testApplication } from '../support/application.js';
 import { isolatedTestDatabaseUrl } from '../../../../tooling/testing/test-database.js';
 import { IdentityMailService } from '../../src/platform/auth/mail.service.js';
 import { parseEnvironment } from '../../src/bootstrap/environment.js';
-import { DatabaseService } from '../../src/platform/database/database.service.js';
 
 const databaseUrl = isolatedTestDatabaseUrl(process.env);
 describe('production identity cookie configuration', () => {
@@ -32,7 +32,6 @@ describe('production identity cookie configuration', () => {
         SMTP_PASSWORD: 'test-only',
       },
     });
-    const database = app.get(DatabaseService);
     const email = `secure-${randomUUID()}@example.test`;
     try {
       await request(app.getHttpServer())
@@ -67,7 +66,7 @@ describe('production identity cookie configuration', () => {
       );
       expect(signedIn.headers['cache-control']).toBe('no-store');
     } finally {
-      await database.client.user.deleteMany({ where: { email } });
+      await cleanupFixtureIdentities(databaseUrl, { emails: [email] });
       await app.close();
     }
   });

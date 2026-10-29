@@ -1,8 +1,66 @@
 import { describe, expect, it, vi } from 'vitest';
 import { parseEnvironment } from './environment.js';
 import { isolatedTestDatabaseUrl } from '../../../../tooling/testing/test-database.js';
+import { createECDH } from 'node:crypto';
 
 describe('configuration safety', () => {
+  it('disables notification channels by default and rejects unsafe queue schemas', () => {
+    const valid = {
+      DATABASE_URL: 'postgresql://localhost/mehran_dev',
+      BETTER_AUTH_URL: 'http://localhost:3000',
+      BETTER_AUTH_SECRET: 'unit-test-only-secret-at-least-32-characters',
+    };
+    const config = parseEnvironment(valid);
+    expect(config.NOTIFICATION_EMAIL_ENABLED).toBe(false);
+    expect(config.PUSH_MODE).toBe('disabled');
+    expect(() => parseEnvironment({ ...valid, JOBS_SCHEMA: 'public' })).toThrow(
+      'Invalid configuration',
+    );
+  });
+  it('requires a matching Web Push VAPID key pair', () => {
+    const key = createECDH('prime256v1');
+    key.generateKeys();
+    const valid = {
+      DATABASE_URL: 'postgresql://localhost/mehran_dev',
+      BETTER_AUTH_URL: 'http://localhost:3000',
+      BETTER_AUTH_SECRET: 'unit-test-only-secret-at-least-32-characters',
+      PUSH_MODE: 'webpush',
+      PUSH_VAPID_PUBLIC_KEY: key.getPublicKey().toString('base64url'),
+      PUSH_VAPID_PRIVATE_KEY: key.getPrivateKey().toString('base64url'),
+      PUSH_VAPID_SUBJECT: 'mailto:owner@example.test',
+    };
+    expect(parseEnvironment(valid).PUSH_MODE).toBe('webpush');
+    const other = createECDH('prime256v1');
+    other.generateKeys();
+    expect(() =>
+      parseEnvironment({
+        ...valid,
+        PUSH_VAPID_PRIVATE_KEY: other.getPrivateKey().toString('base64url'),
+      }),
+    ).toThrow('key pair');
+  });
+  it('rejects local notification sinks and test queue namespaces in production', () => {
+    const valid = {
+      NODE_ENV: 'production',
+      DATABASE_URL: 'postgresql://localhost/mehran_dev',
+      BETTER_AUTH_URL: 'https://api.example.invalid',
+      BETTER_AUTH_SECRET: 'unit-test-only-secret-at-least-32-characters',
+      MAIL_MODE: 'smtp',
+      SMTP_HOST: 'smtp.example.invalid',
+      SMTP_USER: 'test-only',
+      SMTP_PASSWORD: 'test-only',
+      STORAGE_ROOT: process.cwd(),
+    };
+    expect(() => parseEnvironment({ ...valid, PUSH_MODE: 'sink' })).toThrow(
+      'forbidden',
+    );
+    expect(() =>
+      parseEnvironment({
+        ...valid,
+        JOBS_SCHEMA: 'planner_jobs_test_' + 'a'.repeat(32),
+      }),
+    ).toThrow('forbidden');
+  });
   it('requires a strong identity secret and rejects unsafe production origins/mail configuration', () => {
     const valid = {
       DATABASE_URL: 'postgresql://localhost/mehran_dev',

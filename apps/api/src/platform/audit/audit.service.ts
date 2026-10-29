@@ -79,6 +79,10 @@ const ActionSchema = z.enum([
   'FINANCE_BILL_CHANGE',
   'FINANCE_SAVINGS_CHANGE',
   'FINANCE_EXPORT',
+  'REMINDER_CHANGE',
+  'NOTIFICATION_CHANGE',
+  'NOTIFICATION_PREFERENCE_CHANGE',
+  'PUSH_SUBSCRIPTION_CHANGE',
 ]);
 const AuditSchema = z.strictObject({
   action: ActionSchema,

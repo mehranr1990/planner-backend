@@ -1,5 +1,11 @@
 # P0-03 database, API and events
 
+Historical foundation contract below; P1-10 activates the notification-only
+outbox consumer and durable jobs as documented in [notification operations](notifications.md).
+Consumer progress is independent of immutable event envelopes and future consumers.
+The additive migration reviewer accepts a single outer BEGIN/COMMIT pair and
+still inspects every enclosed statement; destructive/procedural forms stay denied.
+
 This batch supplies platform storage and tested contracts. There are no workers,
 dispatchers, consumers, pg-boss activation, file APIs, sync feeds, or business CRUD.
 Use the account/spaces public facades; do not import another owner's repositories.

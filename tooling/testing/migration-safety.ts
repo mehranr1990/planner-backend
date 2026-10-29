@@ -26,6 +26,14 @@ export function assertAdditiveMigration(sql: string): void {
     .split(';')
     .map((statement) => statement.trim())
     .filter(Boolean);
+  // A single outer transaction adds atomicity; inspect every enclosed statement normally.
+  if (
+    /^BEGIN$/i.test(statements[0] ?? '') &&
+    /^COMMIT$/i.test(statements.at(-1) ?? '')
+  ) {
+    statements.shift();
+    statements.pop();
+  }
   if (
     !statements.length ||
     statements.some(

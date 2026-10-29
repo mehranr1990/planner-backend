@@ -85,9 +85,9 @@ describe('P1-08 writing/search/voice contracts and previous API compatibility', 
       ),
     ).not.toThrow();
     for (const path of [
-      '/notifications/preferences',
-      '/notifications/test',
-      '/reminders',
+      '/insights/overview',
+      '/rewards/progress',
+      '/insights/tasks',
       '/insights/overview',
       '/sync/push',
       '/teams',

@@ -41,7 +41,7 @@ try {
       `SELECT tablename FROM pg_tables WHERE schemaname = current_schema() ORDER BY tablename`,
     )
   ).rows;
-  assert.equal(emptyTables.length, 56); // fifty-five application/provider tables plus Prisma's ledger
+  assert.equal(emptyTables.length, 61); // sixty application/provider tables plus Prisma's ledger
   // Required reset capability is restricted to this disposable, newly-created namespace.
   await sandbox.resetOwnedSchema();
   const folder = path.resolve('.tools/migration-check-' + randomUUID());
@@ -338,6 +338,77 @@ try {
     [captureId, spaceId, id],
   );
 
+  // Preserve every earlier fixture, then seed P1-09 before applying P1-10.
+  for (const name of names.slice(
+    names.indexOf('202610280013_p1_09_finance'),
+    names.indexOf('202610290001_p1_10_notifications'),
+  ))
+    fs.cpSync(
+      path.join('prisma/migrations', name),
+      path.join(migrations, name),
+      { recursive: true },
+    );
+  migrate(sandbox.url, 'deploy', config);
+  const accountId = randomUUID(),
+    categoryId = randomUUID(),
+    transactionId = randomUUID(),
+    budgetId = randomUUID(),
+    billId = randomUUID(),
+    savingsId = randomUUID();
+  await sandbox.query(
+    `INSERT INTO "FinancialAccount" (id,"spaceId","createdByUserId",name,currency,scale,"updatedAt") VALUES ($1,$2,$3,'Preserved account','USD',2,now())`,
+    [accountId, spaceId, id],
+  );
+  await sandbox.query(
+    `INSERT INTO "FinanceCategory" (id,"spaceId","createdByUserId",name,kind,"updatedAt") VALUES ($1,$2,$3,'Preserved category','EXPENSE',now())`,
+    [categoryId, spaceId, id],
+  );
+  await sandbox.query(
+    `INSERT INTO "Transaction" (id,"spaceId","createdByUserId",type,"occurredAt","localDate",timezone,note,"sourceCaptureId","updatedAt") VALUES ($1,$2,$3,'EXPENSE','2024-02-29T12:00:00Z','2024-02-29','UTC','Preserved exact ledger',$4,now())`,
+    [transactionId, spaceId, id, captureId],
+  );
+  await sandbox.query(
+    `INSERT INTO "TransactionPosting" (id,"spaceId","transactionId","accountId",currency,scale,amount,role,"categoryId") VALUES ($1,$2,$3,$4,'USD',2,-12.34,'EXPENSE',$5)`,
+    [randomUUID(), spaceId, transactionId, accountId, categoryId],
+  );
+  await sandbox.query(
+    `UPDATE "CaptureItem" SET "targetTransactionId"=$2,state='TRIAGED' WHERE id=$1`,
+    [captureId, transactionId],
+  );
+  const fxId = randomUUID(),
+    destinationId = randomUUID();
+  await sandbox.query(
+    `INSERT INTO "FinancialAccount" (id,"spaceId","createdByUserId",name,currency,scale,"updatedAt") VALUES ($1,$2,$3,'Preserved EUR','EUR',2,now())`,
+    [destinationId, spaceId, id],
+  );
+  await sandbox.query(
+    `INSERT INTO "Transaction" (id,"spaceId","createdByUserId",type,"occurredAt","localDate",timezone,"updatedAt") VALUES ($1,$2,$3,'TRANSFER','2024-02-29T12:00:00Z','2024-02-29','UTC',now())`,
+    [fxId, spaceId, id],
+  );
+  await sandbox.query(
+    `INSERT INTO "TransactionPosting" (id,"spaceId","transactionId","accountId",currency,scale,amount,role) VALUES ($1,$2,$3,$4,'USD',2,-10,'TRANSFER_OUT'),($5,$2,$3,$6,'EUR',2,9,'TRANSFER_IN')`,
+    [randomUUID(), spaceId, fxId, accountId, randomUUID(), destinationId],
+  );
+  await sandbox.query(
+    `INSERT INTO "ExchangeRateSnapshot" (id,"spaceId","transactionId","sourceCurrency","destinationCurrency",rate,"conversionDate") VALUES ($1,$2,$3,'USD','EUR',0.9,'2024-02-29')`,
+    [randomUUID(), spaceId, fxId],
+  );
+  await sandbox.query(
+    `INSERT INTO "Budget" (id,"spaceId","createdByUserId",name,currency,scale,"limit",period,timezone,calendar,"firstDayOfWeek","updatedAt") VALUES ($1,$2,$3,'Preserved budget','USD',2,100,'MONTHLY','UTC','GREGORIAN',1,now())`,
+    [budgetId, spaceId, id],
+  );
+  await sandbox.query(
+    `INSERT INTO "BudgetPeriod" (id,"spaceId","createdByUserId","budgetId","startDate","endDate","startAt","endAt",timezone,calendar,"firstDayOfWeek",currency,scale,"limit","updatedAt") VALUES ($1,$2,$3,$4,'2024-02-01','2024-03-01','2024-02-01T00:00:00Z','2024-03-01T00:00:00Z','UTC','GREGORIAN',1,'USD',2,100,now())`,
+    [randomUUID(), spaceId, id, budgetId],
+  );
+  await sandbox.query(
+    `INSERT INTO "Bill" (id,"logicalId","spaceId","createdByUserId","effectiveFrom",name,"accountId",type,amount,currency,scale,"dueDate",timezone,"updatedAt") VALUES ($1,$1,$2,$3,'2024-02-01','Preserved bill',$4,'EXPENSE',12.34,'USD',2,'2024-02-29','UTC',now())`,
+    [billId, spaceId, id, accountId],
+  );
+  await sandbox.query(
+    `INSERT INTO "SavingsGoal" (id,"logicalId","spaceId","createdByUserId",name,currency,scale,target,mode,"manualAmount","updatedAt") VALUES ($1,$1,$2,$3,'Preserved savings','USD',2,100,'MANUAL',25.50,now())`,
+    [savingsId, spaceId, id],
+  );
   const preservedTables = [
     'User',
     'AuthAccount',
@@ -382,6 +453,15 @@ try {
     'JournalEntry',
     'MoodEntry',
     'CaptureItem',
+    'FinancialAccount',
+    'FinanceCategory',
+    'Transaction',
+    'TransactionPosting',
+    'ExchangeRateSnapshot',
+    'Budget',
+    'BudgetPeriod',
+    'Bill',
+    'SavingsGoal',
     'SecurityAuditEvent',
     'OutboxEvent',
     'IdempotencyRecord',
@@ -392,7 +472,7 @@ try {
       table,
       (
         await sandbox.query(
-          `SELECT ${table === 'CaptureItem' ? "to_jsonb(t) - 'targetTransactionId'" : 'to_jsonb(t)'} AS row FROM "${table}" t ORDER BY to_jsonb(t)::text`,
+          `SELECT ${table === 'OutboxEvent' ? "to_jsonb(t) - 'notificationHandledAt' - 'notificationAttempts' - 'notificationRetryAt' - 'notificationFailureCode'" : 'to_jsonb(t)'} AS row FROM "${table}" t ORDER BY to_jsonb(t)::text`,
         )
       ).rows,
     );
@@ -403,7 +483,7 @@ try {
     assert.deepEqual(
       (
         await sandbox.query(
-          `SELECT ${table === 'CaptureItem' ? "to_jsonb(t) - 'targetTransactionId'" : 'to_jsonb(t)'} AS row FROM "${table}" t ORDER BY to_jsonb(t)::text`,
+          `SELECT ${table === 'OutboxEvent' ? "to_jsonb(t) - 'notificationHandledAt' - 'notificationAttempts' - 'notificationRetryAt' - 'notificationFailureCode'" : 'to_jsonb(t)'} AS row FROM "${table}" t ORDER BY to_jsonb(t)::text`,
         )
       ).rows,
       beforeSnapshots.get(table),

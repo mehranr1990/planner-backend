@@ -1,3 +1,4 @@
+import { cleanupFixtureIdentities } from '../support/fixture-cleanup.js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import request from 'supertest';
 import type { NestExpressApplication } from '@nestjs/platform-express';
@@ -118,12 +119,7 @@ describe('P0-04 private file lifecycle and security', () => {
   });
   afterEach(async () => {
     vi.restoreAllMocks();
-    if (db) {
-      await db.client.securityAuditEvent.deleteMany({
-        where: { actorUserId: { in: identities } },
-      });
-      await db.client.user.deleteMany({ where: { id: { in: identities } } });
-    }
+    if (db) await cleanupFixtureIdentities(databaseUrl, { ids: identities });
     await app?.close();
     identities.length = 0;
     if (

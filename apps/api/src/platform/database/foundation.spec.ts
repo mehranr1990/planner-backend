@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { cleanupFixtureIdentities } from '../../../test/support/fixture-cleanup.js';
 import type { Response } from 'express';
 import { ApiExceptionFilter } from '../../bootstrap/api-exception.filter.js';
 import type { ContextRequest } from '../../bootstrap/request-context.js';
@@ -35,6 +36,36 @@ const scope = AuthorizedSpace.personal(actor, {
   ownerUserId: actor.userId,
 });
 describe('scoped persistence and API conventions', () => {
+  it('refuses fixture teardown outside the exact isolated database or with unrecordable identities', async () => {
+    vi.stubEnv('DATABASE_URL', 'postgresql://localhost/application_dev');
+    vi.stubEnv('TEST_DATABASE_URL', 'postgresql://localhost/fixture_test');
+    try {
+      await expect(
+        cleanupFixtureIdentities('postgresql://localhost/application_dev', {
+          ids: [randomUUID()],
+        }),
+      ).rejects.toThrow('guarded isolated');
+      await expect(
+        cleanupFixtureIdentities('postgresql://localhost/fixture_test', {
+          ids: ['not-a-uuid'],
+        }),
+      ).rejects.toThrow('Invalid exact');
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+  it('forbids administrative fixture deletion in a production process', async () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    try {
+      await expect(
+        cleanupFixtureIdentities('postgresql://localhost/fixture_test', {
+          ids: [randomUUID()],
+        }),
+      ).rejects.toThrow('cannot run in production');
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
   it('denies foreign/missing personal scopes and prevents query override', () => {
     expect(() => AuthorizedSpace.personal(actor, null)).toThrow();
     expect(() =>
@@ -185,6 +216,9 @@ describe('scoped persistence and API conventions', () => {
       '202610280012_p1_08_private_voice',
       '202610280013_p1_09_finance',
       '202610280014_p1_09_capture_finance',
+      '202610290001_p1_10_notifications',
+      '202610290002_p1_10_notification_guards',
+      '202610290003_p1_10_notification_query_indexes',
     ]);
     for (const sql of [
       '',
@@ -195,12 +229,19 @@ describe('scoped persistence and API conventions', () => {
       'UPDATE "User" SET name=\'x\';',
       'ALTER TABLE "User" ALTER COLUMN id TYPE TEXT;',
       'DO $$ BEGIN END $$;',
+      'BEGIN; DELETE FROM "User"; COMMIT;',
+      'BEGIN; CREATE TABLE "safe" (id uuid);',
+      'CREATE TABLE "safe" (id uuid); COMMIT;',
+      'BEGIN; COMMIT;',
     ])
       expect(() => assertAdditiveMigration(sql)).toThrow();
     expect(() =>
       assertAdditiveMigration(
         '/* review */ CREATE TABLE "x" (id uuid REFERENCES "User" (id) ON DELETE CASCADE ON UPDATE CASCADE);',
       ),
+    ).not.toThrow();
+    expect(() =>
+      assertAdditiveMigration('BEGIN; CREATE TABLE "safe" (id uuid); COMMIT;'),
     ).not.toThrow();
   });
 });

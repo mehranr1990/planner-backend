@@ -1,3 +1,4 @@
+import { cleanupFixtureIdentities } from '../support/fixture-cleanup.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import request from 'supertest';
@@ -26,7 +27,7 @@ describe('Better Auth identity and ownership', () => {
   });
   afterAll(async () => {
     // Only this run's known fixture identity is removed from the explicitly guarded test DB.
-    if (db) await db.client.user.deleteMany({ where: { email } });
+    if (db) await cleanupFixtureIdentities(databaseUrl, { emails: [email] });
     await app?.close();
   });
   it('signs up atomically with settings and one personal space; requires email verification', async () => {

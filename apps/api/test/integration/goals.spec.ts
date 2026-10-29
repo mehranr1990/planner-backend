@@ -1,3 +1,4 @@
+import { cleanupFixtureIdentities } from '../support/fixture-cleanup.js';
 import { beforeAll, afterAll, describe, it, expect, vi } from 'vitest';
 import request from 'supertest';
 import { randomUUID } from 'node:crypto';
@@ -64,21 +65,7 @@ describe('P1-06 goals, source consistency, history and isolation', () => {
     b = await identity();
   });
   afterAll(async () => {
-    if (db) {
-      await db.client.securityAuditEvent.deleteMany({
-        where: { actorUserId: { in: users } },
-      });
-      await db.client.goal.deleteMany({
-        where: { spaceId: { in: [a?.spaceId, b?.spaceId].filter(Boolean) } },
-      });
-      await db.client.routine.deleteMany({
-        where: { createdByUserId: { in: users } },
-      });
-      await db.client.space.deleteMany({
-        where: { ownerUserId: { in: users } },
-      });
-      await db.client.user.deleteMany({ where: { id: { in: users } } });
-    }
+    if (db) await cleanupFixtureIdentities(databaseUrl, { ids: users });
     await app?.close();
   });
   const create = async (input: object = {}, actor = a, key = randomUUID()) =>

@@ -96,7 +96,8 @@ remain mandatory before Docker-based release.
 See the [P0-03 reliability contract](./docs/runbooks/database-api-events.md),
 [P0-04 traceability](./docs/p0-04-traceability.md) and coordinated
 [backup/restore requirements](./docs/runbooks/backup-restore.md). Outbox dispatch,
-consumers and jobs remain inactive until their assigned batch. P1-01 adds the
+consumers and jobs were deferred through P1-09; P1-10 activates notification
+dispatch with a separate worker and controlled queue setup. P1-01 adds the
 unified Task aggregate, checklists, labels, recovery, safe history and private
 attachment links. See [task operations](./docs/runbooks/tasks.md) and
 [P1-01 traceability](./docs/p1-01-traceability.md). Its fourth additive migration
@@ -172,3 +173,15 @@ atomically without changing P1-08 Capture contracts. See approved
 [ADR 0017](docs/adr/0017-iso-currency-minor-unit-authority.md),
 [runbook](docs/runbooks/finance.md), [traceability](docs/p1-09-traceability.md) and
 [report](docs/p1-09-report.md). Run `pnpm smoke:p1-09` after building.
+
+## P1-10 reminders and notifications
+
+Owned reminders support absolute/local/Task-relative rules, DST-safe quiet hours,
+in-app history and snooze, opt-in email/Push and bounded durable recovery.
+Tasks remain unchanged by delivery. Explicit `pnpm jobs:migrate` installs the
+reviewed pg-boss schema; `pnpm worker` runs a separate compiled worker. The API
+never installs or connects to the queue. See the [runbook](docs/runbooks/notifications.md),
+[traceability](docs/p1-10-traceability.md), approved ADRs
+[0018](docs/adr/0018-reminder-timing-delivery-and-privacy.md) and
+[0019](docs/adr/0019-durable-queue-schema-and-channel-adapters.md).
+Run `pnpm smoke:p1-10` after building. P1-11 is not started.

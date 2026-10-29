@@ -97,47 +97,52 @@ enum SpaceKind {
 }
 
 model Space {
-  financialAccounts   FinancialAccount[]
-  financeCategories   FinanceCategory[]
-  transactions        Transaction[]
-  transactionPostings TransactionPosting[]
-  budgets             Budget[]
-  budgetPeriods       BudgetPeriod[]
-  bills               Bill[]
-  savingsGoals        SavingsGoal[]
-  exchangeRates       ExchangeRateSnapshot[]
-  notes               Note[]
-  noteFolders         NoteFolder[]
-  journalEntries      JournalEntry[]
-  moodEntries         MoodEntry[]
-  captureItems        CaptureItem[]
-  focusSessions       FocusSession[]
-  timeEntries         TimeEntry[]
-  id                  String                 @id @default(uuid()) @db.Uuid
-  kind                SpaceKind              @default(PERSONAL)
-  ownerUserId         String                 @db.Uuid
-  owner               User                   @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
-  createdAt           DateTime               @default(now())
-  updatedAt           DateTime               @updatedAt
-  outboxEvents        OutboxEvent[]
-  idempotencyRecords  IdempotencyRecord[]
-  storedFiles         StoredFile[]
-  tasks               Task[]
-  labels              Label[]
-  taskTemplates       TaskTemplate[]
-  savedTaskFilters    SavedTaskFilter[]
-  taskRecurrences     TaskRecurrence[]
-  dailyPlans          DailyPlan[]
-  weeklyPlans         WeeklyPlan[]
-  planningReviews     PlanningReview[]
-  calendarEvents      CalendarEvent[]
-  eventRecurrences    EventRecurrence[]
-  timeBlocks          TimeBlock[]
-  habits              Habit[]
-  habitEntryActors    HabitEntry[]
-  routines            Routine[]
-  lifeAreas           LifeArea[]
-  goals               Goal[]
+  reminders               Reminder[]
+  notifications           Notification[]
+  notificationDeliveries  NotificationDelivery[]
+  notificationPreferences NotificationPreference[]
+  pushSubscriptions       PushSubscription[]
+  financialAccounts       FinancialAccount[]
+  financeCategories       FinanceCategory[]
+  transactions            Transaction[]
+  transactionPostings     TransactionPosting[]
+  budgets                 Budget[]
+  budgetPeriods           BudgetPeriod[]
+  bills                   Bill[]
+  savingsGoals            SavingsGoal[]
+  exchangeRates           ExchangeRateSnapshot[]
+  notes                   Note[]
+  noteFolders             NoteFolder[]
+  journalEntries          JournalEntry[]
+  moodEntries             MoodEntry[]
+  captureItems            CaptureItem[]
+  focusSessions           FocusSession[]
+  timeEntries             TimeEntry[]
+  id                      String                   @id @default(uuid()) @db.Uuid
+  kind                    SpaceKind                @default(PERSONAL)
+  ownerUserId             String                   @db.Uuid
+  owner                   User                     @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
+  createdAt               DateTime                 @default(now())
+  updatedAt               DateTime                 @updatedAt
+  outboxEvents            OutboxEvent[]
+  idempotencyRecords      IdempotencyRecord[]
+  storedFiles             StoredFile[]
+  tasks                   Task[]
+  labels                  Label[]
+  taskTemplates           TaskTemplate[]
+  savedTaskFilters        SavedTaskFilter[]
+  taskRecurrences         TaskRecurrence[]
+  dailyPlans              DailyPlan[]
+  weeklyPlans             WeeklyPlan[]
+  planningReviews         PlanningReview[]
+  calendarEvents          CalendarEvent[]
+  eventRecurrences        EventRecurrence[]
+  timeBlocks              TimeBlock[]
+  habits                  Habit[]
+  habitEntryActors        HabitEntry[]
+  routines                Routine[]
+  lifeAreas               LifeArea[]
+  goals                   Goal[]
 
   @@unique([kind, ownerUserId])
   @@unique([id, ownerUserId])
@@ -169,15 +174,19 @@ model SecurityAuditEvent {
 }
 
 model OutboxEvent {
-  id            String   @id @default(uuid()) @db.Uuid
-  type          String   @db.VarChar(100)
-  version       Int
-  occurredAt    DateTime @default(now()) @db.Timestamptz(3)
-  aggregateId   String   @db.Uuid
-  spaceId       String   @db.Uuid
-  space         Space    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
-  payload       Json     @db.JsonB
-  correlationId String   @db.Uuid
+  notificationHandledAt   DateTime? @db.Timestamptz(3)
+  notificationAttempts    Int       @default(0)
+  notificationRetryAt     DateTime? @db.Timestamptz(3)
+  notificationFailureCode String?   @db.VarChar(80)
+  id                      String    @id @default(uuid()) @db.Uuid
+  type                    String    @db.VarChar(100)
+  version                 Int
+  occurredAt              DateTime  @default(now()) @db.Timestamptz(3)
+  aggregateId             String    @db.Uuid
+  spaceId                 String    @db.Uuid
+  space                   Space     @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  payload                 Json      @db.JsonB
+  correlationId           String    @db.Uuid
 
   @@index([spaceId, occurredAt, id])
 }
@@ -252,6 +261,7 @@ enum TaskPriority {
 }
 
 model Task {
+  reminders          Reminder[]
   noteReferences     Note[]
   captureTargets     CaptureItem[]
   estimatedMinutes   Int?
@@ -1371,4 +1381,184 @@ model SavingsGoal {
   @@unique([spaceId, id])
   @@unique([logicalId, revision])
   @@index([spaceId, current, createdAt, logicalId])
+}
+
+model Reminder {
+  id              String   @id @default(uuid()) @db.Uuid
+  spaceId         String   @db.Uuid
+  ownerUserId     String   @db.Uuid
+  createdByUserId String   @db.Uuid
+  space           Space    @relation(fields: [spaceId, ownerUserId], references: [id, ownerUserId], onDelete: Cascade, onUpdate: NoAction)
+  revision        Int      @default(1)
+  createdAt       DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime @updatedAt @db.Timestamptz(3)
+
+  title                String                 @db.VarChar(300)
+  body                 String?                @db.VarChar(2000)
+  taskId               String?                @db.Uuid
+  task                 Task?                  @relation(fields: [spaceId, taskId], references: [spaceId, id], onDelete: NoAction, onUpdate: NoAction)
+  selectedTaskRevision Int?
+  rule                 Json                   @db.JsonB
+  timezoneMode         String                 @db.VarChar(10)
+  timezone             String                 @db.VarChar(100)
+  channels             String[]
+  urgent               Boolean                @default(false)
+  state                String                 @default("ACTIVE") @db.VarChar(12)
+  reason               String?                @db.VarChar(80)
+  ruleVersion          Int                    @default(1)
+  cursorDate           DateTime?              @db.Date
+  nextAt               DateTime?              @db.Timestamptz(3)
+  sourceStamp          String?                @db.Char(64)
+  pausedAt             DateTime?              @db.Timestamptz(3)
+  canceledAt           DateTime?              @db.Timestamptz(3)
+  deliveries           NotificationDelivery[]
+  notifications        Notification[]
+  exhausted            Boolean                @default(false)
+
+  @@unique([spaceId, id])
+  @@index([spaceId, createdAt, id])
+  @@index([spaceId, taskId, state])
+  @@index([spaceId, state])
+  @@index([state, id])
+}
+
+model Notification {
+  id              String   @id @default(uuid()) @db.Uuid
+  spaceId         String   @db.Uuid
+  ownerUserId     String   @db.Uuid
+  createdByUserId String   @db.Uuid
+  space           Space    @relation(fields: [spaceId, ownerUserId], references: [id, ownerUserId], onDelete: Cascade, onUpdate: NoAction)
+  revision        Int      @default(1)
+  createdAt       DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime @updatedAt @db.Timestamptz(3)
+
+  reminderId           String                 @db.Uuid
+  reminder             Reminder               @relation(fields: [spaceId, reminderId], references: [spaceId, id], onDelete: Cascade, onUpdate: NoAction)
+  scheduledAt          DateTime               @db.Timestamptz(3)
+  occurrenceKey        String                 @db.VarChar(100)
+  timezone             String                 @db.VarChar(100)
+  localDate            DateTime               @db.Date
+  title                String                 @db.VarChar(300)
+  body                 String?                @db.VarChar(2000)
+  inbox                Boolean                @default(false)
+  readAt               DateTime?              @db.Timestamptz(3)
+  acknowledgedAt       DateTime?              @db.Timestamptz(3)
+  dismissedAt          DateTime?              @db.Timestamptz(3)
+  snoozedAt            DateTime?              @db.Timestamptz(3)
+  firstDeliveredAt     DateTime?              @db.Timestamptz(3)
+  sourceNotificationId String?                @db.Uuid
+  sourceNotification   Notification?          @relation("NotificationSnooze", fields: [spaceId, sourceNotificationId], references: [spaceId, id], onDelete: NoAction, onUpdate: NoAction)
+  snoozedNotifications Notification[]         @relation("NotificationSnooze")
+  deliveries           NotificationDelivery[] @relation("DeliveryNotification")
+  snoozedDeliveries    NotificationDelivery[] @relation("DeliverySnoozeNotification")
+
+  @@unique([spaceId, id])
+  @@unique([reminderId, scheduledAt])
+  @@index([spaceId, inbox, createdAt, id])
+}
+
+model NotificationDelivery {
+  id              String   @id @default(uuid()) @db.Uuid
+  spaceId         String   @db.Uuid
+  ownerUserId     String   @db.Uuid
+  createdByUserId String   @db.Uuid
+  space           Space    @relation(fields: [spaceId, ownerUserId], references: [id, ownerUserId], onDelete: Cascade, onUpdate: NoAction)
+  revision        Int      @default(1)
+  createdAt       DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime @updatedAt @db.Timestamptz(3)
+
+  reminderId           String                 @db.Uuid
+  reminder             Reminder               @relation(fields: [spaceId, reminderId], references: [spaceId, id], onDelete: Cascade, onUpdate: NoAction)
+  kind                 String                 @default("CHANNEL") @db.VarChar(10)
+  notificationId       String?                @db.Uuid
+  notification         Notification?          @relation("DeliveryNotification", fields: [spaceId, notificationId], references: [spaceId, id], onDelete: NoAction, onUpdate: NoAction)
+  parentId             String?                @db.Uuid
+  parent               NotificationDelivery?  @relation("DeliveryEndpoints", fields: [spaceId, parentId], references: [spaceId, id], onDelete: NoAction, onUpdate: NoAction)
+  children             NotificationDelivery[] @relation("DeliveryEndpoints")
+  subscriptionId       String?                @db.Uuid
+  subscription         PushSubscription?      @relation(fields: [spaceId, subscriptionId], references: [spaceId, id], onDelete: NoAction, onUpdate: NoAction)
+  subscriptionRevision Int?
+  sourceNotificationId String?                @db.Uuid
+  sourceNotification   Notification?          @relation("DeliverySnoozeNotification", fields: [spaceId, sourceNotificationId], references: [spaceId, id], onDelete: NoAction, onUpdate: NoAction)
+  sourceDeliveryId     String?                @db.Uuid
+  sourceDelivery       NotificationDelivery?  @relation("DeliverySnooze", fields: [spaceId, sourceDeliveryId], references: [spaceId, id], onDelete: NoAction, onUpdate: NoAction)
+  snoozedDeliveries    NotificationDelivery[] @relation("DeliverySnooze")
+  channel              String                 @db.VarChar(10)
+  scheduledAt          DateTime?              @db.Timestamptz(3)
+  notBefore            DateTime?              @db.Timestamptz(3)
+  occurrenceKey        String                 @db.VarChar(100)
+  ruleVersion          Int
+  timezone             String                 @db.VarChar(100)
+  localDate            DateTime               @db.Date
+  localTime            String                 @db.VarChar(5)
+  state                String                 @default("PENDING") @db.VarChar(12)
+  reason               String?                @db.VarChar(80)
+  attempts             Int                    @default(0)
+  leaseToken           String?                @db.Uuid
+  leaseUntil           DateTime?              @db.Timestamptz(3)
+  networkStartedAt     DateTime?              @db.Timestamptz(3)
+  sentAt               DateTime?              @db.Timestamptz(3)
+  canceledAt           DateTime?              @db.Timestamptz(3)
+  reactivatedAt        DateTime?              @db.Timestamptz(3)
+  cancelRequestedAt    DateTime?              @db.Timestamptz(3)
+  lastErrorCode        String?                @db.VarChar(80)
+  jobId                String?                @db.Uuid
+  queuedAt             DateTime?              @db.Timestamptz(3)
+  retryAt              DateTime?              @db.Timestamptz(3)
+
+  @@unique([spaceId, id])
+  @@unique([parentId, subscriptionId])
+  @@index([spaceId, reminderId, createdAt, id])
+  @@index([state, notBefore, id])
+  @@index([state, leaseUntil, id])
+  @@index([spaceId, occurrenceKey, channel, state])
+  @@index([spaceId, notificationId])
+  @@index([spaceId, sourceNotificationId])
+  @@index([spaceId, sourceDeliveryId])
+}
+
+model NotificationPreference {
+  id              String   @id @default(uuid()) @db.Uuid
+  spaceId         String   @db.Uuid
+  ownerUserId     String   @db.Uuid
+  createdByUserId String   @db.Uuid
+  space           Space    @relation(fields: [spaceId, ownerUserId], references: [id, ownerUserId], onDelete: Cascade, onUpdate: NoAction)
+  revision        Int      @default(1)
+  createdAt       DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime @updatedAt @db.Timestamptz(3)
+
+  inApp              Boolean @default(true)
+  email              Boolean @default(false)
+  webPush            Boolean @default(false)
+  reactivateOnReopen Boolean @default(false)
+  quietStart         String? @db.VarChar(5)
+  quietEnd           String? @db.VarChar(5)
+
+  @@unique([spaceId])
+  @@unique([spaceId, id])
+}
+
+model PushSubscription {
+  id              String   @id @default(uuid()) @db.Uuid
+  spaceId         String   @db.Uuid
+  ownerUserId     String   @db.Uuid
+  createdByUserId String   @db.Uuid
+  space           Space    @relation(fields: [spaceId, ownerUserId], references: [id, ownerUserId], onDelete: Cascade, onUpdate: NoAction)
+  revision        Int      @default(1)
+  createdAt       DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime @updatedAt @db.Timestamptz(3)
+
+  label        String?                @db.VarChar(100)
+  endpointHash String                 @db.Char(64)
+  endpointHost String                 @db.VarChar(253)
+  endpoint     String?                @db.VarChar(4096)
+  auth         String?                @db.VarChar(50)
+  p256dh       String?                @db.VarChar(100)
+  state        String                 @default("ACTIVE") @db.VarChar(10)
+  revokedAt    DateTime?              @db.Timestamptz(3)
+  deliveries   NotificationDelivery[]
+
+  @@unique([spaceId, id])
+  @@unique([spaceId, endpointHash])
+  @@index([spaceId, state, createdAt, id])
 }

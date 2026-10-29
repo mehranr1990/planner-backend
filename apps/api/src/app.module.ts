@@ -1,4 +1,5 @@
 import { FinanceModule } from './modules/finance/public/index.js';
+import { NotificationsModule } from './modules/notifications/public/index.js';
 import { NotesModule } from './modules/notes/public/index.js';
 import { JournalModule } from './modules/journal/public/index.js';
 import { CaptureModule } from './modules/capture/public/index.js';
@@ -68,6 +69,7 @@ export class AppModule {
         capture,
         FinanceModule.register(capture),
         FocusModule.register(tasks),
+        NotificationsModule.register(tasks),
       ],
       controllers: [HealthController],
     };

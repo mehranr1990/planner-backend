@@ -1,3 +1,4 @@
+import { cleanupFixtureIdentities } from '../support/fixture-cleanup.js';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import request from 'supertest';
 import { randomUUID, createHash } from 'node:crypto';
@@ -97,15 +98,7 @@ describe('P1-01 tasks, organization and ownership', () => {
   });
   afterAll(async () => {
     vi.restoreAllMocks();
-    if (db) {
-      await db.client.securityAuditEvent.deleteMany({
-        where: { actorUserId: { in: users } },
-      });
-      await db.client.space.deleteMany({
-        where: { ownerUserId: { in: users } },
-      });
-      await db.client.user.deleteMany({ where: { id: { in: users } } });
-    }
+    if (db) await cleanupFixtureIdentities(databaseUrl, { ids: users });
     await app?.close();
   });
 

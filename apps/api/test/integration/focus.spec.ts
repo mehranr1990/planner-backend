@@ -1,3 +1,4 @@
+import { cleanupFixtureIdentities } from '../support/fixture-cleanup.js';
 import {
   beforeAll,
   afterAll,
@@ -88,21 +89,7 @@ describe('P1-07 focus timers, time accounting and ownership', () => {
   });
   afterAll(async () => {
     vi.restoreAllMocks();
-    if (db) {
-      await db.client.securityAuditEvent.deleteMany({
-        where: { actorUserId: { in: users } },
-      });
-      await db.client.timeEntry.deleteMany({
-        where: { createdByUserId: { in: users } },
-      });
-      await db.client.focusSession.deleteMany({
-        where: { createdByUserId: { in: users } },
-      });
-      await db.client.space.deleteMany({
-        where: { ownerUserId: { in: users } },
-      });
-      await db.client.user.deleteMany({ where: { id: { in: users } } });
-    }
+    if (db) await cleanupFixtureIdentities(databaseUrl, { ids: users });
     await app?.close();
   });
   const create = async (input: object = {}, actor = a, key = randomUUID()) =>

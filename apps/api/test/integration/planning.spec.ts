@@ -1,3 +1,4 @@
+import { cleanupFixtureIdentities } from '../support/fixture-cleanup.js';
 import { beforeAll, afterAll, describe, it, expect, vi } from 'vitest';
 import request from 'supertest';
 import { randomUUID, createHash } from 'node:crypto';
@@ -158,15 +159,7 @@ describe('P1-03 personal planning, isolation, rollover and capacity', () => {
   });
   afterAll(async () => {
     vi.restoreAllMocks();
-    if (db) {
-      await db.client.securityAuditEvent.deleteMany({
-        where: { actorUserId: { in: users } },
-      });
-      await db.client.space.deleteMany({
-        where: { ownerUserId: { in: users } },
-      });
-      await db.client.user.deleteMany({ where: { id: { in: users } } });
-    }
+    if (db) await cleanupFixtureIdentities(databaseUrl, { ids: users });
     await app?.close();
   });
   it('creates unique scoped days, keeps read-only GETs read-only and protects ownership fields', async () => {

@@ -1,3 +1,4 @@
+import { cleanupFixtureIdentities } from '../support/fixture-cleanup.js';
 import {
   beforeAll,
   afterAll,
@@ -78,33 +79,7 @@ describe('P1-08 private writing, capture and personal search', () => {
     vi.restoreAllMocks();
   });
   afterAll(async () => {
-    if (db) {
-      await db.client.securityAuditEvent.deleteMany({
-        where: { actorUserId: { in: users } },
-      });
-      await db.client.captureItem.deleteMany({
-        where: { createdByUserId: { in: users } },
-      });
-      await db.client.note.deleteMany({
-        where: { createdByUserId: { in: users } },
-      });
-      await db.client.moodEntry.deleteMany({
-        where: { createdByUserId: { in: users } },
-      });
-      await db.client.journalEntry.deleteMany({
-        where: { createdByUserId: { in: users } },
-      });
-      await db.client.noteFolder.deleteMany({
-        where: { createdByUserId: { in: users } },
-      });
-      await db.client.routine.deleteMany({
-        where: { createdByUserId: { in: users } },
-      });
-      await db.client.space.deleteMany({
-        where: { ownerUserId: { in: users } },
-      });
-      await db.client.user.deleteMany({ where: { id: { in: users } } });
-    }
+    if (db) await cleanupFixtureIdentities(databaseUrl, { ids: users });
     await app?.close();
   });
   const content = (text = 'Private reflection') => ({

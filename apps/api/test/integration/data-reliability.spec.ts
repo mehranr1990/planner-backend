@@ -1,3 +1,4 @@
+import { cleanupFixtureIdentities } from '../support/fixture-cleanup.js';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
@@ -58,17 +59,8 @@ describe('P0-03 transactions, API and reliability', () => {
     db = app.get(DatabaseService);
   });
   afterAll(async () => {
-    if (db) {
-      await db.client.securityAuditEvent.deleteMany({
-        where: {
-          OR: [
-            { actorUserId: { in: users } },
-            { requestId: { in: requestIds } },
-          ],
-        },
-      });
-      await db.client.user.deleteMany({ where: { id: { in: users } } });
-    }
+    if (db)
+      await cleanupFixtureIdentities(databaseUrl, { ids: users, requestIds });
     await app?.close();
   });
 

@@ -1,3 +1,4 @@
+import { cleanupFixtureIdentities } from '../support/fixture-cleanup.js';
 import {
   beforeAll,
   afterAll,
@@ -79,15 +80,7 @@ describe('P1-09 private exact finance ledger', () => {
     vi.restoreAllMocks();
   });
   afterAll(async () => {
-    if (db) {
-      await db.client.securityAuditEvent.deleteMany({
-        where: { actorUserId: { in: users } },
-      });
-      await db.client.space.deleteMany({
-        where: { ownerUserId: { in: users } },
-      });
-      await db.client.user.deleteMany({ where: { id: { in: users } } });
-    }
+    if (db) await cleanupFixtureIdentities(databaseUrl, { ids: users });
     await app?.close();
   });
 
@@ -1442,31 +1435,15 @@ describe('P1-09 private exact finance ledger', () => {
   it('rejects excessive report/export density rather than silently truncating totals', async () => {
     const x = await account(),
       ids = Array.from({ length: 10001 }, () => randomUUID());
-    for (let i = 0; i < ids.length; i += 200)
-      await db.client.transaction.createMany({
-        data: ids.slice(i, i + 200).map((id) => ({
-          id,
-          spaceId: a.spaceId,
-          createdByUserId: a.id,
-          type: 'EXPENSE',
-          occurredAt: new Date('2024-05-01T12:00:00Z'),
-          localDate: new Date('2024-05-01'),
-          timezone: 'UTC',
-        })),
-      });
-    for (let i = 0; i < ids.length; i += 200)
-      await db.client.transactionPosting.createMany({
-        data: ids.slice(i, i + 200).map((id) => ({
-          spaceId: a.spaceId,
-          transactionId: id,
-          accountId: x.id,
-          currency: 'USD',
-          scale: 2,
-          amount: '-0.01',
-          role: 'EXPENSE',
-        })),
-      });
     try {
+      // The same 10001 owned, constraint-checked rows; avoid repeated ORM fixture
+      // serialization consuming the density test's unchanged execution budget.
+      for (let i = 0; i < ids.length; i += 200)
+        await db.client
+          .$executeRaw`INSERT INTO "Transaction" (id,"spaceId","createdByUserId",type,"occurredAt","localDate",timezone,"updatedAt") SELECT id,${a.spaceId}::uuid,${a.id}::uuid,'EXPENSE','2024-05-01T12:00:00Z'::timestamptz,'2024-05-01'::date,'UTC',clock_timestamp() FROM unnest(${ids.slice(i, i + 200)}::uuid[]) AS id`;
+      for (let i = 0; i < ids.length; i += 200)
+        await db.client
+          .$executeRaw`INSERT INTO "TransactionPosting" (id,"spaceId","transactionId","accountId",currency,scale,amount,role) SELECT gen_random_uuid(),${a.spaceId}::uuid,id,${x.id}::uuid,'USD',2,-0.01,'EXPENSE' FROM unnest(${ids.slice(i, i + 200)}::uuid[]) AS id`;
       for (const route of ['/finance/reports', '/finance/export'])
         await call(a, 'get', route)
           .query({

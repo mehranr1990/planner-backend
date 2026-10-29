@@ -1,4 +1,6 @@
 import { FinancePreferences } from './public/finance-preferences.js';
+import { NotificationIdentity } from './public/notification-identity.js';
+import { NotificationIdentityRepository } from './infrastructure/notification-identity.repository.js';
 import { FinancePreferencesRepository } from './infrastructure/finance-preferences.repository.js';
 import { Module } from '@nestjs/common';
 import { DatabaseModule } from '../../platform/database/database.module.js';
@@ -14,12 +16,13 @@ import { PlanningPreferencesRepository } from './infrastructure/planning-prefere
 @Module({
   imports: [DatabaseModule, SpacesModule, AuditModule],
   providers: [
+    { provide: NotificationIdentity, useClass: NotificationIdentityRepository },
     { provide: SETTINGS_REPOSITORY, useClass: SettingsRepository },
     AccountService,
     { provide: FinancePreferences, useClass: FinancePreferencesRepository },
     { provide: PlanningPreferences, useClass: PlanningPreferencesRepository },
   ],
   controllers: [MeController],
-  exports: [PlanningPreferences, FinancePreferences],
+  exports: [PlanningPreferences, FinancePreferences, NotificationIdentity],
 })
 export class AccountModule {}

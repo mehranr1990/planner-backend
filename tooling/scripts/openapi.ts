@@ -15,6 +15,7 @@ for (const batch of [
   'p1-06',
   'p1-07',
   'p1-08',
+  'p1-09',
 ])
   assertApiCompatible(
     createOpenApiDocument(),

@@ -71,8 +71,8 @@ describe('P1-09 approved API and compatibility', () => {
       ),
     ).not.toThrow();
     for (const p of [
-      '/reminders',
-      '/notifications/preferences',
+      '/insights/tasks',
+      '/insights/overview',
       '/insights/finance',
       '/sync/push',
     ])

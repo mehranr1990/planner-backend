@@ -1,3 +1,4 @@
+import { cleanupFixtureIdentities } from '../support/fixture-cleanup.js';
 import {
   afterAll,
   afterEach,
@@ -56,7 +57,7 @@ describe('identity lifecycle, isolation and concurrency', () => {
       await database.client.authVerification.deleteMany({
         where: { value: { in: created } },
       });
-      await database.client.user.deleteMany({ where: { id: { in: created } } });
+      await cleanupFixtureIdentities(databaseUrl, { ids: created });
     }
     await app?.close();
   });

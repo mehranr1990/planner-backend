@@ -73,9 +73,9 @@ describe('P1-06 contracts and prior compatibility', () => {
     ).not.toThrow();
     for (const path of [
       '/rewards/achievements',
-      '/push/subscriptions',
-      '/notifications/preferences',
-      '/reminders',
+      '/insights/time',
+      '/insights/overview',
+      '/insights/tasks',
       '/sync/push',
       '/companies',
       '/teams',

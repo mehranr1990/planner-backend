@@ -65,8 +65,8 @@ describe('P1-05 habit/routine contracts and previous API compatibility', () => {
     ).not.toThrow();
     for (const path of [
       '/rewards/achievements',
-      '/push/subscriptions',
-      '/reminders',
+      '/insights/time',
+      '/insights/tasks',
       '/sync/push',
     ])
       expect(paths).not.toHaveProperty('/api/v1' + path);

@@ -1,4 +1,6 @@
 import { CaptureTasks } from './public/capture-tasks.js';
+import { ReminderTasks } from './public/reminder-tasks.js';
+import { ReminderTasksRepository } from './infrastructure/reminder-tasks.repository.js';
 import { CaptureTasksRepository } from './infrastructure/tasks.repository.js';
 import { TaskProductivityController } from './http/productivity.controller.js';
 import { TaskProductivityService } from './application/productivity.service.js';
@@ -31,6 +33,7 @@ export class TasksModule {
       imports: [DatabaseModule, AuditModule, SpacesModule, storage],
       providers: [
         TasksService,
+        { provide: ReminderTasks, useClass: ReminderTasksRepository },
         { provide: CaptureTasks, useClass: CaptureTasksRepository },
         TaskProductivityService,
         TaskProductivityRepository,
@@ -48,7 +51,7 @@ export class TasksModule {
         TaskProductivityController,
         LabelsController,
       ],
-      exports: [PlanningTasks, ProductivityTasks, CaptureTasks],
+      exports: [PlanningTasks, ProductivityTasks, CaptureTasks, ReminderTasks],
     };
   }
 }

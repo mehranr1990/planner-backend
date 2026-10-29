@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createECDH } from 'node:crypto';
 
 const DatabaseUrlSchema = z
   .string()
@@ -79,6 +80,20 @@ const EnvironmentSchema = z.object({
     .min(600)
     .max(86400)
     .default(3600),
+  JOBS_SCHEMA: z
+    .string()
+    .regex(/^planner_jobs(?:_test_[a-f0-9]{32})?$/)
+    .default('planner_jobs'),
+  JOBS_POLL_SECONDS: z.coerce.number().int().min(1).max(30).default(1),
+  NOTIFICATION_EMAIL_ENABLED: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((v) => v === 'true'),
+  NOTIFICATION_SINK_DIR: z.string().min(1).default('.tools/notifications'),
+  PUSH_MODE: z.enum(['disabled', 'sink', 'webpush']).default('disabled'),
+  PUSH_VAPID_PUBLIC_KEY: z.string().optional(),
+  PUSH_VAPID_PRIVATE_KEY: z.string().optional(),
+  PUSH_VAPID_SUBJECT: z.string().optional(),
   FILE_LINK_TTL_SECONDS: z.coerce.number().int().min(30).max(900).default(300),
 });
 export type AppConfig = Readonly<z.infer<typeof EnvironmentSchema>>;
@@ -95,6 +110,43 @@ export function parseEnvironment(environment: NodeJS.ProcessEnv): AppConfig {
     );
   }
   const config = result.data;
+  if (
+    config.NODE_ENV === 'production' &&
+    (config.PUSH_MODE === 'sink' || config.JOBS_SCHEMA !== 'planner_jobs')
+  )
+    throw new Error(
+      'Invalid configuration: PUSH_MODE/JOBS_SCHEMA test settings forbidden in production.',
+    );
+  if (
+    config.PUSH_MODE === 'webpush' &&
+    (!/^[A-Za-z0-9_-]{87}$/.test(config.PUSH_VAPID_PUBLIC_KEY ?? '') ||
+      !/^[A-Za-z0-9_-]{43}$/.test(config.PUSH_VAPID_PRIVATE_KEY ?? '') ||
+      !config.PUSH_VAPID_SUBJECT ||
+      !/^(?:mailto:[^@\s]+@[^@\s]+|https:\/\/[^\s]+)$/.test(
+        config.PUSH_VAPID_SUBJECT,
+      ))
+  )
+    throw new Error(
+      'Invalid configuration: PUSH_VAPID keys/subject required for webpush.',
+    );
+  if (config.PUSH_MODE === 'webpush') {
+    try {
+      const key = createECDH('prime256v1');
+      key.setPrivateKey(
+        Buffer.from(config.PUSH_VAPID_PRIVATE_KEY!, 'base64url'),
+      );
+      if (
+        key.getPublicKey().toString('base64url') !==
+        config.PUSH_VAPID_PUBLIC_KEY
+      )
+        throw new Error();
+      const subject = new URL(config.PUSH_VAPID_SUBJECT!);
+      if (subject.username || subject.password || subject.hash)
+        throw new Error();
+    } catch {
+      throw new Error('Invalid configuration: PUSH_VAPID key pair/subject.');
+    }
+  }
   // Source and compiled bootstrap have the same workspace depth. Relative local
   // roots must not move when pnpm dev changes cwd to apps/api.
   const storageRoot = path.resolve(
