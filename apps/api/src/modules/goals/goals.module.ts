@@ -1,3 +1,5 @@
+import { AnalyticsGoals } from './public/analytics.js';
+import { AnalyticsGoalsRepository } from './infrastructure/analytics.repository.js';
 import { PersonalGoals } from './public/personal-goals.js';
 import { PersonalGoalsRepository } from './infrastructure/personal-goals.repository.js';
 import { Module } from '@nestjs/common';
@@ -28,12 +30,13 @@ export class GoalsModule {
         tasks,
       ],
       providers: [
+        { provide: AnalyticsGoals, useClass: AnalyticsGoalsRepository },
         GoalsService,
         { provide: PersonalGoals, useClass: PersonalGoalsRepository },
         { provide: GOALS_REPOSITORY, useClass: GoalsRepository },
       ],
       controllers: [GoalsController, LifeAreasController],
-      exports: [PersonalGoals],
+      exports: [AnalyticsGoals, PersonalGoals],
     };
   }
 }

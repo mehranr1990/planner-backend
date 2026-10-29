@@ -1,3 +1,5 @@
+import { AnalyticsPlanning } from './public/analytics.js';
+import { AnalyticsPlanningRepository } from './infrastructure/analytics.repository.js';
 import { Module } from '@nestjs/common';
 import type { DynamicModule } from '@nestjs/common';
 import { DatabaseModule } from '../../platform/database/database.module.js';
@@ -21,9 +23,11 @@ export class PlanningModule {
         tasks,
       ],
       providers: [
+        { provide: AnalyticsPlanning, useClass: AnalyticsPlanningRepository },
         PlanningService,
         { provide: PLANNING_REPOSITORY, useClass: PlanningRepository },
       ],
+      exports: [AnalyticsPlanning],
       controllers: [PlanningController],
     };
   }

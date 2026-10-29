@@ -1,3 +1,5 @@
+import { RewardPreferencesAccess } from './public/reward-preferences.js';
+import { RewardPreferencesRepository } from './infrastructure/reward-preferences.repository.js';
 import { FinancePreferences } from './public/finance-preferences.js';
 import { NotificationIdentity } from './public/notification-identity.js';
 import { NotificationIdentityRepository } from './infrastructure/notification-identity.repository.js';
@@ -16,6 +18,7 @@ import { PlanningPreferencesRepository } from './infrastructure/planning-prefere
 @Module({
   imports: [DatabaseModule, SpacesModule, AuditModule],
   providers: [
+    { provide: RewardPreferencesAccess, useClass: RewardPreferencesRepository },
     { provide: NotificationIdentity, useClass: NotificationIdentityRepository },
     { provide: SETTINGS_REPOSITORY, useClass: SettingsRepository },
     AccountService,
@@ -23,6 +26,11 @@ import { PlanningPreferencesRepository } from './infrastructure/planning-prefere
     { provide: PlanningPreferences, useClass: PlanningPreferencesRepository },
   ],
   controllers: [MeController],
-  exports: [PlanningPreferences, FinancePreferences, NotificationIdentity],
+  exports: [
+    PlanningPreferences,
+    FinancePreferences,
+    NotificationIdentity,
+    RewardPreferencesAccess,
+  ],
 })
 export class AccountModule {}

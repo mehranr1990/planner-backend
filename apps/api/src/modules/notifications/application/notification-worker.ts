@@ -7,10 +7,14 @@ export class NotificationWorker {
     @Inject(JobsService) private readonly jobs: JobsService,
     @Inject(NotificationsPort) private readonly port: NotificationsPort,
   ) {}
-  start() {
+  start(additionalOutbox?: () => Promise<boolean>) {
     return this.jobs.start({
       sweep: (after) => this.port.sweep(after),
-      outbox: () => this.port.consumeOutbox(),
+      outbox: async () => {
+        const notification = await this.port.consumeOutbox();
+        const additional = additionalOutbox ? await additionalOutbox() : false;
+        return notification || additional;
+      },
       delivery: (id) => this.port.dispatch(id),
       pending: () => this.port.pending(),
     });

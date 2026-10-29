@@ -219,6 +219,8 @@ describe('scoped persistence and API conventions', () => {
       '202610290001_p1_10_notifications',
       '202610290002_p1_10_notification_guards',
       '202610290003_p1_10_notification_query_indexes',
+      '202610290004_p1_11_analytics_rewards',
+      '202610290005_p1_11_habit_event_provenance',
     ]);
     for (const sql of [
       '',

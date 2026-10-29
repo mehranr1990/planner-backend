@@ -76,7 +76,10 @@ describe('P1-02 OpenAPI and prior-contract preservation', () => {
         ) as Record<string, string>,
       ),
     ).not.toThrow();
-    for (const path of ['/planning', '/calendar', '/insights/tasks', '/sync'])
+    // P1-11 is now explicitly approved; earlier signature checks remain unchanged.
+    for (const approved of ['/insights/tasks'])
+      expect(paths).toHaveProperty('/api/v1' + approved);
+    for (const path of ['/planning', '/calendar', '/sync'])
       expect(paths).not.toHaveProperty('/api/v1' + path);
   });
 });

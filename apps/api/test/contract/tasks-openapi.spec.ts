@@ -70,7 +70,10 @@ describe('P1-01 API coverage and Phase 0 compatibility', () => {
         ) as Record<string, string>,
       ),
     ).not.toThrow();
-    for (const path of ['/calendar', '/rewards/achievements'])
+    // P1-11 is now explicitly approved; earlier signature checks remain unchanged.
+    for (const approved of ['/rewards/achievements'])
+      expect(paths).toHaveProperty('/api/v1' + approved);
+    for (const path of ['/calendar'])
       expect(paths).not.toHaveProperty('/api/v1' + path);
   });
 });

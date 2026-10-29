@@ -517,7 +517,15 @@ describe('P1-08 private writing, capture and personal search', () => {
     await call(a, 'get', '/search/personal')
       .query({ q: token, types: 'JOURNAL' })
       .expect(400);
-    await call(a, 'get', '/insights/overview').expect(404);
+    // P1-11 is approved, but search consent never grants private analytics consent.
+    const overview = await call(a, 'get', '/insights/overview')
+      .query({ from: '2024-01-01', to: '2024-01-03', timezone: 'UTC' })
+      .expect(200);
+    c.InsightResponseSchema.parse(overview.body);
+    expect(JSON.stringify(overview.body)).not.toContain(token);
+    await call(a, 'get', '/insights/overview')
+      .query({ from: '2024-01-01', to: '2024-01-03', includeMood: 'true' })
+      .expect(400);
   });
   it('searches literal wildcard text with scoped stable cursors and excludes retained deletions', async () => {
     const token = 'literal%_' + randomUUID(),

@@ -63,12 +63,14 @@ describe('P1-05 habit/routine contracts and previous API compatibility', () => {
         ) as Record<string, string>,
       ),
     ).not.toThrow();
-    for (const path of [
+    // P1-11 is now explicitly approved; earlier signature checks remain unchanged.
+    for (const approved of [
       '/rewards/achievements',
       '/insights/time',
       '/insights/tasks',
-      '/sync/push',
     ])
+      expect(paths).toHaveProperty('/api/v1' + approved);
+    for (const path of ['/sync/push'])
       expect(paths).not.toHaveProperty('/api/v1' + path);
   });
 });

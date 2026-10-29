@@ -67,6 +67,7 @@ export interface HabitsTransaction {
   event(
     type: 'habit.entry_recorded' | 'habit.entry_corrected',
     habitId: string,
+    entryRevisionId: string,
   ): Promise<void>;
 }
 export interface HabitsPort {

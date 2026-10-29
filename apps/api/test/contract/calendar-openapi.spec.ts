@@ -59,11 +59,10 @@ describe('P1-04 calendar OpenAPI and P1-03 compatibility', () => {
         ) as Record<string, string>,
       ),
     ).not.toThrow();
-    for (const path of [
-      '/rewards/achievements',
-      '/insights/tasks',
-      '/sync/push',
-    ])
+    // P1-11 is now explicitly approved; earlier signature checks remain unchanged.
+    for (const approved of ['/rewards/achievements', '/insights/tasks'])
+      expect(paths).toHaveProperty('/api/v1' + approved);
+    for (const path of ['/sync/push'])
       expect(paths).not.toHaveProperty('/api/v1' + path);
   });
 });

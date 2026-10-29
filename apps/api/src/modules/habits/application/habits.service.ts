@@ -243,7 +243,7 @@ export class HabitsService {
       recordedTimezone: prefs.timezone,
     });
     await tx.audit('HABIT_ENTRY_RECORD', entry.id);
-    await tx.event('habit.entry_recorded', id);
+    await tx.event('habit.entry_recorded', id, entry.revisionId);
     return entry;
   }
   correct(
@@ -293,7 +293,7 @@ export class HabitsService {
           before,
         );
       await tx.audit('HABIT_ENTRY_CORRECT', entry.id);
-      await tx.event('habit.entry_corrected', id);
+      await tx.event('habit.entry_corrected', id, entry.revisionId);
       return entry;
     });
   }

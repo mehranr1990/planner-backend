@@ -97,7 +97,7 @@ const dense = (): never => {
     details: [{ path: 'range', code: 'RANGE_TOO_DENSE' }],
   });
 };
-class Store implements FocusTransaction {
+export class Store implements FocusTransaction {
   constructor(
     private readonly tx: Prisma.TransactionClient,
     private readonly scope: AuthorizedSpace,

@@ -58,3 +58,4 @@ export * from './finance.js';
 export * from './finance-currencies.js';
 
 export * from './notifications.js';
+export * from './insights.js';

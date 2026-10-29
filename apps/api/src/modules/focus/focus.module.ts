@@ -1,3 +1,5 @@
+import { AnalyticsFocus } from './public/analytics.js';
+import { AnalyticsFocusRepository } from './infrastructure/analytics.repository.js';
 import { Module } from '@nestjs/common';
 import type { DynamicModule } from '@nestjs/common';
 import { DatabaseModule } from '../../platform/database/database.module.js';
@@ -25,9 +27,11 @@ export class FocusModule {
         tasks,
       ],
       providers: [
+        { provide: AnalyticsFocus, useClass: AnalyticsFocusRepository },
         FocusService,
         { provide: FOCUS_REPOSITORY, useClass: FocusRepository },
       ],
+      exports: [AnalyticsFocus],
       controllers: [
         FocusController,
         TimeEntriesController,

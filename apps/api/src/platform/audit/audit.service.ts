@@ -83,6 +83,8 @@ const ActionSchema = z.enum([
   'NOTIFICATION_CHANGE',
   'NOTIFICATION_PREFERENCE_CHANGE',
   'PUSH_SUBSCRIPTION_CHANGE',
+  'REWARD_PREFERENCES_CHANGE',
+  'REWARD_RECALCULATE',
 ]);
 const AuditSchema = z.strictObject({
   action: ActionSchema,

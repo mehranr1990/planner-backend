@@ -80,7 +80,7 @@ export async function testApplication(
       const id = res.getHeader('X-Request-Id');
       if (
         typeof id === 'string' &&
-        /^\/api\/v1\/(?:finance(?:\/|\?|$)|reminders(?:\/|\?|$)|notifications(?:\/|\?|$)|push(?:\/|\?|$)|notes(?:\/|\?|$)|journal(?:\/|\?|$)|moods(?:\/|\?|$)|capture(?:\/|\?|$)|search(?:\/|\?|$)|focus(?:\/|\?|$)|time-entries(?:\/|\?|$)|productivity(?:\/|\?|$)|goals(?:\/|\?|$)|life-areas(?:\/|\?|$)|habits(?:\/|\?|$)|routines(?:\/|\?|$)|calendar(?:\/|\?|$)|planning(?:\/|\?|$)|auth\/|task-recurrences(?:\/|\?|$)|task-occurrences(?:\/|\?|$)|task-templates(?:\/|\?|$)|saved-task-filters(?:\/|\?|$)|tasks(?:\/|\?|$)|labels(?:\/|\?|$)|files(?:\/|\?|$)|me(?:\/|\?|$))/.test(
+        /^\/api\/v1\/(?:rewards(?:\/|\?|$)|insights(?:\/|\?|$)|finance(?:\/|\?|$)|reminders(?:\/|\?|$)|notifications(?:\/|\?|$)|push(?:\/|\?|$)|notes(?:\/|\?|$)|journal(?:\/|\?|$)|moods(?:\/|\?|$)|capture(?:\/|\?|$)|search(?:\/|\?|$)|focus(?:\/|\?|$)|time-entries(?:\/|\?|$)|productivity(?:\/|\?|$)|goals(?:\/|\?|$)|life-areas(?:\/|\?|$)|habits(?:\/|\?|$)|routines(?:\/|\?|$)|calendar(?:\/|\?|$)|planning(?:\/|\?|$)|auth\/|task-recurrences(?:\/|\?|$)|task-occurrences(?:\/|\?|$)|task-templates(?:\/|\?|$)|saved-task-filters(?:\/|\?|$)|tasks(?:\/|\?|$)|labels(?:\/|\?|$)|files(?:\/|\?|$)|me(?:\/|\?|$))/.test(
           req.originalUrl,
         )
       )

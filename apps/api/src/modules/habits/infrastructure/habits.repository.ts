@@ -87,7 +87,7 @@ const entryView = (r: EntryRow): Entry => ({
   actorUserId: r.actorUserId,
   current: r.current,
 });
-class Store implements HabitsTransaction {
+export class Store implements HabitsTransaction {
   constructor(
     private readonly tx: Prisma.TransactionClient,
     private readonly scope: AuthorizedSpace,
@@ -382,12 +382,17 @@ class Store implements HabitsTransaction {
   async event(
     type: 'habit.entry_recorded' | 'habit.entry_corrected',
     habitId: string,
+    entryRevisionId: string,
   ) {
-    await appendOutbox(this.tx, this.scope, {
+    const event = await appendOutbox(this.tx, this.scope, {
       type,
       version: 1,
       aggregateId: habitId,
       payload: {},
+    });
+    await this.tx.habitEntry.update({
+      where: { id: entryRevisionId, spaceId: this.scope.spaceId, habitId },
+      data: { sourceEventId: event.id },
     });
   }
 }

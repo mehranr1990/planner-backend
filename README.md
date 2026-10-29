@@ -184,4 +184,17 @@ never installs or connects to the queue. See the [runbook](docs/runbooks/notific
 [traceability](docs/p1-10-traceability.md), approved ADRs
 [0018](docs/adr/0018-reminder-timing-delivery-and-privacy.md) and
 [0019](docs/adr/0019-durable-queue-schema-and-channel-adapters.md).
-Run `pnpm smoke:p1-10` after building. P1-11 is not started.
+Run `pnpm smoke:p1-10` after building.
+
+## P1-11 personal analytics and optional rewards
+
+Owner-scoped, fresh analytics explain Task cohorts, planning selections, canonical
+Habit consistency, Goal snapshots, distinct work time and exact per-currency
+Finance effects. Explicit local-date comparisons retain source history and privacy;
+Journal/Mood are excluded. Optional prospective XP and three participation badges
+use the existing durable worker with independent outbox progress and duplicate
+protection. See approved [ADR 0020](docs/adr/0020-personal-analytics-and-optional-rewards.md),
+[ADR 0021](docs/adr/0021-approved-achievement-catalog-seed.md),
+[runbook](docs/runbooks/insights-and-rewards.md),
+[traceability](docs/p1-11-traceability.md) and [report](docs/p1-11-report.md).
+Run `pnpm smoke:p1-11` after building. P1-12 is not started.

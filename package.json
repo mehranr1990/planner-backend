@@ -43,7 +43,8 @@
     "smoke:p1-09": "node --env-file-if-exists=.env.test.local tooling/scripts/p1-09-smoke.ts",
     "jobs:migrate": "node --env-file=.env tooling/scripts/jobs-migrate.ts",
     "worker": "node --env-file=.env apps/api/dist/worker.js",
-    "smoke:p1-10": "node --env-file-if-exists=.env.test.local tooling/scripts/p1-10-smoke.ts"
+    "smoke:p1-10": "node --env-file-if-exists=.env.test.local tooling/scripts/p1-10-smoke.ts",
+    "smoke:p1-11": "node --env-file-if-exists=.env.test.local tooling/scripts/p1-11-smoke.ts"
   },
   "devDependencies": {
     "@nestjs/throttler": "6.7.1",

@@ -59,7 +59,7 @@ const reviewView = (r: Prisma.GoalReviewGetPayload<object>) =>
     snapshot: r.snapshot,
     createdAt: r.createdAt.toISOString(),
   });
-class Store implements GoalsTransaction {
+export class Store implements GoalsTransaction {
   constructor(
     private readonly tx: Prisma.TransactionClient,
     private readonly scope: AuthorizedSpace,

@@ -275,7 +275,7 @@ export class GoalsService {
       return next;
     });
   }
-  private async compute(
+  async compute(
     tx: GoalsTransaction,
     g: c.Goal,
     now: Date,

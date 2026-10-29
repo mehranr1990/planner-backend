@@ -71,15 +71,15 @@ describe('P1-06 contracts and prior compatibility', () => {
         ) as Record<string, string>,
       ),
     ).not.toThrow();
-    for (const path of [
+    // P1-11 is now explicitly approved; earlier signature checks remain unchanged.
+    for (const approved of [
       '/rewards/achievements',
       '/insights/time',
       '/insights/overview',
       '/insights/tasks',
-      '/sync/push',
-      '/companies',
-      '/teams',
     ])
+      expect(paths).toHaveProperty('/api/v1' + approved);
+    for (const path of ['/sync/push', '/companies', '/teams'])
       expect(paths).not.toHaveProperty('/api/v1' + path);
   });
 });

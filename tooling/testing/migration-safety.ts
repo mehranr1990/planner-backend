@@ -7,6 +7,10 @@ import {
   assertReviewedVoiceMigration,
 } from './reviewed-voice-migration.ts';
 import fs from 'node:fs';
+import {
+  reviewedRewardsMigrationName,
+  assertReviewedRewardsMigration,
+} from './reviewed-rewards-migration.ts';
 import path from 'node:path';
 
 /** Conservative review gate, not a general SQL parser. Unrecognized migration forms need owner review. */
@@ -72,6 +76,8 @@ export function reviewMigrations(directory = 'prisma/migrations'): string[] {
       assertReviewedVoiceMigration(name, sql);
     else if (name === reviewedFinanceMigrationName)
       assertReviewedFinanceMigration(name, sql);
+    else if (name === reviewedRewardsMigrationName)
+      assertReviewedRewardsMigration(name, sql);
     else assertAdditiveMigration(sql);
   }
   return names;

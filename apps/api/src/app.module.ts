@@ -1,4 +1,6 @@
 import { FinanceModule } from './modules/finance/public/index.js';
+import { InsightsModule } from './modules/insights/public/index.js';
+import { RewardsModule } from './modules/rewards/public/index.js';
 import { NotificationsModule } from './modules/notifications/public/index.js';
 import { NotesModule } from './modules/notes/public/index.js';
 import { JournalModule } from './modules/journal/public/index.js';
@@ -46,6 +48,9 @@ export class AppModule {
     const goals = GoalsModule.register(tasks);
     const notes = NotesModule.register(tasks, goals);
     const capture = CaptureModule.register(tasks, goals, notes, storage);
+    const planning = PlanningModule.register(tasks);
+    const finance = FinanceModule.register(capture);
+    const focus = FocusModule.register(tasks);
     return {
       module: AppModule,
       imports: [
@@ -60,15 +65,17 @@ export class AppModule {
         SpacesModule,
         storage,
         tasks,
-        PlanningModule.register(tasks),
+        planning,
         CalendarModule.register(tasks),
         HabitsModule,
         goals,
         notes,
         JournalModule,
         capture,
-        FinanceModule.register(capture),
-        FocusModule.register(tasks),
+        finance,
+        focus,
+        InsightsModule.register([tasks, planning, goals, focus, finance]),
+        RewardsModule.register(tasks),
         NotificationsModule.register(tasks),
       ],
       controllers: [HealthController],

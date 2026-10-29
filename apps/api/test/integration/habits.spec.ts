@@ -670,6 +670,7 @@ describe('P1-05 habit histories, routines, water and personal isolation', () => 
         data: {
           ...row,
           id: randomUUID(),
+          sourceEventId: null,
           logicalId: e.id,
           habitId: foreign.id,
           current: false,
@@ -681,7 +682,7 @@ describe('P1-05 habit histories, routines, water and personal isolation', () => 
     const newId = randomUUID();
     await expect(
       db.client.habitEntry.create({
-        data: { ...row, id: newId, logicalId: newId },
+        data: { ...row, sourceEventId: null, id: newId, logicalId: newId },
       }),
     ).rejects.toMatchObject({ code: 'P2002' });
     await expect(

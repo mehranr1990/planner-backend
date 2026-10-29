@@ -5,9 +5,26 @@ import type { SpacesPort } from './spaces.port.js';
 import { SpacePolicyService } from '../../../platform/authorization/space-policy.service.js';
 import { AuthorizedSpace } from '../../../platform/authorization/authorized-space.js';
 import type { RequestActor } from '../../../platform/auth/request-actor.js';
+import type { Prisma } from '../../../generated/prisma/client.js';
 
 @Injectable()
 export class SpacesService {
+  async background(
+    tx: Prisma.TransactionClient,
+    spaceId: string,
+    requestId: string,
+    correlationId: string,
+  ) {
+    const row = await tx.space.findUnique({
+      where: { id: spaceId },
+      select: { id: true, kind: true, ownerUserId: true },
+    });
+    if (!row) return null;
+    return AuthorizedSpace.personal(
+      { userId: row.ownerUserId, requestId, correlationId },
+      row,
+    );
+  }
   constructor(
     @Inject(SPACES_REPOSITORY) private readonly repository: SpacesPort,
     @Inject(SpacePolicyService) private readonly policy: SpacePolicyService,

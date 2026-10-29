@@ -1,3 +1,5 @@
+import { AnalyticsFinance } from './public/analytics.js';
+import { AnalyticsFinanceRepository } from './infrastructure/analytics.repository.js';
 import { AuditModule } from '../../platform/audit/audit.service.js';
 import { Module } from '@nestjs/common';
 import type { DynamicModule } from '@nestjs/common';
@@ -23,11 +25,13 @@ export class FinanceModule {
         capture,
       ],
       providers: [
+        { provide: AnalyticsFinance, useClass: AnalyticsFinanceRepository },
         { provide: FINANCE_REPOSITORY, useClass: FinanceRepository },
         LedgerService,
         FinancePlanningService,
         FinanceReportsService,
       ],
+      exports: [AnalyticsFinance],
       controllers: [FinanceController],
     };
   }

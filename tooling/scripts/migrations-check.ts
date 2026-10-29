@@ -41,7 +41,7 @@ try {
       `SELECT tablename FROM pg_tables WHERE schemaname = current_schema() ORDER BY tablename`,
     )
   ).rows;
-  assert.equal(emptyTables.length, 61); // sixty application/provider tables plus Prisma's ledger
+  assert.equal(emptyTables.length, 64); // sixty-three application/provider tables plus Prisma's ledger
   // Required reset capability is restricted to this disposable, newly-created namespace.
   await sandbox.resetOwnedSchema();
   const folder = path.resolve('.tools/migration-check-' + randomUUID());
@@ -409,7 +409,27 @@ try {
     `INSERT INTO "SavingsGoal" (id,"logicalId","spaceId","createdByUserId",name,currency,scale,target,mode,"manualAmount","updatedAt") VALUES ($1,$1,$2,$3,'Preserved savings','USD',2,100,'MANUAL',25.50,now())`,
     [savingsId, spaceId, id],
   );
+  // Upgrade from the actual P1-10 boundary, preserving consumer progress too.
+  for (const name of names.slice(
+    names.indexOf('202610290001_p1_10_notifications'),
+    names.indexOf('202610290004_p1_11_analytics_rewards'),
+  ))
+    fs.cpSync(
+      path.join('prisma/migrations', name),
+      path.join(migrations, name),
+      { recursive: true },
+    );
+  migrate(sandbox.url, 'deploy', config);
+  await sandbox.query(
+    'UPDATE "OutboxEvent" SET "notificationAttempts"=2,"notificationHandledAt"=now() WHERE id=$1',
+    [eventId],
+  );
   const preservedTables = [
+    'Reminder',
+    'Notification',
+    'NotificationDelivery',
+    'NotificationPreference',
+    'PushSubscription',
     'User',
     'AuthAccount',
     'AuthSession',
@@ -472,7 +492,7 @@ try {
       table,
       (
         await sandbox.query(
-          `SELECT ${table === 'OutboxEvent' ? "to_jsonb(t) - 'notificationHandledAt' - 'notificationAttempts' - 'notificationRetryAt' - 'notificationFailureCode'" : 'to_jsonb(t)'} AS row FROM "${table}" t ORDER BY to_jsonb(t)::text`,
+          `SELECT ${table === 'OutboxEvent' ? "to_jsonb(t) - 'rewardHandledAt' - 'rewardAttempts' - 'rewardRetryAt' - 'rewardFailureCode'" : table === 'HabitEntry' ? "to_jsonb(t) - 'sourceEventId'" : table === 'UserSettings' ? "to_jsonb(t) - 'rewardsEnabled' - 'rewardsEnabledSince' - 'rewardsDisplayAchievements'" : 'to_jsonb(t)'} AS row FROM "${table}" t ORDER BY to_jsonb(t)::text`,
         )
       ).rows,
     );
@@ -483,7 +503,7 @@ try {
     assert.deepEqual(
       (
         await sandbox.query(
-          `SELECT ${table === 'OutboxEvent' ? "to_jsonb(t) - 'notificationHandledAt' - 'notificationAttempts' - 'notificationRetryAt' - 'notificationFailureCode'" : 'to_jsonb(t)'} AS row FROM "${table}" t ORDER BY to_jsonb(t)::text`,
+          `SELECT ${table === 'OutboxEvent' ? "to_jsonb(t) - 'rewardHandledAt' - 'rewardAttempts' - 'rewardRetryAt' - 'rewardFailureCode'" : table === 'HabitEntry' ? "to_jsonb(t) - 'sourceEventId'" : table === 'UserSettings' ? "to_jsonb(t) - 'rewardsEnabled' - 'rewardsEnabledSince' - 'rewardsDisplayAchievements'" : 'to_jsonb(t)'} AS row FROM "${table}" t ORDER BY to_jsonb(t)::text`,
         )
       ).rows,
       beforeSnapshots.get(table),
