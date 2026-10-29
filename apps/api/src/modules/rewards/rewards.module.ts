@@ -1,3 +1,5 @@
+import { RewardsData } from './public/personal-data.js';
+import { RewardsDataRepository } from './infrastructure/personal-data.repository.js';
 import { Module } from '@nestjs/common';
 import type { DynamicModule } from '@nestjs/common';
 import { DatabaseModule } from '../../platform/database/database.module.js';
@@ -23,11 +25,12 @@ export class RewardsModule {
         tasks,
       ],
       providers: [
+        { provide: RewardsData, useClass: RewardsDataRepository },
         RewardOutbox,
         { provide: RewardsPort, useClass: RewardsRepository },
       ],
       controllers: [RewardsController],
-      exports: [RewardsPort],
+      exports: [RewardsData, RewardsPort],
     };
   }
 }

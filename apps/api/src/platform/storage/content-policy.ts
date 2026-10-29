@@ -9,6 +9,11 @@ export function validContent(
   const hex = (bytes: Uint8Array) =>
     Array.from(bytes, (value) => value.toString(16).padStart(2, '0')).join('');
   switch (mime) {
+    case 'application/json':
+      return (
+        /^[\s]*[\[{]/.test(new TextDecoder().decode(head)) &&
+        /[\]}]\s*$/.test(new TextDecoder().decode(tail))
+      );
     case 'audio/wav':
       return validWav(head, size);
     case 'image/png':

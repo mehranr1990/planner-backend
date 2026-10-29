@@ -16,7 +16,7 @@ describe('P0-02 API contract coverage', () => {
     expect(paths['/api/v1/me']).toHaveProperty('patch');
     expect(paths['/api/v1/me/settings']).toHaveProperty('patch');
     expect(paths['/api/v1/me/spaces']).toHaveProperty('get');
-    expect(paths).not.toHaveProperty('/api/v1/me/export');
+    expect(paths).toHaveProperty('/api/v1/me/export');
     expect(paths).not.toHaveProperty('/api/v1/auth/delete-user');
     expect(paths).toHaveProperty('/api/v1/task-recurrences');
   });

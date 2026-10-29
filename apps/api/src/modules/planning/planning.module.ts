@@ -1,3 +1,7 @@
+import { PlanningData } from './public/personal-data.js';
+import { PlanningDataRepository } from './infrastructure/personal-data.repository.js';
+import { PlanningSync } from './public/sync-access.js';
+import { PlanningSyncRepository } from './infrastructure/sync.repository.js';
 import { AnalyticsPlanning } from './public/analytics.js';
 import { AnalyticsPlanningRepository } from './infrastructure/analytics.repository.js';
 import { Module } from '@nestjs/common';
@@ -23,11 +27,13 @@ export class PlanningModule {
         tasks,
       ],
       providers: [
+        { provide: PlanningData, useClass: PlanningDataRepository },
+        { provide: PlanningSync, useClass: PlanningSyncRepository },
         { provide: AnalyticsPlanning, useClass: AnalyticsPlanningRepository },
         PlanningService,
         { provide: PLANNING_REPOSITORY, useClass: PlanningRepository },
       ],
-      exports: [AnalyticsPlanning],
+      exports: [PlanningData, PlanningSync, AnalyticsPlanning],
       controllers: [PlanningController],
     };
   }

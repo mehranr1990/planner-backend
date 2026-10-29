@@ -1,4 +1,5 @@
 import { betterAuth } from 'better-auth';
+import { APIError } from 'better-auth/api';
 import type { BetterAuthOptions } from 'better-auth';
 import { prismaAdapter } from 'better-auth/adapters/prisma';
 import { authSchemaOptions } from './auth-options.js';
@@ -12,6 +13,7 @@ export function createIdentityAuth(
   client: ReturnType<typeof identityClient>,
   send: (message: IdentityMail) => Promise<void>,
   diagnostic: () => void,
+  admission: (userId: string) => Promise<void> = async () => undefined,
 ) {
   const options: BetterAuthOptions = {
     ...authSchemaOptions,
@@ -24,6 +26,32 @@ export function createIdentityAuth(
       provider: 'postgresql',
       transaction: true,
     }),
+    databaseHooks: {
+      session: {
+        create: {
+          before: async (session) => {
+            try {
+              await admission(session.userId);
+            } catch {
+              throw new APIError('FORBIDDEN', {
+                message: 'Account access unavailable',
+              });
+            }
+            return { data: session };
+          },
+          after: async (session) => {
+            try {
+              await admission(session.userId);
+            } catch {
+              await revokeUserSessions(session.userId);
+              throw new APIError('FORBIDDEN', {
+                message: 'Account access unavailable',
+              });
+            }
+          },
+        },
+      },
+    },
     emailAndPassword: {
       enabled: true,
       requireEmailVerification: true,

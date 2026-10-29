@@ -28,6 +28,7 @@ export class SettingsRepository implements SettingsPort {
   ) {
     const userId = scope.actor.userId;
     return this.database.client.$transaction(async (tx) => {
+      await scope.fence(tx);
       const before = await tx.userSettings.findUniqueOrThrow({
         where: { userId },
       });

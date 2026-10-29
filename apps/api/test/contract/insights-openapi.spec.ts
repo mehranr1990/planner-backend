@@ -47,15 +47,15 @@ describe('P1-11 authorized analytics and reward contracts', () => {
       expect(op.responses).toHaveProperty('409');
     }
   });
-  it('continues to exclude lifecycle/sync and company/team modules', () => {
+  it('includes approved lifecycle/sync while excluding company/team modules', () => {
     for (const path of [
       '/sync/push',
       '/sync/pull',
       '/me/export',
       '/me/deletion-request',
-      '/teams',
-      '/companies',
     ])
+      expect(paths).toHaveProperty('/api/v1' + path);
+    for (const path of ['/teams', '/companies'])
       expect(paths).not.toHaveProperty('/api/v1' + path);
   });
 });

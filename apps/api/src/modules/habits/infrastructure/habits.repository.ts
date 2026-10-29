@@ -1,3 +1,4 @@
+import { appendSyncChanges } from '../../../platform/sync/change-feed.js';
 import { CaptureHabits } from '../public/capture-habits.js';
 import { HabitsService } from '../application/habits.service.js';
 import type { HabitEntryCreate } from '@mehran/api-contracts';
@@ -300,6 +301,15 @@ export class Store implements HabitsTransaction {
         localDate: date(input.localDate),
       },
     });
+    await appendSyncChanges(this.tx, this.scope, [
+      {
+        entity: 'HABIT_ENTRY',
+        resourceId: row.logicalId,
+        parentId: row.habitId,
+        revision: row.revision,
+        deleted: row.state === 'VOID',
+      },
+    ]);
     return entryView(row);
   }
   private async routineView(row: RoutineRow): Promise<Routine> {
@@ -403,6 +413,7 @@ export class HabitsRepository implements HabitsPort {
     @Inject(PlanningPreferences) private readonly account: PlanningPreferences,
   ) {}
   private async store(tx: Prisma.TransactionClient, scope: AuthorizedSpace) {
+    await scope.fence(tx);
     await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`habits:${scope.spaceId}`},0))::text`;
     return new Store(tx, scope, this.account);
   }
@@ -448,6 +459,7 @@ export class GoalHabitsRepository extends GoalHabits {
     super();
   }
   async lock(tx: Prisma.TransactionClient, scope: AuthorizedSpace) {
+    await scope.fence(tx);
     await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`habits:${scope.spaceId}`},0))::text`;
   }
   async describe(

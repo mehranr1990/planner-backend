@@ -1,7 +1,15 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { OnModuleInit } from '@nestjs/common';
 import { createHash } from 'node:crypto';
-import { mkdir, lstat, realpath, open, link, unlink } from 'node:fs/promises';
+import {
+  mkdir,
+  lstat,
+  realpath,
+  open,
+  link,
+  unlink,
+  readdir,
+} from 'node:fs/promises';
 import type { FileHandle } from 'node:fs/promises';
 import path from 'node:path';
 import type { Readable } from 'node:stream';
@@ -51,6 +59,29 @@ export class LocalFileStorage implements StoragePort, OnModuleInit {
       (await realpath(this.root)) !== this.canonical
     )
       throw new StorageFailure('UNAVAILABLE');
+  }
+  async inventory() {
+    await this.checkRoot();
+    const names = await readdir(this.root);
+    if (names.length > 100000) throw new StorageFailure('LIMIT');
+    const result: Array<{ key: string; attempt: string | null }> = [];
+    for (const name of names) {
+      const parts =
+        /^([a-f0-9-]{36})(?:\.([a-f0-9-]{36}))?\.(blob|part)$/i.exec(name);
+      if (
+        !parts ||
+        !uuid.test(parts[1]!) ||
+        (parts[2] && !uuid.test(parts[2])) ||
+        (parts[3] === 'part' && !parts[2]) ||
+        (parts[3] === 'blob' && parts[2])
+      )
+        throw new StorageFailure('UNAVAILABLE');
+      const stat = await lstat(path.join(this.root, name));
+      if (!stat.isFile() || stat.isSymbolicLink() || stat.nlink !== 1)
+        throw new StorageFailure('UNAVAILABLE');
+      result.push({ key: parts[1]!, attempt: parts[2] ?? null });
+    }
+    return result;
   }
   private location(key: string, attempt?: string) {
     if (!uuid.test(key) || (attempt !== undefined && !uuid.test(attempt)))
@@ -112,12 +143,21 @@ export class LocalFileStorage implements StoragePort, OnModuleInit {
           ? value
           : Buffer.from(value as Uint8Array);
         size += chunk.length;
-        if (size > expected.size || size > this.config.FILE_MAX_BYTES)
+        if (
+          size > expected.size ||
+          size >
+            (expected.mimeType === 'application/json'
+              ? 50 * 1024 * 1024
+              : this.config.FILE_MAX_BYTES)
+        )
           throw new StorageFailure('LIMIT');
         if (head.length < 512)
           head = Buffer.concat([head, chunk.subarray(0, 512 - head.length)]);
         tail = Buffer.concat([tail, chunk]).subarray(-1024);
-        if (expected.mimeType === 'text/plain') {
+        if (
+          expected.mimeType === 'text/plain' ||
+          expected.mimeType === 'application/json'
+        ) {
           let text: string;
           try {
             text = decoder.decode(chunk, { stream: true });
@@ -131,7 +171,10 @@ export class LocalFileStorage implements StoragePort, OnModuleInit {
         await handle.writeFile(chunk);
       }
       if (signal.aborted) throw new StorageFailure('INVALID');
-      if (expected.mimeType === 'text/plain') {
+      if (
+        expected.mimeType === 'text/plain' ||
+        expected.mimeType === 'application/json'
+      ) {
         try {
           decoder.decode();
         } catch {

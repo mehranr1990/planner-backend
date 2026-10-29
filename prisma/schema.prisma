@@ -100,6 +100,13 @@ enum SpaceKind {
 }
 
 model Space {
+  accessClosedAt DateTime? @db.Timestamptz(3)
+  syncSequence BigInt @default(0)
+  syncRetainedSequence BigInt @default(0)
+  syncEpoch String @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  syncChanges SyncChange[]
+  exportJobs UserExportJob[]
+  syncReceipts SyncMutationReceipt[]
   xpLedger XpLedger[]
   achievementUnlocks AchievementUnlock[]
   reminders               Reminder[]
@@ -210,6 +217,93 @@ model AchievementDefinition {
   kind String @db.VarChar(20)
   required Int
   unlocks AchievementUnlock[]
+}
+
+model UserExportJob {
+  id String @id @default(uuid()) @db.Uuid
+  ownerUserId String @db.Uuid
+  spaceId String @db.Uuid
+  space Space @relation(fields:[spaceId,ownerUserId],references:[id,ownerUserId],onDelete:Cascade,onUpdate:NoAction)
+  revision Int @default(1)
+  state String @default("QUEUED") @db.VarChar(20)
+  attempts Int @default(0)
+  leaseUntil DateTime? @db.Timestamptz(3)
+  nextAt DateTime @default(now()) @db.Timestamptz(3)
+  objectKey String @default(uuid()) @db.Uuid
+  artifactKeys String[] @default([]) @db.Uuid
+  attemptKey String @default(uuid()) @db.Uuid
+  artifactSize Int?
+  artifactHash String? @db.Char(64)
+  manifest Json? @db.JsonB
+  failureCode String? @db.VarChar(80)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  completedAt DateTime? @db.Timestamptz(3)
+  expiresAt DateTime? @db.Timestamptz(3)
+  @@index([ownerUserId,createdAt,id])
+  @@index([state,nextAt,id])
+}
+
+model AccountDeletionJob {
+  id String @id @default(uuid()) @db.Uuid
+  ownerUserId String? @db.Uuid
+  spaceId String? @db.Uuid
+  identityDigest String @db.Char(64)
+  spaceDigest String @db.Char(64)
+  revision Int @default(1)
+  state String @default("PENDING") @db.VarChar(20)
+  confirmationHash String? @db.Char(64)
+  recoveryHash String? @db.Char(64)
+  confirmationExpiresAt DateTime? @db.Timestamptz(3)
+  recoveryExpiresAt DateTime? @db.Timestamptz(3)
+  policyVersion String @db.VarChar(80)
+  retentionAcknowledged Boolean @default(false)
+  attempts Int @default(0)
+  leaseUntil DateTime? @db.Timestamptz(3)
+  nextAt DateTime @default(now()) @db.Timestamptz(3)
+  progress Json? @db.JsonB
+  failureCode String? @db.VarChar(80)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  confirmedAt DateTime? @db.Timestamptz(3)
+  eraseAfter DateTime? @db.Timestamptz(3)
+  completedAt DateTime? @db.Timestamptz(3)
+  evidenceExpiresAt DateTime? @db.Timestamptz(3)
+  @@index([ownerUserId,createdAt,id])
+  @@index([state,nextAt,id])
+}
+
+model SyncChange {
+  id String @id @default(uuid()) @db.Uuid
+  spaceId String @db.Uuid
+  space Space @relation(fields:[spaceId],references:[id],onDelete:Cascade)
+  sequence BigInt
+  entity String @db.VarChar(20)
+  resourceId String @db.Uuid
+  parentId String? @db.Uuid
+  revision Int
+  deleted Boolean @default(false)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  @@unique([spaceId,sequence])
+  @@index([spaceId,createdAt,sequence])
+  @@index([createdAt,spaceId,sequence])
+}
+
+model SyncMutationReceipt {
+  id String @id @default(uuid()) @db.Uuid
+  spaceId String @db.Uuid
+  actorUserId String @db.Uuid
+  space Space @relation(fields:[spaceId,actorUserId],references:[id,ownerUserId],onDelete:Cascade)
+  clientMutationId String @db.Uuid
+  clientEntryId String? @db.Uuid
+  fingerprint String @db.Char(64)
+  disposition String @db.VarChar(12)
+  resourceId String? @db.Uuid
+  result Json? @db.JsonB
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  bodyExpiresAt DateTime @db.Timestamptz(3)
+  @@unique([spaceId,clientMutationId])
+  @@unique([spaceId,clientEntryId])
+  @@index([spaceId,bodyExpiresAt,id])
+  @@index([bodyExpiresAt,id])
 }
 
 model AchievementUnlock {

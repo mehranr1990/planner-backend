@@ -44,7 +44,7 @@ const expected = (value: { revision: number }, revision: number) => {
 export class PlanningService {
   constructor(
     @Inject(PLANNING_REPOSITORY) private readonly repository: PlanningPort,
-    @Inject(AuditService) private readonly audit: AuditService,
+    @Inject(AuditService) private readonly audit: Pick<AuditService, 'record'>,
   ) {}
   private async guarded<T>(scope: AuthorizedSpace, work: () => Promise<T>) {
     try {

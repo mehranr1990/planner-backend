@@ -59,3 +59,5 @@ export * from './finance-currencies.js';
 
 export * from './notifications.js';
 export * from './insights.js';
+export * from './sync.js';
+export * from './lifecycle.js';

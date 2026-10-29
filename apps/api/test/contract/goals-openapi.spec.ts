@@ -79,7 +79,8 @@ describe('P1-06 contracts and prior compatibility', () => {
       '/insights/tasks',
     ])
       expect(paths).toHaveProperty('/api/v1' + approved);
-    for (const path of ['/sync/push', '/companies', '/teams'])
+    expect(paths).toHaveProperty('/api/v1/sync/push');
+    for (const path of ['/companies', '/teams'])
       expect(paths).not.toHaveProperty('/api/v1' + path);
   });
 });

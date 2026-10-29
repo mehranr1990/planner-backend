@@ -9,7 +9,7 @@ import { isolatedTestDatabaseUrl } from '../../../../tooling/testing/test-databa
 import { DatabaseService } from '../../src/platform/database/database.service.js';
 import { IdentityMailService } from '../../src/platform/auth/mail.service.js';
 import { SpacesService } from '../../src/modules/spaces/public/index.js';
-import { AuthorizedSpace } from '../../src/platform/authorization/authorized-space.js';
+import type { AuthorizedSpace } from '../../src/platform/authorization/authorized-space.js';
 import { idempotent } from '../../src/platform/database/idempotency.js';
 import { serializable } from '../../src/platform/database/transaction.js';
 import { scopedWhere } from '../../src/platform/database/scoped-where.js';
@@ -51,7 +51,7 @@ describe('P0-03 transactions, API and reliability', () => {
     return {
       user,
       actor,
-      scope: AuthorizedSpace.personal(actor, user.spaces[0]!),
+      scope: personalScope(actor, user.spaces[0]!),
     };
   }
   beforeAll(async () => {
@@ -647,3 +647,4 @@ describe('P0-03 transactions, API and reliability', () => {
     }
   });
 });
+import { personalScope } from '../../src/modules/spaces/public/index.js';

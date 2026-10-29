@@ -1,3 +1,6 @@
+import { SyncModule } from './modules/sync/public/index.js';
+import { AccountLifecycleModule } from './modules/account/public/lifecycle-module.js';
+import { IDENTITY_ADMISSION } from './platform/auth/admission.js';
 import { FinanceModule } from './modules/finance/public/index.js';
 import { InsightsModule } from './modules/insights/public/index.js';
 import { RewardsModule } from './modules/rewards/public/index.js';
@@ -51,22 +54,50 @@ export class AppModule {
     const planning = PlanningModule.register(tasks);
     const finance = FinanceModule.register(capture);
     const focus = FocusModule.register(tasks);
+    const calendar = CalendarModule.register(tasks),
+      notifications = NotificationsModule.register(tasks),
+      rewards = RewardsModule.register(tasks);
     return {
       module: AppModule,
       imports: [
         ConfigurationModule.register(config),
         DatabaseModule,
         LoggerModule.forRoot(loggingOptions(config)),
-        AuthModule.register(() => ({
-          ...initialAccountRelations(),
-          ...initialSpaceRelations(),
-        })),
+        AuthModule.register(
+          () => ({
+            ...initialAccountRelations(),
+            ...initialSpaceRelations(),
+          }),
+          [SpacesModule],
+          {
+            provide: IDENTITY_ADMISSION,
+            inject: [SpacesService],
+            useFactory: (spaces: SpacesService) => (userId: string) =>
+              spaces.admit(userId),
+          },
+        ),
         AccountModule,
         SpacesModule,
+        SyncModule.register([tasks, planning, HabitsModule, notes, capture]),
+        AccountLifecycleModule.register([
+          storage,
+          tasks,
+          planning,
+          calendar,
+          HabitsModule,
+          goals,
+          focus,
+          notes,
+          JournalModule,
+          capture,
+          finance,
+          notifications,
+          rewards,
+        ]),
         storage,
         tasks,
         planning,
-        CalendarModule.register(tasks),
+        calendar,
         HabitsModule,
         goals,
         notes,
@@ -75,8 +106,8 @@ export class AppModule {
         finance,
         focus,
         InsightsModule.register([tasks, planning, goals, focus, finance]),
-        RewardsModule.register(tasks),
-        NotificationsModule.register(tasks),
+        rewards,
+        notifications,
       ],
       controllers: [HealthController],
     };

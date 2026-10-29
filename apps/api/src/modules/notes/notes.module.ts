@@ -1,3 +1,7 @@
+import { NotesData } from './public/personal-data.js';
+import { NotesDataRepository } from './infrastructure/personal-data.repository.js';
+import { NotesSync } from './public/sync-access.js';
+import { NotesSyncRepository } from './infrastructure/sync.repository.js';
 import { Module } from '@nestjs/common';
 import type { DynamicModule } from '@nestjs/common';
 import { DatabaseModule } from '../../platform/database/database.module.js';
@@ -21,13 +25,15 @@ export class NotesModule {
       module: NotesModule,
       imports: [DatabaseModule, AuditModule, SpacesModule, tasks, goals],
       providers: [
+        { provide: NotesData, useClass: NotesDataRepository },
+        { provide: NotesSync, useClass: NotesSyncRepository },
         NotesService,
         NotesRepository,
         { provide: NOTES_REPOSITORY, useExisting: NotesRepository },
         { provide: PersonalNotes, useClass: PersonalNotesRepository },
       ],
       controllers: [NoteFoldersController, NotesController],
-      exports: [PersonalNotes],
+      exports: [NotesData, NotesSync, PersonalNotes],
     };
   }
 }

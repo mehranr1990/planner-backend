@@ -63,6 +63,6 @@ describe('P1-04 calendar OpenAPI and P1-03 compatibility', () => {
     for (const approved of ['/rewards/achievements', '/insights/tasks'])
       expect(paths).toHaveProperty('/api/v1' + approved);
     for (const path of ['/sync/push'])
-      expect(paths).not.toHaveProperty('/api/v1' + path);
+      expect(paths).toHaveProperty('/api/v1' + path);
   });
 });

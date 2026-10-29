@@ -67,6 +67,7 @@ export class FilesRepository {
     key?: string,
   ) {
     const work = async (tx: Prisma.TransactionClient) => {
+      await scope.fence(tx);
       const file = await tx.storedFile.create({
         data: {
           id: randomUUID(),
@@ -106,6 +107,7 @@ export class FilesRepository {
   async claim(scope: AuthorizedSpace, id: string, attempt: string) {
     const file = await this.owned(scope, id);
     return this.database.client.$transaction(async (tx) => {
+      await scope.fence(tx);
       const update = await tx.storedFile.updateMany({
         where: {
           ...this.where(scope, id),
@@ -139,6 +141,7 @@ export class FilesRepository {
     auditId: string,
   ) {
     return this.database.client.$transaction(async (tx) => {
+      await scope.fence(tx);
       const update = await tx.storedFile.updateMany({
         where: {
           ...this.where(scope, id),
@@ -171,6 +174,7 @@ export class FilesRepository {
     auditId: string,
   ): Promise<boolean> {
     return this.database.client.$transaction(async (tx) => {
+      await scope.fence(tx);
       await tx.storedFile.updateMany({
         where: {
           ...this.where(scope, id),
@@ -198,6 +202,7 @@ export class FilesRepository {
   async markDeleted(scope: AuthorizedSpace, id: string) {
     const file = await this.owned(scope, id, true);
     return this.database.client.$transaction(async (tx) => {
+      await scope.fence(tx);
       await tx.storedFile.updateMany({
         where: { ...this.where(scope, id), status: { not: 'DELETED' } },
         data: {
@@ -235,6 +240,7 @@ export class FilesRepository {
   }
   async claimCleanup(scope: AuthorizedSpace, file: StoredFile, cutoff: Date) {
     return this.database.client.$transaction(async (tx) => {
+      await scope.fence(tx);
       const updated = await tx.storedFile.updateMany({
         where: {
           ...this.where(scope, file.id),

@@ -1,4 +1,6 @@
 import { VoiceFilesController } from './voice-files.controller.js';
+import { FilePortability } from './public/file-portability.js';
+import { ErasureControl } from './erasure-control.js';
 import { FileCatalog } from './public/file-catalog.js';
 import { Module } from '@nestjs/common';
 import type { DynamicModule, ModuleMetadata, Provider } from '@nestjs/common';
@@ -29,6 +31,8 @@ export class StorageModule {
       ],
       controllers: [FilesController, VoiceFilesController],
       providers: [
+        FilePortability,
+        ErasureControl,
         scopeProvider,
         FileCatalog,
         FileThrottleGuard,
@@ -36,7 +40,13 @@ export class StorageModule {
         FilesService,
         { provide: STORAGE_PORT, useClass: LocalFileStorage },
       ],
-      exports: [FilesService, STORAGE_PORT, FileCatalog],
+      exports: [
+        FilesService,
+        STORAGE_PORT,
+        FileCatalog,
+        FilePortability,
+        ErasureControl,
+      ],
     };
   }
 }

@@ -30,6 +30,9 @@ export async function configureApp(app: NestExpressApplication): Promise<void> {
       'X-Correlation-Id',
       'If-Match',
       'Idempotency-Key',
+      'X-Export-Proof',
+      'X-Deletion-Proof',
+      'X-Deletion-Recovery',
     ],
     exposedHeaders: [
       'X-Request-Id',

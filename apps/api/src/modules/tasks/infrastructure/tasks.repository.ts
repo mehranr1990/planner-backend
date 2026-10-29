@@ -1,3 +1,4 @@
+import { appendSyncChanges } from '../../../platform/sync/change-feed.js';
 import { CaptureTasks } from '../public/capture-tasks.js';
 import { TasksService } from '../application/tasks.service.js';
 import {
@@ -176,7 +177,10 @@ function orderedPage<T extends { id: string }>(
   };
 }
 
-class ScopedTasksStore extends TaskToolsStore implements TaskTransaction {
+export class ScopedTasksStore
+  extends TaskToolsStore
+  implements TaskTransaction
+{
   constructor(
     db: Prisma.TransactionClient,
     scope: AuthorizedSpace,
@@ -508,12 +512,40 @@ class ScopedTasksStore extends TaskToolsStore implements TaskTransaction {
           actorUserId: this.scope.actor.userId,
         })),
       });
+    await appendSyncChanges(
+      this.db,
+      this.scope,
+      changes
+        .filter((c) => c.kind.startsWith('CHECKLIST_') && c.relatedId)
+        .map((c) => ({
+          entity: 'CHECKLIST',
+          resourceId: c.relatedId!,
+          parentId: c.taskId,
+          revision: c.revision,
+          deleted: c.kind === 'CHECKLIST_DELETED',
+        })),
+    );
   }
-  events(type: Parameters<TaskTransaction['events']>[0], ids: string[]) {
-    return appendOutboxBatch(
+
+  async events(type: Parameters<TaskTransaction['events']>[0], ids: string[]) {
+    await appendOutboxBatch(
       this.db,
       this.scope,
       ids.map((id) => ({ type, version: 1, aggregateId: id, payload: {} })),
+    );
+    const rows = await this.db.task.findMany({
+      where: this.where({ id: { in: ids } }),
+      select: { id: true, revision: true, deletedAt: true },
+    });
+    await appendSyncChanges(
+      this.db,
+      this.scope,
+      rows.map((r) => ({
+        entity: 'TASK',
+        resourceId: r.id,
+        revision: r.revision,
+        deleted: r.deletedAt !== null,
+      })),
     );
   }
   async insertChecklist(taskId: string, input: ChecklistCreate) {
@@ -556,21 +588,39 @@ class ScopedTasksStore extends TaskToolsStore implements TaskTransaction {
     });
     if (result.count !== 1) throw new NotFoundException();
   }
-  insertLabel(name: string) {
-    return this.db.label.create({
+  async insertLabel(name: string) {
+    const label = await this.db.label.create({
       data: { spaceId: this.scope.spaceId, name },
     });
+    await appendSyncChanges(this.db, this.scope, [
+      { entity: 'LABEL', resourceId: label.id, revision: label.revision },
+    ]);
+    return label;
   }
+
   async updateLabel(label: LabelRecord, name: string) {
     const result = await this.db.label.updateMany({
       where: this.where({ id: label.id, revision: label.revision }),
       data: { name, revision: { increment: 1 } },
     });
     if (result.count !== 1) throw new ConflictException();
-    return this.label(label.id);
+    const changed = await this.label(label.id);
+    await appendSyncChanges(this.db, this.scope, [
+      { entity: 'LABEL', resourceId: changed.id, revision: changed.revision },
+    ]);
+    return changed;
   }
   async deleteLabel(id: string) {
+    const before = await this.label(id);
     await this.db.label.deleteMany({ where: this.where({ id }) });
+    await appendSyncChanges(this.db, this.scope, [
+      {
+        entity: 'LABEL',
+        resourceId: id,
+        revision: before.revision + 1,
+        deleted: true,
+      },
+    ]);
   }
   tasksForLabel(id: string) {
     return this.db.task.findMany({
@@ -631,6 +681,7 @@ export class TasksRepository implements TasksPort {
     return new ScopedTasksStore(this.database.client, scope, this.files);
   }
   private async locked(tx: Prisma.TransactionClient, scope: AuthorizedSpace) {
+    await scope.fence(tx);
     // One personal-space hierarchy writer at a time; never a cross-tenant lock.
     await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`tasks:${scope.spaceId}`},0))::text`;
     return new ScopedTasksStore(tx, scope, this.files);

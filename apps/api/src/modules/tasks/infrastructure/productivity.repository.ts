@@ -1,3 +1,4 @@
+import { appendSyncChanges } from '../../../platform/sync/change-feed.js';
 import {
   Inject,
   Injectable,
@@ -144,6 +145,9 @@ export class TaskProductivityRepository
               aggregateId: id,
               payload: {},
             });
+            await appendSyncChanges(tx, scope, [
+              { entity: 'TASK', resourceId: id, revision: revision + 1 },
+            ]);
             const { unavailable: _, ...rest } = await read(id);
             return rest;
           },

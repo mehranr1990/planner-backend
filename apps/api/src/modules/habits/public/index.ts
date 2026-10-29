@@ -4,3 +4,5 @@ export type { GoalHabitSnapshot } from './goal-habits.js';
 export { CaptureHabits } from './capture-habits.js';
 export { AnalyticsHabits } from './analytics.js';
 export { RewardHabits } from './reward-habits.js';
+export { HabitsSync } from './sync-access.js';
+export { HabitsData } from './personal-data.js';

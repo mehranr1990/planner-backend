@@ -35,7 +35,8 @@ export class RewardsRepository extends RewardsPort {
   ) {
     super();
   }
-  private lock(tx: Prisma.TransactionClient, scope: AuthorizedSpace) {
+  private async lock(tx: Prisma.TransactionClient, scope: AuthorizedSpace) {
+    await scope.fence(tx);
     return tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${'rewards:' + scope.spaceId},0))::text`;
   }
   preferences(scope: AuthorizedSpace) {

@@ -14,6 +14,9 @@ export function loggingOptions(config: AppConfig): Params {
         paths: [
           'req.headers.authorization',
           'req.headers.cookie',
+          'req.headers["x-export-proof"]',
+          'req.headers["x-deletion-proof"]',
+          'req.headers["x-deletion-recovery"]',
           'res.headers["set-cookie"]',
           'req.body',
           'req.query',

@@ -71,6 +71,6 @@ describe('P1-05 habit/routine contracts and previous API compatibility', () => {
     ])
       expect(paths).toHaveProperty('/api/v1' + approved);
     for (const path of ['/sync/push'])
-      expect(paths).not.toHaveProperty('/api/v1' + path);
+      expect(paths).toHaveProperty('/api/v1' + path);
   });
 });

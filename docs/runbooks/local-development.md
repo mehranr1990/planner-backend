@@ -1,5 +1,10 @@
 # Local Windows development
 
+P1-12 adds an independently retained private erasure-control directory. Existing
+installations must explicitly provision it before normal private access; see
+[personal data lifecycle](./personal-data-lifecycle.md). Do not auto-initialize a
+restored installation or include current control evidence in planner restores.
+
 Use Node 24.22.1 through NVM and pnpm 10.20.0. This repository is native ESM
 (`type: module`, TypeScript NodeNext). Build output uses explicit `.js` imports.
 Vitest uses Vite 8/Oxc legacy decorators with metadata enabled; a compatibility

@@ -41,7 +41,7 @@ try {
       `SELECT tablename FROM pg_tables WHERE schemaname = current_schema() ORDER BY tablename`,
     )
   ).rows;
-  assert.equal(emptyTables.length, 64); // sixty-three application/provider tables plus Prisma's ledger
+  assert.equal(emptyTables.length, 68); // 67 application/provider tables plus Prisma's ledger
   // Required reset capability is restricted to this disposable, newly-created namespace.
   await sandbox.resetOwnedSchema();
   const folder = path.resolve('.tools/migration-check-' + randomUUID());
@@ -409,10 +409,10 @@ try {
     `INSERT INTO "SavingsGoal" (id,"logicalId","spaceId","createdByUserId",name,currency,scale,target,mode,"manualAmount","updatedAt") VALUES ($1,$1,$2,$3,'Preserved savings','USD',2,100,'MANUAL',25.50,now())`,
     [savingsId, spaceId, id],
   );
-  // Upgrade from the actual P1-10 boundary, preserving consumer progress too.
+  // Upgrade from the actual P1-11 boundary, preserving consumer progress too.
   for (const name of names.slice(
     names.indexOf('202610290001_p1_10_notifications'),
-    names.indexOf('202610290004_p1_11_analytics_rewards'),
+    names.indexOf('20261029001200_personal_data_lifecycle_and_sync'),
   ))
     fs.cpSync(
       path.join('prisma/migrations', name),
@@ -424,7 +424,22 @@ try {
     'UPDATE "OutboxEvent" SET "notificationAttempts"=2,"notificationHandledAt"=now() WHERE id=$1',
     [eventId],
   );
+  await sandbox.query(
+    'UPDATE "UserSettings" SET "rewardsEnabled"=true,"rewardsEnabledSince"=$2 WHERE "userId"=$1',
+    [id, '2024-01-01T00:00:00Z'],
+  );
+  await sandbox.query(
+    'INSERT INTO "XpLedger" (id,"spaceId","sourceEventId","rewardKey",kind,points) VALUES ($1,$2,$3,$4,\'TASK\',10)',
+    [randomUUID(), spaceId, eventId, 'task:' + taskId],
+  );
+  await sandbox.query(
+    'INSERT INTO "AchievementUnlock" (id,"spaceId","definitionId") VALUES ($1,$2,$3)',
+    [randomUUID(), spaceId, '11000000-0000-4000-8000-000000000001'],
+  );
   const preservedTables = [
+    'AchievementDefinition',
+    'AchievementUnlock',
+    'XpLedger',
     'Reminder',
     'Notification',
     'NotificationDelivery',
@@ -492,7 +507,7 @@ try {
       table,
       (
         await sandbox.query(
-          `SELECT ${table === 'OutboxEvent' ? "to_jsonb(t) - 'rewardHandledAt' - 'rewardAttempts' - 'rewardRetryAt' - 'rewardFailureCode'" : table === 'HabitEntry' ? "to_jsonb(t) - 'sourceEventId'" : table === 'UserSettings' ? "to_jsonb(t) - 'rewardsEnabled' - 'rewardsEnabledSince' - 'rewardsDisplayAchievements'" : 'to_jsonb(t)'} AS row FROM "${table}" t ORDER BY to_jsonb(t)::text`,
+          `SELECT ${table === 'Space' ? "to_jsonb(t) - 'accessClosedAt' - 'syncEpoch' - 'syncRetainedSequence' - 'syncSequence'" : 'to_jsonb(t)'} AS row FROM "${table}" t ORDER BY to_jsonb(t)::text`,
         )
       ).rows,
     );
@@ -503,7 +518,7 @@ try {
     assert.deepEqual(
       (
         await sandbox.query(
-          `SELECT ${table === 'OutboxEvent' ? "to_jsonb(t) - 'rewardHandledAt' - 'rewardAttempts' - 'rewardRetryAt' - 'rewardFailureCode'" : table === 'HabitEntry' ? "to_jsonb(t) - 'sourceEventId'" : table === 'UserSettings' ? "to_jsonb(t) - 'rewardsEnabled' - 'rewardsEnabledSince' - 'rewardsDisplayAchievements'" : 'to_jsonb(t)'} AS row FROM "${table}" t ORDER BY to_jsonb(t)::text`,
+          `SELECT ${table === 'Space' ? "to_jsonb(t) - 'accessClosedAt' - 'syncEpoch' - 'syncRetainedSequence' - 'syncSequence'" : 'to_jsonb(t)'} AS row FROM "${table}" t ORDER BY to_jsonb(t)::text`,
         )
       ).rows,
       beforeSnapshots.get(table),

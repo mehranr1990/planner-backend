@@ -1,3 +1,7 @@
+import { TasksData } from './public/personal-data.js';
+import { TasksDataRepository } from './infrastructure/personal-data.repository.js';
+import { TasksSync } from './public/sync-access.js';
+import { TasksSyncRepository } from './infrastructure/sync.repository.js';
 import { AnalyticsTasks } from './public/analytics.js';
 import { AnalyticsTasksRepository } from './infrastructure/analytics.repository.js';
 import { CaptureTasks } from './public/capture-tasks.js';
@@ -34,6 +38,8 @@ export class TasksModule {
       module: TasksModule,
       imports: [DatabaseModule, AuditModule, SpacesModule, storage],
       providers: [
+        { provide: TasksData, useClass: TasksDataRepository },
+        { provide: TasksSync, useClass: TasksSyncRepository },
         { provide: AnalyticsTasks, useClass: AnalyticsTasksRepository },
         TasksService,
         { provide: ReminderTasks, useClass: ReminderTasksRepository },
@@ -55,6 +61,8 @@ export class TasksModule {
         LabelsController,
       ],
       exports: [
+        TasksData,
+        TasksSync,
         AnalyticsTasks,
         PlanningTasks,
         ProductivityTasks,

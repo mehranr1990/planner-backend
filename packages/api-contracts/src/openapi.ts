@@ -1,4 +1,5 @@
 import { financePaths } from './finance-openapi.js';
+import { lifecyclePaths } from './lifecycle-openapi.js';
 import { insightPaths } from './insights-openapi.js';
 import { notificationPaths } from './notifications-openapi.js';
 import { writingPaths } from './writing-openapi.js';
@@ -234,6 +235,7 @@ export function createOpenApiDocument() {
       ...financePaths(),
       ...notificationPaths(),
       ...insightPaths(),
+      ...lifecyclePaths(),
       ...extraPaths,
       [healthRoutes.live]: { get: operation('healthLive', 'LiveHealth') },
       [healthRoutes.ready]: { get: operation('healthReady', 'ReadyHealth') },

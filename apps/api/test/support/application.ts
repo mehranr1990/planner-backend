@@ -13,6 +13,8 @@ import { ZodValidationPipe } from '../../src/bootstrap/zod-validation.pipe.js';
 import { DatabaseService } from '../../src/platform/database/database.service.js';
 import { AuthService } from '../../src/platform/auth/auth.service.js';
 import { IdentityMailService } from '../../src/platform/auth/mail.service.js';
+import { ErasureControl } from '../../src/platform/storage/public/index.js';
+import { PersonalLifecycle } from '../../src/modules/account/public/index.js';
 
 const ProbeSchema = z.strictObject({ title: z.string().trim().min(1).max(30) });
 
@@ -37,6 +39,7 @@ export async function testApplication(
     probes?: boolean;
     mail?: IdentityMailService;
     environment?: NodeJS.ProcessEnv;
+    restoredControl?: boolean;
   } = {},
 ) {
   fs.mkdirSync('.tools', { recursive: true });
@@ -60,6 +63,9 @@ export async function testApplication(
     controllers: options.probes ? [ProbeController] : [],
   });
   if (options.database) {
+    builder
+      .overrideProvider(PersonalLifecycle)
+      .useValue({ verifyControl: async () => true });
     builder.overrideProvider(DatabaseService).useValue(options.database);
     builder
       .overrideProvider(AuthService)
@@ -68,6 +74,17 @@ export async function testApplication(
   if (options.mail)
     builder.overrideProvider(IdentityMailService).useValue(options.mail);
   const fixture = await builder.compile();
+  // Fresh, explicitly owned local test volumes only; restores never auto-initialize.
+  if (
+    !options.restoredControl &&
+    !fs.existsSync(
+      path.join(
+        config.ERASURE_CONTROL_ROOT!,
+        '00000000-0000-4000-8000-000000000012.blob',
+      ),
+    )
+  )
+    await fixture.get(ErasureControl).initialize();
   const app = fixture.createNestApplication<NestExpressApplication>({
     bodyParser: false,
     bufferLogs: true,
@@ -107,6 +124,9 @@ export async function testApplication(
         )
           throw new Error('Refusing unsafe fixture cleanup.');
         fs.rmSync(resolved, { recursive: true, force: true });
+        const control = path.resolve(config.ERASURE_CONTROL_ROOT!);
+        if (control === resolved + '-erasure-control')
+          fs.rmSync(control, { recursive: true, force: true });
       }
     }
   };

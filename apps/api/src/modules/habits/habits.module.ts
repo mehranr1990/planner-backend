@@ -1,3 +1,7 @@
+import { HabitsData } from './public/personal-data.js';
+import { HabitsDataRepository } from './infrastructure/personal-data.repository.js';
+import { HabitsSync } from './public/sync-access.js';
+import { HabitsSyncRepository } from './infrastructure/sync.repository.js';
 import { RewardHabits } from './public/reward-habits.js';
 import { RewardHabitsRepository } from './infrastructure/reward-habits.repository.js';
 import { AnalyticsHabits } from './public/analytics.js';
@@ -23,6 +27,8 @@ import { GoalHabits } from './public/goal-habits.js';
 @Module({
   imports: [DatabaseModule, AuditModule, SpacesModule, AccountModule],
   providers: [
+    { provide: HabitsData, useClass: HabitsDataRepository },
+    { provide: HabitsSync, useClass: HabitsSyncRepository },
     { provide: RewardHabits, useClass: RewardHabitsRepository },
     { provide: AnalyticsHabits, useClass: AnalyticsHabitsRepository },
     HabitsService,
@@ -31,6 +37,13 @@ import { GoalHabits } from './public/goal-habits.js';
     { provide: HABITS_REPOSITORY, useClass: HabitsRepository },
   ],
   controllers: [HabitsController, RoutinesController],
-  exports: [RewardHabits, AnalyticsHabits, GoalHabits, CaptureHabits],
+  exports: [
+    HabitsData,
+    HabitsSync,
+    RewardHabits,
+    AnalyticsHabits,
+    GoalHabits,
+    CaptureHabits,
+  ],
 })
 export class HabitsModule {}

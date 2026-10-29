@@ -113,7 +113,7 @@ export class TasksService {
   }
   constructor(
     @Inject(TASKS_REPOSITORY) private readonly repository: TasksPort,
-    @Inject(AuditService) private readonly audit: AuditService,
+    @Inject(AuditService) private readonly audit: Pick<AuditService, 'record'>,
   ) {}
   private async operation<T>(
     scope: AuthorizedSpace,

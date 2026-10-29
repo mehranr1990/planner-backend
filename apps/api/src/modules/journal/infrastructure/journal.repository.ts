@@ -333,6 +333,7 @@ export class JournalRepository implements JournalPort {
     scope: AuthorizedSpace,
     work: (tx: JournalTransaction) => Promise<T>,
   ) {
+    await scope.fence(tx);
     await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`journal:${scope.spaceId}`},0))::text`;
     return work(new Store(tx, scope, this.account));
   }

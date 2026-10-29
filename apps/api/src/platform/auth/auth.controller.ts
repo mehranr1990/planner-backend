@@ -134,6 +134,13 @@ export class AuthController {
         throw new BadRequestException();
     }
     const headers = fromNodeHeaders(req.headers);
+    if (
+      req.headers.cookie &&
+      !['/request-password-reset', '/reset-password', '/sign-out'].includes(
+        route,
+      )
+    )
+      await this.identity.session(req.headers);
     if (route === '/change-email')
       await this.identity.requireFreshSession(req.headers);
     headers.delete('host');

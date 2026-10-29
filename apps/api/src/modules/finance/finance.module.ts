@@ -1,3 +1,5 @@
+import { FinanceData } from './public/personal-data.js';
+import { FinanceDataRepository } from './infrastructure/personal-data.repository.js';
 import { AnalyticsFinance } from './public/analytics.js';
 import { AnalyticsFinanceRepository } from './infrastructure/analytics.repository.js';
 import { AuditModule } from '../../platform/audit/audit.service.js';
@@ -25,13 +27,14 @@ export class FinanceModule {
         capture,
       ],
       providers: [
+        { provide: FinanceData, useClass: FinanceDataRepository },
         { provide: AnalyticsFinance, useClass: AnalyticsFinanceRepository },
         { provide: FINANCE_REPOSITORY, useClass: FinanceRepository },
         LedgerService,
         FinancePlanningService,
         FinanceReportsService,
       ],
-      exports: [AnalyticsFinance],
+      exports: [FinanceData, AnalyticsFinance],
       controllers: [FinanceController],
     };
   }

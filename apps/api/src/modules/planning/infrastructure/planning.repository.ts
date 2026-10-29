@@ -1,3 +1,4 @@
+import { appendSyncChanges } from '../../../platform/sync/change-feed.js';
 import {
   Inject,
   Injectable,
@@ -52,7 +53,7 @@ const dayView = (row: DatabaseDay): Day => ({
   ...times(row),
   localDate: row.localDate.toISOString().slice(0, 10),
 });
-class PlanningStore implements PlanningTransaction {
+export class PlanningStore implements PlanningTransaction {
   constructor(
     private readonly tx: Prisma.TransactionClient,
     private readonly scope: AuthorizedSpace,
@@ -89,12 +90,21 @@ class PlanningStore implements PlanningTransaction {
     return row ? dayView(row) : null;
   }
   async createDay(localDate: string, timezone: string) {
-    return dayView(
+    const created = dayView(
       await this.tx.dailyPlan.create({
         data: { ...this.owner(), localDate: date(localDate), timezone },
       }),
     );
+    await appendSyncChanges(this.tx, this.scope, [
+      {
+        entity: 'DAILY_PLAN',
+        resourceId: created.id,
+        revision: created.revision,
+      },
+    ]);
+    return created;
   }
+
   async items(planId: string) {
     const rows = await this.tx.dailyPlanItem.findMany({
       where: this.where({ planId }),
@@ -154,7 +164,15 @@ class PlanningStore implements PlanningTransaction {
       });
       if (result.count !== 1) throw new ConflictException();
     }
-    return (await this.day(day.localDate))!;
+    const changed = (await this.day(day.localDate))!;
+    await appendSyncChanges(this.tx, this.scope, [
+      {
+        entity: 'DAILY_PLAN',
+        resourceId: changed.id,
+        revision: changed.revision,
+      },
+    ]);
+    return changed;
   }
   async touchWeeks(dates: string[]) {
     if (!dates.length) return;

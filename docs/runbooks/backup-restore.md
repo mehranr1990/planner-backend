@@ -1,5 +1,11 @@
 # Coordinated PostgreSQL and private-file backup / restore
 
+P1-12 amendment: stop both API and worker during a coordinated backup. The approved
+30-day maximum, signed manifest and independent erasure replay requirements are
+defined in [personal data lifecycle](./personal-data-lifecycle.md); they supersede
+the older unconfigured retention references below. Actual off-host expiry and
+Docker restore verification remain deferred deployment gates.
+
 Status: operational definition for P0-04. Actual host, encrypted off-host
 destination, retention, recovery objectives and production credentials are owner
 configuration. No production or Docker backup/restore drill has run locally.

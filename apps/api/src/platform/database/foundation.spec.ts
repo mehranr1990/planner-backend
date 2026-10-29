@@ -221,6 +221,8 @@ describe('scoped persistence and API conventions', () => {
       '202610290003_p1_10_notification_query_indexes',
       '202610290004_p1_11_analytics_rewards',
       '202610290005_p1_11_habit_event_provenance',
+      '20261029001200_personal_data_lifecycle_and_sync',
+      '20261029001300_sync_retention_and_export_attempt_keys',
     ]);
     for (const sql of [
       '',

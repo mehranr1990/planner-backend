@@ -1,3 +1,5 @@
+import { NotificationsData } from './public/personal-data.js';
+import { NotificationsDataRepository } from './infrastructure/personal-data.repository.js';
 import { Module } from '@nestjs/common';
 import type { DynamicModule } from '@nestjs/common';
 import { DatabaseModule } from '../../platform/database/database.module.js';
@@ -26,6 +28,7 @@ export class NotificationsModule {
         tasks,
       ],
       providers: [
+        { provide: NotificationsData, useClass: NotificationsDataRepository },
         NotificationsService,
         NotificationWorker,
         JobsService,
@@ -34,7 +37,7 @@ export class NotificationsModule {
         { provide: NotificationTransport, useClass: ChannelTransport },
       ],
       controllers: [NotificationsController],
-      exports: [NotificationWorker],
+      exports: [NotificationsData, NotificationWorker],
     };
   }
 }

@@ -13,6 +13,7 @@ export class StorageFailure extends Error {
   }
 }
 export interface StoragePort {
+  inventory?(): Promise<Array<{ key: string; attempt: string | null }>>;
   write(
     key: string,
     attempt: string,

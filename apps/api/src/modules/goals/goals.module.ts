@@ -1,3 +1,5 @@
+import { GoalsData } from './public/personal-data.js';
+import { GoalsDataRepository } from './infrastructure/personal-data.repository.js';
 import { AnalyticsGoals } from './public/analytics.js';
 import { AnalyticsGoalsRepository } from './infrastructure/analytics.repository.js';
 import { PersonalGoals } from './public/personal-goals.js';
@@ -30,13 +32,14 @@ export class GoalsModule {
         tasks,
       ],
       providers: [
+        { provide: GoalsData, useClass: GoalsDataRepository },
         { provide: AnalyticsGoals, useClass: AnalyticsGoalsRepository },
         GoalsService,
         { provide: PersonalGoals, useClass: PersonalGoalsRepository },
         { provide: GOALS_REPOSITORY, useClass: GoalsRepository },
       ],
       controllers: [GoalsController, LifeAreasController],
-      exports: [AnalyticsGoals, PersonalGoals],
+      exports: [GoalsData, AnalyticsGoals, PersonalGoals],
     };
   }
 }

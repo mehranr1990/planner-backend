@@ -9,6 +9,7 @@ import { isAPIError } from 'better-auth/api';
 import { PinoLogger } from 'nestjs-pino';
 import { fromNodeHeaders } from 'better-auth/node';
 import type { IncomingHttpHeaders } from 'node:http';
+import type { Prisma } from '../../generated/prisma/client.js';
 import { APP_CONFIG } from '../../bootstrap/configuration.module.js';
 import type { AppConfig } from '../../bootstrap/environment.js';
 import { DatabaseService } from '../database/database.service.js';
@@ -19,22 +20,26 @@ import {
 } from './identity-relations.js';
 import type { InitialIdentityRelations } from './identity-relations.js';
 import { createIdentityAuth } from './create-auth.js';
+import { IDENTITY_ADMISSION } from './admission.js';
+import type { IdentityAdmission } from './admission.js';
 
 @Injectable()
 export class AuthService {
   readonly auth: ReturnType<typeof createIdentityAuth>;
   constructor(
     @Inject(APP_CONFIG) config: AppConfig,
-    @Inject(DatabaseService) database: DatabaseService,
+    @Inject(DatabaseService) private readonly database: DatabaseService,
     @Inject(IdentityMailService) mail: IdentityMailService,
     @Inject(INITIAL_IDENTITY_RELATIONS) relations: InitialIdentityRelations,
     @Inject(PinoLogger) logger: PinoLogger,
+    @Inject(IDENTITY_ADMISSION) private readonly admission: IdentityAdmission,
   ) {
     this.auth = createIdentityAuth(
       config,
       identityClient(database.client, relations),
       (message) => mail.send(message),
       () => logger.warn({ provider: 'better-auth' }, 'Identity provider event'),
+      admission,
     );
   }
   async session(
@@ -47,6 +52,7 @@ export class AuthService {
       returnHeaders: true,
     });
     for (const cookie of result.headers.getSetCookie()) setCookie?.(cookie);
+    if (result.response) await this.admission(result.response.user.id);
     return result.response;
   }
   async auditActor(headers: IncomingHttpHeaders): Promise<string | null> {
@@ -82,5 +88,50 @@ export class AuthService {
       Date.now() - session.session.createdAt.getTime() >= freshAge * 1000
     )
       throw new ForbiddenException();
+  }
+  async verifyPassword(userId: string, password: string) {
+    const ctx = await this.auth.$context;
+    const accounts = await ctx.internalAdapter.findAccounts(userId);
+    const credential = accounts.find((a) => a.providerId === 'credential');
+    if (
+      !credential?.password ||
+      !(await ctx.password.verify({ hash: credential.password, password }))
+    )
+      throw new ForbiddenException({ code: 'REAUTHENTICATION_FAILED' });
+  }
+  async revokeAll(userId: string) {
+    await (await this.auth.$context).internalAdapter.deleteUserSessions(userId);
+  }
+  async revokeAllInside(tx: Prisma.TransactionClient, userId: string) {
+    await tx.authSession.deleteMany({ where: { userId } });
+  }
+  /** Identity-owner erasure in the caller's transaction; provider has no secondary storage. */
+  async eraseIdentityInside(tx: Prisma.TransactionClient, userId: string) {
+    await tx.authVerification.deleteMany({ where: { value: userId } });
+    await tx.authSession.deleteMany({ where: { userId } });
+    await tx.authAccount.deleteMany({ where: { userId } });
+    await tx.user.deleteMany({ where: { id: userId } });
+  }
+  async eraseIdentity(userId: string) {
+    await this.database.client.authVerification.deleteMany({
+      where: { value: userId },
+    });
+    await (await this.auth.$context).internalAdapter.deleteUser(userId);
+  }
+  async profileSnapshot(tx: Prisma.TransactionClient, userId: string) {
+    const user = await tx.user.findUnique({ where: { id: userId } });
+    if (!user) throw new ForbiddenException();
+    return {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      emailVerified: user.emailVerified,
+      image: user.image ?? null,
+      createdAt: user.createdAt.toISOString(),
+      updatedAt: user.updatedAt.toISOString(),
+    };
+  }
+  identityIds(tx: Prisma.TransactionClient) {
+    return tx.user.findMany({ select: { id: true }, take: 100001 });
   }
 }

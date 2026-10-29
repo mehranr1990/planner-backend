@@ -1,3 +1,5 @@
+import { CalendarData } from './public/personal-data.js';
+import { CalendarDataRepository } from './infrastructure/personal-data.repository.js';
 import { Module } from '@nestjs/common';
 import type { DynamicModule } from '@nestjs/common';
 import { DatabaseModule } from '../../platform/database/database.module.js';
@@ -14,10 +16,12 @@ export class CalendarModule {
       module: CalendarModule,
       imports: [DatabaseModule, AuditModule, SpacesModule, tasks],
       providers: [
+        { provide: CalendarData, useClass: CalendarDataRepository },
         CalendarService,
         { provide: CALENDAR_REPOSITORY, useClass: CalendarRepository },
       ],
       controllers: [CalendarController],
+      exports: [CalendarData],
     };
   }
 }

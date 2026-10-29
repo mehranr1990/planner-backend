@@ -1,3 +1,7 @@
+import { CaptureData } from './public/personal-data.js';
+import { CaptureDataRepository } from './infrastructure/personal-data.repository.js';
+import { CaptureSync } from './public/sync-access.js';
+import { CaptureSyncRepository } from './infrastructure/sync.repository.js';
 import { FinanceCaptures } from './public/finance-captures.js';
 import { FinanceCapturesRepository } from './infrastructure/capture.repository.js';
 import { Module } from '@nestjs/common';
@@ -38,13 +42,15 @@ export class CaptureModule {
         storage,
       ],
       providers: [
+        { provide: CaptureData, useClass: CaptureDataRepository },
+        { provide: CaptureSync, useClass: CaptureSyncRepository },
         CaptureService,
         CaptureRepository,
         { provide: FinanceCaptures, useClass: FinanceCapturesRepository },
         { provide: CAPTURE_REPOSITORY, useExisting: CaptureRepository },
       ],
       controllers: [CaptureController, PersonalSearchController],
-      exports: [FinanceCaptures],
+      exports: [CaptureData, CaptureSync, FinanceCaptures],
     };
   }
 }

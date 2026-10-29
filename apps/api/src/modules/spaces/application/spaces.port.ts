@@ -5,6 +5,7 @@ export type OwnedSpace = {
   ownerUserId: string;
   createdAt: Date;
   updatedAt: Date;
+  accessClosedAt?: Date | null;
 };
 export interface SpacesPort {
   personalFor(userId: string): Promise<OwnedSpace>;

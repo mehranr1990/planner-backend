@@ -1,3 +1,4 @@
+import { appendSyncChanges } from '../../../platform/sync/change-feed.js';
 import { FinanceCaptures } from '../public/finance-captures.js';
 import {
   Inject,
@@ -101,7 +102,7 @@ class Store implements CaptureTransaction {
     return { ...page, items: page.items.map(view) };
   }
   async create(input: c.CaptureCreate) {
-    return view(
+    const created = view(
       await this.tx.captureItem.create({
         data: {
           ...input,
@@ -110,7 +111,17 @@ class Store implements CaptureTransaction {
         },
       }),
     );
+    if (created.type !== 'VOICE_MEMO')
+      await appendSyncChanges(this.tx, this.scope, [
+        {
+          entity: 'CAPTURE',
+          resourceId: created.id,
+          revision: created.revision,
+        },
+      ]);
+    return created;
   }
+
   async update(before: c.Capture, input: CaptureWrite) {
     if (
       (
@@ -121,7 +132,16 @@ class Store implements CaptureTransaction {
       ).count !== 1
     )
       throw new ConflictException();
-    return this.capture(before.id);
+    const changed = await this.capture(before.id);
+    if (changed.type !== 'VOICE_MEMO')
+      await appendSyncChanges(this.tx, this.scope, [
+        {
+          entity: 'CAPTURE',
+          resourceId: changed.id,
+          revision: changed.revision,
+        },
+      ]);
+    return changed;
   }
   async voice(id: string) {
     await this.files.requireReady(this.tx, this.scope, id);

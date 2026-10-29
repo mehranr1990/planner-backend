@@ -1,3 +1,5 @@
+import { JournalData } from './public/personal-data.js';
+import { JournalDataRepository } from './infrastructure/personal-data.repository.js';
 import { Module } from '@nestjs/common';
 import { DatabaseModule } from '../../platform/database/database.module.js';
 import { AuditModule } from '../../platform/audit/audit.service.js';
@@ -18,6 +20,7 @@ import {
 @Module({
   imports: [DatabaseModule, AuditModule, SpacesModule, AccountModule],
   providers: [
+    { provide: JournalData, useClass: JournalDataRepository },
     JournalService,
     JournalRepository,
     { provide: JOURNAL_REPOSITORY, useExisting: JournalRepository },
@@ -28,6 +31,6 @@ import {
     DailyCheckinsController,
     MoodsController,
   ],
-  exports: [PersonalJournal],
+  exports: [JournalData, PersonalJournal],
 })
 export class JournalModule {}

@@ -74,6 +74,6 @@ describe('P1-03 OpenAPI and prior API compatibility', () => {
     for (const approved of ['/insights/time', '/insights/tasks'])
       expect(paths).toHaveProperty('/api/v1' + approved);
     for (const path of ['/sync/push'])
-      expect(paths).not.toHaveProperty('/api/v1' + path);
+      expect(paths).toHaveProperty('/api/v1' + path);
   });
 });

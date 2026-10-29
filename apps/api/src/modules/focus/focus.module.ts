@@ -1,3 +1,5 @@
+import { FocusData } from './public/personal-data.js';
+import { FocusDataRepository } from './infrastructure/personal-data.repository.js';
 import { AnalyticsFocus } from './public/analytics.js';
 import { AnalyticsFocusRepository } from './infrastructure/analytics.repository.js';
 import { Module } from '@nestjs/common';
@@ -27,11 +29,12 @@ export class FocusModule {
         tasks,
       ],
       providers: [
+        { provide: FocusData, useClass: FocusDataRepository },
         { provide: AnalyticsFocus, useClass: AnalyticsFocusRepository },
         FocusService,
         { provide: FOCUS_REPOSITORY, useClass: FocusRepository },
       ],
-      exports: [AnalyticsFocus],
+      exports: [FocusData, AnalyticsFocus],
       controllers: [
         FocusController,
         TimeEntriesController,

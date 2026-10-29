@@ -5,6 +5,7 @@ import { ReminderTasks } from '../public/reminder-tasks.js';
 @Injectable()
 export class ReminderTasksRepository extends ReminderTasks {
   async lock(tx: Prisma.TransactionClient, scope: AuthorizedSpace) {
+    await scope.fence(tx);
     await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`tasks:${scope.spaceId}`},0))::text`;
   }
   async read(tx: Prisma.TransactionClient, scope: AuthorizedSpace, id: string) {

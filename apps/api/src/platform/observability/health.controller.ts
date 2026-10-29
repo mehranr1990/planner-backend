@@ -12,12 +12,14 @@ import {
   healthRoutes,
 } from '@mehran/api-contracts';
 import { DatabaseService } from '../database/database.service.js';
+import { PrivacyGate } from '../authorization/privacy-gate.js';
 import { ZodValidationPipe } from '../../bootstrap/zod-validation.pipe.js';
 
 @Controller()
 export class HealthController {
   constructor(
     @Inject(DatabaseService) private readonly database: DatabaseService,
+    @Inject(PrivacyGate) private readonly privacy: PrivacyGate,
   ) {}
 
   @Get(healthRoutes.live)
@@ -28,6 +30,7 @@ export class HealthController {
   @Get(healthRoutes.ready)
   async ready(@Query(new ZodValidationPipe(EmptyQuerySchema)) _query: unknown) {
     try {
+      this.privacy.assert();
       await this.database.checkConnection();
     } catch {
       throw new ServiceUnavailableException();

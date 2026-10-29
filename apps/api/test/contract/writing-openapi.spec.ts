@@ -91,7 +91,8 @@ describe('P1-08 writing/search/voice contracts and previous API compatibility', 
       '/insights/tasks',
     ])
       expect(paths).toHaveProperty('/api/v1' + approved);
-    for (const path of ['/sync/push', '/teams', '/companies'])
+    expect(paths).toHaveProperty('/api/v1/sync/push');
+    for (const path of ['/teams', '/companies'])
       expect(paths).not.toHaveProperty('/api/v1' + path);
   });
 });

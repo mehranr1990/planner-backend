@@ -77,7 +77,6 @@ describe('P1-09 approved API and compatibility', () => {
       '/insights/finance',
     ])
       expect(paths).toHaveProperty('/api/v1' + approved);
-    for (const p of ['/sync/push'])
-      expect(paths).not.toHaveProperty('/api/v1' + p);
+    for (const p of ['/sync/push']) expect(paths).toHaveProperty('/api/v1' + p);
   });
 });

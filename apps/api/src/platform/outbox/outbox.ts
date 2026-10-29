@@ -6,6 +6,7 @@ import type { AuthorizedSpace } from '../authorization/authorized-space.js';
 export const EventSchema = z.strictObject({
   type: z.enum([
     'account.timezone_changed',
+    'account.deletion_requested',
     'task.created',
     'task.updated',
     'task.completed',

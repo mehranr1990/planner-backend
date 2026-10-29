@@ -65,6 +65,7 @@ export async function idempotent(
   };
   return client.$transaction(
     async (tx) => {
+      await scope.fence(tx);
       // Transaction-scoped lock serializes this scoped operation across API processes.
       // Hash collisions only serialize unrelated work; they do not grant replay access.
       const lock = hash(canonical(identity)).slice(0, 16);

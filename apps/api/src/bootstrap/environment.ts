@@ -62,6 +62,11 @@ const EnvironmentSchema = z.object({
   SMTP_USER: z.string().optional(),
   SMTP_PASSWORD: z.string().optional(),
   STORAGE_ROOT: z.string().min(1).default('.tools/private-files'),
+  ERASURE_CONTROL_ROOT: z.string().min(1).optional(),
+  PERSONAL_ERASURE_POLICY_VERSION: z
+    .string()
+    .regex(/^[A-Za-z0-9._-]{1,80}$/)
+    .optional(),
   FILE_MAX_BYTES: z.coerce
     .number()
     .int()
@@ -192,7 +197,26 @@ export function parseEnvironment(environment: NodeJS.ProcessEnv): AppConfig {
     throw new Error(
       'Invalid configuration: SMTP_HOST, SMTP_USER, SMTP_PASSWORD. See .env.example.',
     );
-  return Object.freeze({ ...result.data, STORAGE_ROOT: storageRoot });
+  const controlRoot = path.resolve(
+    config.ERASURE_CONTROL_ROOT ?? storageRoot + '-erasure-control',
+  );
+  const relative = path.relative(storageRoot, controlRoot),
+    reverse = path.relative(controlRoot, storageRoot);
+  if (
+    !relative ||
+    !reverse ||
+    (!relative.startsWith('..') && !path.isAbsolute(relative)) ||
+    (!reverse.startsWith('..') && !path.isAbsolute(reverse)) ||
+    controlRoot === path.parse(controlRoot).root
+  )
+    throw new Error(
+      'Invalid configuration: ERASURE_CONTROL_ROOT must be independent of planner storage.',
+    );
+  return Object.freeze({
+    ...result.data,
+    STORAGE_ROOT: storageRoot,
+    ERASURE_CONTROL_ROOT: controlRoot,
+  });
 }
 
 export function trustedOrigins(config: AppConfig): string[] {

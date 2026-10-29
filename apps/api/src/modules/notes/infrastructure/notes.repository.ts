@@ -1,3 +1,4 @@
+import { appendSyncChanges } from '../../../platform/sync/change-feed.js';
 import {
   Inject,
   Injectable,
@@ -214,7 +215,7 @@ class Store implements NotesTransaction {
     )
       throw new ConflictException();
     const { content, ...rest } = input;
-    return noteView(
+    const created = noteView(
       await this.tx.note.create({
         data: {
           ...rest,
@@ -234,7 +235,17 @@ class Store implements NotesTransaction {
         },
       }),
     );
+    await appendSyncChanges(this.tx, this.scope, [
+      {
+        entity: 'NOTE',
+        resourceId: created.id,
+        revision: created.revision,
+        deleted: created.state === 'DELETED',
+      },
+    ]);
+    return created;
   }
+
   async task(id: string, allowDeleted = false) {
     const t = (await this.tasks.describe(this.tx, this.scope, [id]))[0];
     if (!t || (!allowDeleted && t.deleted)) throw new NotFoundException();

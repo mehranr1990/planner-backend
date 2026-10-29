@@ -917,6 +917,7 @@ export class FinanceRepository implements FinancePort {
     scope: AuthorizedSpace,
     draft = false,
   ) {
+    await scope.fence(tx);
     if (draft) await this.captures.lock(tx, scope);
     await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${'finance:' + scope.spaceId},0))::text`;
     return new Store(tx, scope, this.prefs, this.captures);
