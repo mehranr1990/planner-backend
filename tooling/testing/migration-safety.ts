@@ -8,10 +8,22 @@ import {
 } from './reviewed-voice-migration.ts';
 import fs from 'node:fs';
 import {
+  projectMigrationHashes,
+  assertReviewedProjectMigration,
+} from './reviewed-project-migration.ts';
+import {
   reviewedRewardsMigrationName,
   assertReviewedRewardsMigration,
 } from './reviewed-rewards-migration.ts';
 import path from 'node:path';
+import {
+  collaborationMigrationName,
+  assertReviewedCollaborationMigration,
+} from './reviewed-collaboration-migration.ts';
+import {
+  sharedKernelMigrations,
+  assertReviewedSharedKernel,
+} from './reviewed-shared-kernel.ts';
 
 /** Conservative review gate, not a general SQL parser. Unrecognized migration forms need owner review. */
 export function assertAdditiveMigration(sql: string): void {
@@ -72,7 +84,13 @@ export function reviewMigrations(directory = 'prisma/migrations'): string[] {
       path.join(directory, name, 'migration.sql'),
       'utf8',
     );
-    if (name === reviewedVoiceMigrationName)
+    if (Object.hasOwn(projectMigrationHashes, name))
+      assertReviewedProjectMigration(name, sql);
+    else if (name === collaborationMigrationName)
+      assertReviewedCollaborationMigration(name, sql);
+    else if (Object.hasOwn(sharedKernelMigrations, name))
+      assertReviewedSharedKernel(name, sql);
+    else if (name === reviewedVoiceMigrationName)
       assertReviewedVoiceMigration(name, sql);
     else if (name === reviewedFinanceMigrationName)
       assertReviewedFinanceMigration(name, sql);

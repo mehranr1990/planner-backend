@@ -41,15 +41,30 @@ const areaView = (r: Prisma.LifeAreaGetPayload<object>) =>
     createdAt: r.createdAt.toISOString(),
     updatedAt: r.updatedAt.toISOString(),
   });
-const goalView = (r: Prisma.GoalGetPayload<object>) =>
-  c.GoalSchema.parse({
-    ...r,
+const goalView = (r: Prisma.GoalGetPayload<object>) => {
+  if (r.createdByUserId === null || r.scopeId !== null)
+    throw new NotFoundException();
+  return c.GoalSchema.parse({
+    id: r.id,
+    spaceId: r.spaceId,
+    createdByUserId: r.createdByUserId,
+    revision: r.revision,
+    title: r.title,
+    description: r.description,
+    horizon: r.horizon,
+    status: r.status,
+    lifeAreaId: r.lifeAreaId,
+    parentGoalId: r.parentGoalId,
+    progressMode: r.progressMode,
+    metricId: r.metricId,
+    timezone: r.timezone,
     startDate: iso(r.startDate),
     targetDate: iso(r.targetDate),
     manualProgress: r.manualProgress.toString(),
     createdAt: r.createdAt.toISOString(),
     updatedAt: r.updatedAt.toISOString(),
   });
+};
 const reviewView = (r: Prisma.GoalReviewGetPayload<object>) =>
   c.GoalReviewSchema.parse({
     id: r.id,

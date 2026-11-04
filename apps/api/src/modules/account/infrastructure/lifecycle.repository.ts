@@ -44,7 +44,7 @@ import type {
   AttachmentManifest,
   ErasureRecord,
 } from '../../../platform/storage/public/index.js';
-import { SpacesService } from '../../spaces/public/index.js';
+import { SpacesService, SharedKernel } from '../../spaces/public/index.js';
 import { TasksData } from '../../tasks/public/index.js';
 import { PlanningData } from '../../planning/public/index.js';
 import { CalendarData } from '../../calendar/public/index.js';
@@ -85,6 +85,7 @@ export class LifecycleRepository
     @Inject(APP_CONFIG) private readonly config: AppConfig,
     @Inject(AuthService) private readonly auth: AuthService,
     @Inject(SpacesService) private readonly spaces: SpacesService,
+    @Inject(SharedKernel) private readonly shared: SharedKernel,
     @Inject(STORAGE_PORT) private readonly storage: StoragePort,
     @Inject(FilePortability) private readonly files: FilePortability,
     @Inject(ErasureControl) private readonly control: ErasureControl,
@@ -458,7 +459,9 @@ export class LifecycleRepository
           job.confirmationExpiresAt! <= new Date()
         )
           throw new ConflictException();
-        const confirmedAt = new Date(),
+        const confirmedAt = (
+            await tx.$queryRaw<{ now: Date }[]>`SELECT clock_timestamp() AS now`
+          )[0]!.now,
           next = await tx.accountDeletionJob.update({
             where: { id: job.id },
             data: {
@@ -470,7 +473,7 @@ export class LifecycleRepository
             },
           });
         await this.control.append(this.record(next, 'CLOSED'));
-        await this.spaces.setClosed(tx, scope, true);
+        await this.spaces.setClosed(tx, scope, true, confirmedAt);
         for (const owner of this.owners) await owner.suspend(tx, scope);
         await this.auth.revokeAllInside(tx, scope.actor.userId);
         await tx.userExportJob.updateMany({
@@ -826,42 +829,78 @@ export class LifecycleRepository
           await tx.userExportJob.deleteMany({
             where: { ownerUserId: job.ownerUserId!, spaceId: job.spaceId! },
           });
-          await this.spaces.erase(tx, scope);
           await tx.userSettings.deleteMany({
             where: { userId: job.ownerUserId! },
           });
-          await tx.accountDeletionJob.updateMany({
-            where: { ownerUserId: job.ownerUserId!, id: { not: job.id } },
-            data: {
-              ownerUserId: null,
-              spaceId: null,
-              confirmationHash: null,
-              recoveryHash: null,
-              progress: Prisma.DbNull,
-              evidenceExpiresAt: new Date(Date.now() + 90 * day),
-            },
-          });
-          await this.auth.eraseIdentityInside(tx, job.ownerUserId!);
           await tx.accountDeletionJob.update({
             where: { id: job.id },
-            data: {
-              state: 'ERASED',
-              failureCode: null,
-              ownerUserId: null,
-              spaceId: null,
-              progress: Prisma.DbNull,
-              confirmationHash: null,
-              recoveryHash: null,
-              leaseUntil: null,
-              completedAt: new Date(),
-              evidenceExpiresAt: new Date(Date.now() + 90 * day),
-              revision: { increment: 1 },
-            },
+            data: { progress: { stage: 'IDENTITY' } },
           });
         },
         { timeout: 30000 },
       );
     }
+    // Personal content is already purged. Shared metadata work uses its own
+    // account/identity/custody transactions before final identity-owner work.
+    // Retention/holds or fanout failures cannot hold unrelated Personal content.
+    if (
+      !(await this.shared.prepareIdentityErasure(
+        job.ownerUserId,
+        job.confirmedAt!,
+      ))
+    ) {
+      await this.db.client.accountDeletionJob.updateMany({
+        where: { id: job.id, revision: job.revision, state: 'ERASING' },
+        data: { leaseUntil: null, nextAt: new Date(), attempts: 0 },
+      });
+      return;
+    }
+    await this.db.client.$transaction(
+      async (tx) => {
+        const scope = await this.spaces.erasureScope(
+          tx,
+          job.ownerUserId!,
+          job.spaceId!,
+          job.id,
+        );
+        this.policy(job.policyVersion, job.retentionAcknowledged);
+        const current = await tx.accountDeletionJob.findUniqueOrThrow({
+          where: { id: job.id },
+        });
+        if (current.revision !== job.revision || current.state !== 'ERASING')
+          throw new ConflictException();
+        await this.spaces.erase(tx, scope);
+        await tx.accountDeletionJob.updateMany({
+          where: { ownerUserId: job.ownerUserId!, id: { not: job.id } },
+          data: {
+            ownerUserId: null,
+            spaceId: null,
+            confirmationHash: null,
+            recoveryHash: null,
+            progress: Prisma.DbNull,
+            evidenceExpiresAt: new Date(Date.now() + 90 * day),
+          },
+        });
+        await this.auth.eraseIdentityInside(tx, job.ownerUserId!);
+        await tx.accountDeletionJob.update({
+          where: { id: job.id },
+          data: {
+            state: 'ERASED',
+            failureCode: null,
+            ownerUserId: null,
+            spaceId: null,
+            progress: Prisma.DbNull,
+            confirmationHash: null,
+            recoveryHash: null,
+            leaseUntil: null,
+            completedAt: new Date(),
+            evidenceExpiresAt: new Date(Date.now() + 90 * day),
+            revision: { increment: 1 },
+          },
+        });
+      },
+      { timeout: 30000 },
+    );
     const completed = await this.db.client.accountDeletionJob.findUniqueOrThrow(
       { where: { id: job.id } },
     );

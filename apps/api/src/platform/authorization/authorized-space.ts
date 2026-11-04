@@ -23,7 +23,7 @@ export class AuthorizedSpace {
 
   static personal(
     actor: RequestActor,
-    row: { id: string; kind: string; ownerUserId: string } | null,
+    row: { id: string; kind: string; ownerUserId: string | null } | null,
     transactions?: SpaceTransactionAuthority,
   ): AuthorizedSpace {
     if (!row || row.kind !== 'PERSONAL' || row.ownerUserId !== actor.userId)

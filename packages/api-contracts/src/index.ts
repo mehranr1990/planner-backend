@@ -61,3 +61,5 @@ export * from './notifications.js';
 export * from './insights.js';
 export * from './sync.js';
 export * from './lifecycle.js';
+export * from './collaboration.js';
+export * from './projects.js';

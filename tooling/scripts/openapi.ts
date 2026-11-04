@@ -1,6 +1,9 @@
 import fs from 'node:fs';
 import { createOpenApiDocument } from '../../packages/api-contracts/dist/openapi.js';
-import { assertApiCompatible } from '../compatibility/openapi-compatibility.ts';
+import {
+  assertApiCompatible,
+  assertOpenApiContract,
+} from '../compatibility/openapi-compatibility.ts';
 
 const file = 'docs/api/openapi.json';
 for (const batch of [
@@ -18,6 +21,9 @@ for (const batch of [
   'p1-09',
   'p1-10',
   'p1-11',
+  'p1-12',
+  'p2-02',
+  'p2-03',
 ])
   assertApiCompatible(
     createOpenApiDocument(),
@@ -28,7 +34,9 @@ for (const batch of [
       ),
     ) as Record<string, string>,
   );
-const generated = `${JSON.stringify(createOpenApiDocument(), null, 2)}\n`;
+const document = createOpenApiDocument();
+assertOpenApiContract(document);
+const generated = `${JSON.stringify(document, null, 2)}\n`;
 if (process.argv.includes('--write')) {
   fs.mkdirSync('docs/api', { recursive: true });
   fs.writeFileSync(file, generated);

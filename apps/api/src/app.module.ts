@@ -1,4 +1,5 @@
 import { SyncModule } from './modules/sync/public/index.js';
+import { ProjectsModule } from './modules/projects/public/index.js';
 import { AccountLifecycleModule } from './modules/account/public/lifecycle-module.js';
 import { IDENTITY_ADMISSION } from './platform/auth/admission.js';
 import { FinanceModule } from './modules/finance/public/index.js';
@@ -100,6 +101,7 @@ export class AppModule {
         calendar,
         HabitsModule,
         goals,
+        ProjectsModule.register(tasks, goals),
         notes,
         JournalModule,
         capture,

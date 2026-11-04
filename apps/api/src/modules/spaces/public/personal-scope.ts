@@ -5,7 +5,7 @@ import type { Prisma } from '../../../generated/prisma/client.js';
 /** Only Spaces owns authoritative mutation access and its commit-order counter. */
 export function personalScope(
   actor: RequestActor,
-  row: { id: string; kind: string; ownerUserId: string } | null,
+  row: { id: string; kind: string; ownerUserId: string | null } | null,
 ) {
   const scope = AuthorizedSpace.personal(actor, row, {
     async fence(tx: Prisma.TransactionClient) {

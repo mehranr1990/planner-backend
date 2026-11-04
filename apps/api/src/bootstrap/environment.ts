@@ -63,6 +63,18 @@ const EnvironmentSchema = z.object({
   SMTP_PASSWORD: z.string().optional(),
   STORAGE_ROOT: z.string().min(1).default('.tools/private-files'),
   ERASURE_CONTROL_ROOT: z.string().min(1).optional(),
+  SHARED_CONTROL_ROOT: z.string().min(1).optional(),
+  SHARED_CONTROL_KEYS: z.string().min(1).optional(),
+  SHARED_CONTROL_ACTIVE_KEY_ID: z
+    .string()
+    .regex(/^[A-Za-z0-9._-]{1,40}$/)
+    .optional(),
+  SHARED_SECURITY_ACCEPTANCE_REFERENCE: z
+    .string()
+    .trim()
+    .min(1)
+    .max(200)
+    .optional(),
   PERSONAL_ERASURE_POLICY_VERSION: z
     .string()
     .regex(/^[A-Za-z0-9._-]{1,80}$/)

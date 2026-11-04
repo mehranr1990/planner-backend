@@ -45,9 +45,80 @@ export function apiSignatures(document: unknown): Record<string, string> {
         );
     }
   }
-  for (const name of ['ApiError', 'LiveHealth', 'ReadyHealth'])
-    signatures[`schema ${name}`] = digest(doc.components.schemas[name]!);
+  for (const [name, schema] of Object.entries(doc.components.schemas))
+    signatures[`schema ${name}`] = digest(schema);
   return signatures;
+}
+
+/** Offline checks complement Zod/HTTP tests; snapshot equality cannot detect dangling refs. */
+export function assertOpenApiContract(document: unknown): {
+  references: number;
+  operations: number;
+} {
+  const doc = document as {
+    openapi: string;
+    paths: Record<
+      string,
+      Record<string, { operationId?: string; responses?: object }>
+    >;
+  };
+  if (doc.openapi !== '3.1.0' || !doc.paths)
+    throw new Error('Invalid OpenAPI root');
+  const ids = new Set<string>();
+  let references = 0;
+  const visit = (value: unknown): void => {
+    if (!value || typeof value !== 'object') return;
+    const record = value as Record<string, unknown>;
+    if (typeof record.$ref === 'string') {
+      if (!record.$ref.startsWith('#/'))
+        throw new Error('Nonlocal OpenAPI reference requires review');
+      let target: unknown = document;
+      for (const segment of decodeURIComponent(record.$ref.slice(2)).split(
+        '/',
+      )) {
+        const key = segment.replaceAll('~1', '/').replaceAll('~0', '~');
+        target =
+          target && typeof target === 'object'
+            ? Object.prototype.hasOwnProperty.call(target, key)
+              ? (target as Record<string, unknown>)[key]
+              : undefined
+            : undefined;
+      }
+      if (target === undefined)
+        throw new Error(`Unresolved OpenAPI reference: ${record.$ref}`);
+      references++;
+    }
+    for (const child of Object.values(record)) visit(child);
+  };
+  visit(document);
+  for (const item of Object.values(doc.paths)) {
+    for (const [method, operation] of Object.entries(item)) {
+      if (
+        ![
+          'get',
+          'post',
+          'put',
+          'patch',
+          'delete',
+          'head',
+          'options',
+          'trace',
+        ].includes(method)
+      )
+        continue;
+      if (
+        !operation.operationId ||
+        ids.has(operation.operationId) ||
+        !operation.responses ||
+        !Object.keys(operation.responses).length
+      )
+        throw new Error(
+          'Missing/duplicate operation identity or response contract',
+        );
+      ids.add(operation.operationId);
+    }
+  }
+  return { references, operations: ids.size };
 }
 export function assertApiCompatible(
   document: unknown,

@@ -1,11 +1,60 @@
 import fs from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { createOpenApiDocument } from '../../packages/api-contracts/src/openapi.js';
-import { assertApiCompatible } from './openapi-compatibility.js';
+import {
+  assertApiCompatible,
+  assertOpenApiContract,
+} from './openapi-compatibility.js';
 const baseline = JSON.parse(
   fs.readFileSync('tooling/compatibility/p0-02-api-signatures.json', 'utf8'),
 ) as Record<string, string>;
 describe('approved API compatibility', () => {
+  it('resolves recursive request/result definitions and rejects dangling refs and duplicate operations', () => {
+    const doc = createOpenApiDocument();
+    expect(assertOpenApiContract(doc)).toEqual({
+      references: 2676,
+      operations: 344,
+    });
+    const broken = structuredClone(doc) as { paths: Record<string, unknown> };
+    broken.paths['/probe'] = {
+      get: {
+        operationId: 'probe',
+        responses: { 200: { $ref: '#/$defs/missing' } },
+      },
+    };
+    expect(() => assertOpenApiContract(broken)).toThrow('Unresolved');
+    broken.paths['/probe'] = structuredClone(Object.values(doc.paths)[0]);
+    expect(() => assertOpenApiContract(broken)).toThrow('duplicate');
+  });
+  it('freezes all current P1-12 operations and component schemas', () => {
+    assertApiCompatible(
+      createOpenApiDocument(),
+      JSON.parse(
+        fs.readFileSync(
+          'tooling/compatibility/p2-03-api-signatures.json',
+          'utf8',
+        ),
+      ) as Record<string, string>,
+    );
+    assertApiCompatible(
+      createOpenApiDocument(),
+      JSON.parse(
+        fs.readFileSync(
+          'tooling/compatibility/p1-12-api-signatures.json',
+          'utf8',
+        ),
+      ) as Record<string, string>,
+    );
+    assertApiCompatible(
+      createOpenApiDocument(),
+      JSON.parse(
+        fs.readFileSync(
+          'tooling/compatibility/p2-02-api-signatures.json',
+          'utf8',
+        ),
+      ) as Record<string, string>,
+    );
+  });
   it('retains every P0-01/P0-02/P0-03 request, response, session-security and error contract', () => {
     expect(() =>
       assertApiCompatible(createOpenApiDocument(), baseline),

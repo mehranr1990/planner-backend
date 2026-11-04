@@ -9,6 +9,7 @@ import type { AuthorizedSpace } from '../../../platform/authorization/authorized
 import { personalScope } from '../public/personal-scope.js';
 import { PrivacyGate } from '../../../platform/authorization/privacy-gate.js';
 import { DatabaseService } from '../../../platform/database/database.service.js';
+import { SharedKernel } from './shared-kernel.service.js';
 
 @Injectable()
 export class SpacesService {
@@ -22,7 +23,13 @@ export class SpacesService {
       where: { id: spaceId },
       select: { id: true, kind: true, ownerUserId: true, accessClosedAt: true },
     });
-    if (!row || row.accessClosedAt) return null;
+    if (
+      !row ||
+      row.kind !== 'PERSONAL' ||
+      !row.ownerUserId ||
+      row.accessClosedAt
+    )
+      return null;
     return personalScope(
       { userId: row.ownerUserId, requestId, correlationId },
       row,
@@ -33,6 +40,7 @@ export class SpacesService {
     @Inject(SpacePolicyService) private readonly policy: SpacePolicyService,
     @Inject(PrivacyGate) private readonly privacy: PrivacyGate,
     @Inject(DatabaseService) private readonly database: DatabaseService,
+    @Inject(SharedKernel) private readonly shared: SharedKernel,
   ) {}
   async personalFor(userId: string) {
     const space = await this.repository.personalFor(userId);
@@ -70,6 +78,7 @@ export class SpacesService {
     tx: Prisma.TransactionClient,
     scope: AuthorizedSpace,
     closed: boolean,
+    closedAt?: Date,
   ) {
     await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`personal-access:${scope.spaceId}`},0))::text`;
     const row = await tx.space.findFirst({
@@ -80,10 +89,26 @@ export class SpacesService {
       },
     });
     if (!row) throw new ForbiddenException();
+    const at = closed
+      ? (closedAt ??
+        (
+          await tx.$queryRaw<{ now: Date }[]>`SELECT clock_timestamp() AS now`
+        )[0]!.now)
+      : null;
     await tx.space.update({
       where: { id: row.id },
-      data: { accessClosedAt: closed ? new Date() : null },
+      data: { accessClosedAt: at },
     });
+    if (closed) {
+      const current = await tx.space.findUniqueOrThrow({
+        where: { id: row.id },
+      });
+      await this.shared.enqueueExit(
+        tx,
+        scope.actor.userId,
+        current.accessClosedAt!,
+      );
+    }
   }
   async erasureScope(
     tx: Prisma.TransactionClient,
@@ -110,6 +135,15 @@ export class SpacesService {
       scope.spaceId,
       scope.actor.requestId,
     );
+    if (
+      await tx.sharedActor.findFirst({ where: { userId: scope.actor.userId } })
+    )
+      throw new ForbiddenException({
+        code: 'SHARED_ATTRIBUTION_DETACH_REQUIRED',
+      });
+    await tx.sharedExitWork.deleteMany({
+      where: { userId: scope.actor.userId },
+    });
     await tx.space.delete({ where: { id: scope.spaceId } });
   }
   async isClosed(

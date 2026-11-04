@@ -26,12 +26,14 @@ describe('P1-12 lifecycle and limited sync contracts', () => {
       '/me/deletion-request',
       '/me/deletion-request/confirm',
       '/me/deletion-request/cancel',
+      // Independent Projects are authorized by P2-03; Personal sync stays limited.
+      '/projects',
     ])
       expect(paths['/api/v1' + path]).toBeDefined();
     for (const path of [
       '/teams',
       '/companies',
-      '/projects',
+      '/sync/projects',
       '/sync/finance',
       '/sync/journal',
       '/sync/files',

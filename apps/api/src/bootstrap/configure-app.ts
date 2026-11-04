@@ -33,6 +33,7 @@ export async function configureApp(app: NestExpressApplication): Promise<void> {
       'X-Export-Proof',
       'X-Deletion-Proof',
       'X-Deletion-Recovery',
+      'X-Invitation-Proof',
     ],
     exposedHeaders: [
       'X-Request-Id',

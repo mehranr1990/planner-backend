@@ -223,6 +223,14 @@ describe('scoped persistence and API conventions', () => {
       '202610290005_p1_11_habit_event_provenance',
       '20261029001200_personal_data_lifecycle_and_sync',
       '20261029001300_sync_retention_and_export_attempt_keys',
+      '202611040001_shared_space_kind',
+      '202611040002_shared_space_kernel',
+      '202611040003_shared_exit_retry',
+      '202611040004_shared_invitations_and_handover',
+      '202611040005_project_core',
+      '202611040006_project_usage_features',
+      '202611040007_project_structure_order',
+      '202611040008_project_personal_compatibility',
     ]);
     for (const sql of [
       '',

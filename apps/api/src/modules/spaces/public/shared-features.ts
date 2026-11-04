@@ -1,0 +1,27 @@
+import type { Prisma } from '../../../generated/prisma/client.js';
+export const sharedFeatureKeys = [
+  'shared.custody',
+  'shared.membership',
+  'task.shared',
+  'goal.shared',
+  'shared.resource-grant',
+] as const;
+export type SharedFeatureKey = (typeof sharedFeatureKeys)[number];
+export type SharedFeatureDecisionInput = {
+  feature: SharedFeatureKey;
+  usageOwner:
+    | { kind: 'SHARED_CUSTODY'; spaceId: string }
+    | { kind: 'PERSONAL_ACCOUNT'; userId: string };
+  growth: 1;
+  currentUsage: number;
+};
+/** Current free mode. Safety limits and authorization are always separate. */
+export abstract class SharedFeaturePolicy {
+  abstract decide(
+    input: SharedFeatureDecisionInput,
+    tx: Prisma.TransactionClient,
+  ): Promise<{ allowed: boolean; mode: 'FREE' }>;
+}
+export const freeSharedFeaturePolicy: SharedFeaturePolicy = {
+  decide: async () => ({ allowed: true, mode: 'FREE' }),
+};

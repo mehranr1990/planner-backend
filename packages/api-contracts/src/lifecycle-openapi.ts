@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import * as c from './lifecycle.js';
 import * as s from './sync.js';
+import { embeddedJsonSchema, pointerSegment } from './embedded-json-schema.js';
 export function lifecyclePaths(): Record<string, Record<string, unknown>> {
   const paths: Record<string, Record<string, unknown>> = {},
     json = (schema: z.ZodType) =>
@@ -15,6 +16,8 @@ export function lifecyclePaths(): Record<string, Record<string, unknown>> {
     anonymous = false,
     idempotency = false,
   ) => {
+    const pointer = `#/paths/${pointerSegment('/api/v1' + path)}/${method}`;
+    const success = method === 'post' ? 201 : 200;
     const parameters: unknown[] = [];
     for (const id of path.matchAll(/\{(\w+)\}/g))
       parameters.push({
@@ -57,10 +60,17 @@ export function lifecyclePaths(): Record<string, Record<string, unknown>> {
         schema: { type: 'string', format: 'uri' },
       });
     const responses: Record<string, unknown> = {
-      [method === 'post' ? 201 : 200]: {
+      [success]: {
         description: 'Authorized P1-12 result under ADRs 0022/0023',
         content: output
-          ? { 'application/json': { schema: json(output) } }
+          ? {
+              'application/json': {
+                schema: embeddedJsonSchema(
+                  json(output),
+                  `${pointer}/responses/${success}/content/application~1json/schema`,
+                ),
+              },
+            }
           : {
               'application/octet-stream': {
                 schema: { type: 'string', format: 'binary' },
@@ -87,7 +97,14 @@ export function lifecyclePaths(): Record<string, Record<string, unknown>> {
         ? {
             requestBody: {
               required: true,
-              content: { 'application/json': { schema: json(input) } },
+              content: {
+                'application/json': {
+                  schema: embeddedJsonSchema(
+                    json(input),
+                    `${pointer}/requestBody/content/application~1json/schema`,
+                  ),
+                },
+              },
             },
           }
         : {}),

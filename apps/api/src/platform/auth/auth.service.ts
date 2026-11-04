@@ -102,6 +102,23 @@ export class AuthService {
   async revokeAll(userId: string) {
     await (await this.auth.$context).internalAdapter.deleteUserSessions(userId);
   }
+  /** Provider verification under predeclared identity/credential locks; no preauthorization token. */
+  async verifyPasswordInside(
+    tx: Prisma.TransactionClient,
+    userId: string,
+    password: string,
+  ) {
+    const ctx = await this.auth.$context;
+    const credential = await tx.authAccount.findFirst({
+      where: { userId, providerId: 'credential' },
+      select: { password: true },
+    });
+    if (
+      !credential?.password ||
+      !(await ctx.password.verify({ hash: credential.password, password }))
+    )
+      throw new ForbiddenException({ code: 'REAUTHENTICATION_FAILED' });
+  }
   async revokeAllInside(tx: Prisma.TransactionClient, userId: string) {
     await tx.authSession.deleteMany({ where: { userId } });
   }

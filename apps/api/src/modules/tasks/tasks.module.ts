@@ -1,4 +1,6 @@
 import { TasksData } from './public/personal-data.js';
+import { SharedTasks } from './public/shared-tasks.js';
+import { SharedTasksRepository } from './infrastructure/shared-tasks.repository.js';
 import { TasksDataRepository } from './infrastructure/personal-data.repository.js';
 import { TasksSync } from './public/sync-access.js';
 import { TasksSyncRepository } from './infrastructure/sync.repository.js';
@@ -38,6 +40,7 @@ export class TasksModule {
       module: TasksModule,
       imports: [DatabaseModule, AuditModule, SpacesModule, storage],
       providers: [
+        { provide: SharedTasks, useClass: SharedTasksRepository },
         { provide: TasksData, useClass: TasksDataRepository },
         { provide: TasksSync, useClass: TasksSyncRepository },
         { provide: AnalyticsTasks, useClass: AnalyticsTasksRepository },
@@ -61,6 +64,7 @@ export class TasksModule {
         LabelsController,
       ],
       exports: [
+        SharedTasks,
         TasksData,
         TasksSync,
         AnalyticsTasks,

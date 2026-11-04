@@ -1,4 +1,5 @@
 export { TasksModule } from '../tasks.module.js';
+export { SharedTasks } from './shared-tasks.js';
 export { PlanningTasks } from './planning-tasks.js';
 export type { PlanningTaskSnapshot } from './planning-tasks.js';
 export { ProductivityTasks } from './productivity-tasks.js';

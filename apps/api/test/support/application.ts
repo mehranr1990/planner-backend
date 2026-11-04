@@ -36,6 +36,7 @@ export async function testApplication(
   options: {
     databaseUrl?: string;
     database?: Pick<DatabaseService, 'checkConnection'>;
+    databaseInstance?: DatabaseService;
     probes?: boolean;
     mail?: IdentityMailService;
     environment?: NodeJS.ProcessEnv;
@@ -71,6 +72,10 @@ export async function testApplication(
       .overrideProvider(AuthService)
       .useValue({ session: async () => null });
   }
+  if (options.databaseInstance)
+    builder
+      .overrideProvider(DatabaseService)
+      .useValue(options.databaseInstance);
   if (options.mail)
     builder.overrideProvider(IdentityMailService).useValue(options.mail);
   const fixture = await builder.compile();

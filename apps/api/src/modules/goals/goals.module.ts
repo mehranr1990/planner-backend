@@ -1,4 +1,6 @@
 import { GoalsData } from './public/personal-data.js';
+import { SharedGoals } from './public/shared-goals.js';
+import { SharedGoalsRepository } from './infrastructure/shared-goals.repository.js';
 import { GoalsDataRepository } from './infrastructure/personal-data.repository.js';
 import { AnalyticsGoals } from './public/analytics.js';
 import { AnalyticsGoalsRepository } from './infrastructure/analytics.repository.js';
@@ -32,6 +34,7 @@ export class GoalsModule {
         tasks,
       ],
       providers: [
+        { provide: SharedGoals, useClass: SharedGoalsRepository },
         { provide: GoalsData, useClass: GoalsDataRepository },
         { provide: AnalyticsGoals, useClass: AnalyticsGoalsRepository },
         GoalsService,
@@ -39,7 +42,7 @@ export class GoalsModule {
         { provide: GOALS_REPOSITORY, useClass: GoalsRepository },
       ],
       controllers: [GoalsController, LifeAreasController],
-      exports: [GoalsData, AnalyticsGoals, PersonalGoals],
+      exports: [GoalsData, AnalyticsGoals, PersonalGoals, SharedGoals],
     };
   }
 }

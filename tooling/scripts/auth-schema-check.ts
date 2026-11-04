@@ -31,7 +31,7 @@ function model(source: string, name: string): string {
     .split('\n')
     .filter(
       (line) =>
-        !/^\s*(?:settings|spaces|securityAuditEvents|createdTasks|taskChanges)\s/.test(
+        !/^\s*(?:settings|spaces|securityAuditEvents|createdTasks|taskChanges|sharedActors|ContextInvitation)\s/.test(
           line,
         ),
     )

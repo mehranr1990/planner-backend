@@ -161,7 +161,7 @@ export function validateHierarchy(
     throw new TaskRuleError('HIERARCHY');
 }
 export function transition(
-  task: TaskRecord,
+  task: Pick<TaskRecord, 'status'>,
   action: 'complete' | 'reopen',
   now: Date,
 ): TaskWrite {

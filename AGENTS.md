@@ -4,6 +4,8 @@
 **Role:** Repository-level operating instructions for AI coding agents working on the backend.  
 **Applicability:** Every task, session, change, review, migration, and implementation batch during Phase 0 and Phase 1.
 
+**Permanent extension:** Section 15 applies to all future backend work, including Phases 2–7, while preserving the existing rules and their stated phase boundaries.
+
 > **Mission:** Implement exactly the approved Phase 0/1 backend contract, with no speculative features, no missing acceptance criteria, no unauthorized technology changes, and no progression to the next batch without explicit approval. Make the backend extensible to Project, Team, and Company later without implementing them now.
 
 ## 1. Binding source documents and precedence
@@ -172,3 +174,51 @@ Do **not** treat a generated handoff as overriding the binding docs. On resuming
 - Pino structured logging and basic health checks replace the removed telemetry integration. For production incidents use available redacted logs and health evidence.
 - AGENTS.md is the canonical agent entry point; all unique engineering rules from the reviewed legacy agent file have been preserved here.
 - P0-02 and subsequent batches require explicit approval. Do not commit or push without approval.
+
+## 15. Permanent engineering and execution rules (owner-approved, 2026-10-30)
+
+These rules apply to every future work item, including Phases 2–7. They supplement existing guidance; they do not remove architecture, security, correctness, testing, migration, Git or release requirements.
+
+### Efficiency and scope
+
+- Keep analysis focused. Reuse existing architecture decisions, reports and implementation context instead of repeating documented repository-wide investigations.
+- Read relevant source files, accepted ADRs and targeted documentation. Avoid unnecessary tool calls, repeated searches, verbose logs and duplicate documentation.
+- Prefer concise, maintainable implementations and short reports. Do not over-engineer or add dependencies without a justified current need and any required approval.
+- Follow the approved Mehran Backend V3 roadmap and accepted ADRs. Do not implement later-phase features prematurely or treat proposed ADRs as accepted decisions.
+- For Phase 2 planning, use the recorded A01–A08 decisions in `docs/adr/0024-*.md` through `0031-*.md` and the prerequisite register in `docs/g0-implementation-prerequisites.md`. Their planning approval does not authorize P2-01 execution, migration application or deployment. Reuse this record instead of repeating G0 analysis.
+- Preserve existing functionality, database integrity, security guarantees and backward compatibility.
+
+### Testing discipline
+
+- Write meaningful tests for changed behavior, authorization, security boundaries, migrations, concurrency and regressions. Avoid redundant tests that add no distinct coverage.
+- Run targeted tests during development; do not rerun the entire suite after each small change.
+- Run all applicable mandatory quality gates once at the end of each implementation batch. After a failure, fix the issue and rerun affected checks; repeat the full gate only when necessary to establish final acceptance.
+- Never weaken, delete, skip or bypass required tests to obtain a passing result. Preserve mandatory architecture, migration, authorization, compatibility and integration checks.
+- For documentation-only changes, run relevant documentation/format checks only, unless the change genuinely requires broader validation. Report actual results and any required checks not run.
+
+### Execution and authorization
+
+- When the owner says "Continue", proceed with the next already-authorized work item in the approved sequence. Complete authorized work without repeatedly seeking permission for ordinary technical implementation details.
+- Resolve non-product technical choices using accepted architecture and sound engineering judgment, within the authorized scope. Never silently change an approved product decision.
+- Stop and report genuine blockers requiring owner authorization; do not manufacture approval questions for routine choices already covered by the session.
+- Do not automatically cross a major phase or implementation-batch boundary unless the owner's instruction explicitly authorizes continued execution across that boundary.
+- Do not deploy or make destructive changes to existing databases without explicit authorization.
+- Preserve all existing Git, commit, push and release restrictions. "Continue" alone does not authorize those actions.
+
+### Concise reporting
+
+At the end of each completed work item, report:
+
+1. What was completed.
+2. Important files or architecture changes.
+3. Tests and quality gates run, with results.
+4. Remaining blockers or risks.
+5. The next planned step and its authorization status.
+
+Avoid repeating lengthy architecture explanations or full logs unless a failure or decision requires them. Implementation batches still require the section 11 completion fields, using the current phase/batch identifier and concise factual entries.
+
+### Reconciliation with existing requirements
+
+- Sections 1, 4 and 13 require canonical-document reads at session/batch boundaries and on resumption. Those mandatory reads remain; limit additional investigation to relevant changes and do not repeat completed G0 analysis or ADR work without a new affected requirement or blocker.
+- Efficiency preferences never reduce mandatory correctness, safety or final acceptance coverage. The documentation-only check rule applies to documentation-only work; required implementation gates remain intact.
+- Existing Phase 0/1 scope exclusions retain their stated scope. Later work follows the approved V3 phase sequence and accepted ADRs, with explicit batch authorization; all applicable cross-cutting safeguards remain binding.

@@ -57,4 +57,16 @@ jobs:
         run: pnpm smoke:p1-08
       - name: Compiled P1-09 functional smoke
         run: pnpm smoke:p1-09
+      - name: Compiled P1-10 notification restart smoke
+        run: pnpm smoke:p1-10
+      - name: Compiled P1-11 reward restart smoke
+        run: pnpm smoke:p1-11
+      - name: Compiled P1-12 lifecycle and sync restart smoke
+        run: pnpm smoke:p1-12
+      - name: Compiled P2-01 shared kernel restart smoke
+        run: pnpm smoke:p2-01
+      - name: Compiled P2-02 invitation and succession restart smoke
+        run: pnpm smoke:p2-02
+      - name: Compiled P2-03 Project and source restart smoke
+        run: pnpm smoke:p2-03
       # Docker build/start/persistence is a mandatory future deployment gate.

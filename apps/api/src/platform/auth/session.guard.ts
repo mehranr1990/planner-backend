@@ -44,6 +44,7 @@ export class VerifiedSessionGuard implements CanActivate {
       userId: session.user.id,
       requestId: request.id,
       correlationId: request.correlationId,
+      sessionId: session.session.id,
     });
     return true;
   }

@@ -6,6 +6,11 @@ import { NotificationWorker } from './modules/notifications/public/index.js';
 import { RewardsPort } from './modules/rewards/public/index.js';
 import { PersonalLifecycle } from './modules/account/public/index.js';
 import { SyncService } from './modules/sync/public/index.js';
+import {
+  SharedKernel,
+  CollaborationService,
+  ResourceGrants,
+} from './modules/spaces/public/index.js';
 const config = parseEnvironment(process.env);
 const app = await NestFactory.createApplicationContext(
   AppModule.register(config),
@@ -29,8 +34,13 @@ try {
   await worker.start(async () => {
     const rewards = await app.get(RewardsPort).consume();
     const lifecycle = await app.get(PersonalLifecycle).consume();
+    const sharedExit = await app.get(SharedKernel).consumeExit();
+    const collaboration = await app.get(CollaborationService).maintain();
+    const grants = await app.get(ResourceGrants).maintain();
     const sync = await app.get(SyncService).maintain();
-    return rewards || lifecycle || sync;
+    return (
+      rewards || lifecycle || sharedExit || collaboration || grants || sync
+    );
   });
   process.stdout.write('Planner notification worker ready\n');
 } catch {

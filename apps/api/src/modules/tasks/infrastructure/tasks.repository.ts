@@ -69,7 +69,12 @@ const nodeSelect = {
   deletionBatchId: true,
   updatedAt: true,
 } as const;
+function personalActor(value: string | null) {
+  if (value === null) throw new NotFoundException();
+  return value;
+}
 function taskRecord(row: DatabaseTask): TaskRecord {
+  if (row.createdByUserId === null) throw new NotFoundException();
   return {
     id: row.id,
     spaceId: row.spaceId,
@@ -443,7 +448,7 @@ export class ScopedTasksStore
       items: page.items.map((row) => ({
         id: row.id,
         taskId: row.taskId,
-        actorUserId: row.actorUserId,
+        actorUserId: personalActor(row.actorUserId),
         kind: row.kind as TaskChangeRecord['kind'],
         fields: row.fields as TaskChangeRecord['fields'],
         previousRevision: row.previousRevision,

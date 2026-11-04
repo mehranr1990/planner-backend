@@ -2,3 +2,17 @@ export { SpacesModule } from '../spaces.module.js';
 export { SpacesService } from '../application/spaces.service.js';
 export { initialSpaceRelations } from './identity-creation.js';
 export { personalScope } from './personal-scope.js';
+export { SharedKernel } from '../application/shared-kernel.service.js';
+export { SharedAuthority } from './shared-authority.js';
+export type { SharedRequest } from '../application/shared-kernel.service.js';
+export { CollaborationService } from '../application/collaboration.service.js';
+export { ResourceGrants } from '../application/resource-grants.service.js';
+export {
+  SharedFeaturePolicy,
+  sharedFeatureKeys,
+  freeSharedFeaturePolicy,
+} from './shared-features.js';
+export type {
+  SharedFeatureKey,
+  SharedFeatureDecisionInput,
+} from './shared-features.js';

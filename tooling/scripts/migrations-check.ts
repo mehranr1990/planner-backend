@@ -6,6 +6,9 @@ import { spawnSync } from 'node:child_process';
 import { isolatedTestDatabaseUrl } from '../testing/test-database.ts';
 import { migrationSandbox } from '../testing/migration-sandbox.ts';
 import { reviewMigrations } from '../testing/migration-safety.ts';
+import { verifySharedKernelUpgrade } from '../testing/shared-kernel-upgrade.ts';
+import { verifyCollaborationUpgrade } from '../testing/collaboration-upgrade.ts';
+import { verifyProjectUpgrade } from '../testing/project-upgrade.ts';
 
 const names = reviewMigrations();
 const url = isolatedTestDatabaseUrl(process.env);
@@ -41,7 +44,7 @@ try {
       `SELECT tablename FROM pg_tables WHERE schemaname = current_schema() ORDER BY tablename`,
     )
   ).rows;
-  assert.equal(emptyTables.length, 68); // 67 application/provider tables plus Prisma's ledger
+  assert.equal(emptyTables.length, 96); // 84 P2-02 + 11 Project/source/target tables + Prisma ledger
   // Required reset capability is restricted to this disposable, newly-created namespace.
   await sandbox.resetOwnedSchema();
   const folder = path.resolve('.tools/migration-check-' + randomUUID());
@@ -502,12 +505,26 @@ try {
     'IdempotencyRecord',
   ];
   const beforeSnapshots = new Map<string, unknown>();
+  const preservedColumns = new Map<string, string>();
+  for (const table of preservedTables) {
+    const columns = (
+      await sandbox.query(
+        'SELECT column_name FROM information_schema.columns WHERE table_schema=current_schema() AND table_name=$1 ORDER BY ordinal_position',
+        [table],
+      )
+    ).rows;
+    assert.ok(columns.length > 0, `Existing columns for ${table}`);
+    preservedColumns.set(
+      table,
+      columns.map((c) => '"' + c.column_name + '"').join(','),
+    );
+  }
   for (const table of preservedTables)
     beforeSnapshots.set(
       table,
       (
         await sandbox.query(
-          `SELECT ${table === 'Space' ? "to_jsonb(t) - 'accessClosedAt' - 'syncEpoch' - 'syncRetainedSequence' - 'syncSequence'" : 'to_jsonb(t)'} AS row FROM "${table}" t ORDER BY to_jsonb(t)::text`,
+          `SELECT to_jsonb(t) AS row FROM (SELECT ${preservedColumns.get(table)} FROM "${table}") t ORDER BY to_jsonb(t)::text`,
         )
       ).rows,
     );
@@ -518,7 +535,7 @@ try {
     assert.deepEqual(
       (
         await sandbox.query(
-          `SELECT ${table === 'Space' ? "to_jsonb(t) - 'accessClosedAt' - 'syncEpoch' - 'syncRetainedSequence' - 'syncSequence'" : 'to_jsonb(t)'} AS row FROM "${table}" t ORDER BY to_jsonb(t)::text`,
+          `SELECT to_jsonb(t) AS row FROM (SELECT ${preservedColumns.get(table)} FROM "${table}") t ORDER BY to_jsonb(t)::text`,
         )
       ).rows,
       beforeSnapshots.get(table),
@@ -681,3 +698,6 @@ try {
 } finally {
   await sandbox.close();
 }
+await verifySharedKernelUpgrade(names);
+await verifyCollaborationUpgrade(names);
+await verifyProjectUpgrade(names);

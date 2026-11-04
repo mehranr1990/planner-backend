@@ -7,6 +7,7 @@ export type RequestActor = Readonly<{
   userId: string;
   requestId: string;
   correlationId: string;
+  sessionId?: string;
 }>;
 export type ActorRequest = ContextRequest & { actor: RequestActor };
 export const CurrentActor = createParamDecorator(

@@ -2,7 +2,7 @@ export const SPACES_REPOSITORY = Symbol('SPACES_REPOSITORY');
 export type OwnedSpace = {
   id: string;
   kind: string;
-  ownerUserId: string;
+  ownerUserId: string | null;
   createdAt: Date;
   updatedAt: Date;
   accessClosedAt?: Date | null;

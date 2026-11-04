@@ -5,3 +5,6 @@ coverage/
 pnpm-lock.yaml
 apps/api/src/generated/
 docs/api/openapi.json
+# Owner-supplied, checksum-bearing architecture input; preserve its original bytes.
+# Maintained docs/architecture and docs/adr remain checked.
+/MEHRAN_BACKEND_PRODUCTION_V3_2026-10-30/
