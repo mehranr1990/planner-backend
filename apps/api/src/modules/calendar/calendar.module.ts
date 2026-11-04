@@ -1,4 +1,6 @@
 import { CalendarData } from './public/personal-data.js';
+import { SharedScheduling } from './public/shared-scheduling.js';
+import { SharedSchedulingRepository } from './infrastructure/shared-scheduling.repository.js';
 import { CalendarDataRepository } from './infrastructure/personal-data.repository.js';
 import { Module } from '@nestjs/common';
 import type { DynamicModule } from '@nestjs/common';
@@ -16,12 +18,13 @@ export class CalendarModule {
       module: CalendarModule,
       imports: [DatabaseModule, AuditModule, SpacesModule, tasks],
       providers: [
+        { provide: SharedScheduling, useClass: SharedSchedulingRepository },
         { provide: CalendarData, useClass: CalendarDataRepository },
         CalendarService,
         { provide: CALENDAR_REPOSITORY, useClass: CalendarRepository },
       ],
       controllers: [CalendarController],
-      exports: [CalendarData],
+      exports: [CalendarData, SharedScheduling],
     };
   }
 }

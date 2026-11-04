@@ -231,6 +231,10 @@ describe('scoped persistence and API conventions', () => {
       '202611040006_project_usage_features',
       '202611040007_project_structure_order',
       '202611040008_project_personal_compatibility',
+      '202611040009_task_assignment',
+      '202611040010_task_fields_and_dependencies',
+      '202611040011_task_workflows',
+      '202611040012_task_tool_publication_updates',
     ]);
     for (const sql of [
       '',

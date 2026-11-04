@@ -26,7 +26,7 @@ import {
   ResourceGrants,
 } from '../../spaces/public/index.js';
 import type { SharedRequest } from '../../spaces/public/index.js';
-import { SharedTasks } from '../../tasks/public/index.js';
+import { SharedTasks, ProjectTaskTools } from '../../tasks/public/index.js';
 import { SharedGoals } from '../../goals/public/index.js';
 type Kind = z.infer<typeof c.ProjectComponentKindSchema>;
 const hash = (v: unknown) =>
@@ -68,6 +68,7 @@ export class ProjectsService {
     @Inject(DatabaseService) private readonly db: DatabaseService,
     @Inject(SharedKernel) private readonly kernel: SharedKernel,
     @Inject(SharedTasks) private readonly tasks: SharedTasks,
+    @Inject(ProjectTaskTools) private readonly taskTools: ProjectTaskTools,
     @Inject(SharedGoals) private readonly goals: SharedGoals,
     @Inject(AuthService) private readonly auth: AuthService,
     @Inject(ResourceGrants) private readonly grants: ResourceGrants,
@@ -871,6 +872,11 @@ export class ProjectsService {
         resource,
       ),
       requests = [r, this.request(row, 'task.read', resource)];
+    if (
+      input.status &&
+      (await this.taskTools.workflowHint(this.db.client, row.spaceId, sourceId))
+    )
+      requests.push(this.request(row, 'workflow.transition'));
     if (
       input.title !== undefined ||
       input.description !== undefined ||

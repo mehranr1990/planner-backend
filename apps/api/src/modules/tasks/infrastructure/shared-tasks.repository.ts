@@ -9,6 +9,10 @@ import type { Prisma, Task } from '../../../generated/prisma/client.js';
 import { SharedAuthority } from '../../spaces/public/index.js';
 import { SharedTasks } from '../public/shared-tasks.js';
 import { normalizeTitle, transition, history } from '../domain/tasks.js';
+import {
+  legacyWorkflowGuard,
+  dependencyScheduleGuard,
+} from './task-tool-guards.js';
 const view = (row: Task) =>
   c.SharedTaskSchema.strip().parse({
     ...row,
@@ -16,8 +20,160 @@ const view = (row: Task) =>
     deletedAt: row.deletedAt?.toISOString() ?? null,
     completedAt: row.completedAt?.toISOString() ?? null,
   });
+const scheduleView = (r: Task) =>
+  c.SharedTaskScheduleSchema.parse({
+    id: r.id,
+    revision: r.revision,
+    plannedStartAt: r.plannedStartAt?.toISOString() ?? null,
+    dueAt: r.dueAt?.toISOString() ?? null,
+    scheduledDate: r.scheduledDate?.toISOString().slice(0, 10) ?? null,
+  });
 @Injectable()
 export class SharedTasksRepository extends SharedTasks {
+  async schedule(
+    tx: Prisma.TransactionClient,
+    a: SharedAuthority,
+    space: string,
+    id: string,
+    input?: {
+      revision: number;
+      value: z.infer<typeof c.SharedTaskScheduleInputSchema>;
+    },
+  ) {
+    const access = a.require(tx, space, input ? 'task.update' : 'task.read', {
+      kind: 'TASK',
+      id,
+    });
+    a.require(tx, space, 'task.read', { kind: 'TASK', id });
+    const before = await tx.task.findFirst({
+      where: { id, spaceId: space, scopeId: space, deletedAt: null },
+    });
+    if (!before) throw new NotFoundException();
+    if (!input) return scheduleView(before);
+    if (before.revision !== input.revision) throw new ConflictException();
+    await dependencyScheduleGuard(tx, before, {
+      plannedStartAt: input.value.plannedStartAt
+        ? new Date(input.value.plannedStartAt)
+        : null,
+      dueAt: input.value.dueAt ? new Date(input.value.dueAt) : null,
+      scheduledDate: input.value.scheduledDate,
+    });
+    const row = await tx.task.update({
+      where: { id },
+      data: {
+        plannedStartAt: input.value.plannedStartAt
+          ? new Date(input.value.plannedStartAt)
+          : null,
+        dueAt: input.value.dueAt ? new Date(input.value.dueAt) : null,
+        scheduledDate: input.value.scheduledDate
+          ? new Date(input.value.scheduledDate + 'T00:00:00Z')
+          : null,
+        revision: { increment: 1 },
+      },
+    });
+    await tx.taskChange.create({
+      data: {
+        spaceId: space,
+        scopeId: space,
+        actorId: access.actorId,
+        actorUserId: null,
+        ...history(before, row, 'UPDATED', [
+          'plannedStartAt',
+          'dueAt',
+          'scheduledDate',
+        ]),
+      },
+    });
+    return scheduleView(row);
+  }
+  async project(
+    tx: Prisma.TransactionClient,
+    a: SharedAuthority,
+    sources: { spaceId: string; id: string }[],
+    q: {
+      after?: string;
+      limit: number;
+      status?: z.infer<typeof c.SharedTaskSchema>['status'];
+      range?: { from: string; to: string; timezone: string };
+    },
+  ) {
+    for (const s of sources)
+      a.require(tx, s.spaceId, 'task.read', { kind: 'TASK', id: s.id });
+    if (!sources.length) return [];
+    const output: Task[] = [];
+    let after = q.after;
+    const format = q.range
+      ? new Intl.DateTimeFormat('en-CA', {
+          timeZone: q.range.timezone,
+          calendar: 'iso8601',
+          numberingSystem: 'latn',
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+        })
+      : null;
+    const bounds = q.range
+      ? {
+          gte: new Date(Date.parse(q.range.from) - 2 * 86400000),
+          lt: new Date(Date.parse(q.range.to) + 2 * 86400000),
+        }
+      : null;
+    while (output.length < q.limit) {
+      const rows = await tx.task.findMany({
+        where: {
+          OR: sources.map((s) => ({
+            id: s.id,
+            spaceId: s.spaceId,
+            scopeId: s.spaceId,
+          })),
+          deletedAt: null,
+          ...(after ? { id: { gt: after } } : {}),
+          ...(q.status ? { status: q.status } : {}),
+          ...(bounds
+            ? {
+                AND: [
+                  {
+                    OR: [
+                      { plannedStartAt: bounds },
+                      { plannedStartAt: null, dueAt: bounds },
+                      {
+                        plannedStartAt: null,
+                        dueAt: null,
+                        scheduledDate: {
+                          gte: new Date(q.range!.from),
+                          lt: new Date(q.range!.to),
+                        },
+                      },
+                    ],
+                  },
+                ],
+              }
+            : {}),
+        },
+        orderBy: { id: 'asc' },
+        take: q.limit,
+      });
+      for (const row of rows) {
+        if (format) {
+          const instant = row.plannedStartAt ?? row.dueAt;
+          const parts = instant
+            ? Object.fromEntries(
+                format.formatToParts(instant).map((p) => [p.type, p.value]),
+              )
+            : null;
+          const date = parts
+            ? `${parts.year}-${parts.month}-${parts.day}`
+            : row.scheduledDate?.toISOString().slice(0, 10);
+          if (!date || date < q.range!.from || date >= q.range!.to) continue;
+        }
+        output.push(row);
+        if (output.length === q.limit) break;
+      }
+      if (rows.length < q.limit) break;
+      after = rows.at(-1)!.id;
+    }
+    return output.map((r) => ({ task: view(r), schedule: scheduleView(r) }));
+  }
   async read(
     tx: Prisma.TransactionClient,
     a: SharedAuthority,
@@ -107,6 +263,7 @@ export class SharedTasksRepository extends SharedTasks {
     });
     if (!before) throw new NotFoundException();
     if (before.revision !== revision) throw new ConflictException();
+    if (input.status) await legacyWorkflowGuard(tx, a, before, input.status);
     const now = (
       await tx.$queryRaw<{ now: Date }[]>`SELECT clock_timestamp() now`
     )[0]!.now;

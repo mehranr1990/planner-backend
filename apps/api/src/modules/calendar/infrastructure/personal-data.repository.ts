@@ -11,6 +11,19 @@ export class CalendarDataRepository extends CalendarData {
     budget: ExportBudget,
   ) {
     await budget.collect(
+      'timeBlockSharedTaskLink',
+      (after: string | undefined) =>
+        tx.timeBlockSharedTaskLink.findMany({
+          where: {
+            personalSpaceId: scope.spaceId,
+            ...(after ? { blockId: { gt: after } } : {}),
+          },
+          orderBy: { blockId: 'asc' },
+          take: 100,
+        }),
+      (row) => row.blockId,
+    );
+    await budget.collect(
       'calendarEvent',
       (after: string | undefined) =>
         tx.calendarEvent.findMany({

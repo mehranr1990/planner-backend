@@ -1,5 +1,10 @@
 import { TasksData } from './public/personal-data.js';
 import { SharedTasks } from './public/shared-tasks.js';
+import { ProjectTaskTools } from './public/project-tools.js';
+import { ProjectTaskToolsRepository } from './infrastructure/project-tools.repository.js';
+import { WorkflowTools } from './infrastructure/workflow-tools.repository.js';
+import { FieldTools } from './infrastructure/field-tools.repository.js';
+import { DependencyTools } from './infrastructure/dependency-tools.repository.js';
 import { SharedTasksRepository } from './infrastructure/shared-tasks.repository.js';
 import { TasksDataRepository } from './infrastructure/personal-data.repository.js';
 import { TasksSync } from './public/sync-access.js';
@@ -40,6 +45,10 @@ export class TasksModule {
       module: TasksModule,
       imports: [DatabaseModule, AuditModule, SpacesModule, storage],
       providers: [
+        WorkflowTools,
+        FieldTools,
+        DependencyTools,
+        { provide: ProjectTaskTools, useClass: ProjectTaskToolsRepository },
         { provide: SharedTasks, useClass: SharedTasksRepository },
         { provide: TasksData, useClass: TasksDataRepository },
         { provide: TasksSync, useClass: TasksSyncRepository },
@@ -64,6 +73,7 @@ export class TasksModule {
         LabelsController,
       ],
       exports: [
+        ProjectTaskTools,
         SharedTasks,
         TasksData,
         TasksSync,

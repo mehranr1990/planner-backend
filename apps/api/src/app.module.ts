@@ -101,7 +101,7 @@ export class AppModule {
         calendar,
         HabitsModule,
         goals,
-        ProjectsModule.register(tasks, goals),
+        ProjectsModule.register(tasks, goals, calendar, notifications),
         notes,
         JournalModule,
         capture,

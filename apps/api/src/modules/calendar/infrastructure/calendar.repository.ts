@@ -269,6 +269,13 @@ class Store implements CalendarTransaction {
     return this.blockView(row);
   }
   async updateBlock(before: Block, data: BlockWrite) {
+    if (
+      data.taskId &&
+      (await this.tx.timeBlockSharedTaskLink.findUnique({
+        where: { blockId: before.id },
+      }))
+    )
+      throw new ConflictException();
     const { schedule: s, deletedAt, ...rest } = data;
     const result = await this.tx.timeBlock.updateMany({
       where: this.where({ id: before.id, revision: before.revision }),

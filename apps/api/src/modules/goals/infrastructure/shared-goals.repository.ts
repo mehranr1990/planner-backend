@@ -16,6 +16,35 @@ const view = (row: Goal) =>
   });
 @Injectable()
 export class SharedGoalsRepository extends SharedGoals {
+  async project(
+    tx: Prisma.TransactionClient,
+    a: SharedAuthority,
+    sources: { spaceId: string; id: string }[],
+    q: {
+      after?: string;
+      limit: number;
+      status?: z.infer<typeof c.SharedGoalSchema>['status'];
+    },
+  ) {
+    for (const s of sources)
+      a.require(tx, s.spaceId, 'task.read', { kind: 'GOAL', id: s.id });
+    if (!sources.length) return [];
+    return (
+      await tx.goal.findMany({
+        where: {
+          OR: sources.map((s) => ({
+            id: s.id,
+            spaceId: s.spaceId,
+            scopeId: s.spaceId,
+          })),
+          ...(q.after ? { id: { gt: q.after } } : {}),
+          ...(q.status ? { status: q.status } : {}),
+        },
+        orderBy: { id: 'asc' },
+        take: q.limit,
+      })
+    ).map(view);
+  }
   async read(
     tx: Prisma.TransactionClient,
     a: SharedAuthority,

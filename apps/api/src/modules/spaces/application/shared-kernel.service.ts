@@ -259,9 +259,10 @@ export class SharedKernel {
           version: string;
           generation: number;
           actorId: string;
+          accessId: string;
           role: string;
         }[]
-      >`SELECT s.id,c."authorizationVersion"::text AS version,a.generation,a."actorId",CASE WHEN a.id=c."primaryOwnerAccessId" THEN 'OWNER' ELSE a."memberRole" END AS role FROM "AccessScope" s
+      >`SELECT s.id,c."authorizationVersion"::text AS version,a.generation,a."actorId",a.id AS "accessId",CASE WHEN a.id=c."primaryOwnerAccessId" THEN 'OWNER' ELSE a."memberRole" END AS role FROM "AccessScope" s
       JOIN "SharedCustody" c ON c."spaceId"=s."spaceId"
       JOIN "ContextAccess" a ON a."spaceId"=s."spaceId" AND a."scopeId"=s.id
       JOIN "SharedActor" u ON u.id=a."actorId"
@@ -273,7 +274,11 @@ export class SharedKernel {
       WHERE u."userId"=${userId}::uuid AND u.state='ACTIVE' AND a.state='ACTIVE' AND a."memberRole" IS NOT NULL
       AND c.state IN ('ACTIVE','ARCHIVED') AND s.state IN ('ACTIVE','ARCHIVED') AND account."accessClosedAt" IS NULL AND ownaccount."accessClosedAt" IS NULL
       AND (p."roleDefaults" -> (CASE WHEN a.id=c."primaryOwnerAccessId" THEN 'OWNER' ELSE a."memberRole" END)) ? 'task.read' ORDER BY s.id`;
-      return { ids: rows.map((r) => r.id), stamp: hash(JSON.stringify(rows)) };
+      return {
+        ids: rows.map((r) => r.id),
+        members: rows,
+        stamp: hash(JSON.stringify(rows)),
+      };
     });
   }
   cursorPosition(
@@ -367,6 +372,66 @@ export class SharedKernel {
         )?.userId ?? null)
       : null;
   }
+  async memberUserInTransaction(
+    tx: Prisma.TransactionClient,
+    spaceId: string,
+    accessId: string,
+  ) {
+    const access = await tx.contextAccess.findFirst({
+      where: { id: accessId, spaceId, scopeId: spaceId },
+    });
+    return access
+      ? ((await tx.sharedActor.findUnique({ where: { id: access.actorId } }))
+          ?.userId ?? null)
+      : null;
+  }
+  async resourceLockHints(actor: RequestActor, requests: SharedRequest[]) {
+    return this.grantIssuerHints(actor.userId, requests);
+  }
+  async toolParticipant(
+    tx: Prisma.TransactionClient,
+    spaceId: string,
+    accessId: string,
+    generation: number,
+    lockedUser: string | null,
+    capabilities: SharedRequest['capability'][],
+  ) {
+    await this.eligibleMember(tx, spaceId, accessId, lockedUser);
+    const access = await tx.contextAccess.findUniqueOrThrow({
+      where: { id: accessId },
+    });
+    if (access.generation !== generation) throw new ConflictException();
+    const custody = await tx.sharedCustody.findUniqueOrThrow({
+        where: { spaceId },
+      }),
+      scope = await tx.accessScope.findUniqueOrThrow({
+        where: { id: spaceId },
+      });
+    const policy = await tx.contextCapabilityPolicy.findUniqueOrThrow({
+      where: {
+        spaceId_scopeId_version: {
+          spaceId,
+          scopeId: spaceId,
+          version: scope.currentPolicyVersion,
+        },
+      },
+    });
+    const role =
+      access.id === custody.primaryOwnerAccessId
+        ? 'OWNER'
+        : (access.memberRole as MemberRole);
+    if (
+      capabilities.some(
+        (cap) => !permits(role, cap, policy.roleDefaults as RoleDefaults),
+      )
+    )
+      throw new ForbiddenException();
+    return {
+      accessId: access.id,
+      generation: access.generation,
+      actorId: access.actorId,
+    };
+  }
   async eligibleMember(
     tx: Prisma.TransactionClient,
     spaceId: string,
@@ -395,6 +460,196 @@ export class SharedKernel {
     )
       throw new NotFoundException();
     return { id: a.id, generation: a.generation };
+  }
+  async assignmentRecipient(
+    tx: Prisma.TransactionClient,
+    spaceId: string,
+    accessId: string,
+    generation: number,
+    lockedUser: string | null,
+  ) {
+    await this.eligibleMember(tx, spaceId, accessId, lockedUser);
+    const access = await tx.contextAccess.findUniqueOrThrow({
+      where: { id: accessId },
+    });
+    if (access.generation !== generation) throw new ConflictException();
+    const custody = await tx.sharedCustody.findUniqueOrThrow({
+      where: { spaceId },
+    });
+    const scope = await tx.accessScope.findUniqueOrThrow({
+      where: { id: spaceId },
+    });
+    const policy = await tx.contextCapabilityPolicy.findUniqueOrThrow({
+      where: {
+        spaceId_scopeId_version: {
+          spaceId,
+          scopeId: spaceId,
+          version: scope.currentPolicyVersion,
+        },
+      },
+    });
+    const role =
+      access.id === custody.primaryOwnerAccessId
+        ? 'OWNER'
+        : (access.memberRole as MemberRole);
+    const defaults = policy.roleDefaults as RoleDefaults;
+    if (
+      !permits(role, 'task.read', defaults) ||
+      !permits(role, 'assignment.accept', defaults) ||
+      !permits(role, 'assignment.decline', defaults)
+    )
+      throw new ForbiddenException();
+    return {
+      accessId: access.id,
+      generation: access.generation,
+      actorId: access.actorId,
+    };
+  }
+  async localActor(
+    tx: Prisma.TransactionClient,
+    spaceId: string,
+    accessId: string,
+  ) {
+    return (
+      (
+        await tx.contextAccess.findFirst({
+          where: { id: accessId, spaceId, scopeId: spaceId },
+        })
+      )?.actorId ?? null
+    );
+  }
+  private async assignmentDefaults(
+    tx: Prisma.TransactionClient,
+    a: SharedAuthority,
+    spaceId: string,
+  ) {
+    const access = a.require(tx, spaceId, 'task.read');
+    const scope = await tx.accessScope.findUniqueOrThrow({
+      where: { id: spaceId },
+    });
+    const policy = await tx.contextCapabilityPolicy.findUniqueOrThrow({
+      where: {
+        spaceId_scopeId_version: {
+          spaceId,
+          scopeId: spaceId,
+          version: scope.currentPolicyVersion,
+        },
+      },
+    });
+    return {
+      access,
+      version: scope.currentPolicyVersion,
+      defaults: policy.roleDefaults as RoleDefaults,
+    };
+  }
+  async assignmentManager(
+    tx: Prisma.TransactionClient,
+    a: SharedAuthority,
+    spaceId: string,
+  ) {
+    const p = await this.assignmentDefaults(tx, a, spaceId);
+    return permits(p.access.role, 'assignment.assign', p.defaults);
+  }
+  async assignmentPolicy(
+    tx: Prisma.TransactionClient,
+    a: SharedAuthority,
+    spaceId: string,
+  ) {
+    const p = await this.assignmentDefaults(tx, a, spaceId);
+    return {
+      mode: 'EXPLICIT_CONSENT' as const,
+      automaticAcceptance: false as const,
+      policyVersion: p.version,
+    };
+  }
+  async workHints(actor: RequestActor, includeGoals = false) {
+    const full = await this.readableContextHints(actor);
+    let resources = includeGoals
+      ? await this.transaction(
+          [actor.userId],
+          [],
+          actor,
+          (tx) => tx.$queryRaw<
+            {
+              spaceId: string;
+              scopeId: string;
+              id: string;
+              grantId: string;
+              generation: number;
+              version: string;
+              expiresAt: Date;
+            }[]
+          >`
+      SELECT g."spaceId",g."scopeId",t."goalId" AS id,g.id AS "grantId",a.generation,c."authorizationVersion"::text AS version,g."expiresAt"
+      FROM "GoalGrant" t JOIN "ResourceGrant" g ON g.id=t."grantId"
+      JOIN "ContextAccess" a ON a.id=g."granteeAccessId" JOIN "SharedActor" u ON u.id=a."actorId"
+      JOIN "SharedCustody" c ON c."spaceId"=g."spaceId" JOIN "AccessScope" s ON s.id=g."scopeId"
+      WHERE u."userId"=${actor.userId}::uuid AND u.state='ACTIVE' AND a.state='ACTIVE' AND a.generation=g."granteeGeneration"
+      AND g."revokedAt" IS NULL AND g."expiresAt">clock_timestamp() AND c.state IN ('ACTIVE','ARCHIVED') AND s.state IN ('ACTIVE','ARCHIVED')
+      ORDER BY g.id`,
+        )
+      : [];
+    const candidates = resources;
+    resources = [];
+    for (const r of candidates) {
+      if (full.ids.includes(r.spaceId)) continue;
+      const request: SharedRequest = {
+        spaceId: r.spaceId,
+        scopeId: r.scopeId,
+        capability: 'task.read',
+        resource: { kind: 'GOAL', id: r.id },
+        allowArchived: true,
+      };
+      try {
+        await this.run(
+          actor,
+          { userIds: [], spaceIds: [r.spaceId] },
+          [request],
+          async () => undefined,
+        );
+        resources.push(r);
+      } catch (error) {
+        if (
+          !(error instanceof NotFoundException) &&
+          !(error instanceof ForbiddenException)
+        )
+          throw error;
+      }
+    }
+    const requests: SharedRequest[] = full.ids.map((id) => ({
+      spaceId: id,
+      scopeId: id,
+      capability: 'task.read',
+      allowArchived: true,
+    }));
+    for (const r of resources)
+      if (!full.ids.includes(r.spaceId))
+        requests.push({
+          spaceId: r.spaceId,
+          scopeId: r.scopeId,
+          capability: 'task.read',
+          resource: { kind: 'GOAL', id: r.id },
+          allowArchived: true,
+        });
+    return {
+      ...full,
+      resources,
+      requests,
+      spaceIds: [...new Set(requests.map((r) => r.spaceId))],
+      stamp: hash(JSON.stringify({ full: full.stamp, resources })),
+    };
+  }
+  async personalWork<T>(
+    actor: RequestActor,
+    work: (tx: Prisma.TransactionClient) => Promise<T>,
+  ) {
+    this.enabled();
+    if (!actor.sessionId) throw new ForbiddenException();
+    return this.transaction([actor.userId], [], actor, async (tx) => {
+      if (!(await this.accountActive(tx, actor.userId)))
+        throw new NotFoundException();
+      return work(tx);
+    });
   }
   private async offerControl(
     tx: Prisma.TransactionClient,

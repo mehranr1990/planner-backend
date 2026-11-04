@@ -5,6 +5,12 @@ export const sharedFeatureKeys = [
   'task.shared',
   'goal.shared',
   'shared.resource-grant',
+  'task.assignment',
+  'calendar.shared-link',
+  'task.field-version',
+  'task.dependency',
+  'task.reschedule-preview',
+  'task.workflow-version',
 ] as const;
 export type SharedFeatureKey = (typeof sharedFeatureKeys)[number];
 export type SharedFeatureDecisionInput = {

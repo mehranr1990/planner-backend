@@ -2,6 +2,8 @@ import { financePaths } from './finance-openapi.js';
 import { lifecyclePaths } from './lifecycle-openapi.js';
 import { collaborationPaths } from './collaboration-openapi.js';
 import { projectPaths } from './projects-openapi.js';
+import { workPaths } from './work-openapi.js';
+import { projectToolPaths } from './project-tools-openapi.js';
 import { insightPaths } from './insights-openapi.js';
 import { notificationPaths } from './notifications-openapi.js';
 import { writingPaths } from './writing-openapi.js';
@@ -240,6 +242,8 @@ export function createOpenApiDocument() {
       ...lifecyclePaths(),
       ...collaborationPaths(),
       ...projectPaths(),
+      ...workPaths(),
+      ...projectToolPaths(),
       ...extraPaths,
       [healthRoutes.live]: { get: operation('healthLive', 'LiveHealth') },
       [healthRoutes.ready]: { get: operation('healthReady', 'ReadyHealth') },

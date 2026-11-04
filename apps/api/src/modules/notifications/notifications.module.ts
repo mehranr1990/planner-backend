@@ -1,4 +1,6 @@
 import { NotificationsData } from './public/personal-data.js';
+import { SharedWorkNotifications } from './public/shared-work-notifications.js';
+import { SharedWorkNotificationsRepository } from './infrastructure/shared-work-notifications.repository.js';
 import { NotificationsDataRepository } from './infrastructure/personal-data.repository.js';
 import { Module } from '@nestjs/common';
 import type { DynamicModule } from '@nestjs/common';
@@ -28,6 +30,10 @@ export class NotificationsModule {
         tasks,
       ],
       providers: [
+        {
+          provide: SharedWorkNotifications,
+          useClass: SharedWorkNotificationsRepository,
+        },
         { provide: NotificationsData, useClass: NotificationsDataRepository },
         NotificationsService,
         NotificationWorker,
@@ -37,7 +43,7 @@ export class NotificationsModule {
         { provide: NotificationTransport, useClass: ChannelTransport },
       ],
       controllers: [NotificationsController],
-      exports: [NotificationsData, NotificationWorker],
+      exports: [NotificationsData, NotificationWorker, SharedWorkNotifications],
     };
   }
 }

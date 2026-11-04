@@ -44,7 +44,7 @@ try {
       `SELECT tablename FROM pg_tables WHERE schemaname = current_schema() ORDER BY tablename`,
     )
   ).rows;
-  assert.equal(emptyTables.length, 96); // 84 P2-02 + 11 Project/source/target tables + Prisma ledger
+  assert.equal(emptyTables.length, 116); // 115 domain tables plus migration ledger
   // Required reset capability is restricted to this disposable, newly-created namespace.
   await sandbox.resetOwnedSchema();
   const folder = path.resolve('.tools/migration-check-' + randomUUID());

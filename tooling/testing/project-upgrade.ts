@@ -13,6 +13,7 @@ import {
   assertReviewedProjectMigration,
 } from './reviewed-project-migration.ts';
 import { defaultPolicy } from '../../apps/api/src/modules/spaces/domain/shared-policy.ts';
+import { verifyAssignmentUpgrade } from './assignment-upgrade.ts';
 
 /** Populated accepted P2-02 state -> exact M05, including interrupted DDL and repeat deploy. */
 export async function verifyProjectUpgrade(names: string[]) {
@@ -361,6 +362,18 @@ export async function verifyProjectUpgrade(names: string[]) {
     process.stdout.write(
       'PASS: P2-03 preserves all 84 prior table data sets, unchanged legacy FKs and 28 checksums; only the three reviewed attribution NOT NULL branches and feature CHECK change; active/closing custody, interrupted M05 rollback/resume and repeat deploy.\n',
     );
+    if (names.includes('202611040009_task_assignment'))
+      await verifyAssignmentUpgrade({
+        client,
+        schema,
+        copy,
+        deploy,
+        spaceId: roots[0]!,
+        actorId: actors[0]!,
+        accessId: accesses[0]!,
+        recipientActorId: recipientActor,
+        recipientAccessId: recipientAccess,
+      });
   } finally {
     await client.end();
     await sandbox.close();
