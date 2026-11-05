@@ -6,6 +6,7 @@ import { NotificationWorker } from './modules/notifications/public/index.js';
 import { RewardsPort } from './modules/rewards/public/index.js';
 import { PersonalLifecycle } from './modules/account/public/index.js';
 import { SyncService } from './modules/sync/public/index.js';
+import { ProjectCleanupService } from './modules/projects/public/index.js';
 import {
   SharedKernel,
   CollaborationService,
@@ -35,11 +36,18 @@ try {
     const rewards = await app.get(RewardsPort).consume();
     const lifecycle = await app.get(PersonalLifecycle).consume();
     const sharedExit = await app.get(SharedKernel).consumeExit();
+    const projectCleanup = await app.get(ProjectCleanupService).consume();
     const collaboration = await app.get(CollaborationService).maintain();
     const grants = await app.get(ResourceGrants).maintain();
     const sync = await app.get(SyncService).maintain();
     return (
-      rewards || lifecycle || sharedExit || collaboration || grants || sync
+      rewards ||
+      lifecycle ||
+      sharedExit ||
+      projectCleanup ||
+      collaboration ||
+      grants ||
+      sync
     );
   });
   process.stdout.write('Planner notification worker ready\n');

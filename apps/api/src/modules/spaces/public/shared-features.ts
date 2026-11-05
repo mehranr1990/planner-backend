@@ -18,6 +18,9 @@ export const sharedFeatureKeys = [
   'project.capacity-day',
   'project.work-allocation',
   'project.report-snapshot',
+  'project.document-version',
+  'project.comment-version',
+  'file.shared',
 ] as const;
 export type SharedFeatureKey = (typeof sharedFeatureKeys)[number];
 export type SharedFeatureDecisionInput = {

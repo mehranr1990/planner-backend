@@ -1,4 +1,8 @@
 import { GoalsData } from './public/personal-data.js';
+import { PersonalGoalTransfer } from './public/personal-transfer.js';
+import { SharedGoalsCleanup } from './public/shared-cleanup.js';
+import { SharedGoalsCleanupRepository } from './infrastructure/shared-cleanup.repository.js';
+import { PersonalGoalTransferRepository } from './infrastructure/personal-transfer.repository.js';
 import { SharedGoals } from './public/shared-goals.js';
 import { SharedGoalsRepository } from './infrastructure/shared-goals.repository.js';
 import { GoalsDataRepository } from './infrastructure/personal-data.repository.js';
@@ -34,6 +38,11 @@ export class GoalsModule {
         tasks,
       ],
       providers: [
+        { provide: SharedGoalsCleanup, useClass: SharedGoalsCleanupRepository },
+        {
+          provide: PersonalGoalTransfer,
+          useClass: PersonalGoalTransferRepository,
+        },
         { provide: SharedGoals, useClass: SharedGoalsRepository },
         { provide: GoalsData, useClass: GoalsDataRepository },
         { provide: AnalyticsGoals, useClass: AnalyticsGoalsRepository },
@@ -42,7 +51,14 @@ export class GoalsModule {
         { provide: GOALS_REPOSITORY, useClass: GoalsRepository },
       ],
       controllers: [GoalsController, LifeAreasController],
-      exports: [GoalsData, AnalyticsGoals, PersonalGoals, SharedGoals],
+      exports: [
+        GoalsData,
+        AnalyticsGoals,
+        PersonalGoals,
+        SharedGoals,
+        PersonalGoalTransfer,
+        SharedGoalsCleanup,
+      ],
     };
   }
 }

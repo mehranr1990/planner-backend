@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { Prisma } from '../../generated/prisma/client.js';
 import type { AuthorizedSpace } from '../authorization/authorized-space.js';
+import type { SharedCleanupScope } from '../lifecycle/shared-cleanup.js';
 
 // Consumers fetch timezone through the authorized account facade; no personal value is broadcast.
 export const EventSchema = z.strictObject({
@@ -28,6 +29,25 @@ export const EventSchema = z.strictObject({
   payload: z.strictObject({}),
 });
 export type DomainEvent = z.infer<typeof EventSchema>;
+/** Calendar owner uses this only while unlinking a purged source; no private body or user impersonation. */
+export async function appendSharedSourceDeparture(
+  tx: Prisma.TransactionClient,
+  scope: SharedCleanupScope,
+  personalSpaceId: string,
+  blockId: string,
+) {
+  scope.verify(tx);
+  await tx.outboxEvent.create({
+    data: {
+      type: 'time_block.changed',
+      version: 1,
+      aggregateId: blockId,
+      payload: {},
+      spaceId: personalSpaceId,
+      correlationId: scope.jobId,
+    },
+  });
+}
 
 export async function appendOutbox(
   tx: Prisma.TransactionClient,

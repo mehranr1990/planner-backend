@@ -1,4 +1,13 @@
 import { Module } from '@nestjs/common';
+import { ProjectContentService } from './application/project-content.service.js';
+import { ProjectExportService } from './application/project-export.service.js';
+import { ProjectTransferService } from './application/project-transfer.service.js';
+import { ProjectTransferController } from './http/project-transfer.controller.js';
+import { ProjectCleanupService } from './application/project-cleanup.service.js';
+import { ProjectLifecycleController } from './http/project-lifecycle.controller.js';
+import { ProjectFilesService } from './application/project-files.service.js';
+import { ProjectViewsService } from './application/project-views.service.js';
+import { ProjectCollaborationController } from './http/project-collaboration.controller.js';
 import { ProjectExecutionContext } from './application/project-execution-context.js';
 import { ProjectRegisterService } from './application/project-register.service.js';
 import { ProjectPlansService } from './application/project-plans.service.js';
@@ -28,6 +37,7 @@ export class ProjectsModule {
     goals: DynamicModule,
     calendar: DynamicModule,
     notifications: DynamicModule,
+    storage: DynamicModule,
   ): DynamicModule {
     return {
       module: ProjectsModule,
@@ -39,8 +49,15 @@ export class ProjectsModule {
         goals,
         calendar,
         notifications,
+        storage,
       ],
       providers: [
+        ProjectContentService,
+        ProjectExportService,
+        ProjectTransferService,
+        ProjectCleanupService,
+        ProjectFilesService,
+        ProjectViewsService,
         ProjectExecutionContext,
         ProjectRegisterService,
         ProjectPlansService,
@@ -51,6 +68,9 @@ export class ProjectsModule {
         ProjectToolsService,
       ],
       controllers: [
+        ProjectLifecycleController,
+        ProjectTransferController,
+        ProjectCollaborationController,
         ProjectExecutionController,
         ProjectToolsController,
         ProjectsController,
@@ -58,7 +78,16 @@ export class ProjectsModule {
         WorkController,
         WorkProjectionController,
       ],
-      exports: [ProjectsService, WorkService],
+      exports: [
+        ProjectsService,
+        WorkService,
+        ProjectContentService,
+        ProjectFilesService,
+        ProjectViewsService,
+        ProjectExportService,
+        ProjectTransferService,
+        ProjectCleanupService,
+      ],
     };
   }
 }

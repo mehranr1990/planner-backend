@@ -1,4 +1,10 @@
 export { ProjectsModule } from '../projects.module.js';
+export { ProjectContentService } from '../application/project-content.service.js';
+export { ProjectExportService } from '../application/project-export.service.js';
+export { ProjectTransferService } from '../application/project-transfer.service.js';
+export { ProjectCleanupService } from '../application/project-cleanup.service.js';
+export { ProjectFilesService } from '../application/project-files.service.js';
+export { ProjectViewsService } from '../application/project-views.service.js';
 export { ProjectsService } from '../application/projects.service.js';
 export { WorkService } from '../application/work.service.js';
 export { executableProjectAssociation } from './association.js';

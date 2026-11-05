@@ -131,7 +131,11 @@ describe('P2-05 versioned workflow, typed fields and explicit rescheduling', () 
       base = isolatedTestDatabaseUrl(process.env);
     db = new PrismaClient({
       adapter: new PrismaPg(
-        { connectionString: base, options: '-c search_path=' + schema, max: 8 },
+        {
+          connectionString: base,
+          options: '-c timezone=UTC -c search_path=' + schema,
+          max: 8,
+        },
         { schema },
       ),
     });

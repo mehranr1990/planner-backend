@@ -1,4 +1,8 @@
 import { TasksData } from './public/personal-data.js';
+import { PersonalTaskTransfer } from './public/personal-transfer.js';
+import { SharedTasksCleanup } from './public/shared-cleanup.js';
+import { SharedTasksCleanupRepository } from './infrastructure/shared-cleanup.repository.js';
+import { PersonalTaskTransferRepository } from './infrastructure/personal-transfer.repository.js';
 import { SharedTaskWork } from './public/shared-task-work.js';
 import { SharedTaskWorkRepository } from './infrastructure/shared-task-work.repository.js';
 import { SharedTasks } from './public/shared-tasks.js';
@@ -47,6 +51,11 @@ export class TasksModule {
       module: TasksModule,
       imports: [DatabaseModule, AuditModule, SpacesModule, storage],
       providers: [
+        { provide: SharedTasksCleanup, useClass: SharedTasksCleanupRepository },
+        {
+          provide: PersonalTaskTransfer,
+          useClass: PersonalTaskTransferRepository,
+        },
         { provide: SharedTaskWork, useClass: SharedTaskWorkRepository },
         WorkflowTools,
         FieldTools,
@@ -76,6 +85,8 @@ export class TasksModule {
         LabelsController,
       ],
       exports: [
+        SharedTasksCleanup,
+        PersonalTaskTransfer,
         SharedTaskWork,
         ProjectTaskTools,
         SharedTasks,

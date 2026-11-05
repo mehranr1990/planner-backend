@@ -66,3 +66,6 @@ export * from './projects.js';
 export * from './work.js';
 export * from './project-tools.js';
 export * from './project-execution.js';
+export * from './project-collaboration.js';
+export * from './project-transfer.js';
+export * from './project-lifecycle.js';

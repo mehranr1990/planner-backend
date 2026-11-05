@@ -7,6 +7,7 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { createHash, randomUUID } from 'node:crypto';
+import { appendProjectActivity } from './project-activity.js';
 import * as c from '@mehran/api-contracts';
 import type { z } from 'zod';
 import type {
@@ -140,6 +141,22 @@ export class ProjectsService {
     const row = await this.hint(id);
     return this.grants.revoke(actor, row.spaceId, grantId, revision);
   }
+  async createContentGrantOffer(
+    actor: RequestActor,
+    id: string,
+    input: z.infer<typeof c.ProjectContentGrantCreateSchema>,
+    key: string | undefined,
+  ) {
+    const row = await this.hint(id);
+    return this.grants.createOffer(
+      actor,
+      row.spaceId,
+      input,
+      key,
+      this.validateGrantTarget,
+      true,
+    );
+  }
   async revokeGrantOffer(
     actor: RequestActor,
     id: string,
@@ -221,6 +238,20 @@ export class ProjectsService {
     feature?: string,
   ) {
     const access = a.require(tx, r.spaceId, r.capability, r.resource);
+    if (!action.startsWith('project.member.'))
+      await appendProjectActivity(
+        tx,
+        r.spaceId,
+        access.actorId,
+        action,
+        id,
+        r.resource ??
+          (action.startsWith('task.')
+            ? { kind: 'TASK', id }
+            : action.startsWith('goal.')
+              ? { kind: 'GOAL', id }
+              : undefined),
+      );
     await this.kernel.offerEffect(
       tx,
       actor,

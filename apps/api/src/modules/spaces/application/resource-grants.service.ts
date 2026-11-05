@@ -75,13 +75,15 @@ export class ResourceGrants {
   ) {
     if (
       access?.memberRole === 'VIEWER' &&
-      caps.some((cap) => cap !== 'read') &&
+      caps.some((cap) => !['read', 'file.read'].includes(cap)) &&
       (await tx.sharedCustody.findUniqueOrThrow({ where: { spaceId } }))
         .primaryOwnerAccessId !== access.id
     )
       throw new BadRequestException({ code: 'RECIPIENT_ROLE_CEILING' });
   }
   private action(target: Target, cap: string): SharedRequest['capability'] {
+    if (cap === 'comment') return 'comment.create';
+    if (cap === 'file.read') return 'file.read';
     return cap === 'read'
       ? 'task.read'
       : target.kind === 'GOAL'
@@ -139,11 +141,16 @@ export class ResourceGrants {
   async createOffer(
     actor: RequestActor,
     spaceId: string,
-    input: z.infer<typeof c.GrantOfferCreateSchema>,
+    input:
+      | z.infer<typeof c.GrantOfferCreateSchema>
+      | z.infer<typeof c.ProjectContentGrantCreateSchema>,
     key: string | undefined,
     validate: ValidateTarget,
+    content = false,
   ) {
-    const body = c.GrantOfferCreateSchema.parse(input);
+    const body = content
+      ? c.ProjectContentGrantCreateSchema.parse(input)
+      : c.GrantOfferCreateSchema.parse(input);
     if (
       !key ||
       !/^[!-~]{1,128}$/.test(key) ||

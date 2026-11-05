@@ -69,6 +69,6 @@ jobs:
         run: pnpm smoke:p2-02
       - name: Compiled P2-03 Project and source restart smoke
         run: pnpm smoke:p2-03
-      - name: Compiled P2-04 to P2-06 work, workflow and execution restart smoke
-        run: pnpm smoke:p2-06
+      - name: Compiled P2-04 to P2-07 work, workflow, execution and collaboration restart smoke
+        run: pnpm smoke:p2-07
       # Docker build/start/persistence is a mandatory future deployment gate.

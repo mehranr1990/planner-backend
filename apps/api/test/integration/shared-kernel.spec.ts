@@ -216,7 +216,7 @@ describe('P2-01 shared kernel acceptance in an exclusively owned schema', () => 
         {
           connectionString: base,
           application_name: appName,
-          options: '-c search_path=' + schema,
+          options: '-c timezone=UTC -c search_path=' + schema,
           max: 8,
         },
         { schema },

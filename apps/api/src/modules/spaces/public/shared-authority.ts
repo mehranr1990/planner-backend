@@ -39,4 +39,18 @@ export class SharedAuthority {
   close() {
     this.open = false;
   }
+  has(
+    tx: Prisma.TransactionClient,
+    spaceId: string,
+    capability: SharedCapability,
+    resource?: { kind: 'PROJECT' | 'TASK' | 'GOAL'; id: string },
+  ) {
+    try {
+      this.require(tx, spaceId, capability, resource);
+      return true;
+    } catch (error) {
+      if (error instanceof ForbiddenException) return false;
+      throw error;
+    }
+  }
 }

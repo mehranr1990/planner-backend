@@ -27,6 +27,7 @@ import { SharedGoals } from '../../goals/public/index.js';
 import { SharedScheduling } from '../../calendar/public/index.js';
 import { SharedWorkNotifications } from '../../notifications/public/index.js';
 import { ProjectsService } from './projects.service.js';
+import { appendProjectActivity } from './project-activity.js';
 import {
   respondToAssignment,
   endAssignment,
@@ -143,7 +144,27 @@ export class WorkService {
         );
         const authority = new SharedAuthority(tx, [access, read]);
         try {
-          return await work(tx, authority, now, begin);
+          let changed = false;
+          const result = await work(tx, authority, now, async () => {
+            const id = await begin();
+            changed = true;
+            return id;
+          });
+          if (changed) {
+            const assignment = await tx.taskAssignment.findFirst({
+              where: { id: target, projectId: pid },
+            });
+            const taskId = assignment?.taskId ?? target;
+            await appendProjectActivity(
+              tx,
+              pid,
+              access.actorId,
+              action,
+              target,
+              { kind: 'TASK', id: taskId },
+            );
+          }
+          return result;
         } finally {
           authority.close();
         }
@@ -592,6 +613,16 @@ export class WorkService {
             'task.schedule',
             taskId,
             randomUUID(),
+          );
+        if (input)
+          await appendProjectActivity(
+            tx,
+            pid,
+            a.require(tx, pid, 'task.update', { kind: 'TASK', id: taskId })
+              .actorId,
+            'task.schedule',
+            taskId,
+            { kind: 'TASK', id: taskId },
           );
         return value;
       },

@@ -9,6 +9,9 @@ import type { Prisma } from '../../../generated/prisma/client.js';
 import type { AuthorizedSpace } from '../../../platform/authorization/authorized-space.js';
 import { writeAudit } from '../../../platform/audit/audit.service.js';
 import { appendOutbox } from '../../../platform/outbox/outbox.js';
+import { appendSharedSourceDeparture } from '../../../platform/outbox/outbox.js';
+import type { SharedCleanupScope } from '../../../platform/lifecycle/shared-cleanup.js';
+import { DatabaseService } from '../../../platform/database/database.service.js';
 import { SharedFeaturePolicy } from '../../spaces/public/index.js';
 import { SharedScheduling } from '../public/shared-scheduling.js';
 import type { z } from 'zod';
@@ -16,9 +19,57 @@ import * as c from '@mehran/api-contracts';
 @Injectable()
 export class SharedSchedulingRepository extends SharedScheduling {
   constructor(
+    @Inject(DatabaseService) private readonly db: DatabaseService,
     @Inject(SharedFeaturePolicy) private readonly features: SharedFeaturePolicy,
   ) {
     super();
+  }
+  async cleanupHints(spaceId: string) {
+    const rows = await this.db.client.timeBlockSharedTaskLink.findMany({
+      where: { spaceId },
+      orderBy: { blockId: 'asc' },
+      take: 25,
+      select: { blockId: true, ownerUserId: true },
+    });
+    return {
+      blockIds: rows.map((r) => r.blockId),
+      userIds: [...new Set(rows.map((r) => r.ownerUserId))],
+    };
+  }
+  async cleanup(
+    tx: Prisma.TransactionClient,
+    s: SharedCleanupScope,
+    blockIds: string[],
+  ) {
+    s.verify(tx);
+    if (blockIds.length > 25) throw new ConflictException();
+    const rows = await tx.timeBlockSharedTaskLink.findMany({
+      where: { spaceId: s.spaceId, blockId: { in: blockIds } },
+      orderBy: { personalSpaceId: 'asc' },
+    });
+    for (const row of rows) {
+      if (!s.lockedUsers.includes(row.ownerUserId))
+        throw new ConflictException({ code: 'CALENDAR_OWNER_CHANGED' });
+      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${'calendar:' + row.personalSpaceId},0))::text`;
+      await tx.timeBlock.update({
+        where: { id: row.blockId },
+        data: { revision: { increment: 1 } },
+      });
+      await tx.timeBlockSharedTaskLink.delete({
+        where: { blockId: row.blockId },
+      });
+      await appendSharedSourceDeparture(
+        tx,
+        s,
+        row.personalSpaceId,
+        row.blockId,
+      );
+    }
+    return (
+      (await tx.timeBlockSharedTaskLink.count({
+        where: { spaceId: s.spaceId },
+      })) === 0
+    );
   }
   async read(tx: Prisma.TransactionClient, scope: AuthorizedSpace, id: string) {
     await scope.fence(tx);

@@ -22,6 +22,7 @@ import type {
 import { ProjectTaskTools } from '../../tasks/public/index.js';
 import type { TaskToolContext } from '../../tasks/public/index.js';
 import { ProjectsService } from './projects.service.js';
+import { appendProjectActivity } from './project-activity.js';
 type Session = {
   tx: Prisma.TransactionClient;
   a: SharedAuthority;
@@ -168,6 +169,15 @@ export class ProjectToolsService {
           const mutate = async () => {
             result = await work(s, creationKey, fingerprint);
             const actorId = entries[0]!.actorId;
+            if (audit && !action.includes('.preview'))
+              await appendProjectActivity(
+                tx,
+                pid,
+                actorId,
+                action,
+                target,
+                taskId ? { kind: 'TASK', id: taskId } : undefined,
+              );
             if (audit)
               await this.kernel.offerEffect(
                 tx,

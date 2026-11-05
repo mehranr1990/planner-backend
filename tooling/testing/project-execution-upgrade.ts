@@ -3,6 +3,7 @@ import path from 'node:path';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import type { Client } from 'pg';
+import { verifyProjectCollaborationUpgrade } from './project-collaboration-upgrade.ts';
 import {
   projectExecutionMigrationHashes,
   assertReviewedProjectExecutionMigration,
@@ -237,4 +238,5 @@ export async function verifyProjectExecutionUpgrade(input: Input) {
   process.stdout.write(
     'PASS: P2-06 preserves all 115 prior tables, populated M07 workflow/approval/field/DAG/preview, all prior constraints except additive usage CHECK and 36 checksums; both M08 interruptions and repeat deploy.\n',
   );
+  await verifyProjectCollaborationUpgrade(input);
 }

@@ -125,7 +125,18 @@ export async function verifySharedKernelUpgrade(names: string[]) {
           [schema, fk.conname],
         )
       ).rows;
-      assert.deepEqual(current, [{ definition: fk.definition }]);
+      // This rehearsal deploys the entire current history. M09 changes only
+      // these three FK timings; retain exact targets, columns and actions.
+      const transferTiming =
+        names.includes('202611050018_personal_project_transfer') &&
+        [
+          'TaskChange_spaceId_taskId_fkey',
+          'TaskChange_scope_fk',
+          'Goal_spaceId_id_metricId_fkey',
+        ].includes(fk.conname);
+      assert.deepEqual(current, [
+        { definition: fk.definition + (transferTiming ? ' DEFERRABLE' : '') },
+      ]);
     }
     assert.deepEqual(
       (

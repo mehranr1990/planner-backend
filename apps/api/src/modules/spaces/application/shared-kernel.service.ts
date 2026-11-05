@@ -22,6 +22,8 @@ import { PrivacyGate } from '../../../platform/authorization/privacy-gate.js';
 import { SharedControl } from '../../../platform/storage/shared-control.js';
 import type { SharedControlRecord } from '../../../platform/storage/shared-control.js';
 import { SharedAuthority } from '../public/shared-authority.js';
+import type { SharedCleanupScope } from '../../../platform/lifecycle/shared-cleanup.js';
+import { assertSharedCleanupCatalog } from '../../../platform/lifecycle/shared-cleanup-catalog.js';
 import { SharedFeaturePolicy } from '../public/shared-features.js';
 import type { SharedFeatureKey } from '../public/shared-features.js';
 import type { SharedAccess } from '../public/shared-authority.js';
@@ -168,6 +170,30 @@ export class SharedKernel {
         jobState: job?.state ?? null,
       };
     });
+  }
+  async exportBounds(
+    tx: Prisma.TransactionClient,
+    a: SharedAuthority,
+    spaceId: string,
+  ) {
+    const access = a.require(tx, spaceId, 'export.visible');
+    const scope = await tx.accessScope.findUniqueOrThrow({
+      where: { id: spaceId },
+    });
+    const policy = await tx.contextCapabilityPolicy.findUniqueOrThrow({
+      where: {
+        spaceId_scopeId_version: {
+          spaceId,
+          scopeId: spaceId,
+          version: scope.currentPolicyVersion,
+        },
+      },
+    });
+    return {
+      maxRecords: Math.min(10000, policy.exportMaxRecords),
+      maxBytes: Math.min(10485760, policy.exportMaxBytes),
+      authorizationVersion: String(access.authorizationVersion),
+    };
   }
   async featureGrowth(
     tx: Prisma.TransactionClient,
@@ -406,7 +432,7 @@ export class SharedKernel {
     r: SharedRequest,
     kind: string,
   ) {
-    const access = a.require(tx, r.spaceId, r.capability);
+    const access = a.require(tx, r.spaceId, r.capability, r.resource);
     return {
       context: r.scopeId + ':' + kind,
       stamp: hash(
@@ -764,12 +790,19 @@ export class SharedKernel {
         where: { auditId: record.id },
         include: { SharedAuditEvent: true },
       });
+      const lifecycle = await tx.sharedLifecycleEffect.findUnique({
+        where: { id: record.id },
+      });
       if (
-        committed?.spaceId === spaceId &&
-        committed.authorizationVersion === BigInt(record.version) &&
-        committed.action === record.action &&
-        committed.SharedAuditEvent.action === record.action &&
-        committed.SharedAuditEvent.resourceId === record.resourceId
+        (committed?.spaceId === spaceId &&
+          committed.authorizationVersion === BigInt(record.version) &&
+          committed.action === record.action &&
+          committed.SharedAuditEvent.action === record.action &&
+          committed.SharedAuditEvent.resourceId === record.resourceId) ||
+        (lifecycle?.custodyId === spaceId &&
+          lifecycle.authorizationVersion === BigInt(record.version) &&
+          lifecycle.action === record.action &&
+          lifecycle.jobId === record.resourceId)
       )
         await this.control.append({
           ...record,
@@ -872,14 +905,18 @@ export class SharedKernel {
     locked: string[],
   ) {
     const needed =
-      request.capability === 'task.read'
-        ? 'read'
-        : request.capability === 'task.update' ||
-            request.capability === 'goal.manage'
-          ? 'update'
-          : request.capability === 'task.complete'
-            ? 'complete'
-            : null;
+      request.capability === 'comment.create'
+        ? 'comment'
+        : request.capability === 'file.read'
+          ? 'file.read'
+          : request.capability === 'task.read'
+            ? 'read'
+            : request.capability === 'task.update' ||
+                request.capability === 'goal.manage'
+              ? 'update'
+              : request.capability === 'task.complete'
+                ? 'complete'
+                : null;
     if (!needed) return false;
     const now = (
       await tx.$queryRaw<{ now: Date }[]>`SELECT clock_timestamp() now`
@@ -926,17 +963,32 @@ export class SharedKernel {
       if (
         grant.capabilities.every((cap) => {
           if (request.resource!.kind === 'PROJECT')
-            return cap === 'read' && permits(role, 'task.read', policy);
+            return (
+              ['read', 'comment', 'file.read'].includes(cap) &&
+              permits(
+                role,
+                cap === 'read'
+                  ? 'task.read'
+                  : cap === 'comment'
+                    ? 'comment.create'
+                    : 'file.read',
+                policy,
+              )
+            );
           const action =
-            cap === 'read'
-              ? 'task.read'
-              : request.resource!.kind === 'GOAL' && cap === 'update'
-                ? 'goal.manage'
-                : cap === 'update'
-                  ? 'task.update'
-                  : cap === 'complete'
-                    ? 'task.complete'
-                    : null;
+            cap === 'comment'
+              ? 'comment.create'
+              : cap === 'file.read'
+                ? 'file.read'
+                : cap === 'read'
+                  ? 'task.read'
+                  : request.resource!.kind === 'GOAL' && cap === 'update'
+                    ? 'goal.manage'
+                    : cap === 'update'
+                      ? 'task.update'
+                      : cap === 'complete'
+                        ? 'task.complete'
+                        : null;
           return action !== null && permits(role, action, policy);
         })
       )
@@ -1083,6 +1135,147 @@ export class SharedKernel {
       },
       onRetry,
     );
+  }
+  async lifecycleParticipant<T>(
+    actor: RequestActor,
+    spaceId: string,
+    additionalUsers: string[],
+    work: (
+      tx: Prisma.TransactionClient,
+      now: Date,
+      locked: string[],
+    ) => Promise<T>,
+    onRetry?: () => Promise<void>,
+  ) {
+    this.enabled();
+    if (!actor.sessionId) throw new ForbiddenException();
+    const users = await this.requiredUsers(actor, [spaceId], additionalUsers);
+    return this.transaction(
+      users,
+      [spaceId],
+      actor,
+      async (tx) => {
+        if (!(await this.accountActive(tx, actor.userId)))
+          throw new NotFoundException();
+        const custody = await tx.sharedCustody.findUniqueOrThrow({
+            where: { spaceId },
+          }),
+          seat = custody.primaryOwnerAccessId
+            ? await tx.contextAccess.findUnique({
+                where: { id: custody.primaryOwnerAccessId },
+              })
+            : null;
+        const local = seat
+          ? await tx.sharedActor.findUnique({ where: { id: seat.actorId } })
+          : null;
+        if (
+          custody.kind !== 'PROJECT' ||
+          !local ||
+          local.state !== 'ACTIVE' ||
+          local.userId !== actor.userId
+        )
+          throw new NotFoundException();
+        await this.offerControl(tx, spaceId, custody.authorizationVersion);
+        const now = (
+          await tx.$queryRaw<{ now: Date }[]>`SELECT clock_timestamp() now`
+        )[0]!.now;
+        return work(tx, now, users);
+      },
+      onRetry,
+    );
+  }
+  async auditFileRead(
+    tx: Prisma.TransactionClient,
+    a: SharedAuthority,
+    actor: RequestActor,
+    spaceId: string,
+    parent: NonNullable<SharedRequest['resource']>,
+    fileId: string,
+  ) {
+    const proof = a.require(tx, spaceId, 'file.read', parent);
+    await tx.sharedAuditEvent.create({
+      data: {
+        id: randomUUID(),
+        spaceId,
+        actorId: proof.actorId,
+        action: 'file.download',
+        resourceId: fileId,
+        requestId: actor.requestId,
+      },
+    });
+  }
+  async lifecycleMembers(tx: Prisma.TransactionClient, spaceId: string) {
+    return this.usageCount(tx, spaceId, 'shared.membership');
+  }
+  async lifecycleEffect(
+    tx: Prisma.TransactionClient,
+    spaceId: string,
+    jobId: string,
+    id: string,
+    action: string,
+    operatorReference: string,
+  ) {
+    const custody = await tx.sharedCustody.update({
+      where: { spaceId },
+      data: {
+        authorizationVersion: { increment: 1 },
+        revision: { increment: 1 },
+      },
+    });
+    await tx.accessScope.updateMany({
+      where: { spaceId },
+      data: { authorizationVersion: { increment: 1 } },
+    });
+    await tx.sharedLifecycleEffect.create({
+      data: {
+        id,
+        jobId,
+        custodyId: spaceId,
+        generation: custody.closureGeneration,
+        action,
+        authorizationVersion: custody.authorizationVersion,
+        operatorReference,
+      },
+    });
+  }
+  async withPurge<T>(
+    tx: Prisma.TransactionClient,
+    spaceId: string,
+    jobId: string,
+    leaseId: string,
+    lockedUsers: string[],
+    work: (scope: SharedCleanupScope) => Promise<T>,
+  ) {
+    await assertSharedCleanupCatalog(tx);
+    const job = await tx.sharedLifecycleJob.findUniqueOrThrow({
+        where: { id: jobId },
+      }),
+      progress = job.progress as Record<string, unknown>;
+    if (
+      job.spaceId !== spaceId ||
+      job.state !== 'PURGING' ||
+      progress.leaseId !== leaseId ||
+      !(
+        await tx.$queryRaw<
+          { ok: boolean }[]
+        >`SELECT shared_purge_allowed(${spaceId}::uuid) ok`
+      )[0]!.ok
+    )
+      throw new ConflictException({ code: 'PURGE_LEASE_CHANGED' });
+    let open = true;
+    const scope: SharedCleanupScope = {
+      spaceId,
+      jobId,
+      lockedUsers,
+      verify: (client) => {
+        if (!open || client !== tx) throw new ForbiddenException();
+      },
+    };
+    try {
+      return await work(scope);
+    } finally {
+      open = false;
+    }
   }
   private async accounts(tx: Prisma.TransactionClient, ids: string[]) {
     const rows = await tx.space.findMany({
@@ -1278,6 +1471,7 @@ export class SharedKernel {
       authority: SharedAuthority,
     ) => Promise<T>,
     onRetry?: () => Promise<void>,
+    optionalRequests: SharedRequest[] = [],
   ) {
     this.enabled();
     if (!actor.sessionId) throw new ForbiddenException();
@@ -1307,13 +1501,21 @@ export class SharedKernel {
         actor.userId,
         ...locks.userIds,
         ...owners.flatMap((o) => (o.userId ? [o.userId] : [])),
-        ...(await this.grantIssuerHints(actor.userId, requests)),
+        ...(await this.grantIssuerHints(actor.userId, [
+          ...requests,
+          ...optionalRequests,
+        ])),
       ]),
     ].sort();
     for (const id of [...users, ...spaces, actor.sessionId]) uuid.parse(id);
-    if (!requests.length || requests.some((r) => !spaces.includes(r.spaceId)))
+    if (
+      !requests.length ||
+      [...requests, ...optionalRequests].some(
+        (r) => !spaces.includes(r.spaceId),
+      )
+    )
       throw new BadRequestException();
-    for (const r of requests) uuid.parse(r.scopeId);
+    for (const r of [...requests, ...optionalRequests]) uuid.parse(r.scopeId);
     return this.transaction(
       users,
       spaces,
@@ -1324,6 +1526,13 @@ export class SharedKernel {
         const access: SharedAccess[] = [];
         for (const request of requests)
           access.push(await this.authorize(tx, actor, request, users));
+        for (const request of optionalRequests) {
+          try {
+            access.push(await this.authorize(tx, actor, request, users));
+          } catch (error) {
+            if (!(error instanceof ForbiddenException)) throw error;
+          }
+        }
         const authority = new SharedAuthority(tx, access);
         try {
           return await work(tx, authority);
@@ -1349,7 +1558,7 @@ export class SharedKernel {
       try {
         return await this.db.client.$transaction(
           async (tx) => {
-            await tx.$queryRaw`SELECT set_config('lock_timeout','5s',true),set_config('statement_timeout',${String(remaining) + 'ms'},true)`;
+            await tx.$queryRaw`SELECT set_config('TimeZone','UTC',true),set_config('lock_timeout','5s',true),set_config('statement_timeout',${String(remaining) + 'ms'},true)`;
             await this.accounts(tx, users);
             await this.identity.lock(tx, users);
             if (actor) await this.identity.require(tx, actor);
@@ -1382,6 +1591,7 @@ export class SharedKernel {
         (CASE WHEN a.id=c."primaryOwnerAccessId" THEN 'OWNER' ELSE a."memberRole" END) NOT IN ('OWNER','ADMIN','MANAGER') OR
         EXISTS(SELECT 1 FROM unnest(g.capabilities) cap WHERE
           (cap='read' AND NOT ((p."roleDefaults"->(CASE WHEN a.id=c."primaryOwnerAccessId" THEN 'OWNER' ELSE a."memberRole" END)) ? 'task.read')) OR
+          (cap='file.read' AND NOT ((p."roleDefaults"->(CASE WHEN a.id=c."primaryOwnerAccessId" THEN 'OWNER' ELSE a."memberRole" END)) ? 'file.read')) OR
           (cap='update' AND EXISTS(SELECT 1 FROM "TaskGrant" t WHERE t."grantId"=g.id) AND NOT ((p."roleDefaults"->(CASE WHEN a.id=c."primaryOwnerAccessId" THEN 'OWNER' ELSE a."memberRole" END)) ? 'task.update')) OR
           (cap='complete' AND NOT ((p."roleDefaults"->(CASE WHEN a.id=c."primaryOwnerAccessId" THEN 'OWNER' ELSE a."memberRole" END)) ? 'task.complete'))))`;
   }
@@ -2027,6 +2237,19 @@ export class SharedKernel {
         throw new ForbiddenException({ code: 'SHARED_RETENTION_UNAVAILABLE' });
       if (await tx.space.findUnique({ where: { id: spaceId } }))
         throw new ConflictException();
+      if (
+        await tx.sharedLifecycleJob.findFirst({ where: { custodyId: spaceId } })
+      )
+        throw new ConflictException({ code: 'CUSTODY_ID_RETIRED' });
+      await this.control.assertCurrent(spaceId, 0n);
+      if (
+        Object.values(parsed.data.classRules).some(
+          (rule) => rule.disposalAction !== 'PURGE',
+        )
+      )
+        throw new ForbiddenException({
+          code: 'SHARED_RETENTION_DISPOSITION_UNAVAILABLE',
+        });
       await this.featureGrowth(tx, spaceId, 'shared.custody', actor.userId);
       const actorId = randomUUID(),
         accessId = randomUUID(),
@@ -2320,8 +2543,16 @@ export class SharedKernel {
               primaryActor.userId,
               primary.joinedAt,
             ));
-          const state =
-            remaining === 0
+          const state = [
+            'CLEANUP_PENDING',
+            'WAITING_OBLIGATIONS',
+            'BLOCKED_POLICY',
+            'PURGING',
+            'FAILED',
+            'DELETED',
+          ].includes(custody.state)
+            ? custody.state
+            : remaining === 0
               ? 'CLOSING_GRACE'
               : primaryGone
                 ? 'OWNER_EXIT_FROZEN'
@@ -2613,22 +2844,51 @@ export class SharedKernel {
     const terminal = new Set(
       records.filter((r) => r.outcome !== 'INTENT').map((r) => r.id),
     );
-    return this.transaction([], [spaceId], null, async (tx) => {
+    const live = await this.db.client.sharedCustody.findUnique({
+      where: { spaceId },
+    });
+    return this.transaction([], live ? [spaceId] : [], null, async (tx) => {
+      if (!live) {
+        const retired = await tx.$queryRaw<
+          { id: string }[]
+        >`SELECT id FROM "SharedLifecycleJob" WHERE "custodyId"=${spaceId}::uuid AND state='DELETED' AND "spaceId" IS NULL ORDER BY id FOR UPDATE`;
+        if (
+          !retired.length ||
+          (await tx.sharedCustody.findUnique({ where: { spaceId } }))
+        )
+          throw new NotFoundException();
+      }
       for (const record of records.filter(
         (r) => r.outcome === 'INTENT' && !terminal.has(r.id),
       )) {
         const effect = await tx.sharedOutboxEvent.findUnique({
           where: { auditId: record.id },
+          include: { SharedAuditEvent: true },
+        });
+        const lifecycle = await tx.sharedLifecycleEffect.findUnique({
+          where: { id: record.id },
         });
         if (
           effect &&
           (effect.spaceId !== spaceId ||
-            effect.authorizationVersion !== BigInt(record.version))
+            effect.authorizationVersion !== BigInt(record.version) ||
+            effect.action !== record.action ||
+            effect.SharedAuditEvent.resourceId !== record.resourceId)
         )
           throw new ConflictException();
+        if (
+          lifecycle &&
+          (lifecycle.custodyId !== spaceId ||
+            lifecycle.authorizationVersion !== BigInt(record.version) ||
+            lifecycle.action !== record.action ||
+            lifecycle.jobId !== record.resourceId)
+        )
+          throw new ConflictException();
+        if (!live && !effect && !lifecycle)
+          throw new ConflictException({ code: 'LIFECYCLE_EFFECT_REQUIRED' });
         await this.control.append({
           ...record,
-          outcome: effect ? 'COMMITTED' : 'ABORTED',
+          outcome: effect || lifecycle ? 'COMMITTED' : 'ABORTED',
           at: new Date().toISOString(),
         });
       }

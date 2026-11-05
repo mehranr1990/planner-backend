@@ -98,7 +98,9 @@ export class SharedTaskWorkRepository extends SharedTaskWork {
     spaceId: string,
     ids: string[],
   ) {
-    a.require(tx, spaceId, 'task.read');
+    if (!ids.length) a.require(tx, spaceId, 'task.read');
+    for (const id of ids)
+      a.require(tx, spaceId, 'task.read', { kind: 'TASK', id });
     if (ids.length > 10000 || new Set(ids).size !== ids.length)
       throw new BadRequestException();
     const rows = await tx.task.findMany({

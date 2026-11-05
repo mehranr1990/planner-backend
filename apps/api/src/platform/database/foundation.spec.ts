@@ -237,6 +237,11 @@ describe('scoped persistence and API conventions', () => {
       '202611040012_task_tool_publication_updates',
       '202611040013_project_execution',
       '202611040014_shared_task_work_log',
+      '202611050015_project_collaboration',
+      '202611050016_shared_files',
+      '202611050017_content_grants',
+      '202611050018_personal_project_transfer',
+      '202611050019_shared_lifecycle_effects',
     ]);
     for (const sql of [
       '',

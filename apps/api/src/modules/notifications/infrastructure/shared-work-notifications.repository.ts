@@ -10,6 +10,8 @@ import type {
 } from '../../../generated/prisma/client.js';
 import type { SharedAuthority } from '../../spaces/public/index.js';
 import { SharedWorkNotifications } from '../public/shared-work-notifications.js';
+import { sharedDeleteBatch } from '../../../platform/lifecycle/shared-cleanup.js';
+import type { SharedCleanupScope } from '../../../platform/lifecycle/shared-cleanup.js';
 import * as c from '@mehran/api-contracts';
 import type { z } from 'zod';
 const view = (row: SharedAssignmentNotification) =>
@@ -20,6 +22,9 @@ const view = (row: SharedAssignmentNotification) =>
   });
 @Injectable()
 export class SharedWorkNotificationsRepository extends SharedWorkNotifications {
+  cleanup(tx: Prisma.TransactionClient, s: SharedCleanupScope) {
+    return sharedDeleteBatch(tx, s, ['SharedAssignmentNotification']);
+  }
   async append(
     tx: Prisma.TransactionClient,
     a: SharedAuthority,

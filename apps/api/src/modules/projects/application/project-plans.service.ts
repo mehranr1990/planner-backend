@@ -25,6 +25,7 @@ import {
   matchRevision,
 } from './project-execution-context.js';
 import type { ExecutionContext } from './project-execution-context.js';
+import { appendProjectActivity } from './project-activity.js';
 import { validateTemplate, validateOperations } from '../domain/work-plans.js';
 import { csvRows, formulaCell, CsvImportError } from '../domain/csv-import.js';
 type Operation = z.infer<typeof c.ProjectChangeOperationSchema>;
@@ -764,6 +765,14 @@ export class ProjectPlansService {
                 )
               ).revision;
           }
+          await appendProjectActivity(
+            s.tx,
+            pid,
+            s.a.require(s.tx, pid, 'work.manage').actorId,
+            'task.plan.applied',
+            taskId,
+            { kind: 'TASK', id: taskId },
+          );
           if (o.estimatedMinutes !== undefined) {
             revision = (
               await this.work.estimate(s.tx, s.a, s, taskId, {

@@ -2,7 +2,12 @@ import type { Prisma } from '../../../generated/prisma/client.js';
 import type { SharedAuthority } from '../../spaces/public/index.js';
 import type { z } from 'zod';
 import type * as c from '@mehran/api-contracts';
+import type { SharedCleanupScope } from '../../../platform/lifecycle/shared-cleanup.js';
 export abstract class SharedWorkNotifications {
+  abstract cleanup(
+    tx: Prisma.TransactionClient,
+    scope: SharedCleanupScope,
+  ): Promise<boolean>;
   abstract append(
     tx: Prisma.TransactionClient,
     a: SharedAuthority,

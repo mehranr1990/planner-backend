@@ -18,6 +18,13 @@ describe('configuration safety', () => {
     );
   });
   it('requires a matching Web Push VAPID key pair', () => {
+    // ECDH omits leading zero bytes; VAPID encodes a fixed-width 32-byte scalar.
+    const privateKey = (key: ReturnType<typeof createECDH>) => {
+      const bytes = key.getPrivateKey();
+      return Buffer.concat([Buffer.alloc(32 - bytes.length), bytes]).toString(
+        'base64url',
+      );
+    };
     const key = createECDH('prime256v1');
     key.generateKeys();
     const valid = {
@@ -26,7 +33,7 @@ describe('configuration safety', () => {
       BETTER_AUTH_SECRET: 'unit-test-only-secret-at-least-32-characters',
       PUSH_MODE: 'webpush',
       PUSH_VAPID_PUBLIC_KEY: key.getPublicKey().toString('base64url'),
-      PUSH_VAPID_PRIVATE_KEY: key.getPrivateKey().toString('base64url'),
+      PUSH_VAPID_PRIVATE_KEY: privateKey(key),
       PUSH_VAPID_SUBJECT: 'mailto:owner@example.test',
     };
     expect(parseEnvironment(valid).PUSH_MODE).toBe('webpush');
@@ -35,7 +42,7 @@ describe('configuration safety', () => {
     expect(() =>
       parseEnvironment({
         ...valid,
-        PUSH_VAPID_PRIVATE_KEY: other.getPrivateKey().toString('base64url'),
+        PUSH_VAPID_PRIVATE_KEY: privateKey(other),
       }),
     ).toThrow('key pair');
   });

@@ -1,5 +1,6 @@
 import { VoiceFilesController } from './voice-files.controller.js';
 import { FilePortability } from './public/file-portability.js';
+import { SharedFiles } from './public/shared-files.js';
 import { ErasureControl } from './erasure-control.js';
 import { FileCatalog } from './public/file-catalog.js';
 import { Module } from '@nestjs/common';
@@ -31,6 +32,7 @@ export class StorageModule {
       ],
       controllers: [FilesController, VoiceFilesController],
       providers: [
+        SharedFiles,
         FilePortability,
         ErasureControl,
         scopeProvider,
@@ -41,6 +43,8 @@ export class StorageModule {
         { provide: STORAGE_PORT, useClass: LocalFileStorage },
       ],
       exports: [
+        SharedFiles,
+        FileThrottleGuard,
         FilesService,
         STORAGE_PORT,
         FileCatalog,

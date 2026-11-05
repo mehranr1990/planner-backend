@@ -20,6 +20,7 @@ import type {
   SharedFeatureKey,
 } from '../../spaces/public/index.js';
 import { ProjectsService } from './projects.service.js';
+import { appendProjectActivity } from './project-activity.js';
 import type { TaskToolContext } from '../../tasks/public/index.js';
 export const executionHash = (v: unknown) =>
   createHash('sha256').update(JSON.stringify(v)).digest('hex');
@@ -46,6 +47,7 @@ export const projectWhere = (s: ExecutionContext) => ({
   scopeId: s.scopeId,
   projectId: s.pid,
 });
+export type ExecutionTarget = string | { kind: 'GOAL' | 'PROJECT'; id: string };
 export function matchRevision(actual: number, expected: number) {
   if (actual !== expected)
     throw new ConflictException({ code: 'STALE_REVISION' });
@@ -61,7 +63,7 @@ export class ProjectExecutionContext {
   private requests(
     pid: string,
     caps: SharedRequest['capability'][],
-    tid?: string,
+    tid?: ExecutionTarget,
     archived = false,
   ) {
     return [...new Set([...caps, 'task.read' as const])].map((capability) => ({
@@ -73,7 +75,12 @@ export class ProjectExecutionContext {
       !['work.manage', 'workflow.transition', 'workflow.publish'].includes(
         capability,
       )
-        ? { resource: { kind: 'TASK' as const, id: tid } }
+        ? {
+            resource:
+              typeof tid === 'string'
+                ? { kind: 'TASK' as const, id: tid }
+                : tid,
+          }
         : {}),
     }));
   }
@@ -110,7 +117,20 @@ export class ProjectExecutionContext {
     };
     return s;
   }
-  async linked(s: ExecutionContext, taskId: string) {
+  async linked(s: ExecutionContext, taskId: ExecutionTarget) {
+    if (typeof taskId !== 'string') {
+      if (taskId.kind === 'PROJECT') {
+        if (taskId.id !== s.pid) throw new NotFoundException();
+        return;
+      }
+      if (
+        !(await s.tx.projectGoal.findFirst({
+          where: { ...projectWhere(s), goalId: taskId.id },
+        }))
+      )
+        throw new NotFoundException();
+      return;
+    }
     if (
       !(await s.tx.projectTask.findFirst({
         where: { ...projectWhere(s), taskId },
@@ -122,8 +142,9 @@ export class ProjectExecutionContext {
     actor: RequestActor,
     pid: string,
     caps: SharedRequest['capability'][],
-    taskId: string | undefined,
+    taskId: ExecutionTarget | undefined,
     work: (s: ExecutionContext) => Promise<T>,
+    optionalCaps: SharedRequest['capability'][] = [],
   ) {
     await this.projects.hint(pid);
     return this.kernel.run(
@@ -151,13 +172,15 @@ export class ProjectExecutionContext {
         if (taskId) await this.linked(s, taskId);
         return work(s);
       },
+      undefined,
+      optionalCaps.length ? this.requests(pid, optionalCaps, taskId, true) : [],
     );
   }
   async write<T>(
     actor: RequestActor,
     pid: string,
     caps: SharedRequest['capability'][],
-    taskId: string | undefined,
+    taskId: ExecutionTarget | undefined,
     action: string,
     target: string,
     accessIds: string[],
@@ -222,6 +245,24 @@ export class ProjectExecutionContext {
           if (taskId) await this.linked(s, taskId);
           const result = await work(s);
           if (audit) {
+            if (
+              !['file.', 'comment.', 'document.', 'export.', 'transfer.'].some(
+                (prefix) => action.startsWith(prefix),
+              ) &&
+              !action.includes('.preview') &&
+              !action.includes('.plan.')
+            ) {
+              await appendProjectActivity(
+                tx,
+                pid,
+                entries[0]!.actorId,
+                action,
+                target,
+                typeof taskId === 'string'
+                  ? { kind: 'TASK', id: taskId }
+                  : taskId,
+              );
+            }
             if (feature) usage.set(feature, (usage.get(feature) ?? 0) + 1);
             await this.kernel.offerBatchEffect(
               tx,
@@ -253,8 +294,9 @@ export class ProjectExecutionContext {
     kind: string,
     query: { limit: number; after?: string | undefined },
     rows: (after: string | undefined) => Promise<T[]>,
+    target?: ExecutionTarget,
   ) {
-    const request = this.requests(s.pid, [], undefined, true)[0]!,
+    const request = this.requests(s.pid, [], target, true)[0]!,
       b = this.kernel.scopeCursor(s.tx, s.a, request, kind),
       after = this.kernel.cursorPosition(
         b.context,

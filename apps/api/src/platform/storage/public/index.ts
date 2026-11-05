@@ -1,4 +1,7 @@
 export { StorageModule } from '../storage.module.js';
+export { SharedFiles } from './shared-files.js';
+export { FileThrottleGuard } from '../files.controller.js';
+export type { SharedFileScope, SharedUploadTicket } from './shared-files.js';
 export { FileCatalog } from './file-catalog.js';
 export { FilePortability } from './file-portability.js';
 export type { AttachmentManifest } from './file-portability.js';

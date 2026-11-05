@@ -5,6 +5,7 @@ import { projectPaths } from './projects-openapi.js';
 import { workPaths } from './work-openapi.js';
 import { projectToolPaths } from './project-tools-openapi.js';
 import { projectExecutionPaths } from './project-execution-openapi.js';
+import { projectCollaborationPaths } from './project-collaboration-openapi.js';
 import { insightPaths } from './insights-openapi.js';
 import { notificationPaths } from './notifications-openapi.js';
 import { writingPaths } from './writing-openapi.js';
@@ -246,6 +247,7 @@ export function createOpenApiDocument() {
       ...workPaths(),
       ...projectToolPaths(),
       ...projectExecutionPaths(),
+      ...projectCollaborationPaths(),
       ...extraPaths,
       [healthRoutes.live]: { get: operation('healthLive', 'LiveHealth') },
       [healthRoutes.ready]: { get: operation('healthReady', 'ReadyHealth') },

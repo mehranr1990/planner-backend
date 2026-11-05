@@ -100,7 +100,10 @@ export class CollaborationService {
       locked: string[],
       begin: () => Promise<string>,
     ) => Promise<T>,
+    lifecycle = false,
   ) {
+    if (lifecycle && !action.startsWith('lifecycle.'))
+      throw new BadRequestException();
     const intents: SharedControlRecord[] = [];
     let committed = false;
     const abort = async () => {
@@ -137,11 +140,19 @@ export class CollaborationService {
       });
     try {
       const result = actor
-        ? await this.kernel.participate(actor, spaceId, users, body, abort)
+        ? lifecycle
+          ? await this.kernel.lifecycleParticipant(
+              actor,
+              spaceId,
+              users,
+              body,
+              abort,
+            )
+          : await this.kernel.participate(actor, spaceId, users, body, abort)
         : await this.kernel.offerMaintenance(
             spaceId,
             users,
-            (tx, now) => body(tx, now, []),
+            (tx, now) => body(tx, now, [...new Set(users)].sort()),
             abort,
           );
       committed = true;

@@ -26,6 +26,10 @@ import { migrationSandbox } from '../testing/migration-sandbox.ts';
 import { isolatedTestDatabaseUrl } from '../testing/test-database.ts';
 import { taskToolsCompiledSmoke } from '../testing/task-tools-compiled-smoke.ts';
 import { projectExecutionCompiledSmoke } from '../testing/project-execution-compiled-smoke.ts';
+import {
+  projectCollaborationCompiledSmoke,
+  verifyProjectCollaborationRestart,
+} from '../testing/project-collaboration-compiled-smoke.ts';
 
 const base = isolatedTestDatabaseUrl(process.env);
 async function runtime(environment: NodeJS.ProcessEnv, initialize = false) {
@@ -40,7 +44,10 @@ async function runtime(environment: NodeJS.ProcessEnv, initialize = false) {
   });
   const client = new PrismaClient({
     adapter: new PrismaPg(
-      { connectionString: base, options: '-c search_path=' + schema },
+      {
+        connectionString: base,
+        options: '-c timezone=UTC -c search_path=' + schema,
+      },
       { schema },
     ),
   });
@@ -354,6 +361,14 @@ if (process.argv.includes('--worker-pass')) {
         )
       : null;
     if (execution) await context.client.sharedRateLimit.deleteMany();
+    const content = process.argv.includes('--p2-07')
+      ? await projectCollaborationCompiledSmoke(
+          context.app,
+          projectId,
+          ownerCookie,
+        )
+      : null;
+    if (content) await context.client.sharedRateLimit.deleteMany();
     await context.app.close();
     context = undefined;
     const child = spawnSync(
@@ -366,6 +381,13 @@ if (process.argv.includes('--worker-pass')) {
         'Compiled fresh worker bootstrap failed; captured output withheld',
       );
     context = await runtime(environment);
+    if (content)
+      await verifyProjectCollaborationRestart(
+        context.app,
+        projectId,
+        ownerCookie,
+        content,
+      );
     if (execution) {
       const report = await http()
         .get(

@@ -166,6 +166,10 @@ model Space {
 
   @@unique([kind, ownerUserId])
   @@unique([id, ownerUserId])
+
+  StoredFile_StoredFile_spaceIdToSpace StoredFile[]              @relation("StoredFile_spaceIdToSpace")
+
+  ProjectTransfer                      ProjectTransfer[]
 }
 
 // Platform evidence: deliberately contains no email, IP, token, URL or arbitrary JSON.
@@ -373,31 +377,38 @@ enum StoredFileStatus {
 }
 
 model StoredFile {
-  voiceCaptures   CaptureItem[]
-  id              String           @id @default(uuid()) @db.Uuid
-  spaceId         String           @db.Uuid
-  ownerUserId     String           @db.Uuid
-  space           Space            @relation(fields: [spaceId, ownerUserId], references: [id, ownerUserId], onDelete: Cascade)
-  objectKey       String           @unique @db.Uuid
-  filename        String           @db.VarChar(180)
-  mimeType        String           @db.VarChar(100)
-  expectedSize    Int
-  expectedSha256  String?          @db.Char(64)
-  actualSize      Int?
-  sha256          String?          @db.Char(64)
-  status          StoredFileStatus @default(INITIATED)
-  revision        Int              @default(1)
-  uploadAttemptId String?          @db.Uuid
-  uploadStartedAt DateTime?        @db.Timestamptz(3)
-  uploadExpiresAt DateTime         @db.Timestamptz(3)
-  createdAt       DateTime         @default(now()) @db.Timestamptz(3)
-  updatedAt       DateTime         @updatedAt @db.Timestamptz(3)
-  completedAt     DateTime?        @db.Timestamptz(3)
-  deletedAt       DateTime?        @db.Timestamptz(3)
-  purgedAt        DateTime?        @db.Timestamptz(3)
-  taskAttachments TaskAttachment[]
+  id                              String           @id @default(uuid()) @db.Uuid
+  spaceId                         String           @db.Uuid
+  ownerUserId                     String?          @db.Uuid
+  objectKey                       String           @unique @db.Uuid
+  filename                        String           @db.VarChar(180)
+  mimeType                        String           @db.VarChar(100)
+  expectedSize                    Int
+  expectedSha256                  String?          @db.Char(64)
+  actualSize                      Int?
+  sha256                          String?          @db.Char(64)
+  status                          StoredFileStatus @default(INITIATED)
+  revision                        Int              @default(1)
+  uploadAttemptId                 String?          @db.Uuid
+  uploadStartedAt                 DateTime?        @db.Timestamptz(3)
+  uploadExpiresAt                 DateTime         @db.Timestamptz(3)
+  createdAt                       DateTime         @default(now()) @db.Timestamptz(3)
+  updatedAt                       DateTime         @updatedAt @db.Timestamptz(3)
+  completedAt                     DateTime?        @db.Timestamptz(3)
+  deletedAt                       DateTime?        @db.Timestamptz(3)
+  purgedAt                        DateTime?        @db.Timestamptz(3)
+  scopeId                         String?          @db.Uuid
+  createdByActorId                String?          @db.Uuid
+  voiceCaptures                   CaptureItem[]
+  ProjectFile                     ProjectFile[]
+  Space_StoredFile_spaceIdToSpace Space            @relation("StoredFile_spaceIdToSpace", fields: [spaceId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "StoredFile_direct_space_fk")
+  AccessScope                     AccessScope?     @relation(fields: [spaceId, scopeId], references: [spaceId, id], onDelete: NoAction, onUpdate: NoAction, map: "StoredFile_scope_fk")
+  SharedActor                     SharedActor?     @relation(fields: [spaceId, createdByActorId], references: [spaceId, id], onDelete: NoAction, onUpdate: NoAction, map: "StoredFile_shared_actor_fk")
+  space                           Space?           @relation(fields: [spaceId, ownerUserId], references: [id, ownerUserId], onDelete: Cascade)
+  taskAttachments                 TaskAttachment[]
 
   @@unique([spaceId, id])
+  @@unique([spaceId, scopeId, id], map: "StoredFile_scope_id_key")
   @@index([spaceId, status, createdAt, id])
 }
 
@@ -1797,6 +1808,8 @@ model AccessScope {
   TaskWorkflow          TaskWorkflow[]
 
   @@unique([spaceId, id])
+
+  StoredFile                                                                                   StoredFile[]
 }
 
 // SQL enforces additional branch, lifecycle and immutable-history constraints.
@@ -1852,6 +1865,8 @@ model ContextAccess {
   @@unique([spaceId, id])
   @@unique([spaceId, scopeId, actorId])
   @@index([actorId, scopeId, state], map: "ContextAccess_actor_scope")
+
+  ProjectTransfer                                                                                     ProjectTransfer[]
 }
 
 // SQL enforces additional branch, lifecycle and immutable-history constraints.
@@ -1890,6 +1905,8 @@ model ContextAccessInterval {
   SharedTaskWorkLog     SharedTaskWorkLog[]
 
   @@id([accessId, generation])
+
+  ProjectTransfer                                                                                        ProjectTransfer[]
 }
 
 // SQL enforces additional branch, lifecycle and immutable-history constraints.
@@ -1989,6 +2006,16 @@ model SharedActor {
   SharedTaskWorkLog      SharedTaskWorkLog[]
 
   @@unique([spaceId, id])
+
+  ProjectActivity                                                                   ProjectActivity[]
+  ProjectComment                                                                    ProjectComment[]
+  ProjectCommentVersion                                                             ProjectCommentVersion[]
+  ProjectDocument                                                                   ProjectDocument[]
+  ProjectDocumentVersion                                                            ProjectDocumentVersion[]
+
+  StoredFile                                                                        StoredFile[]
+
+  ProjectTransfer                                                                   ProjectTransfer[]
 }
 
 // SQL enforces additional branch, lifecycle and immutable-history constraints.
@@ -2066,8 +2093,11 @@ model SharedLifecycleJob {
   SharedCustody          SharedCustody?        @relation(fields: [spaceId], references: [spaceId], onUpdate: NoAction)
 
   @@unique([custodyId, generation])
+  @@unique([id, custodyId, generation],map:"SharedLifecycleJob_effect_identity_key")
   @@index([state, leaseUntil, id], map: "SharedLifecycleJob_lease")
   @@index([state, nextAt, id], map: "SharedLifecycleJob_pending")
+
+  SharedLifecycleEffect  SharedLifecycleEffect[]
 }
 
 // SQL enforces additional branch, lifecycle and immutable-history constraints.
@@ -2260,6 +2290,13 @@ model Project {
 
   @@unique([spaceId, scopeId, id])
   @@index([createdAt, id], map: "Project_created")
+
+  ProjectActivity         ProjectActivity[]
+  ProjectComment          ProjectComment[]
+  ProjectDocument         ProjectDocument[]
+  ProjectFile             ProjectFile[]
+
+  ProjectTransfer         ProjectTransfer[]
 }
 
 model ProjectGoal {
@@ -2274,6 +2311,11 @@ model ProjectGoal {
   ProjectMilestone ProjectMilestone? @relation(fields: [spaceId, scopeId, projectId, milestoneId], references: [spaceId, scopeId, projectId, id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([spaceId, scopeId, projectId, goalId], map: "ProjectGoal_page")
+
+  ProjectActivity  ProjectActivity[]
+  ProjectComment   ProjectComment[]
+  ProjectFile      ProjectFile[]
+  @@unique([spaceId, scopeId, projectId, goalId], map: "ProjectGoal_project_goal_key")
 }
 
 model ProjectGrant {
@@ -2388,6 +2430,10 @@ model ProjectTask {
 
   @@unique([spaceId, scopeId, projectId, taskId], map: "ProjectTask_assignment_source_key")
   @@index([spaceId, scopeId, projectId, taskId], map: "ProjectTask_page")
+
+  ProjectActivity       ProjectActivity[]
+  ProjectComment        ProjectComment[]
+  ProjectFile           ProjectFile[]
 }
 
 model TaskGrant {
@@ -3073,4 +3119,186 @@ model SharedTaskWorkLog {
 
   @@unique([accessId, generation, creationKey])
   @@index([spaceId, scopeId, taskId, id], map: "SharedTaskWorkLog_task_page")
+}
+
+
+model ProjectActivity {
+  id              String           @id @db.Uuid
+  spaceId         String           @db.Uuid
+  scopeId         String           @db.Uuid
+  projectId       String           @db.Uuid
+  taskId          String?          @db.Uuid
+  goalId          String?          @db.Uuid
+  documentId      String?          @db.Uuid
+  actorId         String           @db.Uuid
+  action          String           @db.VarChar(80)
+  resourceId      String           @db.Uuid
+  createdAt       DateTime         @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+  SharedActor     SharedActor      @relation(fields: [spaceId, actorId], references: [spaceId, id], onDelete: NoAction, onUpdate: NoAction)
+  ProjectDocument ProjectDocument? @relation(fields: [spaceId, scopeId, projectId, documentId], references: [spaceId, scopeId, projectId, id], onDelete: NoAction, onUpdate: NoAction)
+  Project         Project          @relation(fields: [spaceId, scopeId, projectId], references: [spaceId, scopeId, id], onDelete: NoAction, onUpdate: NoAction)
+  ProjectGoal     ProjectGoal?     @relation(fields: [spaceId, scopeId, projectId, goalId], references: [spaceId, scopeId, projectId, goalId], onDelete: NoAction, onUpdate: NoAction)
+  ProjectTask     ProjectTask?     @relation(fields: [spaceId, scopeId, projectId, taskId], references: [spaceId, scopeId, projectId, taskId], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([spaceId, scopeId, projectId, taskId, goalId, documentId, id], map: "ProjectActivity_page")
+}
+
+
+model ProjectComment {
+  id                    String                  @id @db.Uuid
+  spaceId               String                  @db.Uuid
+  scopeId               String                  @db.Uuid
+  projectId             String                  @db.Uuid
+  taskId                String?                 @db.Uuid
+  goalId                String?                 @db.Uuid
+  documentId            String?                 @db.Uuid
+  body                  String                  @db.VarChar(10000)
+  revision              Int                     @default(1)
+  deletedAt             DateTime?               @db.Timestamptz(3)
+  createdAt             DateTime                @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+  createdByActorId      String                  @db.Uuid
+  creationKey           String                  @db.Char(64)
+  fingerprint           String                  @db.Char(64)
+  SharedActor           SharedActor             @relation(fields: [spaceId, createdByActorId], references: [spaceId, id], onDelete: NoAction, onUpdate: NoAction)
+  ProjectDocument       ProjectDocument?        @relation(fields: [spaceId, scopeId, projectId, documentId], references: [spaceId, scopeId, projectId, id], onDelete: NoAction, onUpdate: NoAction)
+  Project               Project                 @relation(fields: [spaceId, scopeId, projectId], references: [spaceId, scopeId, id], onDelete: NoAction, onUpdate: NoAction)
+  ProjectGoal           ProjectGoal?            @relation(fields: [spaceId, scopeId, projectId, goalId], references: [spaceId, scopeId, projectId, goalId], onDelete: NoAction, onUpdate: NoAction)
+  ProjectTask           ProjectTask?            @relation(fields: [spaceId, scopeId, projectId, taskId], references: [spaceId, scopeId, projectId, taskId], onDelete: NoAction, onUpdate: NoAction)
+  ProjectCommentVersion ProjectCommentVersion[]
+
+  @@unique([spaceId, scopeId, projectId, creationKey])
+  @@unique([spaceId, scopeId, projectId, id])
+  @@index([spaceId, scopeId, projectId, taskId, goalId, documentId, id], map: "ProjectComment_page")
+}
+
+
+model ProjectCommentVersion {
+  spaceId        String         @db.Uuid
+  scopeId        String         @db.Uuid
+  projectId      String         @db.Uuid
+  commentId      String         @db.Uuid
+  revision       Int
+  body           String?        @db.VarChar(10000)
+  actorId        String         @db.Uuid
+  createdAt      DateTime       @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+  SharedActor    SharedActor    @relation(fields: [spaceId, actorId], references: [spaceId, id], onDelete: NoAction, onUpdate: NoAction)
+  ProjectComment ProjectComment @relation(fields: [spaceId, scopeId, projectId, commentId], references: [spaceId, scopeId, projectId, id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@id([commentId, revision])
+}
+
+
+model ProjectDocument {
+  id                                                                         String                   @id @db.Uuid
+  spaceId                                                                    String                   @db.Uuid
+  scopeId                                                                    String                   @db.Uuid
+  projectId                                                                  String                   @db.Uuid
+  title                                                                      String                   @db.VarChar(300)
+  revision                                                                   Int                      @default(1)
+  retiredAt                                                                  DateTime?                @db.Timestamptz(3)
+  createdAt                                                                  DateTime                 @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+  createdByActorId                                                           String                   @db.Uuid
+  creationKey                                                                String                   @db.Char(64)
+  fingerprint                                                                String                   @db.Char(64)
+  ProjectActivity                                                            ProjectActivity[]
+  ProjectComment                                                             ProjectComment[]
+  ProjectDocumentVersion_ProjectDocument_id_revisionToProjectDocumentVersion ProjectDocumentVersion   @relation("ProjectDocument_id_revisionToProjectDocumentVersion", fields: [id, revision], references: [documentId, version], onDelete: NoAction, onUpdate: NoAction, map: "ProjectDocument_current_version_fk")
+  SharedActor                                                                SharedActor              @relation(fields: [spaceId, createdByActorId], references: [spaceId, id], onDelete: NoAction, onUpdate: NoAction)
+  Project                                                                    Project                  @relation(fields: [spaceId, scopeId, projectId], references: [spaceId, scopeId, id], onDelete: NoAction, onUpdate: NoAction)
+  ProjectDocumentVersion                                                     ProjectDocumentVersion[]
+  ProjectFile                                                                ProjectFile[]
+
+  @@unique([spaceId, scopeId, projectId, creationKey])
+  @@unique([spaceId, scopeId, projectId, id])
+  @@index([spaceId, scopeId, projectId, id], map: "ProjectDocument_page")
+}
+
+
+model ProjectDocumentVersion {
+  spaceId                                                             String           @db.Uuid
+  scopeId                                                             String           @db.Uuid
+  projectId                                                           String           @db.Uuid
+  documentId                                                          String           @db.Uuid
+  version                                                             Int
+  title                                                               String           @db.VarChar(300)
+  body                                                                String           @db.VarChar(100000)
+  actorId                                                             String           @db.Uuid
+  createdAt                                                           DateTime         @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+  ProjectDocument_ProjectDocument_id_revisionToProjectDocumentVersion ProjectDocument[] @relation("ProjectDocument_id_revisionToProjectDocumentVersion")
+  SharedActor                                                         SharedActor      @relation(fields: [spaceId, actorId], references: [spaceId, id], onDelete: NoAction, onUpdate: NoAction)
+  ProjectDocument                                                     ProjectDocument  @relation(fields: [spaceId, scopeId, projectId, documentId], references: [spaceId, scopeId, projectId, id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@id([documentId, version])
+}
+
+
+model ProjectFile {
+  fileId          String           @id @db.Uuid
+  spaceId         String           @db.Uuid
+  scopeId         String           @db.Uuid
+  projectId       String           @db.Uuid
+  taskId          String?          @db.Uuid
+  goalId          String?          @db.Uuid
+  documentId      String?          @db.Uuid
+  creationKey     String           @db.Char(64)
+  fingerprint     String           @db.Char(64)
+  StoredFile      StoredFile       @relation(fields: [spaceId, scopeId, fileId], references: [spaceId, scopeId, id], onDelete: NoAction, onUpdate: NoAction)
+  ProjectDocument ProjectDocument? @relation(fields: [spaceId, scopeId, projectId, documentId], references: [spaceId, scopeId, projectId, id], onDelete: NoAction, onUpdate: NoAction)
+  Project         Project          @relation(fields: [spaceId, scopeId, projectId], references: [spaceId, scopeId, id], onDelete: NoAction, onUpdate: NoAction)
+  ProjectGoal     ProjectGoal?     @relation(fields: [spaceId, scopeId, projectId, goalId], references: [spaceId, scopeId, projectId, goalId], onDelete: NoAction, onUpdate: NoAction)
+  ProjectTask     ProjectTask?     @relation(fields: [spaceId, scopeId, projectId, taskId], references: [spaceId, scopeId, projectId, taskId], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([spaceId, scopeId, projectId, creationKey])
+  @@unique([spaceId, scopeId, projectId, fileId])
+  @@index([spaceId, scopeId, projectId, taskId, goalId, documentId, fileId], map: "ProjectFile_page")
+}
+
+
+model ProjectTransfer {
+  id                    String                @id @db.Uuid
+  spaceId               String                @db.Uuid
+  scopeId               String                @db.Uuid
+  projectId             String                @db.Uuid
+  sourceCustodyId       String                @db.Uuid
+  sourceSpaceId         String?               @db.Uuid
+  creatorAccessId       String                @db.Uuid
+  creatorGeneration     Int
+  createdByActorId      String                @db.Uuid
+  authorizationVersion  BigInt
+  manifest              Json
+  manifestHash          String                @db.Char(64)
+  state                 String                @default("PREVIEWED") @db.VarChar(10)
+  revision              Int                   @default(1)
+  createdAt             DateTime              @db.Timestamptz(3)
+  expiresAt             DateTime              @db.Timestamptz(3)
+  acceptedAt            DateTime?             @db.Timestamptz(3)
+  appliedAt             DateTime?             @db.Timestamptz(3)
+  reauthenticatedAt     DateTime?             @db.Timestamptz(3)
+  applyKeyHash          String?               @db.Char(64)
+  creationKey           String                @db.Char(64)
+  fingerprint           String                @db.Char(64)
+  ContextAccessInterval ContextAccessInterval @relation(fields: [creatorAccessId, creatorGeneration], references: [accessId, generation], onDelete: NoAction, onUpdate: NoAction)
+  Space                 Space?                @relation(fields: [sourceSpaceId], references: [id], onUpdate: NoAction)
+  SharedActor           SharedActor           @relation(fields: [spaceId, createdByActorId], references: [spaceId, id], onDelete: NoAction, onUpdate: NoAction)
+  ContextAccess         ContextAccess         @relation(fields: [spaceId, scopeId, creatorAccessId], references: [spaceId, scopeId, id], onDelete: NoAction, onUpdate: NoAction)
+  Project               Project               @relation(fields: [spaceId, scopeId, projectId], references: [spaceId, scopeId, id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([creatorAccessId, creatorGeneration, creationKey])
+  @@unique([spaceId, scopeId, projectId, id])
+  @@index([spaceId, state, expiresAt, id], map: "ProjectTransfer_expiry")
+}
+
+
+model SharedLifecycleEffect {
+  id                   String             @id @db.Uuid
+  jobId                String             @db.Uuid
+  custodyId            String             @db.Uuid
+  generation           Int
+  action               String             @db.VarChar(80)
+  authorizationVersion BigInt
+  operatorReference    String             @db.VarChar(200)
+  createdAt            DateTime           @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+  SharedLifecycleJob   SharedLifecycleJob @relation(fields: [jobId, custodyId, generation], references: [id, custodyId, generation], onUpdate: NoAction)
+
+  @@index([jobId, createdAt, id], map: "SharedLifecycleEffect_job")
 }

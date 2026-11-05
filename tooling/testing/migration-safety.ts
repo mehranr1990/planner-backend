@@ -8,6 +8,10 @@ import {
 } from './reviewed-voice-migration.ts';
 import fs from 'node:fs';
 import {
+  projectCollaborationMigrationHashes,
+  assertReviewedProjectCollaborationMigration,
+} from './reviewed-project-collaboration-migrations.ts';
+import {
   projectExecutionMigrationHashes,
   assertReviewedProjectExecutionMigration,
 } from './reviewed-project-execution-migrations.ts';
@@ -96,7 +100,9 @@ export function reviewMigrations(directory = 'prisma/migrations'): string[] {
       path.join(directory, name, 'migration.sql'),
       'utf8',
     );
-    if (Object.hasOwn(projectExecutionMigrationHashes, name))
+    if (Object.hasOwn(projectCollaborationMigrationHashes, name))
+      assertReviewedProjectCollaborationMigration(name, sql);
+    else if (Object.hasOwn(projectExecutionMigrationHashes, name))
       assertReviewedProjectExecutionMigration(name, sql);
     else if (Object.hasOwn(taskToolsMigrationHashes, name))
       assertReviewedTaskToolsMigration(name, sql);

@@ -5,6 +5,7 @@ import { SpacesService } from './application/spaces.service.js';
 import { SpacePolicyService } from '../../platform/authorization/space-policy.service.js';
 import { SPACES_REPOSITORY } from './application/spaces.port.js';
 import { SharedKernel } from './application/shared-kernel.service.js';
+import { SharedLifecycleService } from './application/shared-lifecycle.service.js';
 import { SharedIdentity } from '../../platform/auth/shared-identity.js';
 import { SharedControl } from '../../platform/storage/shared-control.js';
 import { AuditModule } from '../../platform/audit/audit.service.js';
@@ -25,6 +26,7 @@ import {
   imports: [DatabaseModule, AuditModule],
   providers: [
     SharedKernel,
+    SharedLifecycleService,
     SharedIdentity,
     SharedControl,
     CollaborationService,
@@ -40,6 +42,7 @@ import {
   exports: [
     SpacesService,
     SharedKernel,
+    SharedLifecycleService,
     SharedControl,
     CollaborationService,
     ResourceGrants,
