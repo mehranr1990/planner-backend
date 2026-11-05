@@ -153,4 +153,6 @@ export async function verifyLocalSecurityUpgrade(input: {
   process.stdout.write(
     'PASS: local security closeout preserves 134 prior table data sets, all old constraints, 43 checksums and legacy Personal proof hashes; interrupted rollback, resume and repeat deploy.\n',
   );
+  await verifyTeamsUpgrade(input);
 }
+import { verifyTeamsUpgrade } from './teams-upgrade.ts';

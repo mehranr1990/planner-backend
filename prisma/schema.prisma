@@ -1781,6 +1781,7 @@ model PushSubscription {
 
 // SQL enforces additional branch, lifecycle and immutable-history constraints.
 model AccessScope {
+  Team Team[]
   ContextInvitation                                                                            ContextInvitation[]
   OwnerHandover                                                                                OwnerHandover[]
   id                                                                                           String                    @id @db.Uuid
@@ -1963,6 +1964,7 @@ model ResourceGrant {
 
 // SQL enforces additional branch, lifecycle and immutable-history constraints.
 model SharedActor {
+  Team Team[]
   ContextInvitation       ContextInvitation[]
   OwnerHandover           OwnerHandover[]
   id                      String                    @id @db.Uuid
@@ -2039,6 +2041,7 @@ model SharedAuditEvent {
 
 // SQL enforces additional branch, lifecycle and immutable-history constraints.
 model SharedCustody {
+  Team Team?
   spaceId                String                @id @db.Uuid
   kind                   String                @db.VarChar(20)
   state                  String                @db.VarChar(24)
@@ -2267,6 +2270,9 @@ model GoalGrant {
 }
 
 model Project {
+  TeamProjectReference TeamProjectReference[] @relation("ReferenceScope")
+  TeamProjectReferenceId TeamProjectReference[] @relation("ReferenceId")
+  @@unique([spaceId,id], map: "Project_space_id_pair")
   id                      String                    @id @db.Uuid
   spaceId                 String                    @unique @db.Uuid
   scopeId                 String                    @db.Uuid
@@ -3310,4 +3316,36 @@ model SharedLifecycleEffect {
   SharedLifecycleJob   SharedLifecycleJob @relation(fields: [jobId, custodyId, generation], references: [id, custodyId, generation], onUpdate: NoAction)
 
   @@index([jobId, createdAt, id], map: "SharedLifecycleEffect_job")
+}
+
+model Team {
+  id                   String                 @id @db.Uuid
+  spaceId              String                 @unique @db.Uuid
+  scopeId              String                 @db.Uuid
+  createdByActorId     String                 @db.Uuid
+  title                String                 @db.VarChar(300)
+  description          String?                @db.VarChar(10000)
+  revision             Int                    @default(1)
+  creationKey          String                 @db.Char(64)
+  creationFingerprint  String                 @db.Char(64)
+  createdAt            DateTime               @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+  updatedAt            DateTime               @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+  SharedCustody        SharedCustody          @relation(fields: [spaceId], references: [spaceId], onDelete: NoAction, onUpdate: NoAction)
+  AccessScope          AccessScope            @relation(fields: [spaceId, scopeId], references: [spaceId, id], onDelete: NoAction, onUpdate: NoAction)
+  SharedActor          SharedActor            @relation(fields: [spaceId, createdByActorId], references: [spaceId, id], onDelete: NoAction, onUpdate: NoAction)
+  TeamProjectReference TeamProjectReference[]
+}
+
+model TeamProjectReference {
+  teamId    String  @db.Uuid
+  projectId String  @db.Uuid
+  spaceId   String  @db.Uuid
+  revision  Int     @default(1)
+  active    Boolean @default(true)
+  Team      Team    @relation(fields: [teamId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  ProjectId Project @relation("ReferenceId", fields: [projectId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  Project   Project @relation("ReferenceScope", fields: [spaceId, projectId], references: [spaceId, id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@id([teamId, projectId])
+  @@index([projectId, teamId], map: "TeamProjectReference_project")
 }

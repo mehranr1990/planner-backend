@@ -395,9 +395,16 @@ describe('P2-03 independent Projects and authorized shared sources', () => {
     const tables = await client.$queryRaw<
       { tablename: string }[]
     >`SELECT tablename FROM pg_tables WHERE schemaname=current_schema()`;
-    expect(tables.some((t) => /^(Team|Company)$/.test(t.tablename))).toBe(
-      false,
+    expect(tables.some((t) => t.tablename === 'Company')).toBe(false);
+    expect(tables.some((t) => t.tablename === 'Team')).toBe(true); // Authorized P3-01 expansion.
+    expect(await client.team.count({ where: { spaceId: first.spaceId } })).toBe(
+      0,
     );
+    expect(
+      await client.teamProjectReference.count({
+        where: { projectId: first.id },
+      }),
+    ).toBe(0);
     expect(
       (await projects.list(owner.actor, { limit: 100 })).items.some(
         (p) => p.id === first.id,

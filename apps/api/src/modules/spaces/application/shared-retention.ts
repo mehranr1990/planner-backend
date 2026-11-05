@@ -6,9 +6,11 @@ const rule = z.strictObject({
     .int()
     .nonnegative()
     .max(Number.MAX_SAFE_INTEGER),
-  audience: z.array(z.enum(['OWNER', 'ADMIN', 'MANAGER', 'MEMBER', 'VIEWER'])),
+  audience: z.array(
+    z.enum(['OWNER', 'ADMIN', 'MANAGER', 'LEAD', 'MEMBER', 'VIEWER']),
+  ),
   exportAuthority: z.array(
-    z.enum(['OWNER', 'ADMIN', 'MANAGER', 'MEMBER', 'VIEWER']),
+    z.enum(['OWNER', 'ADMIN', 'MANAGER', 'LEAD', 'MEMBER', 'VIEWER']),
   ),
   disposalAction: z.enum(['PURGE', 'PSEUDONYMIZE']),
 });
@@ -38,7 +40,11 @@ export const SharedRetentionSchema = z
     policyVersion: z.string().regex(/^[A-Za-z0-9._-]{1,80}$/),
     approvalReference: name,
     accountableOperator: name,
-    applicableContexts: z.tuple([z.literal('PROJECT')]),
+    applicableContexts: z
+      .array(z.enum(['PROJECT', 'TEAM']))
+      .min(1)
+      .max(2)
+      .refine((v) => new Set(v).size === v.length),
     marketScope: name,
     sharedRecoverySeconds: z.literal(2592000),
     classRules: z.strictObject({

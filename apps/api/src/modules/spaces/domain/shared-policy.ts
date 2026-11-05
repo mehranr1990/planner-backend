@@ -1,5 +1,5 @@
 export const roles = ['OWNER', 'ADMIN', 'MANAGER', 'MEMBER', 'VIEWER'] as const;
-export type SharedRole = (typeof roles)[number];
+export type SharedRole = (typeof roles)[number] | 'LEAD';
 export type MemberRole = Exclude<SharedRole, 'OWNER'>;
 export const ordinaryCapabilities = [
   'task.read',
@@ -34,7 +34,11 @@ export const fixedCapabilities = [
 ] as const;
 export type SharedCapability =
   OrdinaryCapability | (typeof fixedCapabilities)[number];
-export type RoleDefaults = Record<SharedRole, OrdinaryCapability[]>;
+export type RoleDefaults = Record<
+  'OWNER' | 'ADMIN' | 'MEMBER' | 'VIEWER',
+  OrdinaryCapability[]
+> &
+  Partial<Record<'MANAGER' | 'LEAD', OrdinaryCapability[]>>;
 export const defaultPolicy: RoleDefaults = {
   OWNER: [...ordinaryCapabilities],
   ADMIN: [...ordinaryCapabilities],
@@ -51,6 +55,22 @@ export const defaultPolicy: RoleDefaults = {
   ],
   VIEWER: ['task.read', 'file.read'],
 };
+export const teamDefaultPolicy: RoleDefaults = {
+  OWNER: [...defaultPolicy.OWNER],
+  ADMIN: [...defaultPolicy.ADMIN],
+  LEAD: [...defaultPolicy.MANAGER!],
+  MEMBER: [...defaultPolicy.MEMBER],
+  VIEWER: [...defaultPolicy.VIEWER],
+};
+export function roleInContext(role: string | null, kind: string) {
+  return (
+    role === null ||
+    (kind === 'TEAM'
+      ? ['ADMIN', 'LEAD', 'MEMBER', 'VIEWER']
+      : ['ADMIN', 'MANAGER', 'MEMBER', 'VIEWER']
+    ).includes(role)
+  );
+}
 export function withinCeiling(
   role: SharedRole,
   capability: OrdinaryCapability,
@@ -64,9 +84,12 @@ export function withinCeiling(
 export function validateRoleDefaults(value: unknown): value is RoleDefaults {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const record = value as Record<string, unknown>;
+  const catalog = Object.hasOwn(record, 'LEAD')
+    ? (['OWNER', 'ADMIN', 'LEAD', 'MEMBER', 'VIEWER'] as const)
+    : roles;
   return (
     Object.keys(record).length === roles.length &&
-    roles.every((role) => {
+    catalog.every((role) => {
       const caps = record[role];
       return (
         Array.isArray(caps) &&
@@ -89,7 +112,7 @@ export function permits(
   if (capability === 'membership.leave') return true;
   if (capability === 'custody.accept') return true;
   if (ordinaryCapabilities.includes(capability as OrdinaryCapability))
-    return policy[role].includes(capability as OrdinaryCapability);
+    return policy[role]?.includes(capability as OrdinaryCapability) ?? false;
   if (
     capability === 'membership.admin' ||
     (capability.startsWith('custody.') && capability !== 'custody.archive')
@@ -105,13 +128,13 @@ export function permits(
   )
     return role === 'OWNER' || role === 'ADMIN';
   if (['goal.manage', 'work.manage', 'membership.member'].includes(capability))
-    return ['OWNER', 'ADMIN', 'MANAGER'].includes(role);
+    return ['OWNER', 'ADMIN', 'MANAGER', 'LEAD'].includes(role);
   return capability === 'comment.create' && role !== 'VIEWER';
 }
 export function roleAdministration(role: MemberRole) {
   return role === 'ADMIN'
     ? 'membership.admin'
-    : role === 'MANAGER'
+    : role === 'MANAGER' || role === 'LEAD'
       ? 'membership.manager'
       : 'membership.member';
 }

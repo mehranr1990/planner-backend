@@ -1,4 +1,4 @@
-/** Typed future association requests. Only INDEPENDENT is executable during P2. */
+/** Independent custody is preserved. Team references use the separate authorized Team routes. Company remains inactive. */
 export type ProjectAssociationIntent =
   | { kind: 'INDEPENDENT' }
   | { kind: 'TEAM'; teamId: string }

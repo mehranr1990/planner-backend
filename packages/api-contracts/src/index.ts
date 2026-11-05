@@ -69,3 +69,4 @@ export * from './project-execution.js';
 export * from './project-collaboration.js';
 export * from './project-transfer.js';
 export * from './project-lifecycle.js';
+export * from './teams.js';

@@ -80,7 +80,8 @@ describe('P1-06 contracts and prior compatibility', () => {
     ])
       expect(paths).toHaveProperty('/api/v1' + approved);
     expect(paths).toHaveProperty('/api/v1/sync/push');
-    for (const path of ['/companies', '/teams'])
+    expect(paths).toHaveProperty('/api/v1/teams'); // P3-01 is explicitly authorized.
+    for (const path of ['/companies', '/sync/teams'])
       expect(paths).not.toHaveProperty('/api/v1' + path);
   });
 });

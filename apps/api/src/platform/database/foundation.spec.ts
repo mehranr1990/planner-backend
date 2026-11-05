@@ -243,6 +243,8 @@ describe('scoped persistence and API conventions', () => {
       '202611050018_personal_project_transfer',
       '202611050019_shared_lifecycle_effects',
       '202611050020_local_security_closeout',
+      '202611050021_independent_teams',
+      '202611050022_team_reference_usage',
     ]);
     for (const sql of [
       '',

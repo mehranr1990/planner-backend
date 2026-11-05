@@ -1,4 +1,12 @@
 import {
+  teamReferenceUsageName,
+  assertReviewedTeamReferenceUsage,
+} from './reviewed-teams-migration.ts';
+import {
+  teamsMigrationName,
+  assertReviewedTeamsMigration,
+} from './reviewed-teams-migration.ts';
+import {
   localSecurityMigrationName,
   assertReviewedLocalSecurityMigration,
 } from './reviewed-local-security-migration.ts';
@@ -104,7 +112,11 @@ export function reviewMigrations(directory = 'prisma/migrations'): string[] {
       path.join(directory, name, 'migration.sql'),
       'utf8',
     );
-    if (name === localSecurityMigrationName)
+    if (name === teamReferenceUsageName)
+      assertReviewedTeamReferenceUsage(name, sql);
+    else if (name === teamsMigrationName)
+      assertReviewedTeamsMigration(name, sql);
+    else if (name === localSecurityMigrationName)
       assertReviewedLocalSecurityMigration(name, sql);
     else if (Object.hasOwn(projectCollaborationMigrationHashes, name))
       assertReviewedProjectCollaborationMigration(name, sql);

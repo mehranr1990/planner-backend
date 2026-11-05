@@ -180,11 +180,7 @@ export class ProjectsService {
     const row = await this.hint(id);
     return this.grants.readOffer(actor, row.spaceId, offerId);
   }
-  private async view(
-    tx: Prisma.TransactionClient,
-    row: Project,
-    a: SharedAuthority,
-  ) {
+  async view(tx: Prisma.TransactionClient, row: Project, a: SharedAuthority) {
     const state = await this.kernel.contextState(tx, a, row.spaceId, row.id);
     return c.ProjectSchema.strip().parse({
       ...row,

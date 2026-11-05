@@ -35,6 +35,8 @@ import {
 import type { SharedRestoreScope } from '../../../platform/lifecycle/shared-replay.js';
 import {
   defaultPolicy,
+  teamDefaultPolicy,
+  roleInContext,
   permits,
   validateRoleDefaults,
   roleAdministration,
@@ -314,7 +316,7 @@ export class SharedKernel {
       return (
         await tx.$queryRaw<
           { count: number }[]
-        >`SELECT count(*)::int AS count FROM "SharedCustody" c JOIN "ContextAccess" a ON a.id=c."primaryOwnerAccessId" JOIN "SharedActor" s ON s.id=a."actorId" WHERE s."userId"=${ownerUserId ?? null}::uuid AND c.kind='PROJECT' AND c.state IN ('ACTIVE','ARCHIVED') AND a.state='ACTIVE' AND s.state='ACTIVE'`
+        >`SELECT count(*)::int AS count FROM "SharedCustody" c JOIN "ContextAccess" a ON a.id=c."primaryOwnerAccessId" JOIN "SharedActor" s ON s.id=a."actorId" WHERE s."userId"=${ownerUserId ?? null}::uuid AND c.kind IN ('PROJECT','TEAM') AND c.state IN ('ACTIVE','ARCHIVED') AND a.state='ACTIVE' AND s.state='ACTIVE'`
       )[0]!.count;
     if (feature === 'shared.membership') {
       let count = 0;
@@ -360,7 +362,40 @@ export class SharedKernel {
       throw new NotFoundException();
     return identity;
   }
-  async readableContextHints(actor: RequestActor) {
+  async currentMemberships(
+    tx: Prisma.TransactionClient,
+    authority: SharedAuthority,
+    spaceId: string,
+  ) {
+    authority.require(tx, spaceId, 'task.read');
+    const rows = await tx.contextAccess.findMany({
+      where: {
+        spaceId,
+        scopeId: spaceId,
+        state: { in: ['ACTIVE', 'SUSPENDED'] },
+        memberRole: { not: null },
+      },
+      orderBy: { id: 'asc' },
+    });
+    const result = [];
+    for (const row of rows) {
+      const actor = await tx.sharedActor.findUniqueOrThrow({
+        where: { id: row.actorId },
+      });
+      if (
+        actor.state === 'ACTIVE' &&
+        actor.userId &&
+        (await this.accountActive(tx, actor.userId)) &&
+        !(await this.endedByClosure(tx, actor.userId, row.joinedAt))
+      )
+        result.push(row);
+    }
+    return result;
+  }
+  async readableContextHints(
+    actor: RequestActor,
+    kind: 'PROJECT' | 'TEAM' = 'PROJECT',
+  ) {
     this.enabled();
     if (!actor.sessionId) throw new ForbiddenException();
     await this.control.records();
@@ -386,7 +421,7 @@ export class SharedKernel {
       JOIN "SharedActor" custodian ON custodian.id=owner."actorId"
       JOIN "Space" account ON account."ownerUserId"=custodian."userId" AND account.kind='PERSONAL'
       JOIN "Space" ownaccount ON ownaccount."ownerUserId"=u."userId" AND ownaccount.kind='PERSONAL'
-      WHERE u."userId"=${userId}::uuid AND u.state='ACTIVE' AND a.state='ACTIVE' AND a."memberRole" IS NOT NULL
+      WHERE c.kind=${kind} AND u."userId"=${userId}::uuid AND u.state='ACTIVE' AND a.state='ACTIVE' AND a."memberRole" IS NOT NULL
       AND c.state IN ('ACTIVE','ARCHIVED') AND s.state IN ('ACTIVE','ARCHIVED') AND account."accessClosedAt" IS NULL AND ownaccount."accessClosedAt" IS NULL
       AND (p."roleDefaults" -> (CASE WHEN a.id=c."primaryOwnerAccessId" THEN 'OWNER' ELSE a."memberRole" END)) ? 'task.read' ORDER BY s.id`;
       return {
@@ -1428,7 +1463,11 @@ export class SharedKernel {
         },
       },
     });
-    if (!validateRoleDefaults(policy.roleDefaults))
+    if (
+      !validateRoleDefaults(policy.roleDefaults) ||
+      !roleInContext(access.memberRole, custody.kind) ||
+      (custody.kind === 'TEAM') !== Object.hasOwn(policy.roleDefaults, 'LEAD')
+    )
       throw new ForbiddenException();
     const role =
       access.id === custody.primaryOwnerAccessId
@@ -2073,7 +2112,9 @@ export class SharedKernel {
   ) {
     uuid.parse(input.accessId);
     if (
-      !['ADMIN', 'MANAGER', 'MEMBER', 'VIEWER'].includes(input.memberRole) ||
+      !['ADMIN', 'MANAGER', 'LEAD', 'MEMBER', 'VIEWER'].includes(
+        input.memberRole,
+      ) ||
       !['ACTIVE', 'SUSPENDED', 'LEFT', 'REVOKED'].includes(input.state)
     )
       throw new BadRequestException();
@@ -2112,6 +2153,8 @@ export class SharedKernel {
         const custody = await tx.sharedCustody.findUniqueOrThrow({
           where: { spaceId: input.spaceId },
         });
+        if (!roleInContext(input.memberRole, custody.kind))
+          throw new BadRequestException();
         if (target.id === custody.primaryOwnerAccessId)
           throw new ConflictException({
             code: 'CUSTODIAN_SUCCESSION_REQUIRED',
@@ -2281,6 +2324,7 @@ export class SharedKernel {
         accessId: string;
       },
     ) => Promise<void>,
+    kind: 'PROJECT' | 'TEAM' = 'PROJECT',
   ) {
     this.enabled();
     uuid.parse(spaceId);
@@ -2298,7 +2342,8 @@ export class SharedKernel {
         !parsed ||
         !parsed.success ||
         parsed.data.policyVersion !== retention.version ||
-        parsed.data.approvalReference !== retention.approvalReference
+        parsed.data.approvalReference !== retention.approvalReference ||
+        !parsed.data.applicableContexts.includes(kind)
       )
         throw new ForbiddenException({ code: 'SHARED_RETENTION_UNAVAILABLE' });
       if (await tx.space.findUnique({ where: { id: spaceId } }))
@@ -2334,7 +2379,7 @@ export class SharedKernel {
       await tx.sharedCustody.create({
         data: {
           spaceId,
-          kind: 'PROJECT',
+          kind,
           state: 'ACTIVE',
           primaryOwnerAccessId: accessId,
           retentionPolicyVersion: retentionVersion,
@@ -2365,7 +2410,7 @@ export class SharedKernel {
           spaceId,
           scopeId: spaceId,
           version: 1,
-          roleDefaults: defaultPolicy,
+          roleDefaults: kind === 'TEAM' ? teamDefaultPolicy : defaultPolicy,
           exportMaxRecords: 10000,
           exportMaxBytes: 10485760,
           publishedByActorId: actorId,

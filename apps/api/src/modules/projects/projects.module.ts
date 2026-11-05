@@ -52,6 +52,7 @@ export class ProjectsModule {
         storage,
       ],
       providers: [
+        TeamProjects,
         ProjectContentService,
         ProjectExportService,
         ProjectTransferService,
@@ -79,6 +80,7 @@ export class ProjectsModule {
         WorkProjectionController,
       ],
       exports: [
+        TeamProjects,
         ProjectsService,
         WorkService,
         ProjectContentService,
@@ -91,3 +93,4 @@ export class ProjectsModule {
     };
   }
 }
+import { TeamProjects } from './application/team-projects.service.js';

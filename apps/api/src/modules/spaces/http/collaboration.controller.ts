@@ -65,6 +65,11 @@ export class CollaborationGuard implements CanActivate {
         context.getHandler(),
       ) ?? false,
     );
+    if (request.params.spaceId)
+      await this.service.requireContextKind(
+        String(request.params.spaceId),
+        'PROJECT',
+      );
     return true;
   }
 }

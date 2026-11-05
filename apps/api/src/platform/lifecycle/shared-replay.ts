@@ -30,7 +30,9 @@ export const SharedReplaySchema = z.strictObject({
         id: uuid,
         actorId: uuid,
         state: z.string().max(24),
-        memberRole: z.enum(['ADMIN', 'MANAGER', 'MEMBER', 'VIEWER']).nullable(),
+        memberRole: z
+          .enum(['ADMIN', 'MANAGER', 'LEAD', 'MEMBER', 'VIEWER'])
+          .nullable(),
         generation: z.number().int().positive(),
         joinedAt: instant,
         endedAt: instant.nullable(),

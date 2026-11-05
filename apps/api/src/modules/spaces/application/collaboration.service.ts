@@ -25,6 +25,7 @@ import { SharedKernel } from './shared-kernel.service.js';
 import { CollaborationLimit } from './collaboration-limit.js';
 import {
   roleAdministration,
+  roleInContext,
   permits,
   validateRoleDefaults,
 } from '../domain/shared-policy.js';
@@ -48,7 +49,7 @@ function proofHash(proof: string | undefined) {
   return hash(proof);
 }
 const invitationView = (r: ContextInvitation) =>
-  c.InvitationSchema.parse({
+  c.ContextInvitationSchema.parse({
     id: r.id,
     spaceId: r.spaceId,
     scopeId: r.scopeId,
@@ -87,6 +88,12 @@ export class CollaborationService {
     this.kernel.assertEnabled();
     await this.limit.request(ip, actor?.userId, preview);
     await this.control.records();
+  }
+  async requireContextKind(spaceId: string, kind: 'PROJECT' | 'TEAM') {
+    const row = await this.db.client.sharedCustody.findUnique({
+      where: { spaceId },
+    });
+    if (!row || row.kind !== kind) throw new NotFoundException();
   }
   async signed<T>(
     actor: RequestActor | null,
@@ -225,7 +232,7 @@ export class CollaborationService {
     const custody = await tx.sharedCustody.findUniqueOrThrow({
       where: { spaceId: access.spaceId },
     });
-    return c.SharedMembershipSchema.parse({
+    return c.ContextMembershipSchema.parse({
       id: access.id,
       spaceId: access.spaceId,
       scopeId: access.scopeId,
@@ -243,11 +250,11 @@ export class CollaborationService {
   async createInvitation(
     actor: RequestActor,
     spaceId: string,
-    input: z.infer<typeof c.InvitationCreateSchema>,
+    input: z.infer<typeof c.ContextInvitationCreateSchema>,
     key: string | undefined,
   ) {
     const keyValue = keyHash(key),
-      body = c.InvitationCreateSchema.parse(input);
+      body = c.ContextInvitationCreateSchema.parse(input);
     const email =
       'email' in body.recipient
         ? this.identity.canonicalEmail(body.recipient.email)
@@ -274,6 +281,11 @@ export class CollaborationService {
       'invitation.create',
       id,
       async (tx, now, locked, begin) => {
+        const custodyKind = (
+          await tx.sharedCustody.findUniqueOrThrow({ where: { spaceId } })
+        ).kind;
+        if (!roleInContext(body.memberRole, custodyKind))
+          throw new BadRequestException();
         const authority = await this.kernel.participantAuthority(
           tx,
           actor,
@@ -295,7 +307,7 @@ export class CollaborationService {
         });
         if (prior) {
           if (prior.fingerprint !== fingerprint) throw new ConflictException();
-          return c.InvitationDeliverySchema.parse({
+          return c.ContextInvitationDeliverySchema.parse({
             invitation: invitationView(prior),
             proof: null,
           });
@@ -387,7 +399,7 @@ export class CollaborationService {
           fingerprint,
           id,
         );
-        return c.InvitationDeliverySchema.parse({
+        return c.ContextInvitationDeliverySchema.parse({
           invitation: invitationView(result),
           proof,
         });
@@ -419,7 +431,10 @@ export class CollaborationService {
       },
     );
   }
-  async preview(proof: string | undefined) {
+  async preview(
+    proof: string | undefined,
+    kind: 'PROJECT' | 'TEAM' = 'PROJECT',
+  ) {
     this.kernel.assertEnabled();
     const hint = await this.db.client.contextInvitation.findUnique({
       where: { proofHash: proofHash(proof) },
@@ -436,7 +451,8 @@ export class CollaborationService {
         !row ||
         row.state !== 'PENDING' ||
         row.expiresAt <= now ||
-        custody.state !== 'ACTIVE'
+        custody.state !== 'ACTIVE' ||
+        custody.kind !== kind
       )
         throw new NotFoundException();
       const issuer = await tx.contextAccess.findUnique({
@@ -497,8 +513,12 @@ export class CollaborationService {
         )
       )
         throw new NotFoundException();
-      return c.InvitationPreviewSchema.parse({
-        contextLabel: 'Project',
+      return (
+        kind === 'TEAM'
+          ? c.TeamInvitationPreviewSchema
+          : c.InvitationPreviewSchema
+      ).parse({
+        contextLabel: kind === 'TEAM' ? 'Team' : 'Project',
         offerCategory: 'MEMBERSHIP',
         expiresAt: row.expiresAt.toISOString(),
       });
@@ -517,6 +537,7 @@ export class CollaborationService {
     proof: string | undefined,
     revision: number,
     accept: boolean,
+    kind: 'PROJECT' | 'TEAM' = 'PROJECT',
   ) {
     const hint = await this.invitationHint(id, proof),
       issuerUser = await this.userForAccess(
@@ -533,6 +554,14 @@ export class CollaborationService {
         const row = await tx.contextInvitation.findUniqueOrThrow({
           where: { id },
         });
+        if (
+          (
+            await tx.sharedCustody.findUniqueOrThrow({
+              where: { spaceId: row.spaceId },
+            })
+          ).kind !== kind
+        )
+          throw new NotFoundException();
         if (row.proofHash !== proofHash(proof)) throw new NotFoundException();
         if (row.state === 'ACCEPTED' && accept) {
           const access = await tx.contextAccess.findUnique({
@@ -561,7 +590,7 @@ export class CollaborationService {
             },
             locked,
           );
-          return c.InvitationAcceptanceSchema.parse({
+          return c.ContextInvitationAcceptanceSchema.parse({
             invitation: invitationView(row),
             membership: await this.memberView(tx, access),
           });
@@ -711,7 +740,7 @@ export class CollaborationService {
           id,
         );
         if (!accept) return invitationView(result);
-        return c.InvitationAcceptanceSchema.parse({
+        return c.ContextInvitationAcceptanceSchema.parse({
           invitation: invitationView(result),
           membership: await this.memberView(tx, access!),
         });
@@ -778,7 +807,9 @@ export class CollaborationService {
     spaceId: string,
     accessId: string,
     revision: number,
-    input: z.infer<typeof c.MembershipChangeSchema>,
+    input:
+      | z.infer<typeof c.MembershipChangeSchema>
+      | z.infer<typeof c.TeamMembershipChangeSchema>,
   ) {
     return this.kernel.changeAccess(
       actor,

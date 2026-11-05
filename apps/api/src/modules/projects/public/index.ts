@@ -13,3 +13,4 @@ export { ProjectToolsService } from '../application/project-tools.service.js';
 export { ProjectRegisterService } from '../application/project-register.service.js';
 export { ProjectPlansService } from '../application/project-plans.service.js';
 export { ProjectWorkMetricsService } from '../application/project-work-metrics.service.js';
+export { TeamProjects } from '../application/team-projects.service.js';
