@@ -1,11 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { OnModuleInit } from '@nestjs/common';
-import {
-  createHash,
-  createHmac,
-  randomUUID,
-  timingSafeEqual,
-} from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { readdir, lstat, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { Readable } from 'node:stream';
@@ -13,7 +8,13 @@ import { z } from 'zod';
 import { APP_CONFIG } from '../../bootstrap/configuration.module.js';
 import type { AppConfig } from '../../bootstrap/environment.js';
 import { LocalFileStorage } from './local-storage.js';
+import { PersonalEvidenceKeys } from '../lifecycle/personal-evidence-keys.js';
 const RecordSchema = z.strictObject({
+  digestKeyId: z
+    .string()
+    .regex(/^[A-Za-z0-9_-]{1,40}$/)
+    .nullable()
+    .optional(),
   jobId: z.uuid(),
   identityDigest: z.string().regex(/^[a-f0-9]{64}$/),
   spaceDigest: z.string().regex(/^[a-f0-9]{64}$/),
@@ -33,7 +34,9 @@ export type ErasureRecord = z.infer<typeof RecordSchema>;
 export class ErasureControl implements OnModuleInit {
   private readonly storage: LocalFileStorage;
   private readonly root: string;
+  readonly keys: PersonalEvidenceKeys;
   constructor(@Inject(APP_CONFIG) private readonly config: AppConfig) {
+    this.keys = new PersonalEvidenceKeys(config);
     this.root =
       config.ERASURE_CONTROL_ROOT ?? config.STORAGE_ROOT + '-erasure-control';
     this.storage = new LocalFileStorage({ ...config, STORAGE_ROOT: this.root });
@@ -42,19 +45,20 @@ export class ErasureControl implements OnModuleInit {
     await this.storage.onModuleInit();
   }
   digest(kind: 'identity' | 'space', id: string) {
-    return createHmac('sha256', this.config.BETTER_AUTH_SECRET)
-      .update('erasure-' + kind + '-v1:' + id)
-      .digest('hex');
+    return this.keys.digest(kind, id);
   }
-  private mac(data: string) {
-    return createHmac('sha256', this.config.BETTER_AUTH_SECRET)
-      .update('erasure-control-v1:' + data)
-      .digest('hex');
+  matchesDigest(kind: 'identity' | 'space', id: string, digest: string) {
+    return this.keys.digests(kind, id).includes(digest);
+  }
+  digests(kind: 'identity' | 'space', id: string) {
+    return this.keys.digests(kind, id);
   }
   async initialize() {
     await this.storage.onModuleInit();
     const bytes = Buffer.from(
-      JSON.stringify({ version: 1, signature: this.mac('initialized-v1') }),
+      JSON.stringify(
+        this.keys.sign('control', 'initialized-v1', 'erasure-control-v1:'),
+      ),
     );
     await this.storage.write(
       genesis,
@@ -66,7 +70,12 @@ export class ErasureControl implements OnModuleInit {
   }
   async append(value: ErasureRecord) {
     const body = JSON.stringify(RecordSchema.parse(value)),
-      bytes = Buffer.from(JSON.stringify({ body, signature: this.mac(body) }));
+      bytes = Buffer.from(
+        JSON.stringify({
+          body,
+          ...this.keys.sign('control', body, 'erasure-control-v1:'),
+        }),
+      );
     await this.storage.write(
       randomUUID(),
       randomUUID(),
@@ -80,14 +89,22 @@ export class ErasureControl implements OnModuleInit {
     if (names.length > 100000)
       throw new Error('Erasure control bound exceeded');
     const marker = z
-      .strictObject({ version: z.literal(1), signature: z.string() })
+      .strictObject({
+        version: z.union([z.literal(1), z.literal(2)]),
+        keyId: z.string().optional(),
+        signature: z.string().regex(/^[a-f0-9]{64}$/),
+      })
       .parse(
         JSON.parse(
           await readFile(path.join(this.root, genesis + '.blob'), 'utf8'),
         ),
       );
-    if (!equalMarker(marker.signature, this.mac('initialized-v1')))
-      throw new Error('Missing current erasure control checkpoint');
+    this.keys.verify(
+      'control',
+      'initialized-v1',
+      marker,
+      'erasure-control-v1:',
+    );
     const latest = new Map<string, ErasureRecord>();
     for (const name of names) {
       if (name.endsWith('.part') || name === genesis + '.blob') continue;
@@ -104,19 +121,21 @@ export class ErasureControl implements OnModuleInit {
         throw new Error('Invalid erasure control artifact');
       const envelope = z
         .strictObject({
+          version: z.union([z.literal(1), z.literal(2)]).optional(),
+          keyId: z.string().optional(),
           body: z.string().max(3500),
           signature: z.string().regex(/^[a-f0-9]{64}$/),
         })
         .parse(JSON.parse(await readFile(filename, 'utf8')));
-      if (
-        !timingSafeEqual(
-          Buffer.from(envelope.signature, 'hex'),
-          Buffer.from(this.mac(envelope.body), 'hex'),
-        )
-      )
-        throw new Error('Invalid erasure control signature');
+      this.keys.verify(
+        'control',
+        envelope.body,
+        envelope,
+        'erasure-control-v1:',
+      );
       const value = RecordSchema.parse(JSON.parse(envelope.body)),
         prior = latest.get(value.jobId);
+      this.keys.requireDigestKey(value.digestKeyId);
       if (!prior || value.at > prior.at) latest.set(value.jobId, value);
     }
     return [...latest.values()];
@@ -153,9 +172,4 @@ export class ErasureControl implements OnModuleInit {
     }
     return [...expired];
   }
-}
-function equalMarker(a: string, b: string) {
-  const x = Buffer.from(a),
-    y = Buffer.from(b);
-  return x.length === y.length && timingSafeEqual(x, y);
 }

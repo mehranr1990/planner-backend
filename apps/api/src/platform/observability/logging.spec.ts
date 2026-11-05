@@ -46,6 +46,8 @@ describe('structured log privacy', () => {
         },
         res: { statusCode: 200, headers: { 'set-cookie': 'private-session' } },
         err: new Error('private-exception'),
+        PERSONAL_EVIDENCE_KEYS: 'private-purpose-keyring',
+        PERSONAL_EVIDENCE_LEGACY_KEY: 'private-legacy-material',
         password: 'private-password',
         filename: 'private-filename',
         objectKey: 'private-object-key',
@@ -57,7 +59,7 @@ describe('structured log privacy', () => {
     );
     expect(JSON.parse(output).req).toEqual({ id: 'safe-id', method: 'POST' });
     expect(output).not.toMatch(
-      /secret-file|private-token|secret-bearer|private-cookie|private-journal|private-mood|private-finance|private-reflection|private-habit-title|private-habit-quantity|private-water-amount|private-goal-title|private-goal-metric|private-goal-review|private-focus-title|private-time-entry-note|private-note-content|private-journal-revision|private-mood-value|private-capture-text|private-search-query|private-session|private-exception|private-password|private-nested-token|private-content|private-filename|private-object-key|private-file-link|private-link-signature/,
+      /private-purpose-keyring|private-legacy-material|secret-file|private-token|secret-bearer|private-cookie|private-journal|private-mood|private-finance|private-reflection|private-habit-title|private-habit-quantity|private-water-amount|private-goal-title|private-goal-metric|private-goal-review|private-focus-title|private-time-entry-note|private-note-content|private-journal-revision|private-mood-value|private-capture-text|private-search-query|private-session|private-exception|private-password|private-nested-token|private-content|private-filename|private-object-key|private-file-link|private-link-signature/,
     );
     expect(JSON.parse(output).msg).toBe('Safe message');
   });

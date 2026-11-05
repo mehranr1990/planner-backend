@@ -283,6 +283,8 @@ model AccountDeletionJob {
 
   @@index([ownerUserId, createdAt, id])
   @@index([state, nextAt, id])
+  evidenceKeyId String? @db.VarChar(40)
+
 }
 
 model SyncChange {
@@ -2089,6 +2091,8 @@ model SharedLifecycleJob {
   revision               Int                   @default(1)
   progress               Json                  @default("{}")
   recoveryHash           String?               @db.Char(64)
+  evidenceDisposalAfter   DateTime?             @db.Timestamptz(3)
+  disposalApprovalReference String?             @db.VarChar(200)
   SharedRetentionPolicy  SharedRetentionPolicy @relation(fields: [retentionPolicyVersion], references: [version], onUpdate: NoAction)
   SharedCustody          SharedCustody?        @relation(fields: [spaceId], references: [spaceId], onUpdate: NoAction)
 
@@ -2098,6 +2102,11 @@ model SharedLifecycleJob {
   @@index([state, nextAt, id], map: "SharedLifecycleJob_pending")
 
   SharedLifecycleEffect  SharedLifecycleEffect[]
+}
+
+model SharedEvidenceFloor {
+  id Int @id
+  before DateTime @db.Timestamptz(3)
 }
 
 // SQL enforces additional branch, lifecycle and immutable-history constraints.

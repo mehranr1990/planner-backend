@@ -17,6 +17,7 @@ import type { AppConfig } from '../../../bootstrap/environment.js';
 import { STORAGE_PORT, StorageFailure } from '../storage.port.js';
 import type { StoragePort, FileEvidence } from '../storage.port.js';
 import { sharedDeleteBatch } from '../../lifecycle/shared-cleanup.js';
+import type { SharedRestoreScope } from '../../lifecycle/shared-replay.js';
 import type {
   SharedCleanupScope,
   CleanupFile,
@@ -36,6 +37,63 @@ export class SharedFiles {
     @Inject(STORAGE_PORT) private readonly storage: StoragePort,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {}
+  async restoreDeleted(
+    tx: Prisma.TransactionClient,
+    scope: SharedRestoreScope,
+    id: string | null,
+  ) {
+    scope.verify(tx);
+    if (id)
+      await tx.storedFile.updateMany({
+        where: {
+          id,
+          spaceId: scope.spaceId,
+          scopeId: scope.spaceId,
+          ownerUserId: null,
+          status: { not: 'DELETED' },
+        },
+        data: {
+          status: 'DELETED',
+          deletedAt: new Date(),
+          revision: { increment: 1 },
+        },
+      });
+    return tx.storedFile.findMany({
+      where: {
+        spaceId: scope.spaceId,
+        scopeId: scope.spaceId,
+        ownerUserId: null,
+        status: 'DELETED',
+        purgedAt: null,
+      },
+      orderBy: { id: 'asc' },
+      take: 25,
+    });
+  }
+  async restoreRemoved(
+    tx: Prisma.TransactionClient,
+    scope: SharedRestoreScope,
+    rows: StoredFile[],
+  ) {
+    scope.verify(tx);
+    if (rows.length > 25) throw new ConflictException();
+    for (const row of rows)
+      await tx.storedFile.updateMany({
+        where: {
+          id: row.id,
+          spaceId: scope.spaceId,
+          ownerUserId: null,
+          status: 'DELETED',
+          objectKey: row.objectKey,
+          uploadAttemptId: row.uploadAttemptId,
+        },
+        data: {
+          purgedAt: new Date(),
+          uploadAttemptId: null,
+          uploadStartedAt: null,
+        },
+      });
+  }
   async purgePlan(
     tx: Prisma.TransactionClient,
     s: SharedCleanupScope,

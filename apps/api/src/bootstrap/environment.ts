@@ -63,6 +63,12 @@ const EnvironmentSchema = z.object({
   SMTP_PASSWORD: z.string().optional(),
   STORAGE_ROOT: z.string().min(1).default('.tools/private-files'),
   ERASURE_CONTROL_ROOT: z.string().min(1).optional(),
+  PERSONAL_EVIDENCE_KEYS: z.string().min(1).optional(),
+  PERSONAL_EVIDENCE_ACTIVE_KEY_ID: z
+    .string()
+    .regex(/^[A-Za-z0-9_-]{1,40}$/)
+    .optional(),
+  PERSONAL_EVIDENCE_LEGACY_KEY: z.string().min(32).optional(),
   SHARED_CONTROL_ROOT: z.string().min(1).optional(),
   SHARED_CONTROL_KEYS: z.string().min(1).optional(),
   SHARED_CONTROL_ACTIVE_KEY_ID: z

@@ -19,6 +19,16 @@ import type { NestExpressApplication } from '@nestjs/platform-express';
 import { PrismaClient } from '../../src/generated/prisma/client.js';
 import { AuthService } from '../../src/platform/auth/auth.service.js';
 import type { RequestActor } from '../../src/platform/auth/request-actor.js';
+import { PersonalLifecycle } from '../../src/modules/account/public/index.js';
+import { SpacesService } from '../../src/modules/spaces/public/index.js';
+import { APP_CONFIG } from '../../src/bootstrap/configuration.module.js';
+import type { AppConfig } from '../../src/bootstrap/environment.js';
+import { localSharedSnapshot } from '../../../../tooling/testing/local-shared-snapshot.js';
+import {
+  SharedKernel,
+  SharedLifecycleService,
+} from '../../src/modules/spaces/public/index.js';
+import { defaultPolicy } from '../../src/modules/spaces/domain/shared-policy.js';
 import { SharedControl } from '../../src/platform/storage/shared-control.js';
 import { SharedFiles } from '../../src/platform/storage/public/index.js';
 import {
@@ -1208,4 +1218,702 @@ describe('P2-07 authorized Project content and consistent views', () => {
       });
     }
   });
+  async function restored(
+    snapshot: Awaited<ReturnType<typeof localSharedSnapshot>>,
+    extraEnvironment: NodeJS.ProcessEnv = {},
+  ) {
+    const copy = await snapshot(),
+      schema = new URL(copy.target.url).searchParams.get('schema')!,
+      base = isolatedTestDatabaseUrl(process.env),
+      config = app.get<AppConfig>(APP_CONFIG);
+    const client = new PrismaClient({
+      adapter: new PrismaPg(
+        {
+          connectionString: base,
+          options: '-c timezone=UTC -c search_path=' + schema,
+          max: 8,
+        },
+        { schema },
+      ),
+    });
+    const restoredApp = await testApplication({
+      databaseUrl: base,
+      databaseInstance: {
+        client,
+        checkConnection: async () => {
+          await client.$queryRaw`SELECT 1`;
+        },
+        onApplicationShutdown: () => client.$disconnect(),
+      },
+      restoredControl: true,
+      environment: {
+        STORAGE_ROOT: copy.files,
+        ERASURE_CONTROL_ROOT: config.ERASURE_CONTROL_ROOT,
+        SHARED_CONTROL_ROOT: config.SHARED_CONTROL_ROOT,
+        SHARED_CONTROL_KEYS: config.SHARED_CONTROL_KEYS,
+        SHARED_CONTROL_ACTIVE_KEY_ID: config.SHARED_CONTROL_ACTIVE_KEY_ID,
+        SHARED_SECURITY_ACCEPTANCE_REFERENCE:
+          config.SHARED_SECURITY_ACCEPTANCE_REFERENCE,
+        ...extraEnvironment,
+      },
+    });
+    return {
+      app: restoredApp,
+      db: client,
+      close: async () => {
+        await restoredApp.close();
+        await copy.target.close();
+      },
+    };
+  }
+  it('CLOSEOUT: replays committed membership and policy restrictions plus deleted private bytes from a real older snapshot', async () => {
+    const p = await project(),
+      t = await task(p.id),
+      seat = await join(p.id),
+      target = { kind: 'TASK' as const, id: t.id };
+    await join(p.id, viewer, 'VIEWER');
+    const upload = await files.initiate(
+      owner.actor,
+      p.id,
+      {
+        id: randomUUID(),
+        target,
+        filename: 'synthetic.txt',
+        mimeType: 'text/plain',
+        expectedSize: 5,
+      },
+      randomUUID(),
+    );
+    const ready = await files.complete(
+      owner.actor,
+      p.id,
+      upload.id,
+      target,
+      Readable.from(['hello']),
+      '5',
+    );
+    const snapshot = await localSharedSnapshot(
+      sandbox.url,
+      app.get<AppConfig>(APP_CONFIG).STORAGE_ROOT,
+    );
+    await app.get(SharedKernel).changeAccess(owner.actor, {
+      spaceId: p.id,
+      scopeId: p.id,
+      accessId: seat.id,
+      revision: seat.revision,
+      state: 'REVOKED',
+      memberRole: 'MEMBER',
+    });
+    await app.get(SharedKernel).publishPolicy(owner.actor, {
+      spaceId: p.id,
+      scopeId: p.id,
+      expectedVersion: 1,
+      roleDefaults: { ...defaultPolicy, VIEWER: [] },
+      exportMaxRecords: 10000,
+      exportMaxBytes: 10485760,
+    });
+    await files.delete(owner.actor, p.id, upload.id, target, ready.revision);
+    const copy = await restored(snapshot);
+    try {
+      const source = copy.app.get(ProjectsService),
+        clean = copy.app.get(ProjectCleanupService),
+        privateFiles = copy.app.get(ProjectFilesService);
+      await expect(
+        source.source(member.actor, p.id, 'TASK', t.id),
+      ).rejects.toThrow();
+      await expect(
+        privateFiles.download(owner.actor, p.id, upload.id, target),
+      ).rejects.toThrow();
+      expect((await clean.restoreRestrictions(p.id)).complete).toBe(true);
+      await expect(
+        source.source(member.actor, p.id, 'TASK', t.id),
+      ).rejects.toThrow();
+      await expect(
+        source.source(viewer.actor, p.id, 'TASK', t.id),
+      ).rejects.toThrow();
+      await expect(
+        privateFiles.download(owner.actor, p.id, upload.id, target),
+      ).rejects.toThrow();
+      expect((await source.source(owner.actor, p.id, 'TASK', t.id)).id).toBe(
+        t.id,
+      );
+      expect((await clean.restoreRestrictions(p.id)).processed).toBe(0);
+      const row = await copy.db.storedFile.findUniqueOrThrow({
+        where: { id: upload.id },
+      });
+      expect(row.status).toBe('DELETED');
+      expect(row.purgedAt).not.toBe(null);
+      expect(
+        fs.existsSync(
+          path.join(
+            copy.app.get<AppConfig>(APP_CONFIG).STORAGE_ROOT,
+            row.objectKey + '.blob',
+          ),
+        ),
+      ).toBe(false);
+    } finally {
+      await copy.close();
+    }
+  }, 60000);
+  it('CLOSEOUT: restores closure restrictions and requires a fresh password and new one-use recovery proof', async () => {
+    const p = await project(),
+      t = await task(p.id),
+      snapshot = await localSharedSnapshot(
+        sandbox.url,
+        app.get<AppConfig>(APP_CONFIG).STORAGE_ROOT,
+      );
+    await projects.lifecycle(
+      owner.actor,
+      p.id,
+      1,
+      'delete',
+      'synthetic-p207-password-123!',
+    );
+    const old = await cleanup.lifecycle.status(owner.actor, p.id),
+      stale = await cleanup.lifecycle.issueProof(
+        owner.actor,
+        p.id,
+        old.revision,
+        'synthetic-p207-password-123!',
+      );
+    const copy = await restored(snapshot);
+    try {
+      const clean = copy.app.get(ProjectCleanupService),
+        source = copy.app.get(ProjectsService),
+        life = copy.app.get(SharedLifecycleService);
+      expect((await clean.restoreRestrictions(p.id)).complete).toBe(true);
+      await expect(
+        source.source(owner.actor, p.id, 'TASK', t.id),
+      ).rejects.toThrow();
+      const status = await life.status(owner.actor, p.id);
+      await expect(
+        clean.recover(
+          owner.actor,
+          p.id,
+          status.revision,
+          status.generation,
+          stale.proof,
+          'synthetic-p207-password-123!',
+        ),
+      ).rejects.toThrow();
+      await expect(
+        life.issueProof(owner.actor, p.id, status.revision, 'wrong'),
+      ).rejects.toThrow();
+      const fresh = await life.issueProof(
+        owner.actor,
+        p.id,
+        status.revision,
+        'synthetic-p207-password-123!',
+      );
+      await clean.recover(
+        owner.actor,
+        p.id,
+        fresh.revision,
+        fresh.generation,
+        fresh.proof,
+        'synthetic-p207-password-123!',
+      );
+      expect((await source.source(owner.actor, p.id, 'TASK', t.id)).id).toBe(
+        t.id,
+      );
+      await expect(
+        clean.recover(
+          owner.actor,
+          p.id,
+          fresh.revision,
+          fresh.generation,
+          fresh.proof,
+          'synthetic-p207-password-123!',
+        ),
+      ).rejects.toThrow();
+    } finally {
+      await copy.close();
+    }
+  }, 60000);
+  it('CLOSEOUT: rejects legacy duplicate-ID policy release and keeps distinct holds independent', async () => {
+    const base = await db.sharedRetentionPolicy.findUniqueOrThrow({
+        where: { version: policy },
+      }),
+      version = 'closeout-' + randomUUID(),
+      one = randomUUID(),
+      two = randomUUID();
+    const hold = (id: string) => ({
+      id,
+      basis: 'SYNTHETIC',
+      authority: 'SYNTHETIC',
+      scope: 'PROJECT',
+      nextReviewAt: new Date(Date.now() + 86400000).toISOString(),
+      state: 'ACTIVE',
+      releaseEvidence: null,
+    });
+    const configuration = {
+      ...(base.configuration as object),
+      policyVersion: version,
+      holds: [hold(one), hold(two)],
+    };
+    await db.sharedRetentionPolicy.create({
+      data: { version, approvalReference: 'SYNTHETIC-ONLY', configuration },
+    });
+    const p = await project(version),
+      job = await expire(p.id);
+    await cleanup.consume();
+    await cleanup.consume();
+    const waiting = await db.sharedLifecycleJob.findUniqueOrThrow({
+      where: { id: job.id },
+    });
+    await cleanup.lifecycle.release(
+      p.id,
+      job.id,
+      waiting.revision,
+      one,
+      'SYNTHETIC RELEASE',
+    );
+    await cleanup.consume();
+    expect(
+      (await db.sharedLifecycleJob.findUniqueOrThrow({ where: { id: job.id } }))
+        .state,
+    ).toBe('WAITING_OBLIGATIONS');
+    const badVersion = 'duplicate-' + randomUUID();
+    await db.sharedRetentionPolicy.create({
+      data: {
+        version: badVersion,
+        approvalReference: 'SYNTHETIC-ONLY',
+        configuration: {
+          ...configuration,
+          policyVersion: badVersion,
+          holds: [hold(one), hold(one)],
+        },
+      },
+    });
+    await expect(project(badVersion)).rejects.toThrow();
+  });
+  it('CLOSEOUT: disposes only expired detached evidence and fences every older backup checkpoint', async () => {
+    const spaceId = randomUUID(),
+      jobId = randomUUID(),
+      effectId = randomUUID(),
+      now = Date.now(),
+      departed = new Date(now - 100 * 86400000),
+      deadline = new Date(departed.getTime() + 30 * 86400000),
+      terminal = new Date(now - 60 * 86400000),
+      through = new Date(now - 40 * 86400000);
+    await db.sharedLifecycleJob.create({
+      data: {
+        id: jobId,
+        custodyId: spaceId,
+        generation: 1,
+        state: 'DELETED',
+        effectiveDepartureAt: departed,
+        recoveryDeadline: deadline,
+        retentionPolicyVersion: policy,
+        nextAt: terminal,
+        progress: { stage: 'DELETED', completedAt: terminal.toISOString() },
+      },
+    });
+    await db.sharedLifecycleEffect.create({
+      data: {
+        id: effectId,
+        jobId,
+        custodyId: spaceId,
+        generation: 1,
+        action: 'lifecycle.advance',
+        authorizationVersion: 2n,
+        operatorReference: 'SYNTHETIC',
+        createdAt: terminal,
+      },
+    });
+    await expect(
+      db.sharedLifecycleEffect.delete({ where: { id: effectId } }),
+    ).rejects.toThrow();
+    await expect(
+      cleanup.lifecycle.disposeTerminalEvidence(
+        spaceId,
+        new Date(),
+        'SYNTHETIC EXPIRY',
+      ),
+    ).rejects.toThrow();
+    const snapshot = await localSharedSnapshot(
+      sandbox.url,
+      app.get<AppConfig>(APP_CONFIG).STORAGE_ROOT,
+    );
+    const result = await cleanup.lifecycle.disposeTerminalEvidence(
+      spaceId,
+      through,
+      'SYNTHETIC VERIFIED EXPIRY',
+    );
+    expect(result.complete).toBe(true);
+    await db.sharedEvidenceFloor.update({
+      where: { id: 1 },
+      data: { before: new Date(through.getTime() + 1) },
+    });
+    await expect(app.get(SharedKernel).verifyRestoreFloor()).rejects.toThrow();
+    await db.sharedEvidenceFloor.update({
+      where: { id: 1 },
+      data: { before: through },
+    });
+    await app.get(SharedKernel).verifyRestoreFloor();
+    expect(
+      await db.sharedLifecycleEffect.findUnique({ where: { id: effectId } }),
+    ).toBe(null);
+    expect(
+      await db.sharedLifecycleJob.findUnique({ where: { id: jobId } }),
+    ).toBe(null);
+    const copy = await restored(snapshot);
+    try {
+      await expect(
+        copy.app.get(SharedKernel).verifyRestoreFloor(),
+      ).rejects.toThrow();
+    } finally {
+      await copy.close();
+    }
+    expect(
+      (
+        await cleanup.lifecycle.disposeTerminalEvidence(
+          spaceId,
+          through,
+          'SYNTHETIC VERIFIED EXPIRY',
+        )
+      ).complete,
+    ).toBe(true);
+  }, 60000);
+
+  it('CLOSEOUT: unresolved or legacy committed effects without replay state remain quarantined', async () => {
+    const p = await project(),
+      c = await db.sharedCustody.findUniqueOrThrow({
+        where: { spaceId: p.id },
+      }),
+      record = {
+        id: randomUUID(),
+        spaceId: p.id,
+        version: String(c.authorizationVersion + 1n),
+        action: 'membership.change',
+        resourceId: p.id,
+        outcome: 'INTENT' as const,
+        at: new Date().toISOString(),
+      };
+    await app.get(SharedControl).append(record);
+    await expect(cleanup.restoreRestrictions(p.id)).rejects.toThrow();
+    await app.get(SharedControl).append({ ...record, outcome: 'COMMITTED' });
+    await expect(cleanup.restoreRestrictions(p.id)).rejects.toThrow();
+    expect(
+      (await db.sharedCustody.findUniqueOrThrow({ where: { spaceId: p.id } }))
+        .authorizationVersion,
+    ).toBe(c.authorizationVersion);
+  });
+  it('CLOSEOUT: replays erased Shared attribution without restoring its live identity link', async () => {
+    const p = await project(),
+      who = await person(),
+      seat = await join(p.id, who),
+      snapshot = await localSharedSnapshot(
+        sandbox.url,
+        app.get<AppConfig>(APP_CONFIG).STORAGE_ROOT,
+      ),
+      closedAt = new Date();
+    await db.space.updateMany({
+      where: { ownerUserId: who.actor.userId, kind: 'PERSONAL' },
+      data: { accessClosedAt: closedAt },
+    });
+    await app
+      .get(SharedKernel)
+      .prepareIdentityErasure(who.actor.userId, closedAt);
+    const copy = await restored(snapshot);
+    try {
+      expect(
+        (await copy.app.get(ProjectCleanupService).restoreRestrictions(p.id))
+          .complete,
+      ).toBe(true);
+      const actor = await copy.db.sharedActor.findUniqueOrThrow({
+        where: { id: seat.actorId },
+      });
+      expect(actor.userId).toBe(null);
+      expect(actor.state).toBe('ERASED');
+      await expect(
+        copy.app.get(ProjectsService).read(who.actor, p.id),
+      ).rejects.toThrow();
+      expect(
+        (await copy.app.get(ProjectsService).read(owner.actor, p.id)).id,
+      ).toBe(p.id);
+    } finally {
+      await copy.close();
+    }
+  }, 60000);
+  it('CLOSEOUT: disposal respects explicit retention and holds, and resumes after a control-store failure', async () => {
+    const base = await db.sharedRetentionPolicy.findUniqueOrThrow({
+        where: { version: policy },
+      }),
+      version = 'evidence-' + randomUUID(),
+      spaceId = randomUUID(),
+      jobId = randomUUID(),
+      item = randomUUID(),
+      now = Date.now(),
+      departed = new Date(now - 100 * 86400000),
+      terminal = new Date(now - 60 * 86400000),
+      through = new Date(now - 40 * 86400000);
+    const configuration = {
+      ...(base.configuration as object),
+      policyVersion: version,
+      holds: [
+        {
+          id: item,
+          basis: 'SYNTHETIC',
+          authority: 'SYNTHETIC',
+          scope: 'evidence',
+          state: 'ACTIVE',
+          releaseEvidence: null,
+          nextReviewAt: new Date(now + 86400000).toISOString(),
+        },
+      ],
+    };
+    await db.sharedRetentionPolicy.create({
+      data: { version, approvalReference: 'SYNTHETIC-ONLY', configuration },
+    });
+    await db.sharedLifecycleJob.create({
+      data: {
+        id: jobId,
+        custodyId: spaceId,
+        generation: 1,
+        state: 'DELETED',
+        effectiveDepartureAt: departed,
+        recoveryDeadline: new Date(departed.getTime() + 30 * 86400000),
+        retentionPolicyVersion: version,
+        nextAt: terminal,
+        progress: { stage: 'DELETED' },
+      },
+    });
+    await expect(
+      cleanup.lifecycle.disposeTerminalEvidence(spaceId, through, 'SYNTHETIC'),
+    ).rejects.toThrow();
+    await db.sharedLifecycleJob.update({
+      where: { id: jobId },
+      data: {
+        progress: {
+          stage: 'DELETED',
+          releases: { [item]: 'SYNTHETIC REVIEWED RELEASE' },
+        },
+      },
+    });
+    const failure = vi
+      .spyOn(app.get(SharedControl), 'disposeEvidence')
+      .mockRejectedValueOnce(new Error('Synthetic storage interruption'));
+    await expect(
+      cleanup.lifecycle.disposeTerminalEvidence(spaceId, through, 'SYNTHETIC'),
+    ).rejects.toThrow();
+    failure.mockRestore();
+    await expect(app.get(SharedKernel).verifyRestoreFloor()).rejects.toThrow();
+    expect(
+      await db.sharedLifecycleJob.findUnique({ where: { id: jobId } }),
+    ).not.toBe(null);
+    expect(
+      (
+        await cleanup.lifecycle.disposeTerminalEvidence(
+          spaceId,
+          through,
+          'SYNTHETIC',
+        )
+      ).complete,
+    ).toBe(true);
+    await app.get(SharedKernel).verifyRestoreFloor();
+    const longVersion = 'long-evidence-' + randomUUID(),
+      futureId = randomUUID(),
+      futureSpace = randomUUID(),
+      classRules = (
+        base.configuration as { classRules: Record<string, unknown> }
+      ).classRules;
+    await db.sharedRetentionPolicy.create({
+      data: {
+        version: longVersion,
+        approvalReference: 'SYNTHETIC-ONLY',
+        configuration: {
+          ...(base.configuration as object),
+          policyVersion: longVersion,
+          classRules: {
+            ...classRules,
+            accessAuditLifecycle: {
+              ...(classRules.accessAuditLifecycle as object),
+              retainAfterClosureSeconds: 200 * 86400,
+            },
+          },
+        },
+      },
+    });
+    await db.sharedLifecycleJob.create({
+      data: {
+        id: futureId,
+        custodyId: futureSpace,
+        generation: 1,
+        state: 'DELETED',
+        effectiveDepartureAt: departed,
+        recoveryDeadline: new Date(departed.getTime() + 30 * 86400000),
+        retentionPolicyVersion: longVersion,
+        nextAt: terminal,
+      },
+    });
+    await expect(
+      cleanup.lifecycle.disposeTerminalEvidence(
+        futureSpace,
+        through,
+        'SYNTHETIC',
+      ),
+    ).rejects.toThrow();
+    expect(
+      await db.sharedLifecycleJob.findUnique({ where: { id: futureId } }),
+    ).not.toBe(null);
+  });
+
+  it('CLOSEOUT: resumes authorized terminal purge after restoring older work instead of reopening it', async () => {
+    const p = await project(),
+      t = await task(p.id),
+      snapshot = await localSharedSnapshot(
+        sandbox.url,
+        app.get<AppConfig>(APP_CONFIG).STORAGE_ROOT,
+      );
+    await expire(p.id);
+    for (
+      let n = 0;
+      n < 100 &&
+      (await db.sharedCustody.findUnique({ where: { spaceId: p.id } }));
+      n++
+    )
+      await cleanup.consume();
+    expect(
+      await db.sharedCustody.findUnique({ where: { spaceId: p.id } }),
+    ).toBe(null);
+    const copy = await restored(snapshot);
+    try {
+      const clean = copy.app.get(ProjectCleanupService);
+      for (let n = 0; n < 20; n++)
+        if ((await clean.restoreRestrictions(p.id)).complete) break;
+      await expect(
+        copy.app.get(ProjectsService).source(owner.actor, p.id, 'TASK', t.id),
+      ).rejects.toThrow();
+      for (
+        let n = 0;
+        n < 100 &&
+        (await copy.db.sharedCustody.findUnique({ where: { spaceId: p.id } }));
+        n++
+      )
+        await clean.consume();
+      expect(await copy.db.task.findUnique({ where: { id: t.id } })).toBe(null);
+      expect(
+        await copy.db.sharedCustody.findUnique({ where: { spaceId: p.id } }),
+      ).toBe(null);
+      expect(
+        await copy.db.user.findUnique({ where: { id: owner.actor.userId } }),
+      ).not.toBe(null);
+    } finally {
+      await copy.close();
+    }
+  }, 60000);
+  it('CLOSEOUT: persists the Personal digest key and honors an issued challenge across writer-key rotation', async () => {
+    const who = await person(true),
+      config = app.get<AppConfig>(APP_CONFIG),
+      root = fs.mkdtempSync(path.resolve('.tools/personal-rotation-flow-'));
+    const material = () => ({
+      control: randomBytes(48).toString('base64url'),
+      identity: randomBytes(48).toString('base64url'),
+      backup: randomBytes(48).toString('base64url'),
+      capability: randomBytes(48).toString('base64url'),
+    });
+    const keys = JSON.stringify({ a: material(), b: material() }),
+      erasure = path.join(root, 'control');
+    fs.cpSync(config.ERASURE_CONTROL_ROOT!, erasure, { recursive: true });
+    const environment = {
+      PERSONAL_EVIDENCE_KEYS: keys,
+      PERSONAL_EVIDENCE_ACTIVE_KEY_ID: 'a',
+      PERSONAL_EVIDENCE_LEGACY_KEY: config.BETTER_AUTH_SECRET,
+      PERSONAL_ERASURE_POLICY_VERSION: 'SYNTHETIC-KEY-ROTATION',
+      ERASURE_CONTROL_ROOT: erasure,
+    };
+    const snapshot = await localSharedSnapshot(
+        sandbox.url,
+        config.STORAGE_ROOT,
+      ),
+      copy = await restored(snapshot, environment);
+    let rotated: NestExpressApplication | undefined;
+    try {
+      const scope = await copy.app
+          .get(SpacesService)
+          .authorizePersonal(who.actor),
+        key = randomUUID(),
+        settings = await copy.db.userSettings.findUniqueOrThrow({
+          where: { userId: who.actor.userId },
+        }),
+        input = {
+          password: 'synthetic-p207-password-123!',
+          accountRevision: settings.revision,
+          policyVersion: 'SYNTHETIC-KEY-ROTATION',
+          retentionAcknowledged: true as const,
+        };
+      const issued = await copy.app
+        .get(PersonalLifecycle)
+        .requestDeletion(scope, key, input);
+      expect(
+        (
+          await copy.db.accountDeletionJob.findUniqueOrThrow({
+            where: { id: issued.job.id },
+          })
+        ).evidenceKeyId,
+      ).toBe('a');
+      const copyConfig = copy.app.get<AppConfig>(APP_CONFIG);
+      rotated = await testApplication({
+        databaseUrl: isolatedTestDatabaseUrl(process.env),
+        databaseInstance: {
+          client: copy.db,
+          checkConnection: async () => {
+            await copy.db.$queryRaw`SELECT 1`;
+          },
+          onApplicationShutdown: () => copy.db.$disconnect(),
+        },
+        restoredControl: true,
+        environment: {
+          STORAGE_ROOT: copyConfig.STORAGE_ROOT,
+          SHARED_CONTROL_ROOT: copyConfig.SHARED_CONTROL_ROOT,
+          SHARED_CONTROL_KEYS: copyConfig.SHARED_CONTROL_KEYS,
+          SHARED_CONTROL_ACTIVE_KEY_ID: copyConfig.SHARED_CONTROL_ACTIVE_KEY_ID,
+          SHARED_SECURITY_ACCEPTANCE_REFERENCE:
+            copyConfig.SHARED_SECURITY_ACCEPTANCE_REFERENCE,
+          ...environment,
+          PERSONAL_EVIDENCE_ACTIVE_KEY_ID: 'b',
+        },
+      });
+      const life = rotated.get(PersonalLifecycle),
+        rotatedScope = await rotated
+          .get(SpacesService)
+          .authorizePersonal(who.actor),
+        replay = await life.requestDeletion(rotatedScope, key, input);
+      expect(replay.confirmationProof).toBe(issued.confirmationProof);
+      expect(replay.recoveryCapability).toBe(issued.recoveryCapability);
+      expect(
+        (
+          await life.confirm(
+            { jobId: issued.job.id, revision: issued.job.revision },
+            issued.confirmationProof,
+            { cookie: who.cookie, origin },
+          )
+        ).state,
+      ).toBe('WAITING');
+      await expect(
+        life.cancel(
+          { jobId: issued.job.id, password: 'wrong' },
+          issued.recoveryCapability,
+        ),
+      ).rejects.toThrow();
+      expect(
+        (
+          await life.cancel(
+            { jobId: issued.job.id, password: input.password },
+            issued.recoveryCapability,
+          )
+        ).state,
+      ).toBe('CANCELED');
+      expect(
+        await copy.db.authSession.count({
+          where: { userId: who.actor.userId },
+        }),
+      ).toBe(0);
+      expect(await life.verifyControl()).toBe(true);
+    } finally {
+      await rotated?.close();
+      await copy.close();
+    }
+  }, 60000);
 });

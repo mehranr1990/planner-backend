@@ -1,3 +1,4 @@
+import { verifyLocalSecurityUpgrade } from './local-security-upgrade.ts';
 import fs from 'node:fs';
 import path from 'node:path';
 import assert from 'node:assert/strict';
@@ -260,4 +261,5 @@ export async function verifyProjectCollaborationUpgrade(input: Input) {
   process.stdout.write(
     'PASS: P2-07 preserves 126 populated prior tables, M08 execution/reporting, 38 checksums and prior constraints with only reviewed additive exceptions; all five interruptions and repeat deploy.\n',
   );
+  await verifyLocalSecurityUpgrade(input);
 }

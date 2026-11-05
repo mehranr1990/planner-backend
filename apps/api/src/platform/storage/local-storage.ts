@@ -51,7 +51,7 @@ export class LocalFileStorage implements StoragePort, OnModuleInit {
       );
     }
   }
-  private async checkRoot() {
+  async checkRoot() {
     const status = await lstat(this.root);
     if (
       !status.isDirectory() ||

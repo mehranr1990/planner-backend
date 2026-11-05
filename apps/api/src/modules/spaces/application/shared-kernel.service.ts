@@ -29,6 +29,11 @@ import type { SharedFeatureKey } from '../public/shared-features.js';
 import type { SharedAccess } from '../public/shared-authority.js';
 import { SharedRetentionSchema } from './shared-retention.js';
 import {
+  captureSharedReplay,
+  applySharedReplay,
+} from './shared-replay-state.js';
+import type { SharedRestoreScope } from '../../../platform/lifecycle/shared-replay.js';
+import {
   defaultPolicy,
   permits,
   validateRoleDefaults,
@@ -88,6 +93,20 @@ function knownRollback(error: unknown) {
 }
 @Injectable()
 export class SharedKernel {
+  // A control view lives only inside one already-fenced DB transaction. Every new transaction reloads it.
+  private readonly controlViews = new WeakMap<
+    object,
+    Promise<Awaited<ReturnType<SharedControl['currentEvidence']>>>
+  >();
+  private controlView(tx: Prisma.TransactionClient) {
+    if (tx === this.db.client) return this.control.currentEvidence();
+    let view = this.controlViews.get(tx);
+    if (!view) {
+      view = this.control.currentEvidence();
+      this.controlViews.set(tx, view);
+    }
+    return view;
+  }
   constructor(
     @Inject(DatabaseService) private readonly db: DatabaseService,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
@@ -777,9 +796,9 @@ export class SharedKernel {
     spaceId: string,
     version: bigint,
   ) {
-    const records = (await this.control.records()).filter(
-      (r) => r.spaceId === spaceId,
-    );
+    await this.verifyRestoreFloor(tx);
+    const view = await this.controlView(tx);
+    const records = view.records.filter((r) => r.spaceId === spaceId);
     const terminal = new Set(
       records.filter((r) => r.outcome !== 'INTENT').map((r) => r.id),
     );
@@ -803,16 +822,19 @@ export class SharedKernel {
           lifecycle.authorizationVersion === BigInt(record.version) &&
           lifecycle.action === record.action &&
           lifecycle.jobId === record.resourceId)
-      )
-        await this.control.append({
+      ) {
+        const outcome = {
           ...record,
-          outcome: 'COMMITTED',
+          outcome: 'COMMITTED' as const,
           at: new Date().toISOString(),
-        });
+        };
+        await this.control.append(outcome);
+        view.records.push(outcome);
+      }
     }
     // Missing atomic evidence never authorizes automatic abort of an unresolved intent.
     try {
-      await this.control.assertCurrent(spaceId, version);
+      await this.control.assertCurrent(spaceId, version, view.records);
     } catch (error) {
       if (error instanceof ForbiddenException) throw new NotFoundException();
       throw error;
@@ -1445,9 +1467,11 @@ export class SharedKernel {
       !SharedRetentionSchema.safeParse(retention.configuration).success
     )
       throw new ForbiddenException({ code: 'SHARED_RETENTION_UNAVAILABLE' });
+    await this.verifyRestoreFloor(tx);
     await this.control.assertCurrent(
       request.spaceId,
       custody.authorizationVersion,
+      (await this.controlView(tx)).records,
     );
     return {
       spaceId: request.spaceId,
@@ -1563,7 +1587,49 @@ export class SharedKernel {
             await this.identity.lock(tx, users);
             if (actor) await this.identity.require(tx, actor);
             await this.lockCustodies(tx, spaces);
-            return work(tx);
+            const baseline = await tx.sharedCustody.findMany({
+              where: { spaceId: { in: spaces } },
+              select: { spaceId: true, authorizationVersion: true },
+            });
+            const result = await work(tx);
+            for (const b of baseline) {
+              const effects = await tx.sharedOutboxEvent.findMany({
+                where: {
+                  spaceId: b.spaceId,
+                  authorizationVersion: { gt: b.authorizationVersion },
+                },
+                include: { SharedAuditEvent: true },
+              });
+              const system = await tx.sharedLifecycleEffect.findMany({
+                where: {
+                  custodyId: b.spaceId,
+                  authorizationVersion: { gt: b.authorizationVersion },
+                },
+              });
+              for (const e of effects)
+                await this.control.appendReplay(
+                  await captureSharedReplay(tx, {
+                    id: e.auditId,
+                    spaceId: b.spaceId,
+                    version: String(e.authorizationVersion),
+                    action: e.action,
+                    resourceId: e.SharedAuditEvent.resourceId,
+                    actorId: e.actorId,
+                  }),
+                );
+              for (const e of system)
+                await this.control.appendReplay(
+                  await captureSharedReplay(tx, {
+                    id: e.id,
+                    spaceId: b.spaceId,
+                    version: String(e.authorizationVersion),
+                    action: e.action,
+                    resourceId: e.jobId,
+                    actorId: null,
+                  }),
+                );
+            }
+            return result;
           },
           {
             isolationLevel: 'ReadCommitted',
@@ -2241,7 +2307,12 @@ export class SharedKernel {
         await tx.sharedLifecycleJob.findFirst({ where: { custodyId: spaceId } })
       )
         throw new ConflictException({ code: 'CUSTODY_ID_RETIRED' });
-      await this.control.assertCurrent(spaceId, 0n);
+      await this.verifyRestoreFloor(tx);
+      await this.control.assertCurrent(
+        spaceId,
+        0n,
+        (await this.controlView(tx)).records,
+      );
       if (
         Object.values(parsed.data.classRules).some(
           (rule) => rule.disposalAction !== 'PURGE',
@@ -2884,6 +2955,12 @@ export class SharedKernel {
             lifecycle.jobId !== record.resourceId)
         )
           throw new ConflictException();
+        if (
+          !effect &&
+          !lifecycle &&
+          (await this.control.replayEvidence()).some((e) => e.id === record.id)
+        )
+          throw new ConflictException({ code: 'UNCERTAIN_RESTORE_OUTCOME' });
         if (!live && !effect && !lifecycle)
           throw new ConflictException({ code: 'LIFECYCLE_EFFECT_REQUIRED' });
         await this.control.append({
@@ -2891,6 +2968,151 @@ export class SharedKernel {
           outcome: effect || lifecycle ? 'COMMITTED' : 'ABORTED',
           at: new Date().toISOString(),
         });
+      }
+    });
+  }
+  async verifyRestoreFloor(
+    tx: Prisma.TransactionClient = this.db.client,
+    allowNewInstallation = false,
+  ) {
+    if (!this.config.SHARED_CONTROL_ACTIVE_KEY_ID) return;
+    const rows = await tx.$queryRaw<
+      { seconds: number }[]
+    >`SELECT EXTRACT(EPOCH FROM "before")::float8 AS seconds FROM "SharedEvidenceFloor" WHERE id=1`;
+    if (
+      allowNewInstallation &&
+      rows[0]?.seconds === 0 &&
+      !(await tx.sharedCustody.count()) &&
+      !(await tx.sharedLifecycleJob.count())
+    )
+      return;
+    const floor = (await this.controlView(tx)).floor;
+    if (!rows[0] || Math.round(rows[0].seconds * 1000) !== Date.parse(floor))
+      throw new ForbiddenException({
+        code: 'SHARED_BACKUP_CUTOFF_REPLAY_REQUIRED',
+      });
+  }
+  async restoreRestrictions(
+    spaceId: string,
+    fileEffect: (
+      tx: Prisma.TransactionClient,
+      scope: SharedRestoreScope,
+      fileId: string | null,
+    ) => Promise<void>,
+  ) {
+    this.enabled();
+    uuid.parse(spaceId);
+    const records = (await this.control.records()).filter(
+        (r) => r.spaceId === spaceId,
+      ),
+      evidence = await this.control.replayEvidence();
+    const terminal = new Map(
+      records
+        .filter((r) => r.outcome !== 'INTENT')
+        .map((r) => [r.id, r.outcome]),
+    );
+    if (records.some((r) => r.outcome === 'INTENT' && !terminal.has(r.id)))
+      throw new ConflictException({ code: 'UNRESOLVED_RESTORE_INTENT' });
+    const committed = [
+      ...new Map(
+        records.filter((r) => r.outcome === 'COMMITTED').map((r) => [r.id, r]),
+      ).values(),
+    ].sort((a, b) => (BigInt(a.version) < BigInt(b.version) ? -1 : 1));
+    const actorHints = await this.db.client.sharedActor.findMany({
+      where: { spaceId, userId: { not: null } },
+      select: { userId: true },
+    });
+    const users = [
+      ...new Set(actorHints.flatMap((a) => (a.userId ? [a.userId] : []))),
+    ].sort();
+    return this.transaction(users, [spaceId], null, async (tx) => {
+      await this.verifyRestoreFloor(tx);
+      let c = await tx.sharedCustody.findUniqueOrThrow({ where: { spaceId } }),
+        count = 0;
+      for (const record of committed
+        .filter((r) => BigInt(r.version) > c.authorizationVersion)
+        .slice(0, 25)) {
+        const candidates = evidence.filter((e) => e.id === record.id);
+        if (
+          !candidates.length ||
+          candidates.some(
+            (e) => JSON.stringify(e) !== JSON.stringify(candidates[0]),
+          )
+        )
+          throw new ConflictException({
+            code: 'MISSING_OR_CONFLICTING_REPLAY_EVIDENCE',
+          });
+        const r = candidates[0]!;
+        if (
+          r.spaceId !== spaceId ||
+          r.version !== record.version ||
+          r.action !== record.action ||
+          r.resourceId !== record.resourceId
+        )
+          throw new ConflictException();
+        if (r.action === 'file.delete' && r.resourceId) {
+          let open = true;
+          const scope: SharedRestoreScope = {
+            spaceId,
+            verify: (client) => {
+              if (!open || client !== tx) throw new ForbiddenException();
+            },
+          };
+          try {
+            await fileEffect(tx, scope, r.resourceId);
+          } finally {
+            open = false;
+          }
+        }
+        await applySharedReplay(tx, r);
+        c = await tx.sharedCustody.findUniqueOrThrow({ where: { spaceId } });
+        count++;
+      }
+      const complete = !committed.some(
+        (r) => BigInt(r.version) > c.authorizationVersion,
+      );
+      if (complete)
+        await this.control.assertCurrent(spaceId, c.authorizationVersion);
+      let open = true;
+      const scope: SharedRestoreScope = {
+        spaceId,
+        verify: (client) => {
+          if (!open || client !== tx) throw new ForbiddenException();
+        },
+      };
+      try {
+        await fileEffect(tx, scope, null);
+      } finally {
+        open = false;
+      }
+      return { processed: count, complete };
+    });
+  }
+  async restoredFileEffect(
+    spaceId: string,
+    work: (
+      tx: Prisma.TransactionClient,
+      scope: SharedRestoreScope,
+    ) => Promise<void>,
+  ) {
+    this.enabled();
+    return this.transaction([], [spaceId], null, async (tx) => {
+      await this.verifyRestoreFloor(tx);
+      const c = await tx.sharedCustody.findUniqueOrThrow({
+        where: { spaceId },
+      });
+      await this.control.assertCurrent(spaceId, c.authorizationVersion);
+      let open = true;
+      const scope: SharedRestoreScope = {
+        spaceId,
+        verify: (client) => {
+          if (!open || client !== tx) throw new ForbiddenException();
+        },
+      };
+      try {
+        await work(tx, scope);
+      } finally {
+        open = false;
       }
     });
   }

@@ -2,6 +2,20 @@
 
 This summary separates local implementation from activation and production release.
 
+The [2026-11-05 local readiness review](phase-2-local-readiness-review.md) records
+the verified P2-07 publication, remaining local security/retention findings and
+release-only deferrals. Local implementation acceptance does not claim those
+remaining activation requirements are complete.
+
+The owner authorized local implementation of L1–L4 after accepting that review.
+See the [local security closeout](phase-2-local-security-closeout.md) for the exact
+implementation, migration, verification and release boundary.
+
+L1–L4 local implementation and verification are now complete and submitted for
+owner review: 1,089 distinct tests covered successfully across the single full
+gate and affected reruns, plus compiled Personal/P2 API and worker restart smokes.
+This does not grant acceptance of deployment prerequisites or activate Shared.
+
 | Batch | Local functionality                                                                                  | Owner acceptance                                                       |
 | ----- | ---------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
 | P2-01 | Shared Space kernel, typed custody, admission/permissions and transaction fencing                    | Accepted                                                               |

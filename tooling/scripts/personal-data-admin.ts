@@ -4,6 +4,8 @@ import { createReadStream } from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { parseEnvironment } from '../../apps/api/src/bootstrap/environment.ts';
+import { SharedControl } from '../../apps/api/dist/platform/storage/shared-control.js';
+import { PersonalEvidenceKeys } from '../../apps/api/dist/platform/lifecycle/personal-evidence-keys.js';
 import { ErasureControl } from '../../apps/api/dist/platform/storage/erasure-control.js';
 import {
   signBackup,
@@ -47,7 +49,7 @@ try {
     const records = await control.records(),
       actual = await artifacts(root, names),
       now = new Date();
-    const signed = signBackup(config.BETTER_AUTH_SECRET, {
+    const signed = signBackup(new PersonalEvidenceKeys(config), {
       version: 1,
       capturedAt: now.toISOString(),
       expiresAt: new Date(now.getTime() + 30 * 86400000).toISOString(),
@@ -73,7 +75,18 @@ try {
     };
     const names = envelope.manifest.artifacts.map((v) => v.name),
       actual = await artifacts(root, names);
-    verifyBackup(config.BETTER_AUTH_SECRET, envelope, actual);
+    const verified = verifyBackup(
+      new PersonalEvidenceKeys(config),
+      envelope,
+      actual,
+    );
+    if (
+      config.SHARED_CONTROL_ACTIVE_KEY_ID &&
+      verified.capturedAt <= (await new SharedControl(config).restoreFloor())
+    )
+      throw new Error(
+        'Backup predates the independent restrictive expiry checkpoint',
+      );
     if (command === 'restore-replay') {
       // An operator restores only to an isolated target first. This command never pg_restores/resets a DB.
       const { NestFactory } = await import('@nestjs/core'),

@@ -121,3 +121,11 @@ Local integration tests restore a real earlier fixture identity/Task/file snapsh
 while retaining current erasure control, prove access denial and replay complete
 purge. Docker, actual encrypted off-host restore and physical expiry drills remain
 mandatory deployment gates, not claimed local results.
+
+# Local key and Shared restore amendment
+
+The owner-authorized [Phase 2 security closeout](../phase-2-local-security-closeout.md)
+defines optional purpose-specific Personal evidence keys, explicit v1 compatibility,
+Shared restrictive replay and policy-bound terminal evidence disposal. Existing
+Personal grace, recovery proofs and retention periods remain unchanged. Do not
+rotate or retire referenced material without preserving required verification.

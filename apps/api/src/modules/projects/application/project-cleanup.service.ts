@@ -5,7 +5,7 @@ import {
   HttpException,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import type { Prisma } from '../../../generated/prisma/client.js';
+import type { Prisma, StoredFile } from '../../../generated/prisma/client.js';
 import type { RequestActor } from '../../../platform/auth/request-actor.js';
 import {
   sharedDeleteBatch,
@@ -13,7 +13,10 @@ import {
 } from '../../../platform/lifecycle/shared-cleanup.js';
 import type { SharedCleanupScope } from '../../../platform/lifecycle/shared-cleanup.js';
 import { SharedFiles } from '../../../platform/storage/public/index.js';
-import { SharedLifecycleService } from '../../spaces/public/index.js';
+import {
+  SharedLifecycleService,
+  SharedKernel,
+} from '../../spaces/public/index.js';
 import type { LifecycleStep } from '../../spaces/public/index.js';
 import { SharedTasksCleanup } from '../../tasks/public/index.js';
 import { SharedGoalsCleanup } from '../../goals/public/index.js';
@@ -22,6 +25,7 @@ import { SharedWorkNotifications } from '../../notifications/public/index.js';
 @Injectable()
 export class ProjectCleanupService {
   constructor(
+    @Inject(SharedKernel) private readonly kernel: SharedKernel,
     @Inject(SharedLifecycleService) readonly lifecycle: SharedLifecycleService,
     @Inject(SharedFiles) private readonly files: SharedFiles,
     @Inject(SharedTasksCleanup) private readonly tasks: SharedTasksCleanup,
@@ -30,6 +34,26 @@ export class ProjectCleanupService {
     @Inject(SharedWorkNotifications)
     private readonly notifications: SharedWorkNotifications,
   ) {}
+  async restoreRestrictions(spaceId: string) {
+    let rows: StoredFile[] = [];
+    const result = await this.kernel.restoreRestrictions(
+      spaceId,
+      async (tx, scope, id) => {
+        rows = await this.files.restoreDeleted(tx, scope, id);
+      },
+    );
+    // Private IO is outside the replay transaction; metadata already denies every download.
+    for (const row of rows) await this.files.remove(row);
+    if (result.complete)
+      await this.kernel.restoredFileEffect(spaceId, (tx, scope) =>
+        this.files.restoreRemoved(tx, scope, rows),
+      );
+    return {
+      ...result,
+      complete: result.complete && rows.length < 25,
+      filesRemoved: rows.length,
+    };
+  }
   private async content(tx: Prisma.TransactionClient, s: SharedCleanupScope) {
     if (
       !(await sharedDeleteBatch(tx, s, [

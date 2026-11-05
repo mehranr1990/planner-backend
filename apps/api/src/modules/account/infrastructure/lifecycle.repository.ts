@@ -7,12 +7,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import type { OnApplicationBootstrap } from '@nestjs/common';
-import {
-  createHash,
-  createHmac,
-  randomUUID,
-  timingSafeEqual,
-} from 'node:crypto';
+import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 import { Readable } from 'node:stream';
 import type { IncomingHttpHeaders } from 'node:http';
 import * as c from '@mehran/api-contracts';
@@ -125,10 +120,24 @@ export class LifecycleRepository
     await this.verifyControl();
   }
   private capability(id: string, kind: string) {
-    return createHmac('sha256', this.config.BETTER_AUTH_SECRET)
-      .update('account-lifecycle-capability-v1:' + kind + ':' + id)
-      .digest('base64url');
+    return this.control.keys.capability(id, kind);
   }
+  private retainedCapability(
+    job: AccountDeletionJob,
+    kind: 'confirmation' | 'recovery',
+  ) {
+    const expected =
+      kind === 'confirmation' ? job.confirmationHash : job.recoveryHash;
+    const proof = this.control.keys
+      .capabilities(job.id, kind)
+      .find((v) => hash(v) === expected);
+    if (!proof)
+      throw new Error(
+        'Required Personal recovery verification key unavailable',
+      );
+    return proof;
+  }
+
   private proof(job: UserExportJob) {
     const expires = Math.min(Date.now() + 600000, job.expiresAt!.getTime()),
       body = Buffer.from(
@@ -249,7 +258,9 @@ export class LifecycleRepository
         !body ||
         !signature ||
         extra.length ||
-        !equal(signature, this.capability(body, 'export'))
+        !this.control.keys
+          .capabilities(body, 'export')
+          .some((v) => equal(signature, v))
       )
         throw new Error();
       const claim = JSON.parse(
@@ -348,6 +359,7 @@ export class LifecycleRepository
             id,
             ownerUserId: scope.actor.userId,
             spaceId: scope.spaceId,
+            evidenceKeyId: this.control.keys.activeKeyId,
             identityDigest: this.control.digest('identity', scope.actor.userId),
             spaceDigest: this.control.digest('space', scope.spaceId),
             policyVersion: input.policyVersion,
@@ -380,8 +392,8 @@ export class LifecycleRepository
     });
     return c.DeletionChallengeSchema.parse({
       job: this.deletionView(job),
-      confirmationProof: this.capability(job.id, 'confirmation'),
-      recoveryCapability: this.capability(job.id, 'recovery'),
+      confirmationProof: this.retainedCapability(job, 'confirmation'),
+      recoveryCapability: this.retainedCapability(job, 'recovery'),
       confirmationExpiresAt: job.confirmationExpiresAt!.toISOString(),
     });
   }
@@ -411,6 +423,7 @@ export class LifecycleRepository
   ): ErasureRecord {
     return {
       jobId: job.id,
+      digestKeyId: job.evidenceKeyId,
       identityDigest: job.identityDigest,
       spaceDigest: job.spaceDigest,
       state,
@@ -585,9 +598,12 @@ export class LifecycleRepository
           throw new Error('Restore checkpoint mismatch');
         if (job.state === 'ERASED') {
           if (
-            settings.some(
-              (v) =>
-                this.control.digest('identity', v.id) === record.identityDigest,
+            settings.some((v) =>
+              this.control.matchesDigest(
+                'identity',
+                v.id,
+                record.identityDigest,
+              ),
             )
           )
             throw new Error('Erased identity restored');
@@ -636,6 +652,7 @@ export class LifecycleRepository
         ))
       )
         throw new Error('Unknown restored private file');
+      await this.shared.verifyRestoreFloor(this.db.client, true);
       this.gate.release();
       return true;
     } catch {
@@ -1176,7 +1193,9 @@ export class LifecycleRepository
         );
       if (users.length > 100000) return false;
       const identities = new Map(
-        users.map((v) => [this.control.digest('identity', v.id), v.id]),
+        users.flatMap((v) =>
+          this.control.digests('identity', v.id).map((d) => [d, v.id] as const),
+        ),
       );
       let processed = 0;
       for (const record of records) {
@@ -1213,7 +1232,7 @@ export class LifecycleRepository
             const row = await this.spaces.restoredPersonal(tx, userId);
             if (
               !row ||
-              this.control.digest('space', row.id) !== record.spaceDigest
+              !this.control.matchesDigest('space', row.id, record.spaceDigest)
             )
               throw new Error('Unknown restore owner');
             await this.spaces.restoreClosure(
@@ -1227,6 +1246,7 @@ export class LifecycleRepository
             const data = {
               ownerUserId: userId,
               spaceId: row.id,
+              evidenceKeyId: record.digestKeyId ?? null,
               identityDigest: record.identityDigest,
               spaceDigest: record.spaceDigest,
               state:

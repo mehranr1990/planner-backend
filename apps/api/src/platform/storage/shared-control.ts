@@ -7,6 +7,12 @@ import { z } from 'zod';
 import { APP_CONFIG } from '../../bootstrap/configuration.module.js';
 import type { AppConfig } from '../../bootstrap/environment.js';
 import { LocalFileStorage } from './local-storage.js';
+import { SharedReplaySchema } from '../lifecycle/shared-replay.js';
+import type { SharedReplay } from '../lifecycle/shared-replay.js';
+const floorSchema = z.strictObject({
+  kind: z.literal('FLOOR'),
+  before: z.iso.datetime(),
+});
 
 const controlRecord = z.strictObject({
   id: z.uuid(),
@@ -30,6 +36,62 @@ export class SharedControl {
   private readonly storage: LocalFileStorage;
   private readonly keys: Record<string, string>;
   private rootReady?: Promise<void>;
+  private readonly verified = new Map<
+    string,
+    {
+      stamp: string;
+      envelope: { version: 1; keyId: string; body: string; signature: string };
+      bytes: number;
+    }
+  >();
+  private verifiedBytes = 0;
+  private async readEnvelope(name: string) {
+    const file = path.join(this.root, name),
+      stat = await lstat(file);
+    if (
+      !stat.isFile() ||
+      stat.isSymbolicLink() ||
+      stat.nlink !== 1 ||
+      stat.size > 65536
+    )
+      throw new Error('Invalid shared control artifact');
+    const stamp = [
+      stat.dev,
+      stat.ino,
+      stat.size,
+      stat.mtimeMs,
+      stat.ctimeMs,
+      stat.birthtimeMs,
+    ].join(':');
+    const prior = this.verified.get(name);
+    if (prior?.stamp === stamp) return prior.envelope;
+    const envelope = z
+      .strictObject({
+        version: z.literal(1),
+        keyId: z.string(),
+        body: z.string().max(60000),
+        signature: z.string().regex(/^[a-f0-9]{64}$/),
+      })
+      .parse(JSON.parse(await readFile(file, 'utf8')));
+    if (
+      !timingSafeEqual(
+        Buffer.from(envelope.signature, 'hex'),
+        Buffer.from(this.mac(envelope.body, envelope.keyId), 'hex'),
+      )
+    )
+      throw new Error('Invalid shared control signature');
+    const replaced = this.verified.get(name);
+    if (replaced) this.verifiedBytes -= replaced.bytes;
+    this.verified.delete(name);
+    this.verified.set(name, { stamp, envelope, bytes: stat.size });
+    this.verifiedBytes += stat.size;
+    while (this.verifiedBytes > 16 * 1024 * 1024) {
+      const oldest = this.verified.keys().next().value!;
+      this.verifiedBytes -= this.verified.get(oldest)!.bytes;
+      this.verified.delete(oldest);
+    }
+    return envelope;
+  }
   private ready() {
     return (this.rootReady ??= this.storage.onModuleInit());
   }
@@ -152,46 +214,84 @@ export class SharedControl {
   async append(record: SharedControlRecord) {
     await this.write(randomUUID(), JSON.stringify(controlRecord.parse(record)));
   }
-  async records() {
+  private async entries() {
     await this.ready();
-    await this.storage.inventory();
+    await this.storage.checkRoot();
     const names = await readdir(this.root);
     if (names.length > 100000) throw new Error('Shared control bound exceeded');
     let marker = false;
     const records: SharedControlRecord[] = [];
-    for (const name of names) {
-      if (name.endsWith('.part')) continue;
-      if (!/^[a-f0-9-]{36}\.blob$/i.test(name))
-        throw new Error('Unknown shared control artifact');
-      const file = path.join(this.root, name),
-        stat = await lstat(file);
+    const replays: SharedReplay[] = [];
+    const floors: (z.infer<typeof floorSchema> & { key: string })[] = [];
+    const files: { key: string; spaceId: string }[] = [];
+    const temporary: string[] = [];
+    const published = names.filter((name) => {
       if (
-        !stat.isFile() ||
-        stat.isSymbolicLink() ||
-        stat.nlink !== 1 ||
-        stat.size > 4096
-      )
-        throw new Error('Invalid shared control artifact');
-      const envelope = z
-        .strictObject({
-          version: z.literal(1),
-          keyId: z.string(),
-          body: z.string().max(3000),
-          signature: z.string().regex(/^[a-f0-9]{64}$/),
-        })
-        .parse(JSON.parse(await readFile(file, 'utf8')));
+        /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\.[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\.part$/i.test(
+          name,
+        )
+      ) {
+        temporary.push(name);
+        return false;
+      }
       if (
-        !timingSafeEqual(
-          Buffer.from(envelope.signature, 'hex'),
-          Buffer.from(this.mac(envelope.body, envelope.keyId), 'hex'),
+        !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\.blob$/i.test(
+          name,
         )
       )
-        throw new Error('Invalid shared control signature');
+        throw new Error('Unknown shared control artifact');
+      return true;
+    });
+    for (const name of temporary) {
+      try {
+        const stat = await lstat(path.join(this.root, name));
+        if (!stat.isFile() || stat.isSymbolicLink() || stat.nlink !== 1)
+          throw new Error('Invalid shared staging artifact');
+      } catch (error) {
+        if (
+          !error ||
+          typeof error !== 'object' ||
+          !('code' in error) ||
+          error.code !== 'ENOENT'
+        )
+          throw error;
+      }
+    }
+    const present = new Set(published);
+    for (const [name, value] of this.verified)
+      if (!present.has(name)) {
+        this.verifiedBytes -= value.bytes;
+        this.verified.delete(name);
+      }
+    const envelopes = [];
+    for (let at = 0; at < published.length; at += 32)
+      envelopes.push(
+        ...(await Promise.all(
+          published.slice(at, at + 32).map(async (name) => ({
+            name,
+            envelope: await this.readEnvelope(name),
+          })),
+        )),
+      );
+    for (const { name, envelope } of envelopes) {
       if (name === markerId + '.blob') {
         if (envelope.body !== 'initialized-shared-control-v1')
           throw new Error('Invalid shared checkpoint');
         marker = true;
-      } else records.push(controlRecord.parse(JSON.parse(envelope.body)));
+      } else {
+        const body = JSON.parse(envelope.body) as { kind?: string };
+        if (body.kind === 'REPLAY') {
+          const r = SharedReplaySchema.parse(body);
+          replays.push(r);
+          files.push({ key: name.slice(0, -5), spaceId: r.spaceId });
+        } else if (body.kind === 'FLOOR')
+          floors.push({ ...floorSchema.parse(body), key: name.slice(0, -5) });
+        else {
+          const r = controlRecord.parse(body);
+          records.push(r);
+          files.push({ key: name.slice(0, -5), spaceId: r.spaceId });
+        }
+      }
     }
     if (!marker) throw new Error('Missing current shared checkpoint');
     const identities = new Map<string, SharedControlRecord>();
@@ -216,10 +316,76 @@ export class SharedControl {
         terminal.set(record.id, record.outcome);
       }
     }
-    return records;
+    return { records, replays, floors, files };
   }
-  async assertCurrent(spaceId: string, version: bigint) {
-    const records = (await this.records()).filter((r) => r.spaceId === spaceId);
+  async records() {
+    return (await this.entries()).records;
+  }
+  async currentEvidence() {
+    const view = await this.entries();
+    return {
+      records: view.records,
+      floor: view.floors.reduce(
+        (latest, f) => (f.before > latest ? f.before : latest),
+        '1970-01-01T00:00:00.000Z',
+      ),
+    };
+  }
+  async replayEvidence() {
+    return (await this.entries()).replays;
+  }
+  async appendReplay(value: SharedReplay) {
+    const body = JSON.stringify(SharedReplaySchema.parse(value));
+    if (Buffer.byteLength(body) > 60000)
+      throw new Error('Shared replay evidence exceeds safe envelope');
+    await this.write(randomUUID(), body);
+  }
+  async restoreFloor() {
+    return (await this.entries()).floors.reduce(
+      (latest, f) => (f.before > latest ? f.before : latest),
+      '1970-01-01T00:00:00.000Z',
+    );
+  }
+  async advanceRestoreFloor(before: Date, approvalReference: string) {
+    if (
+      !Number.isFinite(before.getTime()) ||
+      before.getTime() > Date.now() - 30 * 86400000
+    )
+      throw new Error('Backup expiry horizon has not elapsed');
+    if (!approvalReference.trim() || approvalReference.length > 200)
+      throw new Error('Disposal approval reference required');
+    if (before.toISOString() <= (await this.restoreFloor())) return;
+    await this.write(
+      randomUUID(),
+      JSON.stringify(
+        floorSchema.parse({
+          kind: 'FLOOR',
+          before: before.toISOString(),
+        }),
+      ),
+    );
+    const floors = (await this.entries()).floors.toSorted(
+      (a, b) => a.before.localeCompare(b.before) || a.key.localeCompare(b.key),
+    );
+    for (const old of floors.slice(0, -1).slice(0, 25))
+      await this.storage.remove(old.key);
+  }
+
+  async disposeEvidence(spaceId: string) {
+    const rows = (await this.entries()).files
+      .filter((f) => f.spaceId === spaceId)
+      .slice(0, 25);
+    for (const f of rows) await this.storage.remove(f.key);
+    return rows.length;
+  }
+  async assertCurrent(
+    spaceId: string,
+    version: bigint,
+    current?: SharedControlRecord[],
+  ) {
+    const records = (current ?? (await this.records())).filter(
+      (r) => r.spaceId === spaceId,
+    );
     const outcomes = new Map(
       records
         .filter((r) => r.outcome !== 'INTENT')

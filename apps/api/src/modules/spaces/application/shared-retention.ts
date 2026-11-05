@@ -33,21 +33,37 @@ const hold = z
     releaseEvidence: name.nullable(),
   })
   .refine((v) => v.state !== 'RELEASED' || v.releaseEvidence !== null);
-export const SharedRetentionSchema = z.strictObject({
-  policyVersion: z.string().regex(/^[A-Za-z0-9._-]{1,80}$/),
-  approvalReference: name,
-  accountableOperator: name,
-  applicableContexts: z.tuple([z.literal('PROJECT')]),
-  marketScope: name,
-  sharedRecoverySeconds: z.literal(2592000),
-  classRules: z.strictObject({
-    workContent: rule,
-    commentsHistory: rule,
-    filesDerivatives: rule,
-    exports: rule,
-    accessAuditLifecycle: rule,
-  }),
-  obligations: z.array(obligation).max(1000),
-  holds: z.array(hold).max(1000),
-  backupPolicyReference: name,
-});
+export const SharedRetentionSchema = z
+  .strictObject({
+    policyVersion: z.string().regex(/^[A-Za-z0-9._-]{1,80}$/),
+    approvalReference: name,
+    accountableOperator: name,
+    applicableContexts: z.tuple([z.literal('PROJECT')]),
+    marketScope: name,
+    sharedRecoverySeconds: z.literal(2592000),
+    classRules: z.strictObject({
+      workContent: rule,
+      commentsHistory: rule,
+      filesDerivatives: rule,
+      exports: rule,
+      accessAuditLifecycle: rule,
+    }),
+    obligations: z.array(obligation).max(1000),
+    holds: z.array(hold).max(1000),
+    backupPolicyReference: name,
+  })
+  .superRefine((policy, ctx) => {
+    const ids = new Set<string>();
+    for (const kind of ['holds', 'obligations'] as const) {
+      policy[kind].forEach((item, index) => {
+        if (ids.has(item.id.toLowerCase()))
+          ctx.addIssue({
+            code: 'custom',
+            path: [kind, index, 'id'],
+            message:
+              'Retention item IDs must be unique across holds and obligations',
+          });
+        ids.add(item.id.toLowerCase());
+      });
+    }
+  });

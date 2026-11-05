@@ -1,5 +1,9 @@
 import { z } from 'zod';
-import { createHmac, timingSafeEqual } from 'node:crypto';
+import { PersonalEvidenceKeys } from './personal-evidence-keys.js';
+const keys = (input: string | PersonalEvidenceKeys) =>
+  typeof input === 'string'
+    ? new PersonalEvidenceKeys({ BETTER_AUTH_SECRET: input })
+    : input;
 const Manifest = z.strictObject({
   version: z.literal(1),
   capturedAt: z.iso.datetime(),
@@ -16,36 +20,37 @@ const Manifest = z.strictObject({
     .max(100),
 });
 export type BackupManifest = z.infer<typeof Manifest>;
-export function signBackup(secret: string, input: BackupManifest) {
+export function signBackup(
+  secret: string | PersonalEvidenceKeys,
+  input: BackupManifest,
+) {
   const manifest = Manifest.parse(input),
     body = JSON.stringify(manifest);
   return {
     manifest,
-    signature: createHmac('sha256', secret)
-      .update('personal-backup-v1:' + body)
-      .digest('hex'),
+    ...keys(secret).sign('backup', body, 'personal-backup-v1:'),
   };
 }
 export function verifyBackup(
-  secret: string,
+  secret: string | PersonalEvidenceKeys,
   input: unknown,
   actual: Record<string, string>,
   now = new Date(),
 ) {
   const envelope = z
-      .strictObject({
-        manifest: Manifest,
-        signature: z.string().regex(/^[a-f0-9]{64}$/),
-      })
-      .parse(input),
-    expected = signBackup(secret, envelope.manifest).signature;
-  if (
-    !timingSafeEqual(
-      Buffer.from(expected, 'hex'),
-      Buffer.from(envelope.signature, 'hex'),
-    )
-  )
-    throw new Error('Invalid backup signature');
+    .strictObject({
+      manifest: Manifest,
+      version: z.union([z.literal(1), z.literal(2)]).optional(),
+      keyId: z.string().optional(),
+      signature: z.string().regex(/^[a-f0-9]{64}$/),
+    })
+    .parse(input);
+  keys(secret).verify(
+    'backup',
+    JSON.stringify(envelope.manifest),
+    envelope,
+    'personal-backup-v1:',
+  );
   const { manifest } = envelope,
     captured = new Date(manifest.capturedAt).getTime(),
     expires = new Date(manifest.expiresAt).getTime();

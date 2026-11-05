@@ -22,6 +22,7 @@ import { sharedDeleteBatch } from '../../../platform/lifecycle/shared-cleanup.js
 import { SharedKernel } from './shared-kernel.service.js';
 import { CollaborationService } from './collaboration.service.js';
 import { SharedRetentionSchema } from './shared-retention.js';
+import { SharedControl } from '../../../platform/storage/shared-control.js';
 export type LifecycleFile = { id: string; key: string; attempt: string | null };
 export type LifecycleStep = {
   nextStage?: string;
@@ -44,12 +45,161 @@ const hash = (s: string) => createHash('sha256').update(s).digest('hex');
 @Injectable()
 export class SharedLifecycleService {
   constructor(
+    @Inject(SharedControl) private readonly control: SharedControl,
     @Inject(DatabaseService) private readonly db: DatabaseService,
     @Inject(SharedKernel) private readonly kernel: SharedKernel,
     @Inject(CollaborationService)
     private readonly collaboration: CollaborationService,
     @Inject(AuthService) private readonly auth: AuthService,
   ) {}
+  /** Explicit operator command only; never API admission or automatic policy provisioning. */
+  async disposeTerminalEvidence(
+    custodyId: string,
+    expiredThrough: Date,
+    approvalReference: string,
+  ) {
+    if (
+      !approvalReference.trim() ||
+      approvalReference.length > 200 ||
+      !Number.isFinite(expiredThrough.getTime())
+    )
+      throw new ConflictException();
+    const cutoff = expiredThrough.toISOString();
+    if (expiredThrough.getTime() > Date.now() - 30 * 86400000)
+      throw new ConflictException({ code: 'BACKUP_EXPIRY_HORIZON_REQUIRED' });
+    const records = (await this.control.records()).filter(
+      (r) => r.spaceId === custodyId,
+    );
+    const outcomes = new Map(
+      records
+        .filter((r) => r.outcome !== 'INTENT')
+        .map((r) => [r.id, r.outcome]),
+    );
+    if (
+      records.some(
+        (r) => (r.outcome === 'INTENT' && !outcomes.has(r.id)) || r.at > cutoff,
+      )
+    )
+      throw new ConflictException({ code: 'CONTROL_EVIDENCE_STILL_REQUIRED' });
+    return this.db.client.$transaction(
+      async (tx) => {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${'shared-evidence-disposal:' + custodyId},0))`;
+        if (
+          await tx.sharedCustody.findUnique({ where: { spaceId: custodyId } })
+        )
+          throw new ConflictException({
+            code: 'LIVE_CUSTODY_EVIDENCE_REQUIRED',
+          });
+        const unplanned = {
+          custodyId,
+          OR: [
+            { evidenceDisposalAfter: null },
+            { disposalApprovalReference: { not: approvalReference } },
+          ],
+        };
+        const pending = await tx.sharedLifecycleJob.findMany({
+          where: unplanned,
+          orderBy: { id: 'asc' },
+          take: 200,
+        });
+        const jobs = pending.length
+          ? pending
+          : await tx.sharedLifecycleJob.findMany({
+              where: { custodyId },
+              orderBy: { id: 'asc' },
+              take: 200,
+            });
+        if (!jobs.length) {
+          await this.kernel.verifyRestoreFloor(tx);
+          return { complete: true, removed: 0 };
+        }
+        const now = (
+          await tx.$queryRaw<{ now: Date }[]>`SELECT clock_timestamp() now`
+        )[0]!.now;
+        for (const job of jobs) {
+          if (
+            job.spaceId !== null ||
+            !['DELETED', 'CANCELED'].includes(job.state) ||
+            job.leaseUntil ||
+            job.recoveryHash ||
+            job.nextAt > expiredThrough
+          )
+            throw new ConflictException();
+          const policy = await tx.sharedRetentionPolicy.findUniqueOrThrow({
+              where: { version: job.retentionPolicyVersion },
+            }),
+            parsed = SharedRetentionSchema.safeParse(policy.configuration);
+          if (
+            !parsed.success ||
+            parsed.data.policyVersion !== policy.version ||
+            parsed.data.approvalReference !== policy.approvalReference
+          )
+            throw new ConflictException({ code: 'INVALID_EVIDENCE_POLICY' });
+          const p = progress(job),
+            releases = p.releases as Record<string, unknown> | undefined;
+          for (const item of [...parsed.data.holds, ...parsed.data.obligations])
+            if (
+              ['ACTIVE', 'OUTSTANDING'].includes(item.state) &&
+              (!releases ||
+                typeof releases !== 'object' ||
+                Array.isArray(releases) ||
+                typeof releases[item.id] !== 'string' ||
+                !String(releases[item.id]).trim())
+            )
+              throw new ConflictException({ code: 'EVIDENCE_RETENTION_HOLD' });
+          const rule = parsed.data.classRules.accessAuditLifecycle,
+            after =
+              job.effectiveDepartureAt.getTime() +
+              rule.retainAfterClosureSeconds * 1000;
+          if (
+            rule.disposalAction !== 'PURGE' ||
+            !Number.isSafeInteger(after) ||
+            after > now.getTime() ||
+            after > 8640000000000000
+          )
+            throw new ConflictException({ code: 'EVIDENCE_RETENTION_WINDOW' });
+          const last = await tx.sharedLifecycleEffect.findFirst({
+            where: { jobId: job.id },
+            orderBy: { createdAt: 'desc' },
+          });
+          if (last && last.createdAt > expiredThrough)
+            throw new ConflictException({ code: 'BACKUP_STILL_ADMISSIBLE' });
+          await tx.sharedLifecycleJob.update({
+            where: { id: job.id },
+            data: {
+              evidenceDisposalAfter: new Date(after),
+              disposalApprovalReference: approvalReference,
+            },
+          });
+        }
+        if (await tx.sharedLifecycleJob.count({ where: unplanned }))
+          return { complete: false, removed: 0 };
+        // Write the restrictive cutoff before any evidence disappears. A crash quarantines older DB checkpoints.
+        await this.control.advanceRestoreFloor(
+          expiredThrough,
+          approvalReference,
+        );
+        const floor = new Date(await this.control.restoreFloor());
+        await tx.$executeRaw`UPDATE "SharedEvidenceFloor" SET "before"=GREATEST("before",${floor}) WHERE id=1`;
+        const removed = await this.control.disposeEvidence(custodyId);
+        if (removed) return { complete: false, removed };
+        for (const job of jobs) {
+          await tx.$executeRaw`DELETE FROM "SharedLifecycleEffect" WHERE id IN (SELECT id FROM "SharedLifecycleEffect" WHERE "jobId"=${job.id}::uuid ORDER BY id LIMIT 200)`;
+          if (
+            await tx.sharedLifecycleEffect.count({ where: { jobId: job.id } })
+          )
+            return { complete: false, removed: 200 };
+          await tx.sharedLifecycleJob.delete({ where: { id: job.id } });
+        }
+        return {
+          complete:
+            (await tx.sharedLifecycleJob.count({ where: { custodyId } })) === 0,
+          removed: jobs.length,
+        };
+      },
+      { timeout: 30000 },
+    );
+  }
   private async current(tx: Prisma.TransactionClient, spaceId: string) {
     const c = await tx.sharedCustody.findUniqueOrThrow({ where: { spaceId } }),
       job = await tx.sharedLifecycleJob.findUnique({
@@ -271,7 +421,7 @@ export class SharedLifecycleService {
       await tx.$executeRaw`DELETE FROM "SharedActor" WHERE id IN(SELECT a.id FROM "SharedActor" a WHERE a."spaceId"=${s.spaceId}::uuid AND NOT EXISTS(SELECT 1 FROM "ContextCapabilityPolicy" p WHERE p."spaceId"=a."spaceId" AND p."publishedByActorId"=a.id) ORDER BY a.id LIMIT 200)`;
     if (actors) return false;
     const jobs =
-      await tx.$executeRaw`UPDATE "SharedLifecycleJob" SET "spaceId"=NULL,"recoveryHash"=NULL,progress='{}'::jsonb,"leaseUntil"=NULL WHERE id IN(SELECT id FROM "SharedLifecycleJob" WHERE "spaceId"=${s.spaceId}::uuid AND state='CANCELED' ORDER BY id LIMIT 200)`;
+      await tx.$executeRaw`UPDATE "SharedLifecycleJob" SET "spaceId"=NULL,"recoveryHash"=NULL,progress=jsonb_build_object('stage','CANCELED','releases',COALESCE(progress->'releases','{}'::jsonb)),"leaseUntil"=NULL WHERE id IN(SELECT id FROM "SharedLifecycleJob" WHERE "spaceId"=${s.spaceId}::uuid AND state='CANCELED' ORDER BY id LIMIT 200)`;
     return jobs === 0;
   }
   next() {
@@ -478,7 +628,6 @@ export class SharedLifecycleService {
             where: { spaceId },
             data: {
               recoveryHash: null,
-              progress: { stage: 'CANCELED' },
               leaseUntil: null,
             },
           });
@@ -487,7 +636,11 @@ export class SharedLifecycleService {
             data: {
               state: 'DELETED',
               revision: { increment: 1 },
-              progress: { stage: 'DELETED', completedAt: now.toISOString() },
+              progress: {
+                releases: p.releases ?? {},
+                stage: 'DELETED',
+                completedAt: now.toISOString(),
+              },
               nextAt: now,
             },
           });
