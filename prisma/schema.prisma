@@ -480,6 +480,8 @@ model Task {
   TaskWorkflowApproval                                              TaskWorkflowApproval[]
   TaskWorkflowBinding                                               TaskWorkflowBinding[]
 
+  SharedTaskWorkLog SharedTaskWorkLog[]
+
   @@unique([spaceId, id])
   @@unique([spaceId, scopeId, id], map: "Task_scope_id_key")
   @@index([spaceId, deletedAt, createdAt, id])
@@ -1839,6 +1841,12 @@ model ContextAccess {
   TaskWorkflowApproval_TaskWorkflowApproval_spaceId_scopeId_requesterAccessIdToContextAccess TaskWorkflowApproval[]  @relation("TaskWorkflowApproval_spaceId_scopeId_requesterAccessIdToContextAccess")
   TaskWorkflowApprover                                                                       TaskWorkflowApprover[]
 
+  ProjectCapacityDay    ProjectCapacityDay[]
+  ProjectChangePlan     ProjectChangePlan[]
+  ProjectRiskIssue      ProjectRiskIssue[]
+  ProjectWorkAllocation ProjectWorkAllocation[]
+  SharedTaskWorkLog     SharedTaskWorkLog[]
+
   @@unique([spaceId, scopeId, id], map: "ContextAccess_scope_key")
   @@unique([spaceId, scopeId, id, actorId], map: "ContextAccess_admission_key")
   @@unique([spaceId, id])
@@ -1874,6 +1882,12 @@ model ContextAccessInterval {
   TaskWorkflowApproval_TaskWorkflowApproval_decisionAccessId_decisionGenerationToContextAccessInterval   TaskWorkflowApproval[]  @relation("TaskWorkflowApproval_decisionAccessId_decisionGenerationToContextAccessInterval")
   TaskWorkflowApproval_TaskWorkflowApproval_requesterAccessId_requesterGenerationToContextAccessInterval TaskWorkflowApproval[]  @relation("TaskWorkflowApproval_requesterAccessId_requesterGenerationToContextAccessInterval")
   TaskWorkflowApprover                                                                                   TaskWorkflowApprover[]
+
+  ProjectCapacityDay    ProjectCapacityDay[]
+  ProjectChangePlan     ProjectChangePlan[]
+  ProjectRiskIssue      ProjectRiskIssue[]
+  ProjectWorkAllocation ProjectWorkAllocation[]
+  SharedTaskWorkLog     SharedTaskWorkLog[]
 
   @@id([accessId, generation])
 }
@@ -1965,6 +1979,14 @@ model SharedActor {
   TaskWorkflowApproval_TaskWorkflowApproval_spaceId_decidedByActorIdToSharedActor   TaskWorkflowApproval[]  @relation("TaskWorkflowApproval_spaceId_decidedByActorIdToSharedActor")
   TaskWorkflowApproval_TaskWorkflowApproval_spaceId_requestedByActorIdToSharedActor TaskWorkflowApproval[]  @relation("TaskWorkflowApproval_spaceId_requestedByActorIdToSharedActor")
   TaskWorkflowVersion                                                               TaskWorkflowVersion[]
+
+  ProjectChangePlan      ProjectChangePlan[]
+  ProjectReportSnapshot  ProjectReportSnapshot[]
+  ProjectRiskIssue       ProjectRiskIssue[]
+  ProjectRiskIssueEvent  ProjectRiskIssueEvent[]
+  ProjectTemplate        ProjectTemplate[]
+  ProjectTemplateVersion ProjectTemplateVersion[]
+  SharedTaskWorkLog      SharedTaskWorkLog[]
 
   @@unique([spaceId, id])
 }
@@ -2230,6 +2252,12 @@ model Project {
 
   ResourceGrantOffer ResourceGrantOffer[]
 
+  ProjectCapacityDay    ProjectCapacityDay[]
+  ProjectChangePlan     ProjectChangePlan[]
+  ProjectReportSnapshot ProjectReportSnapshot[]
+  ProjectRiskIssue      ProjectRiskIssue[]
+  ProjectTemplate       ProjectTemplate[]
+
   @@unique([spaceId, scopeId, id])
   @@index([createdAt, id], map: "Project_created")
 }
@@ -2354,6 +2382,10 @@ model ProjectTask {
   ProjectSection   ProjectSection?   @relation(fields: [spaceId, scopeId, projectId, sectionId], references: [spaceId, scopeId, projectId, id], onDelete: NoAction, onUpdate: NoAction)
   Task             Task              @relation(fields: [spaceId, scopeId, taskId], references: [spaceId, scopeId, id], onDelete: NoAction, onUpdate: NoAction)
 
+  ProjectChangeSource   ProjectChangeSource[]
+  ProjectReportSource   ProjectReportSource[]
+  ProjectWorkAllocation ProjectWorkAllocation[]
+
   @@unique([spaceId, scopeId, projectId, taskId], map: "ProjectTask_assignment_source_key")
   @@index([spaceId, scopeId, projectId, taskId], map: "ProjectTask_page")
 }
@@ -2456,6 +2488,8 @@ model TaskAssignment {
   ContextAccess_TaskAssignment_spaceId_scopeId_issuerAccessIdToContextAccess                        ContextAccess                  @relation("TaskAssignment_spaceId_scopeId_issuerAccessIdToContextAccess", fields: [spaceId, scopeId, issuerAccessId], references: [spaceId, scopeId, id], onDelete: NoAction, onUpdate: NoAction)
   ProjectTask                                                                                       ProjectTask                    @relation(fields: [spaceId, scopeId, projectId, taskId], references: [spaceId, scopeId, projectId, taskId], onDelete: NoAction, onUpdate: NoAction)
   ContextAccess_TaskAssignment_spaceId_scopeId_recipientAccessIdToContextAccess                     ContextAccess                  @relation("TaskAssignment_spaceId_scopeId_recipientAccessIdToContextAccess", fields: [spaceId, scopeId, recipientAccessId], references: [spaceId, scopeId, id], onDelete: NoAction, onUpdate: NoAction)
+
+  ProjectWorkAllocation ProjectWorkAllocation[]
 
   @@unique([issuerAccessId, issuerGeneration, creationKey])
   @@unique([spaceId, scopeId, id])
@@ -2804,4 +2838,239 @@ model TaskWorkflowVersion {
   TaskWorkflow_TaskWorkflowVersion_spaceId_scopeId_workflowIdToTaskWorkflow        TaskWorkflow        @relation("TaskWorkflowVersion_spaceId_scopeId_workflowIdToTaskWorkflow", fields: [spaceId, scopeId, workflowId], references: [spaceId, scopeId, id], onDelete: NoAction, onUpdate: NoAction)
 
   @@id([spaceId, scopeId, workflowId, version])
+}
+
+model ProjectCapacityDay {
+  id                    String                @id @db.Uuid
+  spaceId               String                @db.Uuid
+  scopeId               String                @db.Uuid
+  projectId             String                @db.Uuid
+  accessId              String                @db.Uuid
+  generation            Int
+  date                  DateTime              @db.Date
+  timezone              String                @db.VarChar(100)
+  availableMinutes      Int?
+  revision              Int                   @default(1)
+  ContextAccessInterval ContextAccessInterval @relation(fields: [accessId, generation], references: [accessId, generation], onDelete: NoAction, onUpdate: NoAction)
+  ContextAccess         ContextAccess         @relation(fields: [spaceId, scopeId, accessId], references: [spaceId, scopeId, id], onDelete: NoAction, onUpdate: NoAction)
+  Project               Project               @relation(fields: [spaceId, scopeId, projectId], references: [spaceId, scopeId, id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([spaceId, scopeId, projectId, accessId, generation, date, timezone])
+  @@index([spaceId, scopeId, projectId, timezone, date, id], map: "ProjectCapacityDay_range")
+}
+
+model ProjectChangePlan {
+  id                     String                  @id @db.Uuid
+  spaceId                String                  @db.Uuid
+  scopeId                String                  @db.Uuid
+  projectId              String                  @db.Uuid
+  kind                   String                  @db.VarChar(8)
+  state                  String                  @default("PREVIEWED") @db.VarChar(10)
+  revision               Int                     @default(1)
+  operations             Json
+  templateId             String?                 @db.Uuid
+  templateVersion        Int?
+  creatorAccessId        String                  @db.Uuid
+  creatorGeneration      Int
+  createdByActorId       String                  @db.Uuid
+  authorizationVersion   BigInt
+  manifestHash           String                  @db.Char(64)
+  creationKey            String                  @db.Char(64)
+  fingerprint            String                  @db.Char(64)
+  createdAt              DateTime                @db.Timestamptz(3)
+  expiresAt              DateTime                @db.Timestamptz(3)
+  appliedAt              DateTime?               @db.Timestamptz(3)
+  ContextAccessInterval  ContextAccessInterval   @relation(fields: [creatorAccessId, creatorGeneration], references: [accessId, generation], onDelete: NoAction, onUpdate: NoAction)
+  SharedActor            SharedActor             @relation(fields: [spaceId, createdByActorId], references: [spaceId, id], onDelete: NoAction, onUpdate: NoAction)
+  ContextAccess          ContextAccess           @relation(fields: [spaceId, scopeId, creatorAccessId], references: [spaceId, scopeId, id], onDelete: NoAction, onUpdate: NoAction)
+  Project                Project                 @relation(fields: [spaceId, scopeId, projectId], references: [spaceId, scopeId, id], onDelete: NoAction, onUpdate: NoAction)
+  ProjectTemplateVersion ProjectTemplateVersion? @relation(fields: [spaceId, scopeId, projectId, templateId, templateVersion], references: [spaceId, scopeId, projectId, templateId, version], onDelete: NoAction, onUpdate: NoAction)
+  ProjectChangeSource    ProjectChangeSource[]
+
+  @@unique([creatorAccessId, creatorGeneration, creationKey])
+  @@unique([spaceId, scopeId, projectId, id])
+  @@index([spaceId, scopeId, projectId, state, expiresAt, id], map: "ProjectChangePlan_expiry")
+}
+
+model ProjectChangeSource {
+  spaceId           String            @db.Uuid
+  scopeId           String            @db.Uuid
+  projectId         String            @db.Uuid
+  planId            String            @db.Uuid
+  taskId            String            @db.Uuid
+  sourceRevision    Int
+  kind              String            @db.VarChar(8)
+  ProjectChangePlan ProjectChangePlan @relation(fields: [spaceId, scopeId, projectId, planId], references: [spaceId, scopeId, projectId, id], onDelete: NoAction, onUpdate: NoAction)
+  ProjectTask       ProjectTask       @relation(fields: [spaceId, scopeId, projectId, taskId], references: [spaceId, scopeId, projectId, taskId], onDelete: NoAction, onUpdate: NoAction)
+
+  @@id([planId, taskId])
+}
+
+model ProjectReportSnapshot {
+  id                  String                @id @db.Uuid
+  spaceId             String                @db.Uuid
+  scopeId             String                @db.Uuid
+  projectId           String                @db.Uuid
+  createdByActorId    String                @db.Uuid
+  createdAt           DateTime              @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+  report              Json
+  creationKey         String                @db.Char(64)
+  fingerprint         String                @db.Char(64)
+  SharedActor         SharedActor           @relation(fields: [spaceId, createdByActorId], references: [spaceId, id], onDelete: NoAction, onUpdate: NoAction)
+  Project             Project               @relation(fields: [spaceId, scopeId, projectId], references: [spaceId, scopeId, id], onDelete: NoAction, onUpdate: NoAction)
+  ProjectReportSource ProjectReportSource[]
+
+  @@unique([spaceId, scopeId, projectId, creationKey])
+  @@unique([spaceId, scopeId, projectId, id])
+}
+
+model ProjectReportSource {
+  spaceId               String                @db.Uuid
+  scopeId               String                @db.Uuid
+  projectId             String                @db.Uuid
+  snapshotId            String                @db.Uuid
+  taskId                String                @db.Uuid
+  sourceRevision        Int
+  ProjectReportSnapshot ProjectReportSnapshot @relation(fields: [spaceId, scopeId, projectId, snapshotId], references: [spaceId, scopeId, projectId, id], onDelete: NoAction, onUpdate: NoAction)
+  ProjectTask           ProjectTask           @relation(fields: [spaceId, scopeId, projectId, taskId], references: [spaceId, scopeId, projectId, taskId], onDelete: NoAction, onUpdate: NoAction)
+
+  @@id([snapshotId, taskId])
+}
+
+model ProjectRiskIssue {
+  id                    String                  @id @db.Uuid
+  spaceId               String                  @db.Uuid
+  scopeId               String                  @db.Uuid
+  projectId             String                  @db.Uuid
+  kind                  String                  @db.VarChar(5)
+  title                 String                  @db.VarChar(300)
+  description           String                  @db.VarChar(10000)
+  severity              String                  @db.VarChar(8)
+  probability           Int?
+  mitigation            String                  @db.VarChar(10000)
+  status                String                  @db.VarChar(10)
+  ownerAccessId         String?                 @db.Uuid
+  ownerGeneration       Int?
+  createdByActorId      String                  @db.Uuid
+  revision              Int                     @default(1)
+  createdAt             DateTime                @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+  retiredAt             DateTime?               @db.Timestamptz(3)
+  creationKey           String                  @db.Char(64)
+  fingerprint           String                  @db.Char(64)
+  ContextAccessInterval ContextAccessInterval?  @relation(fields: [ownerAccessId, ownerGeneration], references: [accessId, generation], onDelete: NoAction, onUpdate: NoAction)
+  SharedActor           SharedActor             @relation(fields: [spaceId, createdByActorId], references: [spaceId, id], onDelete: NoAction, onUpdate: NoAction)
+  ContextAccess         ContextAccess?          @relation(fields: [spaceId, scopeId, ownerAccessId], references: [spaceId, scopeId, id], onDelete: NoAction, onUpdate: NoAction)
+  Project               Project                 @relation(fields: [spaceId, scopeId, projectId], references: [spaceId, scopeId, id], onDelete: NoAction, onUpdate: NoAction)
+  ProjectRiskIssueEvent ProjectRiskIssueEvent[]
+
+  @@unique([spaceId, scopeId, projectId, creationKey])
+  @@unique([spaceId, scopeId, projectId, id])
+  @@index([spaceId, scopeId, projectId, kind, status, id], map: "ProjectRiskIssue_page")
+}
+
+model ProjectRiskIssueEvent {
+  id               String           @id @db.Uuid
+  spaceId          String           @db.Uuid
+  scopeId          String           @db.Uuid
+  projectId        String           @db.Uuid
+  itemId           String           @db.Uuid
+  actorId          String           @db.Uuid
+  revision         Int
+  before           Json?
+  after            Json
+  createdAt        DateTime         @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+  SharedActor      SharedActor      @relation(fields: [spaceId, actorId], references: [spaceId, id], onDelete: NoAction, onUpdate: NoAction)
+  ProjectRiskIssue ProjectRiskIssue @relation(fields: [spaceId, scopeId, projectId, itemId], references: [spaceId, scopeId, projectId, id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([itemId, revision])
+  @@index([spaceId, scopeId, projectId, itemId, id], map: "ProjectRiskIssueEvent_page")
+}
+
+model ProjectTemplate {
+  id                                                                                                         String                   @id @db.Uuid
+  spaceId                                                                                                    String                   @db.Uuid
+  scopeId                                                                                                    String                   @db.Uuid
+  projectId                                                                                                  String                   @db.Uuid
+  name                                                                                                       String                   @db.VarChar(300)
+  currentVersion                                                                                             Int                      @default(1)
+  revision                                                                                                   Int                      @default(1)
+  deprecatedAt                                                                                               DateTime?                @db.Timestamptz(3)
+  createdByActorId                                                                                           String                   @db.Uuid
+  creationKey                                                                                                String                   @db.Char(64)
+  fingerprint                                                                                                String                   @db.Char(64)
+  ProjectTemplateVersion_ProjectTemplate_spaceId_scopeId_projectId_id_currentVersionToProjectTemplateVersion ProjectTemplateVersion   @relation("ProjectTemplate_spaceId_scopeId_projectId_id_currentVersionToProjectTemplateVersion", fields: [spaceId, scopeId, projectId, id, currentVersion], references: [spaceId, scopeId, projectId, templateId, version], onDelete: NoAction, onUpdate: NoAction, map: "ProjectTemplate_current_version_fk")
+  SharedActor                                                                                                SharedActor              @relation(fields: [spaceId, createdByActorId], references: [spaceId, id], onDelete: NoAction, onUpdate: NoAction)
+  Project                                                                                                    Project                  @relation(fields: [spaceId, scopeId, projectId], references: [spaceId, scopeId, id], onDelete: NoAction, onUpdate: NoAction)
+  ProjectTemplateVersion_ProjectTemplateVersion_spaceId_scopeId_projectId_templateIdToProjectTemplate        ProjectTemplateVersion[] @relation("ProjectTemplateVersion_spaceId_scopeId_projectId_templateIdToProjectTemplate")
+
+  @@unique([spaceId, scopeId, projectId, creationKey])
+  @@unique([spaceId, scopeId, projectId, id])
+  @@index([spaceId, scopeId, projectId, id], map: "ProjectTemplate_page")
+}
+
+model ProjectTemplateVersion {
+  spaceId                                                                                             String              @db.Uuid
+  scopeId                                                                                             String              @db.Uuid
+  projectId                                                                                           String              @db.Uuid
+  templateId                                                                                          String              @db.Uuid
+  version                                                                                             Int
+  name                                                                                                String              @db.VarChar(300)
+  definition                                                                                          Json
+  publishedByActorId                                                                                  String              @db.Uuid
+  createdAt                                                                                           DateTime            @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+  creationKey                                                                                         String              @db.Char(64)
+  fingerprint                                                                                         String              @db.Char(64)
+  ProjectChangePlan                                                                                   ProjectChangePlan[]
+  ProjectTemplate_ProjectTemplate_spaceId_scopeId_projectId_id_currentVersionToProjectTemplateVersion ProjectTemplate[]   @relation("ProjectTemplate_spaceId_scopeId_projectId_id_currentVersionToProjectTemplateVersion")
+  SharedActor                                                                                         SharedActor         @relation(fields: [spaceId, publishedByActorId], references: [spaceId, id], onDelete: NoAction, onUpdate: NoAction)
+  ProjectTemplate_ProjectTemplateVersion_spaceId_scopeId_projectId_templateIdToProjectTemplate        ProjectTemplate     @relation("ProjectTemplateVersion_spaceId_scopeId_projectId_templateIdToProjectTemplate", fields: [spaceId, scopeId, projectId, templateId], references: [spaceId, scopeId, projectId, id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@id([spaceId, scopeId, projectId, templateId, version])
+  @@unique([spaceId, scopeId, projectId, templateId, creationKey])
+}
+
+model ProjectWorkAllocation {
+  id                    String                @id @db.Uuid
+  spaceId               String                @db.Uuid
+  scopeId               String                @db.Uuid
+  projectId             String                @db.Uuid
+  taskId                String                @db.Uuid
+  assignmentId          String                @db.Uuid
+  accessId              String                @db.Uuid
+  generation            Int
+  date                  DateTime              @db.Date
+  timezone              String                @db.VarChar(100)
+  plannedMinutes        Int
+  revision              Int                   @default(1)
+  ContextAccessInterval ContextAccessInterval @relation(fields: [accessId, generation], references: [accessId, generation], onDelete: NoAction, onUpdate: NoAction)
+  ContextAccess         ContextAccess         @relation(fields: [spaceId, scopeId, accessId], references: [spaceId, scopeId, id], onDelete: NoAction, onUpdate: NoAction)
+  TaskAssignment        TaskAssignment        @relation(fields: [spaceId, scopeId, assignmentId], references: [spaceId, scopeId, id], onDelete: NoAction, onUpdate: NoAction)
+  ProjectTask           ProjectTask           @relation(fields: [spaceId, scopeId, projectId, taskId], references: [spaceId, scopeId, projectId, taskId], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([assignmentId, date, timezone])
+  @@index([spaceId, scopeId, projectId, timezone, date, id], map: "ProjectWorkAllocation_range")
+}
+
+model SharedTaskWorkLog {
+  id                    String                @id @db.Uuid
+  spaceId               String                @db.Uuid
+  scopeId               String                @db.Uuid
+  taskId                String                @db.Uuid
+  actorId               String                @db.Uuid
+  accessId              String                @db.Uuid
+  generation            Int
+  startedAt             DateTime              @db.Timestamptz(3)
+  endedAt               DateTime              @db.Timestamptz(3)
+  revision              Int                   @default(1)
+  createdAt             DateTime              @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+  voidedAt              DateTime?             @db.Timestamptz(3)
+  creationKey           String                @db.Char(64)
+  fingerprint           String                @db.Char(64)
+  ContextAccessInterval ContextAccessInterval @relation(fields: [accessId, generation], references: [accessId, generation], onDelete: NoAction, onUpdate: NoAction)
+  SharedActor           SharedActor           @relation(fields: [spaceId, actorId], references: [spaceId, id], onDelete: NoAction, onUpdate: NoAction)
+  ContextAccess         ContextAccess         @relation(fields: [spaceId, scopeId, accessId], references: [spaceId, scopeId, id], onDelete: NoAction, onUpdate: NoAction)
+  Task                  Task                  @relation(fields: [spaceId, scopeId, taskId], references: [spaceId, scopeId, id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([accessId, generation, creationKey])
+  @@index([spaceId, scopeId, taskId, id], map: "SharedTaskWorkLog_task_page")
 }

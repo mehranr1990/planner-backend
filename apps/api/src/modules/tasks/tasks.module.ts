@@ -1,4 +1,6 @@
 import { TasksData } from './public/personal-data.js';
+import { SharedTaskWork } from './public/shared-task-work.js';
+import { SharedTaskWorkRepository } from './infrastructure/shared-task-work.repository.js';
 import { SharedTasks } from './public/shared-tasks.js';
 import { ProjectTaskTools } from './public/project-tools.js';
 import { ProjectTaskToolsRepository } from './infrastructure/project-tools.repository.js';
@@ -45,6 +47,7 @@ export class TasksModule {
       module: TasksModule,
       imports: [DatabaseModule, AuditModule, SpacesModule, storage],
       providers: [
+        { provide: SharedTaskWork, useClass: SharedTaskWorkRepository },
         WorkflowTools,
         FieldTools,
         DependencyTools,
@@ -73,6 +76,7 @@ export class TasksModule {
         LabelsController,
       ],
       exports: [
+        SharedTaskWork,
         ProjectTaskTools,
         SharedTasks,
         TasksData,

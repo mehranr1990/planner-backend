@@ -235,6 +235,8 @@ describe('scoped persistence and API conventions', () => {
       '202611040010_task_fields_and_dependencies',
       '202611040011_task_workflows',
       '202611040012_task_tool_publication_updates',
+      '202611040013_project_execution',
+      '202611040014_shared_task_work_log',
     ]);
     for (const sql of [
       '',

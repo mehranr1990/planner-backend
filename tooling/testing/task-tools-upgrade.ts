@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { verifyProjectExecutionUpgrade } from './project-execution-upgrade.ts';
 import path from 'node:path';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
@@ -182,4 +183,5 @@ export async function verifyTaskToolsUpgrade(input: {
   process.stdout.write(
     'PASS: P2-05 preserves 98 prior tables, populated assignments/notifications, all prior constraints except additive usage CHECK and 33 checksums; both M07 interruptions and repeat deploy.\n',
   );
+  await verifyProjectExecutionUpgrade(input);
 }

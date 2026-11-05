@@ -1,4 +1,9 @@
 import { Module } from '@nestjs/common';
+import { ProjectExecutionContext } from './application/project-execution-context.js';
+import { ProjectRegisterService } from './application/project-register.service.js';
+import { ProjectPlansService } from './application/project-plans.service.js';
+import { ProjectWorkMetricsService } from './application/project-work-metrics.service.js';
+import { ProjectExecutionController } from './http/project-execution.controller.js';
 import type { DynamicModule } from '@nestjs/common';
 import { DatabaseModule } from '../../platform/database/database.module.js';
 import { AuditModule } from '../../platform/audit/audit.service.js';
@@ -36,12 +41,17 @@ export class ProjectsModule {
         notifications,
       ],
       providers: [
+        ProjectExecutionContext,
+        ProjectRegisterService,
+        ProjectPlansService,
+        ProjectWorkMetricsService,
         ProjectsService,
         ProjectGuard,
         WorkService,
         ProjectToolsService,
       ],
       controllers: [
+        ProjectExecutionController,
         ProjectToolsController,
         ProjectsController,
         ResourceInvitationController,

@@ -25,6 +25,7 @@ import {
 import { migrationSandbox } from '../testing/migration-sandbox.ts';
 import { isolatedTestDatabaseUrl } from '../testing/test-database.ts';
 import { taskToolsCompiledSmoke } from '../testing/task-tools-compiled-smoke.ts';
+import { projectExecutionCompiledSmoke } from '../testing/project-execution-compiled-smoke.ts';
 
 const base = isolatedTestDatabaseUrl(process.env);
 async function runtime(environment: NodeJS.ProcessEnv, initialize = false) {
@@ -342,6 +343,17 @@ if (process.argv.includes('--worker-pass')) {
       : null;
     // The optional P2-05 exercise adds a separate burst to this owned fixture.
     if (taskTools) await context.client.sharedRateLimit.deleteMany();
+    const execution = process.argv.includes('--p2-06')
+      ? await projectExecutionCompiledSmoke(
+          context.app,
+          projectId,
+          ownerCookie,
+          memberCookie,
+          admitted.membership,
+          assignmentId,
+        )
+      : null;
+    if (execution) await context.client.sharedRateLimit.deleteMany();
     await context.app.close();
     context = undefined;
     const child = spawnSync(
@@ -354,6 +366,36 @@ if (process.argv.includes('--worker-pass')) {
         'Compiled fresh worker bootstrap failed; captured output withheld',
       );
     context = await runtime(environment);
+    if (execution) {
+      const report = await http()
+        .get(
+          '/api/v1/projects/' +
+            projectId +
+            '/reports/snapshots/' +
+            execution.snapshotId,
+        )
+        .set('Cookie', ownerCookie)
+        .expect(200);
+      assert.equal(report.body.report.recordedSeconds, 3600);
+      const history = await http()
+        .get(
+          '/api/v1/projects/' +
+            projectId +
+            '/register-items/' +
+            execution.riskId +
+            '/history',
+        )
+        .set('Cookie', ownerCookie)
+        .expect(200);
+      assert.equal(history.body.items.length, 1);
+      const plan = await http()
+        .get(
+          '/api/v1/projects/' + projectId + '/change-plans/' + execution.planId,
+        )
+        .set('Cookie', ownerCookie)
+        .expect(200);
+      assert.equal(plan.body.state, 'APPLIED');
+    }
     if (taskTools) {
       const plan = await http()
         .get(

@@ -11,6 +11,13 @@ export const sharedFeatureKeys = [
   'task.dependency',
   'task.reschedule-preview',
   'task.workflow-version',
+  'project.risk-issue',
+  'project.template-version',
+  'project.change-plan',
+  'task.shared-work-log',
+  'project.capacity-day',
+  'project.work-allocation',
+  'project.report-snapshot',
 ] as const;
 export type SharedFeatureKey = (typeof sharedFeatureKeys)[number];
 export type SharedFeatureDecisionInput = {

@@ -189,6 +189,76 @@ export class SharedKernel {
     if (!decision.allowed)
       throw new ForbiddenException({ code: 'SHARED_FEATURE_UNAVAILABLE' });
   }
+  async featureBatchGrowth(
+    tx: Prisma.TransactionClient,
+    spaceId: string,
+    feature: SharedFeatureKey,
+    count: number,
+  ) {
+    if (!Number.isSafeInteger(count) || count < 1 || count > 200)
+      throw new BadRequestException();
+    const current = await this.usageCount(tx, spaceId, feature);
+    for (let i = 0; i < count; i++)
+      if (
+        !(
+          await this.features.decide(
+            {
+              feature,
+              currentUsage: current + i,
+              usageOwner: { kind: 'SHARED_CUSTODY', spaceId },
+              growth: 1,
+            },
+            tx,
+          )
+        ).allowed
+      )
+        throw new ForbiddenException({ code: 'SHARED_FEATURE_UNAVAILABLE' });
+  }
+  async offerBatchEffect(
+    tx: Prisma.TransactionClient,
+    actor: RequestActor,
+    spaceId: string,
+    actorId: string,
+    action: string,
+    resourceId: string,
+    auditId: string,
+    usage: { feature: SharedFeatureKey; delta: number }[],
+  ) {
+    if (
+      usage.some(
+        (item) => !Number.isSafeInteger(item.delta) || item.delta < 1,
+      ) ||
+      usage.reduce((n, item) => n + item.delta, 0) > 200
+    )
+      throw new BadRequestException();
+    // Preserve the existing one-unit, one-audit ledger contract. The entire batch
+    // is one atomic transaction covered by the caller's signed minimum-version intent.
+    let first = true;
+    for (const item of usage)
+      for (let i = 0; i < item.delta; i++) {
+        await this.offerEffect(
+          tx,
+          actor,
+          spaceId,
+          actorId,
+          action,
+          resourceId,
+          first ? auditId : randomUUID(),
+          { actorId, feature: item.feature, delta: 1 },
+        );
+        first = false;
+      }
+    if (first)
+      await this.offerEffect(
+        tx,
+        actor,
+        spaceId,
+        actorId,
+        action,
+        resourceId,
+        auditId,
+      );
+  }
   private async usageCount(
     tx: Prisma.TransactionClient,
     spaceId: string,
@@ -384,6 +454,31 @@ export class SharedKernel {
       ? ((await tx.sharedActor.findUnique({ where: { id: access.actorId } }))
           ?.userId ?? null)
       : null;
+  }
+  /** Read-only current membership visibility; never issues mutation authority. */
+  async visibleWorkMember(
+    tx: Prisma.TransactionClient,
+    a: SharedAuthority,
+    spaceId: string,
+    id: string,
+    generation: number,
+  ) {
+    a.require(tx, spaceId, 'task.read');
+    const user = await this.memberUserInTransaction(tx, spaceId, id);
+    try {
+      await this.toolParticipant(tx, spaceId, id, generation, user, [
+        'task.read',
+      ]);
+      return true;
+    } catch (error) {
+      if (
+        error instanceof NotFoundException ||
+        error instanceof ForbiddenException ||
+        error instanceof ConflictException
+      )
+        return false;
+      throw error;
+    }
   }
   async resourceLockHints(actor: RequestActor, requests: SharedRequest[]) {
     return this.grantIssuerHints(actor.userId, requests);

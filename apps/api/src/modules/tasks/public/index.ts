@@ -12,3 +12,4 @@ export type { ReminderTask } from './reminder-tasks.js';
 export { AnalyticsTasks } from './analytics.js';
 export { TasksSync } from './sync-access.js';
 export { TasksData } from './personal-data.js';
+export { SharedTaskWork } from './shared-task-work.js';
