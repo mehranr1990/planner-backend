@@ -250,6 +250,7 @@ export function createOpenApiDocument() {
       ...teamPaths(),
       ...teamWorkPaths(),
       ...teamAnalyticsPaths(),
+      ...teamInteractionsPaths(),
       ...workPaths(),
       ...projectToolPaths(),
       ...projectExecutionPaths(),
@@ -277,3 +278,5 @@ export function createOpenApiDocument() {
     },
   };
 }
+
+import { teamInteractionsPaths } from './team-interactions-openapi.js';

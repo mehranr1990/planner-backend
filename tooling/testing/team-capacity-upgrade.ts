@@ -192,17 +192,16 @@ export async function verifyTeamCapacityUpgrade(input: {
   fks.sort((a, b) =>
     a.table + '|' + a.name < b.table + '|' + b.name ? -1 : 1,
   );
-  const expected = fs
-    .readFileSync(
-      'apps/api/src/platform/lifecycle/shared-cleanup-catalog.ts',
-      'utf8',
-    )
-    .match(/'([a-f0-9]{64})'/)![1];
+  const expected =
+    '336a7052accb2274b6a30ab56a9aaa192e3f11285ab425d3f1039797b9f55e73';
   assert.equal(
     createHash('sha256').update(JSON.stringify(fks)).digest('hex'),
     expected,
   );
+  await verifyTeamInteractionsUpgrade(input);
   process.stdout.write(
     'PASS: P3-03 populated 139-table preservation, 48 immutable checksums, original constraints, interrupted rollback, repeat deploy and exact cleanup catalog.\n',
   );
 }
+
+import { verifyTeamInteractionsUpgrade } from './team-interactions-upgrade.ts';

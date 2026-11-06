@@ -742,6 +742,7 @@ model PlanningReview {
 }
 
 model CalendarEvent {
+ TeamMeeting_Event TeamMeeting[] @relation("TeamMeeting_Event")
  scopedVersions EventRecurrence[] @relation("EventScope")
  @@unique([spaceId,scopeId,id],map:"CalendarEvent_scope_key")
  scopeId String? @db.Uuid
@@ -1798,6 +1799,7 @@ model PushSubscription {
 
 // SQL enforces additional branch, lifecycle and immutable-history constraints.
 model AccessScope {
+ restoreGeneration Int @default(0)
  CalendarEvent CalendarEvent[]
  EventRecurrence EventRecurrence[]
   Team Team[]
@@ -1836,6 +1838,12 @@ model AccessScope {
 
 // SQL enforces additional branch, lifecycle and immutable-history constraints.
 model ContextAccess {
+ TeamMeetingInvitation_recipientMember TeamMeetingInvitation[] @relation("TeamMeetingInvitation_recipientMember")
+ TeamMeetingInvitation_inviterMember TeamMeetingInvitation[] @relation("TeamMeetingInvitation_inviterMember")
+ TeamDisclosureRecipient_Member TeamDisclosureRecipient[] @relation("TeamDisclosureRecipient_Member")
+ TeamCase_reviewerMember TeamCase[] @relation("TeamCase_reviewerMember")
+ TeamCase_subjectMember TeamCase[] @relation("TeamCase_subjectMember")
+ TeamCase_authorMember TeamCase[] @relation("TeamCase_authorMember")
  TeamCapacityDay TeamCapacityDay[]
   ContextInvitation_ContextInvitation_spaceId_scopeId_acceptedAccessId_acceptedActorIdToContextAccess ContextInvitation[]     @relation("ContextInvitation_spaceId_scopeId_acceptedAccessId_acceptedActorIdToContextAccess")
   ContextInvitation_ContextInvitation_spaceId_scopeId_acceptedAccessIdToContextAccess                 ContextInvitation[]     @relation("ContextInvitation_spaceId_scopeId_acceptedAccessIdToContextAccess")
@@ -1894,6 +1902,12 @@ model ContextAccess {
 
 // SQL enforces additional branch, lifecycle and immutable-history constraints.
 model ContextAccessInterval {
+ TeamMeetingInvitation_recipientInterval TeamMeetingInvitation[] @relation("TeamMeetingInvitation_recipientInterval")
+ TeamMeetingInvitation_inviterInterval TeamMeetingInvitation[] @relation("TeamMeetingInvitation_inviterInterval")
+ TeamDisclosureRecipient_Interval TeamDisclosureRecipient[] @relation("TeamDisclosureRecipient_Interval")
+ TeamCase_reviewerInterval TeamCase[] @relation("TeamCase_reviewerInterval")
+ TeamCase_subjectInterval TeamCase[] @relation("TeamCase_subjectInterval")
+ TeamCase_authorInterval TeamCase[] @relation("TeamCase_authorInterval")
  TeamCapacityDay TeamCapacityDay[]
   ContextInvitation_ContextInvitation_acceptedAccessId_acceptedGenerationToContextAccessInterval   ContextInvitation[] @relation("ContextInvitation_acceptedAccessId_acceptedGenerationToContextAccessInterval")
   ContextInvitation_ContextInvitation_inviterAccessId_inviterGenerationToContextAccessInterval     ContextInvitation[] @relation("ContextInvitation_inviterAccessId_inviterGenerationToContextAccessInterval")
@@ -1985,6 +1999,8 @@ model ResourceGrant {
 
 // SQL enforces additional branch, lifecycle and immutable-history constraints.
 model SharedActor {
+ TeamMeeting_Actor TeamMeeting[] @relation("TeamMeeting_Actor")
+ TeamCaseEntry_Actor TeamCaseEntry[] @relation("TeamCaseEntry_Actor")
  TeamPlans TeamPlan[] @relation("TeamPlanCreator")
  TeamReviews TeamPlan[] @relation("TeamPlanReviewer")
  TeamWorkItem TeamWorkItem[]
@@ -3346,6 +3362,8 @@ model SharedLifecycleEffect {
 }
 
 model Team {
+ TeamMeeting_Team TeamMeeting[] @relation("TeamMeeting_Team")
+ TeamCase_Team TeamCase[] @relation("TeamCase_Team")
  TeamCapacityDay TeamCapacityDay[]
  TeamPlan TeamPlan[]
  TeamWorkItem TeamWorkItem[]
@@ -3436,4 +3454,117 @@ model TeamCapacityDay {
  ContextAccessInterval ContextAccessInterval @relation(fields:[accessId,generation],references:[accessId,generation],onDelete:NoAction,onUpdate:NoAction,map:"TeamCapacityDay_generation")
  @@unique([spaceId,accessId,generation,date,timezone])
  @@index([spaceId,timezone,date,id],map:"TeamCapacityDay_range")
+}
+
+model TeamCase {
+ id String @db.Uuid @id
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ kind String @db.VarChar(12)
+ authorAccessId String @db.Uuid
+ authorGeneration Int
+ subjectAccessId String @db.Uuid
+ subjectGeneration Int
+ reviewerAccessId String @db.Uuid
+ reviewerGeneration Int
+ reason String @db.VarChar(10000)
+ evidence String @db.VarChar(10000)
+ state String @default("OPEN") @db.VarChar(12)
+ revision Int @default(1)
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ Team Team @relation("TeamCase_Team",fields:[spaceId],references:[spaceId],onDelete:NoAction,onUpdate:NoAction,map:"TeamCase_Team")
+ authorMember ContextAccess @relation("TeamCase_authorMember",fields:[spaceId,scopeId,authorAccessId],references:[spaceId,scopeId,id],onDelete:NoAction,onUpdate:NoAction,map:"TeamCase_authorMember")
+ authorInterval ContextAccessInterval @relation("TeamCase_authorInterval",fields:[authorAccessId,authorGeneration],references:[accessId,generation],onDelete:NoAction,onUpdate:NoAction,map:"TeamCase_authorInterval")
+ subjectMember ContextAccess @relation("TeamCase_subjectMember",fields:[spaceId,scopeId,subjectAccessId],references:[spaceId,scopeId,id],onDelete:NoAction,onUpdate:NoAction,map:"TeamCase_subjectMember")
+ subjectInterval ContextAccessInterval @relation("TeamCase_subjectInterval",fields:[subjectAccessId,subjectGeneration],references:[accessId,generation],onDelete:NoAction,onUpdate:NoAction,map:"TeamCase_subjectInterval")
+ reviewerMember ContextAccess @relation("TeamCase_reviewerMember",fields:[spaceId,scopeId,reviewerAccessId],references:[spaceId,scopeId,id],onDelete:NoAction,onUpdate:NoAction,map:"TeamCase_reviewerMember")
+ reviewerInterval ContextAccessInterval @relation("TeamCase_reviewerInterval",fields:[reviewerAccessId,reviewerGeneration],references:[accessId,generation],onDelete:NoAction,onUpdate:NoAction,map:"TeamCase_reviewerInterval")
+ TeamCaseEntry_Case TeamCaseEntry[] @relation("TeamCaseEntry_Case")
+ TeamDisclosure_Case TeamDisclosure[] @relation("TeamDisclosure_Case")
+ @@unique([spaceId,id])
+ @@index([spaceId,id],map:"TeamCase_page")
+}
+
+model TeamCaseEntry {
+ id String @db.Uuid @id
+ spaceId String @db.Uuid
+ caseId String @db.Uuid
+ kind String @db.VarChar(12)
+ body String @db.VarChar(10000)
+ createdByActorId String @db.Uuid
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ Case TeamCase @relation("TeamCaseEntry_Case",fields:[spaceId,caseId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction,map:"TeamCaseEntry_Case")
+ Actor SharedActor @relation("TeamCaseEntry_Actor",fields:[spaceId,createdByActorId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction,map:"TeamCaseEntry_Actor")
+ @@index([spaceId,id],map:"TeamCaseEntry_page")
+}
+
+model TeamDisclosure {
+ id String @db.Uuid @id
+ spaceId String @db.Uuid
+ caseId String @db.Uuid
+ sourceRevision Int
+ audience String @db.VarChar(8)
+ summary String @db.VarChar(2000)
+ expiresAt DateTime @db.Timestamptz(3)
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ state String @default("PENDING") @db.VarChar(12)
+ revision Int @default(1)
+ restoreGeneration Int
+ reviewNote String? @db.VarChar(10000)
+ reviewedAt DateTime? @db.Timestamptz(3)
+ subjectConsentedAt DateTime? @db.Timestamptz(3)
+ Case TeamCase @relation("TeamDisclosure_Case",fields:[spaceId,caseId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction,map:"TeamDisclosure_Case")
+ TeamDisclosureRecipient_Disclosure TeamDisclosureRecipient[] @relation("TeamDisclosureRecipient_Disclosure")
+ @@unique([spaceId,id])
+ @@index([spaceId,id],map:"TeamDisclosure_page")
+}
+
+model TeamDisclosureRecipient {
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ disclosureId String @db.Uuid
+ accessId String @db.Uuid
+ generation Int
+ Disclosure TeamDisclosure @relation("TeamDisclosureRecipient_Disclosure",fields:[spaceId,disclosureId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction,map:"TeamDisclosureRecipient_Disclosure")
+ Member ContextAccess @relation("TeamDisclosureRecipient_Member",fields:[spaceId,scopeId,accessId],references:[spaceId,scopeId,id],onDelete:NoAction,onUpdate:NoAction,map:"TeamDisclosureRecipient_Member")
+ Interval ContextAccessInterval @relation("TeamDisclosureRecipient_Interval",fields:[accessId,generation],references:[accessId,generation],onDelete:NoAction,onUpdate:NoAction,map:"TeamDisclosureRecipient_Interval")
+ @@id([spaceId,disclosureId,accessId])
+}
+
+model TeamMeeting {
+ id String @db.Uuid @id
+ spaceId String @db.Uuid
+ eventId String @db.Uuid
+ agenda String @db.VarChar(10000)
+ revision Int @default(1)
+ createdByActorId String @db.Uuid
+ Team Team @relation("TeamMeeting_Team",fields:[spaceId],references:[spaceId],onDelete:NoAction,onUpdate:NoAction,map:"TeamMeeting_Team")
+ Event CalendarEvent @relation("TeamMeeting_Event",fields:[spaceId,eventId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction,map:"TeamMeeting_Event")
+ Actor SharedActor @relation("TeamMeeting_Actor",fields:[spaceId,createdByActorId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction,map:"TeamMeeting_Actor")
+ TeamMeetingInvitation_Meeting TeamMeetingInvitation[] @relation("TeamMeetingInvitation_Meeting")
+ @@unique([spaceId,id])
+ @@unique([spaceId,eventId])
+ @@index([spaceId,id],map:"TeamMeeting_page")
+}
+
+model TeamMeetingInvitation {
+ id String @db.Uuid @id
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ meetingId String @db.Uuid
+ inviterAccessId String @db.Uuid
+ inviterGeneration Int
+ recipientAccessId String @db.Uuid
+ recipientGeneration Int
+ expiresAt DateTime @db.Timestamptz(3)
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ state String @default("PENDING") @db.VarChar(12)
+ revision Int @default(1)
+ restoreGeneration Int
+ Meeting TeamMeeting @relation("TeamMeetingInvitation_Meeting",fields:[spaceId,meetingId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction,map:"TeamMeetingInvitation_Meeting")
+ inviterMember ContextAccess @relation("TeamMeetingInvitation_inviterMember",fields:[spaceId,scopeId,inviterAccessId],references:[spaceId,scopeId,id],onDelete:NoAction,onUpdate:NoAction,map:"TeamMeetingInvitation_inviterMember")
+ inviterInterval ContextAccessInterval @relation("TeamMeetingInvitation_inviterInterval",fields:[inviterAccessId,inviterGeneration],references:[accessId,generation],onDelete:NoAction,onUpdate:NoAction,map:"TeamMeetingInvitation_inviterInterval")
+ recipientMember ContextAccess @relation("TeamMeetingInvitation_recipientMember",fields:[spaceId,scopeId,recipientAccessId],references:[spaceId,scopeId,id],onDelete:NoAction,onUpdate:NoAction,map:"TeamMeetingInvitation_recipientMember")
+ recipientInterval ContextAccessInterval @relation("TeamMeetingInvitation_recipientInterval",fields:[recipientAccessId,recipientGeneration],references:[accessId,generation],onDelete:NoAction,onUpdate:NoAction,map:"TeamMeetingInvitation_recipientInterval")
+ @@index([spaceId,id],map:"TeamMeetingInvitation_page")
 }

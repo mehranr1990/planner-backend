@@ -1184,6 +1184,36 @@ export class SharedKernel {
       throw new NotFoundException();
     return this.authorize(tx, { ...actor, userId }, request, lockedUsers);
   }
+  async restoreGeneration(
+    tx: Prisma.TransactionClient,
+    a: SharedAuthority,
+    spaceId: string,
+  ) {
+    a.require(tx, spaceId, 'task.read');
+    return (await tx.accessScope.findUniqueOrThrow({ where: { id: spaceId } }))
+      .restoreGeneration;
+  }
+  /** Opaque access audit only: no resource bodies, content-derived values or authority change. */
+  async recordAccess(
+    tx: Prisma.TransactionClient,
+    a: SharedAuthority,
+    actor: RequestActor,
+    spaceId: string,
+    resourceId: string,
+    action: string,
+  ) {
+    const access = a.require(tx, spaceId, 'task.read');
+    await tx.sharedAuditEvent.create({
+      data: {
+        id: randomUUID(),
+        spaceId,
+        actorId: access.actorId,
+        resourceId,
+        action,
+        requestId: actor.requestId,
+      },
+    });
+  }
   /** Spaces-owned offer effect, after the caller's transaction-local proof/delegation checks. */
   async offerEffect(
     tx: Prisma.TransactionClient,

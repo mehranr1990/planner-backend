@@ -35,17 +35,34 @@ export class TeamsModule {
         TeamGuard,
         TeamWorkService,
         TeamAnalyticsService,
+        TeamInteractionContext,
+        TeamCareService,
+        TeamMeetingsService,
       ],
       controllers: [
         TeamsController,
         TeamInvitationController,
         TeamWorkController,
         TeamAnalyticsController,
+        TeamCareController,
+        TeamMeetingsController,
       ],
-      exports: [TeamsService, TeamWorkService, TeamAnalyticsService],
+      exports: [
+        TeamsService,
+        TeamWorkService,
+        TeamAnalyticsService,
+        TeamCareService,
+        TeamMeetingsService,
+      ],
     };
   }
 }
 
 import { TeamAnalyticsService } from './application/team-analytics.service.js';
 import { TeamAnalyticsController } from './http/team-analytics.controller.js';
+
+import { TeamInteractionContext } from './application/team-interaction.context.js';
+import { TeamCareService } from './application/team-care.service.js';
+import { TeamMeetingsService } from './application/team-meetings.service.js';
+import { TeamCareController } from './http/team-care.controller.js';
+import { TeamMeetingsController } from './http/team-meetings.controller.js';

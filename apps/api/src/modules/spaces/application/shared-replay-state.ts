@@ -129,6 +129,11 @@ export async function applySharedReplay(
   r: SharedReplay,
 ) {
   const spaceId = r.spaceId;
+  // New disclosure/invitation authorities never survive a restored authorization snapshot.
+  await tx.accessScope.update({
+    where: { id: spaceId },
+    data: { restoreGeneration: { increment: 1 } },
+  });
   const c = await tx.sharedCustody.findUniqueOrThrow({ where: { spaceId } });
   if (c.retentionPolicyVersion !== r.custody.retentionPolicyVersion)
     throw new Error('Replay retention policy mismatch');

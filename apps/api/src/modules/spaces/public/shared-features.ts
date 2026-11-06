@@ -26,6 +26,11 @@ export const sharedFeatureKeys = [
   'team.work-item',
   'calendar.shared-event',
   'team.capacity-day',
+  'team.case',
+  'team.case-entry',
+  'team.disclosure',
+  'team.meeting',
+  'team.meeting-invitation',
 ] as const;
 export type SharedFeatureKey = (typeof sharedFeatureKeys)[number];
 export type SharedFeatureDecisionInput = {
