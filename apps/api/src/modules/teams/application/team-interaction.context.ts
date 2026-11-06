@@ -55,7 +55,7 @@ export class TeamInteractionContext {
     return this.kernel.run(
       actor,
       { userIds: users, spaceIds: [id] },
-      [req(id)],
+      [{ ...req(id), allowArchived: true }],
       async (tx, a) =>
         work({
           tx,

@@ -30,6 +30,15 @@ function sharedView(value: unknown, spaceId: string): unknown {
 }
 @Injectable()
 export class SharedCalendarRepository extends SharedCalendar {
+  async cleanup(tx: Prisma.TransactionClient, scope: SharedCleanupScope) {
+    scope.verify(tx);
+    await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${'calendar:' + scope.spaceId},0))::text`;
+    if (!(await sharedDeleteBatch(tx, scope, ['EventRecurrence'])))
+      return false;
+    const removed =
+      await tx.$executeRaw`DELETE FROM "CalendarEvent" WHERE id IN (SELECT e.id FROM "CalendarEvent" e WHERE e."spaceId"=${scope.spaceId}::uuid AND NOT EXISTS(SELECT 1 FROM "CalendarEvent" child WHERE child."spaceId"=e."spaceId" AND (child."seriesId"=e.id OR child."previousSeriesId"=e.id)) ORDER BY e.id LIMIT 200)`;
+    return removed === 0;
+  }
   constructor(
     @Inject(SharedKernel) private readonly kernel: SharedKernel,
     @Inject(PlanningTasks) private readonly tasks: PlanningTasks,
@@ -154,3 +163,5 @@ export class SharedCalendarRepository extends SharedCalendar {
     }
   }
 }
+import { sharedDeleteBatch } from '../../../platform/lifecycle/shared-cleanup.js';
+import type { SharedCleanupScope } from '../../../platform/lifecycle/shared-cleanup.js';

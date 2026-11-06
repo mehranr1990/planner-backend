@@ -221,27 +221,39 @@ export class SharedLifecycleService {
     )
       throw new ConflictException({ code: 'RECOVERY_UNAVAILABLE' });
   }
-  async status(actor: RequestActor, spaceId: string) {
-    return this.kernel.lifecycleParticipant(actor, spaceId, [], async (tx) => {
-      const { job } = await this.current(tx, spaceId),
-        p = progress(job);
-      return {
-        jobId: job.id,
-        generation: job.generation,
-        revision: job.revision,
-        state: job.state,
-        recoveryDeadline: job.recoveryDeadline.toISOString(),
-        nextAt: job.nextAt.toISOString(),
-        stage: typeof p.stage === 'string' ? p.stage : null,
-        failureCode: typeof p.failureCode === 'string' ? p.failureCode : null,
-      };
-    });
+  async status(
+    actor: RequestActor,
+    spaceId: string,
+    kind: 'PROJECT' | 'TEAM' = 'PROJECT',
+  ) {
+    return this.kernel.lifecycleParticipant(
+      actor,
+      spaceId,
+      [],
+      async (tx) => {
+        const { job } = await this.current(tx, spaceId),
+          p = progress(job);
+        return {
+          jobId: job.id,
+          generation: job.generation,
+          revision: job.revision,
+          state: job.state,
+          recoveryDeadline: job.recoveryDeadline.toISOString(),
+          nextAt: job.nextAt.toISOString(),
+          stage: typeof p.stage === 'string' ? p.stage : null,
+          failureCode: typeof p.failureCode === 'string' ? p.failureCode : null,
+        };
+      },
+      undefined,
+      kind,
+    );
   }
   issueProof(
     actor: RequestActor,
     spaceId: string,
     expected: number,
     password: string,
+    kind: 'PROJECT' | 'TEAM' = 'PROJECT',
   ) {
     return this.collaboration.signed(
       actor,
@@ -288,6 +300,7 @@ export class SharedLifecycleService {
         };
       },
       true,
+      kind,
     );
   }
   recover(
@@ -298,6 +311,7 @@ export class SharedLifecycleService {
     proof: string | undefined,
     password: string,
     sourceEffect: (tx: Prisma.TransactionClient, now: Date) => Promise<void>,
+    kind: 'PROJECT' | 'TEAM' = 'PROJECT',
   ) {
     return this.collaboration.signed(
       actor,
@@ -388,6 +402,7 @@ export class SharedLifecycleService {
         };
       },
       true,
+      kind,
     );
   }
   admissions(tx: Prisma.TransactionClient, s: SharedCleanupScope) {
@@ -424,10 +439,11 @@ export class SharedLifecycleService {
       await tx.$executeRaw`UPDATE "SharedLifecycleJob" SET "spaceId"=NULL,"recoveryHash"=NULL,progress=jsonb_build_object('stage','CANCELED','releases',COALESCE(progress->'releases','{}'::jsonb)),"leaseUntil"=NULL WHERE id IN(SELECT id FROM "SharedLifecycleJob" WHERE "spaceId"=${s.spaceId}::uuid AND state='CANCELED' ORDER BY id LIMIT 200)`;
     return jobs === 0;
   }
-  next() {
+  next(kind: 'PROJECT' | 'TEAM' = 'PROJECT') {
     return this.db.client.sharedLifecycleJob.findFirst({
       where: {
         spaceId: { not: null },
+        SharedCustody: { kind },
         state: { notIn: ['CANCELED', 'DELETED', 'FAILED'] },
         nextAt: { lte: new Date() },
         OR: [{ leaseUntil: null }, { leaseUntil: { lte: new Date() } }],
@@ -443,6 +459,7 @@ export class SharedLifecycleService {
       s: SharedCleanupScope,
       stage: string,
     ) => Promise<LifecycleStep>,
+    kind: 'PROJECT' | 'TEAM' = 'PROJECT',
   ): Promise<LifecycleAdvance | null> {
     if (!hint.spaceId) return null;
     const spaceId = hint.spaceId;
@@ -454,6 +471,7 @@ export class SharedLifecycleService {
       hint.id,
       async (tx, now, locked, begin) => {
         const { c, job } = await this.current(tx, spaceId);
+        if (c.kind !== kind) throw new NotFoundException();
         if (
           job.state !== c.state ||
           job.id !== hint.id ||
@@ -511,7 +529,7 @@ export class SharedLifecycleService {
             ? wait('CLOSING_GRACE', 'RECOVERY_WINDOW', job.recoveryDeadline)
             : wait('CLEANUP_PENDING', 'RECOVERY_ENDED', now);
         if (
-          c.kind !== 'PROJECT' ||
+          c.kind !== kind ||
           (await this.kernel.lifecycleMembers(tx, spaceId)) > 0
         )
           return wait(

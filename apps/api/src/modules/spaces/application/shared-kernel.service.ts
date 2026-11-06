@@ -1282,6 +1282,7 @@ export class SharedKernel {
       locked: string[],
     ) => Promise<T>,
     onRetry?: () => Promise<void>,
+    kind: 'PROJECT' | 'TEAM' = 'PROJECT',
   ) {
     this.enabled();
     if (!actor.sessionId) throw new ForbiddenException();
@@ -1305,7 +1306,7 @@ export class SharedKernel {
           ? await tx.sharedActor.findUnique({ where: { id: seat.actorId } })
           : null;
         if (
-          custody.kind !== 'PROJECT' ||
+          custody.kind !== kind ||
           !local ||
           local.state !== 'ACTIVE' ||
           local.userId !== actor.userId
@@ -1972,11 +1973,28 @@ export class SharedKernel {
       },
     );
   }
-  async projectLifecycle<T>(
+  projectLifecycle<T>(
     actor: RequestActor,
     spaceId: string,
     action: 'archive' | 'restore' | 'delete',
     write: (tx: Prisma.TransactionClient) => Promise<T>,
+  ) {
+    return this.contextLifecycle(actor, spaceId, action, write, 'PROJECT');
+  }
+  teamLifecycle<T>(
+    actor: RequestActor,
+    spaceId: string,
+    action: 'archive' | 'restore' | 'delete',
+    write: (tx: Prisma.TransactionClient) => Promise<T>,
+  ) {
+    return this.contextLifecycle(actor, spaceId, action, write, 'TEAM');
+  }
+  private async contextLifecycle<T>(
+    actor: RequestActor,
+    spaceId: string,
+    action: 'archive' | 'restore' | 'delete',
+    write: (tx: Prisma.TransactionClient) => Promise<T>,
+    kind: 'PROJECT' | 'TEAM',
   ) {
     return this.restrictive(
       actor,
@@ -1987,12 +2005,13 @@ export class SharedKernel {
           action === 'delete' ? 'custody.dissolve' : 'custody.archive',
         allowArchived: true,
       },
-      'project.' + action,
+      kind.toLowerCase() + '.' + action,
       spaceId,
       async (tx, a, auditId) => {
         const custody = await tx.sharedCustody.findUniqueOrThrow({
           where: { spaceId },
         });
+        if (custody.kind !== kind) throw new NotFoundException();
         if (
           (action === 'archive' && custody.state !== 'ACTIVE') ||
           (action === 'restore' && custody.state !== 'ARCHIVED')
@@ -2026,6 +2045,11 @@ export class SharedKernel {
               });
           }
         }
+        if (kind === 'TEAM')
+          await tx.accessScope.update({
+            where: { id: spaceId },
+            data: { restoreGeneration: { increment: 1 } },
+          });
         const result = await write(tx);
         if (action === 'delete') {
           const generation = custody.closureGeneration + 1,
@@ -2077,7 +2101,7 @@ export class SharedKernel {
           tx,
           actor,
           a,
-          'project.' + action,
+          kind.toLowerCase() + '.' + action,
           spaceId,
           auditId,
           action === 'delete'

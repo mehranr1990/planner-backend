@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import type { Client } from 'pg';
+import { verifyTeamLifecycleUpgrade } from './team-lifecycle-upgrade.ts';
 import {
   teamInteractionsMigrationName,
   assertReviewedTeamInteractionsMigration,
@@ -139,4 +140,5 @@ export async function verifyTeamInteractionsUpgrade(input: {
   process.stdout.write(
     'PASS: P3-04 preserves 140 prior table datasets, populated Team work/Calendar/planning/capacity, 49 immutable checksums and prior constraints except additive usage CHECK; interrupted rollback, zero restore-generation default, repeat deploy and exact cleanup catalog.\n',
   );
+  await verifyTeamLifecycleUpgrade(input);
 }

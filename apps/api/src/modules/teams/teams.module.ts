@@ -18,6 +18,8 @@ export class TeamsModule {
     tasks: DynamicModule,
     goals: DynamicModule,
     calendar: DynamicModule,
+    notifications: DynamicModule,
+    storage: DynamicModule,
   ): DynamicModule {
     return {
       module: TeamsModule,
@@ -29,6 +31,8 @@ export class TeamsModule {
         tasks,
         goals,
         calendar,
+        notifications,
+        storage,
       ],
       providers: [
         TeamsService,
@@ -38,6 +42,8 @@ export class TeamsModule {
         TeamInteractionContext,
         TeamCareService,
         TeamMeetingsService,
+        TeamLifecycleService,
+        TeamCleanupService,
       ],
       controllers: [
         TeamsController,
@@ -46,8 +52,11 @@ export class TeamsModule {
         TeamAnalyticsController,
         TeamCareController,
         TeamMeetingsController,
+        TeamLifecycleController,
       ],
       exports: [
+        TeamLifecycleService,
+        TeamCleanupService,
         TeamsService,
         TeamWorkService,
         TeamAnalyticsService,
@@ -66,3 +75,7 @@ import { TeamCareService } from './application/team-care.service.js';
 import { TeamMeetingsService } from './application/team-meetings.service.js';
 import { TeamCareController } from './http/team-care.controller.js';
 import { TeamMeetingsController } from './http/team-meetings.controller.js';
+
+import { TeamLifecycleService } from './application/team-lifecycle.service.js';
+import { TeamCleanupService } from './application/team-cleanup.service.js';
+import { TeamLifecycleController } from './http/team-lifecycle.controller.js';

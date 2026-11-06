@@ -1,0 +1,156 @@
+import {
+  Inject,
+  Injectable,
+  ConflictException,
+  HttpException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
+import type { Prisma, StoredFile } from '../../../generated/prisma/client.js';
+import { sharedDeleteBatch } from '../../../platform/lifecycle/shared-cleanup.js';
+import type { SharedCleanupScope } from '../../../platform/lifecycle/shared-cleanup.js';
+import { SharedFiles } from '../../../platform/storage/public/index.js';
+import {
+  SharedLifecycleService,
+  SharedKernel,
+} from '../../spaces/public/index.js';
+import type { LifecycleStep } from '../../spaces/public/index.js';
+import { SharedTasksCleanup } from '../../tasks/public/index.js';
+import { SharedGoalsCleanup } from '../../goals/public/index.js';
+import {
+  SharedScheduling,
+  SharedCalendar,
+} from '../../calendar/public/index.js';
+import { TeamProjects } from '../../projects/public/index.js';
+import { SharedWorkNotifications } from '../../notifications/public/index.js';
+@Injectable()
+export class TeamCleanupService {
+  constructor(
+    @Inject(TeamProjects) private readonly projects: TeamProjects,
+    @Inject(SharedCalendar) private readonly events: SharedCalendar,
+    @Inject(SharedKernel) private readonly kernel: SharedKernel,
+    @Inject(SharedLifecycleService) readonly lifecycle: SharedLifecycleService,
+    @Inject(SharedFiles) private readonly files: SharedFiles,
+    @Inject(SharedTasksCleanup) private readonly tasks: SharedTasksCleanup,
+    @Inject(SharedGoalsCleanup) private readonly goals: SharedGoalsCleanup,
+    @Inject(SharedScheduling) private readonly calendar: SharedScheduling,
+    @Inject(SharedWorkNotifications)
+    private readonly notifications: SharedWorkNotifications,
+  ) {}
+  async restoreRestrictions(spaceId: string) {
+    let rows: StoredFile[] = [];
+    const result = await this.kernel.restoreRestrictions(
+      spaceId,
+      async (tx, scope, id) => {
+        rows = await this.files.restoreDeleted(tx, scope, id);
+      },
+    );
+    // Private IO is outside the replay transaction; metadata already denies every download.
+    for (const row of rows) await this.files.remove(row);
+    if (result.complete)
+      await this.kernel.restoredFileEffect(spaceId, (tx, scope) =>
+        this.files.restoreRemoved(tx, scope, rows),
+      );
+    return {
+      ...result,
+      complete: result.complete && rows.length < 25,
+      filesRemoved: rows.length,
+    };
+  }
+  private async content(tx: Prisma.TransactionClient, s: SharedCleanupScope) {
+    if (!(await this.projects.cleanup(tx, s))) return false;
+    return sharedDeleteBatch(tx, s, [
+      'TeamMeetingInvitation',
+      'TeamMeeting',
+      'TeamDisclosureRecipient',
+      'TeamDisclosure',
+      'TeamCaseEntry',
+      'TeamCase',
+      'TeamCapacityDay',
+      'TeamWorkItem',
+      'TeamPlan',
+    ]);
+  }
+  async consume() {
+    const hint = await this.lifecycle.next('TEAM');
+    if (!hint?.spaceId) return false;
+    const p = hint.progress as Record<string, unknown>,
+      calendar =
+        p.stage === 'CALENDAR'
+          ? await this.calendar.cleanupHints(hint.spaceId)
+          : { blockIds: [], userIds: [] };
+    let claimedLease: string | undefined;
+    try {
+      const result = await this.lifecycle.advance(
+        hint,
+        calendar.userIds,
+        async (tx, s, stage): Promise<LifecycleStep> => {
+          if (stage === 'FILES') {
+            const files = await this.files.purgePlan(tx, s);
+            return files.length ? { files } : { nextStage: 'ADMISSIONS' };
+          }
+          if (stage === 'ADMISSIONS')
+            return (await this.lifecycle.admissions(tx, s))
+              ? { nextStage: 'NOTIFICATIONS' }
+              : {};
+          if (stage === 'NOTIFICATIONS')
+            return (await this.notifications.cleanup(tx, s))
+              ? { nextStage: 'TEAM_CONTENT' }
+              : {};
+          if (stage === 'TEAM_CONTENT')
+            return (await this.content(tx, s)) ? { nextStage: 'CALENDAR' } : {};
+          if (stage === 'CALENDAR')
+            return (await this.calendar.cleanup(tx, s, calendar.blockIds)) &&
+              (await this.events.cleanup(tx, s))
+              ? { nextStage: 'GOALS' }
+              : {};
+          if (stage === 'GOALS')
+            return (await this.goals.batch(tx, s))
+              ? { nextStage: 'TASKS' }
+              : {};
+          if (stage === 'TASKS')
+            return (await this.tasks.batch(tx, s))
+              ? { nextStage: 'STORAGE' }
+              : {};
+          if (stage === 'STORAGE')
+            return (await this.files.purgeRows(tx, s))
+              ? { nextStage: 'TEAM_ROOT' }
+              : {};
+          if (stage === 'TEAM_ROOT')
+            return (await sharedDeleteBatch(tx, s, ['Team']))
+              ? { nextStage: 'CORE' }
+              : {};
+          if (stage === 'CORE')
+            return (await this.lifecycle.core(tx, s)) ? { finalize: true } : {};
+          throw new ConflictException({ code: 'UNKNOWN_CLEANUP_STAGE' });
+        },
+        'TEAM',
+      );
+      if (result?.transfer) {
+        const pass = result.transfer;
+        claimedLease = pass.leaseId;
+        await this.files.purgeRemove(pass.files);
+        await this.lifecycle.ack(
+          pass.jobId,
+          pass.spaceId,
+          pass.leaseId,
+          pass.files,
+          (tx, s, files) => this.files.purgeAck(tx, s, files),
+        );
+      }
+      return Boolean(result);
+    } catch (error) {
+      if (error instanceof HttpException && error.getStatus() === 404)
+        return false;
+      if (
+        claimedLease ||
+        (error instanceof HttpException && error.getStatus() < 500)
+      ) {
+        await this.lifecycle.failure(hint, claimedLease);
+        return true;
+      }
+      throw new ServiceUnavailableException({
+        code: 'SHARED_LIFECYCLE_RECONCILIATION_REQUIRED',
+      });
+    }
+  }
+}

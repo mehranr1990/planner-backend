@@ -14,6 +14,12 @@ import { ProjectsService } from './projects.service.js';
 import { SharedTaskWork } from '../../tasks/public/index.js';
 @Injectable()
 export class TeamProjects {
+  async cleanup(tx: Prisma.TransactionClient, scope: SharedCleanupScope) {
+    scope.verify(tx);
+    const count =
+      await tx.$executeRaw`DELETE FROM "TeamProjectReference" WHERE ctid IN (SELECT ctid FROM "TeamProjectReference" WHERE "teamId"=${scope.spaceId}::uuid LIMIT 200)`;
+    return count === 0;
+  }
   async analytics(
     tx: Prisma.TransactionClient,
     a: SharedAuthority,
@@ -210,3 +216,4 @@ export class TeamProjects {
     return { teamId, projectId, revision: row.revision, active: row.active };
   }
 }
+import type { SharedCleanupScope } from '../../../platform/lifecycle/shared-cleanup.js';

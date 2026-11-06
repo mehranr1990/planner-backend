@@ -50,7 +50,12 @@ export class TeamsService {
     id: string,
     capability: SharedRequest['capability'] = 'task.read',
   ): SharedRequest {
-    return { spaceId: id, scopeId: id, capability };
+    return {
+      spaceId: id,
+      scopeId: id,
+      capability,
+      allowArchived: capability === 'task.read',
+    };
   }
   private async view(
     tx: Prisma.TransactionClient,

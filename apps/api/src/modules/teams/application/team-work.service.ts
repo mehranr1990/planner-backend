@@ -73,7 +73,11 @@ export class TeamWorkService {
         userIds: [],
         spaceIds: [...new Set([id, ...extra.map((r) => r.spaceId)])],
       },
-      [this.request(id), this.request(id, cap), ...extra],
+      [
+        { ...this.request(id), allowArchived: cap === 'task.read' },
+        { ...this.request(id, cap), allowArchived: cap === 'task.read' },
+        ...extra,
+      ],
       work,
     );
   }
@@ -188,7 +192,18 @@ export class TeamWorkService {
         body,
         async () => {
           await this.kernel.featureGrowth(tx, id, 'task.shared');
-          const row = await this.tasks.create(tx, a, id, body);
+          const row = await this.tasks
+            .create(tx, a, id, body)
+            .catch((error: unknown) => {
+              if (
+                error &&
+                typeof error === 'object' &&
+                'code' in error &&
+                error.code === 'P2002'
+              )
+                throw new ConflictException();
+              throw error;
+            });
           await this.effect(
             tx,
             a,

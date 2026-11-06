@@ -67,7 +67,11 @@ export class TeamAnalyticsService {
         userIds: users,
         spaceIds: [...new Set([id, ...extra.map((r) => r.spaceId)])],
       },
-      [request(id), request(id, cap), ...extra],
+      [
+        { ...request(id), allowArchived: cap === 'task.read' },
+        { ...request(id, cap), allowArchived: cap === 'task.read' },
+        ...extra,
+      ],
       work,
     );
   }

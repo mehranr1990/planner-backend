@@ -108,6 +108,7 @@ export class CollaborationService {
       begin: () => Promise<string>,
     ) => Promise<T>,
     lifecycle = false,
+    lifecycleKind: 'PROJECT' | 'TEAM' = 'PROJECT',
   ) {
     if (lifecycle && !action.startsWith('lifecycle.'))
       throw new BadRequestException();
@@ -154,6 +155,7 @@ export class CollaborationService {
               users,
               body,
               abort,
+              lifecycleKind,
             )
           : await this.kernel.participate(actor, spaceId, users, body, abort)
         : await this.kernel.offerMaintenance(

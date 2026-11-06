@@ -24,6 +24,10 @@ export type SharedCalendarCommand =
   | { kind: 'LIST'; query: { limit?: string; cursor?: string } }
   | { kind: 'VIEW'; query: c.CalendarRangeQuery };
 export abstract class SharedCalendar {
+  abstract cleanup(
+    tx: Prisma.TransactionClient,
+    scope: SharedCleanupScope,
+  ): Promise<boolean>;
   abstract run(
     tx: Prisma.TransactionClient,
     a: SharedAuthority,
@@ -32,3 +36,5 @@ export abstract class SharedCalendar {
     command: SharedCalendarCommand,
   ): Promise<unknown>;
 }
+
+import type { SharedCleanupScope } from '../../../platform/lifecycle/shared-cleanup.js';

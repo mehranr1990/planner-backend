@@ -6,3 +6,6 @@ export { TeamAnalyticsService } from '../application/team-analytics.service.js';
 
 export { TeamCareService } from '../application/team-care.service.js';
 export { TeamMeetingsService } from '../application/team-meetings.service.js';
+
+export { TeamLifecycleService } from '../application/team-lifecycle.service.js';
+export { TeamCleanupService } from '../application/team-cleanup.service.js';

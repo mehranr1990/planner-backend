@@ -12,8 +12,8 @@ describe('approved API compatibility', () => {
   it('resolves recursive request/result definitions and rejects dangling refs and duplicate operations', () => {
     const doc = createOpenApiDocument();
     expect(assertOpenApiContract(doc)).toEqual({
-      references: 4456,
-      operations: 522,
+      references: 4576,
+      operations: 534,
     });
     const broken = structuredClone(doc) as { paths: Record<string, unknown> };
     broken.paths['/probe'] = {
@@ -35,6 +35,7 @@ describe('approved API compatibility', () => {
       'p3-01',
       'p3-02',
       'p3-03',
+      'p3-04',
     ])
       assertApiCompatible(
         createOpenApiDocument(),

@@ -74,3 +74,5 @@ export * from './team-work.js';
 export * from './team-analytics.js';
 
 export * from './team-interactions.js';
+
+export * from './team-lifecycle.js';

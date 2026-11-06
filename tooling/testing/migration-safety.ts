@@ -120,7 +120,9 @@ export function reviewMigrations(directory = 'prisma/migrations'): string[] {
       path.join(directory, name, 'migration.sql'),
       'utf8',
     );
-    if (name === teamInteractionsMigrationName)
+    if (name === teamLifecycleMigrationName)
+      assertReviewedTeamLifecycleMigration(name, sql);
+    else if (name === teamInteractionsMigrationName)
       assertReviewedTeamInteractionsMigration(name, sql);
     else if (name === teamCapacityMigrationName)
       assertReviewedTeamCapacityMigration(name, sql);
@@ -168,3 +170,8 @@ import {
   teamInteractionsMigrationName,
   assertReviewedTeamInteractionsMigration,
 } from './reviewed-team-interactions-migration.ts';
+
+import {
+  teamLifecycleMigrationName,
+  assertReviewedTeamLifecycleMigration,
+} from './reviewed-team-lifecycle-migration.ts';

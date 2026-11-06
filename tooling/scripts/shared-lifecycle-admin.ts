@@ -4,6 +4,8 @@ import { parseEnvironment } from '../../apps/api/dist/bootstrap/environment.js';
 import { AppModule } from '../../apps/api/dist/app.module.js';
 import { SharedLifecycleService } from '../../apps/api/dist/modules/spaces/public/index.js';
 import { ProjectCleanupService } from '../../apps/api/dist/modules/projects/public/index.js';
+import { TeamCleanupService } from '../../apps/api/dist/modules/teams/public/index.js';
+import { DatabaseService } from '../../apps/api/dist/platform/database/database.service.js';
 import * as c from '../../packages/api-contracts/dist/index.js';
 const [command, ...args] = process.argv.slice(2);
 const uuid = c.ProjectCreateSchema.shape.id;
@@ -39,9 +41,16 @@ const app = await NestFactory.createApplicationContext(
 );
 try {
   if (command === 'restore-replay') {
-    const result = await app
-      .get(ProjectCleanupService)
-      .restoreRestrictions(spaceId);
+    const kind = (
+      await app
+        .get(DatabaseService)
+        .client.sharedCustody.findUniqueOrThrow({ where: { spaceId } })
+    ).kind;
+    const cleanup =
+      kind === 'TEAM'
+        ? app.get(TeamCleanupService)
+        : app.get(ProjectCleanupService);
+    const result = await cleanup.restoreRestrictions(spaceId);
     if (!result.complete)
       throw new Error(
         'Restore remains restricted; rerun the bounded replay command',
