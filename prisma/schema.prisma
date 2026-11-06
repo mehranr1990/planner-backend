@@ -103,6 +103,8 @@ enum SpaceKind {
 }
 
 model Space {
+ TeamCalendarEvents CalendarEvent[] @relation("CalendarEventBoundary")
+ TeamEventRecurrences EventRecurrence[] @relation("EventRecurrenceBoundary")
   sharedCustody           SharedCustody?
   accessClosedAt          DateTime?                @db.Timestamptz(3)
   syncSequence            BigInt                   @default(0)
@@ -430,6 +432,7 @@ enum TaskPriority {
 }
 
 model Task {
+ TeamWorkItem TeamWorkItem[]
   reminders          Reminder[]
   noteReferences     Note[]
   captureTargets     CaptureItem[]
@@ -739,9 +742,16 @@ model PlanningReview {
 }
 
 model CalendarEvent {
+ scopedVersions EventRecurrence[] @relation("EventScope")
+ @@unique([spaceId,scopeId,id],map:"CalendarEvent_scope_key")
+ scopeId String? @db.Uuid
+ createdByActorId String? @db.Uuid
+ SharedBoundary Space @relation("CalendarEventBoundary",fields:[spaceId],references:[id],onDelete:NoAction,onUpdate:NoAction,map:"CalendarEvent_boundary")
+ AccessScope AccessScope? @relation(fields:[spaceId,scopeId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction,map:"CalendarEvent_scope")
+ SharedActor SharedActor? @relation(fields:[spaceId,createdByActorId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction,map:"CalendarEvent_actor")
   id               String            @id @default(uuid()) @db.Uuid
   spaceId          String            @db.Uuid
-  createdByUserId  String            @db.Uuid
+  createdByUserId String? @db.Uuid
   title            String            @db.VarChar(300)
   status           String            @default("ACTIVE") @db.VarChar(10)
   kind             String            @db.VarChar(10)
@@ -755,7 +765,7 @@ model CalendarEvent {
   revision         Int               @default(1)
   createdAt        DateTime          @default(now()) @db.Timestamptz(3)
   updatedAt        DateTime          @updatedAt @db.Timestamptz(3)
-  space            Space             @relation(fields: [spaceId, createdByUserId], references: [id, ownerUserId], onDelete: Cascade)
+  space Space? @relation(fields: [spaceId, createdByUserId], references: [id, ownerUserId], onDelete: Cascade)
   description      String?
   deletedAt        DateTime?         @db.Timestamptz(3)
   seriesId         String?           @db.Uuid
@@ -777,10 +787,16 @@ model CalendarEvent {
 }
 
 model EventRecurrence {
-  space           Space         @relation(fields: [spaceId, createdByUserId], references: [id, ownerUserId], onDelete: Cascade)
+ ScopedEvent CalendarEvent? @relation("EventScope",fields:[spaceId,scopeId,eventId],references:[spaceId,scopeId,id],onDelete:Cascade,onUpdate:NoAction,map:"EventRecurrence_parent_scope")
+ scopeId String? @db.Uuid
+ createdByActorId String? @db.Uuid
+ SharedBoundary Space @relation("EventRecurrenceBoundary",fields:[spaceId],references:[id],onDelete:NoAction,onUpdate:NoAction,map:"EventRecurrence_boundary")
+ AccessScope AccessScope? @relation(fields:[spaceId,scopeId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction,map:"EventRecurrence_scope")
+ SharedActor SharedActor? @relation(fields:[spaceId,createdByActorId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction,map:"EventRecurrence_actor")
+  space Space? @relation(fields: [spaceId, createdByUserId], references: [id, ownerUserId], onDelete: Cascade)
   id              String        @id @default(uuid()) @db.Uuid
   spaceId         String        @db.Uuid
-  createdByUserId String        @db.Uuid
+  createdByUserId String? @db.Uuid
   title           String        @db.VarChar(300)
   status          String        @default("ACTIVE") @db.VarChar(10)
   kind            String        @db.VarChar(10)
@@ -963,6 +979,7 @@ model LifeArea {
 }
 
 model Goal {
+ TeamWorkItem TeamWorkItem[]
   noteReferences  Note[]
   id              String   @id @default(uuid()) @db.Uuid
   spaceId         String   @db.Uuid
@@ -1781,6 +1798,8 @@ model PushSubscription {
 
 // SQL enforces additional branch, lifecycle and immutable-history constraints.
 model AccessScope {
+ CalendarEvent CalendarEvent[]
+ EventRecurrence EventRecurrence[]
   Team Team[]
   ContextInvitation                                                                            ContextInvitation[]
   OwnerHandover                                                                                OwnerHandover[]
@@ -1964,6 +1983,11 @@ model ResourceGrant {
 
 // SQL enforces additional branch, lifecycle and immutable-history constraints.
 model SharedActor {
+ TeamPlans TeamPlan[] @relation("TeamPlanCreator")
+ TeamReviews TeamPlan[] @relation("TeamPlanReviewer")
+ TeamWorkItem TeamWorkItem[]
+ CalendarEvent CalendarEvent[]
+ EventRecurrence EventRecurrence[]
   Team Team[]
   ContextInvitation       ContextInvitation[]
   OwnerHandover           OwnerHandover[]
@@ -2041,6 +2065,7 @@ model SharedAuditEvent {
 
 // SQL enforces additional branch, lifecycle and immutable-history constraints.
 model SharedCustody {
+ TeamWorkItem TeamWorkItem[]
   Team Team?
   spaceId                String                @id @db.Uuid
   kind                   String                @db.VarChar(20)
@@ -3319,6 +3344,8 @@ model SharedLifecycleEffect {
 }
 
 model Team {
+ TeamPlan TeamPlan[]
+ TeamWorkItem TeamWorkItem[]
   id                   String                 @id @db.Uuid
   spaceId              String                 @unique @db.Uuid
   scopeId              String                 @db.Uuid
@@ -3348,4 +3375,45 @@ model TeamProjectReference {
 
   @@id([teamId, projectId])
   @@index([projectId, teamId], map: "TeamProjectReference_project")
+}
+
+model TeamPlan {
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ kind String @db.VarChar(10)
+ title String @db.VarChar(300)
+ startDate DateTime @db.Date
+ endDate DateTime @db.Date
+ timezone String @db.VarChar(100)
+ state String @default("DRAFT") @db.VarChar(10)
+ revision Int @default(1)
+ createdByActorId String @db.Uuid
+ reviewSummary String? @db.VarChar(10000)
+ reviewedByActorId String? @db.Uuid
+ reviewedAt DateTime? @db.Timestamptz(3)
+ Team Team @relation(fields:[spaceId],references:[spaceId],onDelete:NoAction,onUpdate:NoAction)
+ Creator SharedActor @relation("TeamPlanCreator",fields:[spaceId,createdByActorId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction)
+ Reviewer SharedActor? @relation("TeamPlanReviewer",fields:[spaceId,reviewedByActorId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction)
+ TeamWorkItem TeamWorkItem[]
+ @@unique([spaceId,id])
+}
+model TeamWorkItem {
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ planId String? @db.Uuid
+ sourceSpaceId String @db.Uuid
+ taskId String? @db.Uuid
+ goalId String? @db.Uuid
+ sourceRevision Int
+ position Int @default(0)
+ revision Int @default(1)
+ createdByActorId String @db.Uuid
+ Team Team @relation(fields:[spaceId],references:[spaceId],onDelete:NoAction,onUpdate:NoAction)
+ TeamPlan TeamPlan? @relation(fields:[spaceId,planId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction)
+ SharedCustody SharedCustody @relation(fields:[sourceSpaceId],references:[spaceId],onDelete:NoAction,onUpdate:NoAction)
+ Task Task? @relation(fields:[sourceSpaceId,taskId],references:[spaceId,id],onDelete:Cascade,onUpdate:NoAction)
+ Goal Goal? @relation(fields:[sourceSpaceId,goalId],references:[spaceId,id],onDelete:Cascade,onUpdate:NoAction)
+ SharedActor SharedActor @relation(fields:[spaceId,createdByActorId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction)
+ @@unique([spaceId,id])
+ @@index([spaceId,planId,id],map:"TeamWorkItem_page")
 }

@@ -70,3 +70,4 @@ export * from './project-collaboration.js';
 export * from './project-transfer.js';
 export * from './project-lifecycle.js';
 export * from './teams.js';
+export * from './team-work.js';

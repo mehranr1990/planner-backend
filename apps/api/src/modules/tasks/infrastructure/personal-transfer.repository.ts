@@ -14,6 +14,7 @@ import { appendOutbox } from '../../../platform/outbox/outbox.js';
 import { transferCatalog } from '../../../platform/database/transfer-catalog.js';
 import { PersonalTaskTransfer } from '../public/personal-transfer.js';
 const known = [
+  'TeamWorkItem_sourceSpaceId_taskId_fkey',
   'CaptureItem_spaceId_targetTaskId_fkey',
   'DailyPlanItem_spaceId_taskId_fkey',
   'FocusSession_spaceId_taskId_fkey',
@@ -66,6 +67,7 @@ export class PersonalTaskTransferRepository extends PersonalTaskTransfer {
         include: {
           _count: {
             select: {
+              TeamWorkItem: true,
               reminders: true,
               noteReferences: true,
               captureTargets: true,

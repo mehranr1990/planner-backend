@@ -1,3 +1,4 @@
+import type { SharedCalendarContext } from '../application/calendar.port.js';
 import {
   Inject,
   Injectable,
@@ -71,6 +72,9 @@ function base(row: Row | BlockRow) {
     id: row.id,
     spaceId: row.spaceId,
     createdByUserId: row.createdByUserId,
+    ...('createdByActorId' in row && row.createdByActorId
+      ? { createdByActorId: row.createdByActorId }
+      : {}),
     title: row.title,
     status: row.status as 'ACTIVE' | 'CANCELED',
     schedule: schedule(row),
@@ -80,16 +84,32 @@ function base(row: Row | BlockRow) {
     deletedAt: row.deletedAt?.toISOString() ?? null,
   };
 }
-class Store implements CalendarTransaction {
+export class Store implements CalendarTransaction {
   constructor(
     private readonly tx: Prisma.TransactionClient,
-    private readonly scope: AuthorizedSpace,
+    private readonly scope: AuthorizedSpace | SharedCalendarContext,
     private readonly tasks: PlanningTasks,
   ) {}
   private where<T extends object>(input: T) {
-    return scopedWhere(this.scope, input);
+    return 'shared' in this.scope
+      ? { ...input, spaceId: this.scope.spaceId, scopeId: this.scope.spaceId }
+      : scopedWhere(this.scope, input);
   }
   private owner() {
+    if ('shared' in this.scope)
+      return {
+        spaceId: this.scope.spaceId,
+        scopeId: this.scope.spaceId,
+        createdByUserId: null,
+        createdByActorId: this.scope.actorId,
+      };
+    return {
+      spaceId: this.scope.spaceId,
+      createdByUserId: this.scope.actor.userId,
+    };
+  }
+  private personalOwner() {
+    if ('shared' in this.scope) throw new BadRequestException();
     return {
       spaceId: this.scope.spaceId,
       createdByUserId: this.scope.actor.userId,
@@ -130,6 +150,7 @@ class Store implements CalendarTransaction {
     return Promise.all(rows.map((row) => this.eventView(row)));
   }
   async createEvent(data: EventWrite) {
+    if ('shared' in this.scope) await this.scope.creating();
     const { schedule: s, deletedAt, ...rest } = data;
     const row = await this.tx.calendarEvent.create({
       data: {
@@ -139,6 +160,7 @@ class Store implements CalendarTransaction {
         ...(deletedAt ? { deletedAt: new Date(deletedAt) } : {}),
       },
     });
+    if ('shared' in this.scope) await this.scope.created(row.id);
     return this.eventView(row);
   }
   async updateEvent(before: Event, data: Partial<EventWrite>) {
@@ -214,6 +236,7 @@ class Store implements CalendarTransaction {
     if (result.count !== 1) throw new ConflictException();
   }
   async task(id: string) {
+    if ('shared' in this.scope) throw new BadRequestException();
     return (await this.tasks.describe(this.tx, this.scope, [id]))[0] ?? null;
   }
   private async blockView(row: BlockRow): Promise<Block> {
@@ -242,6 +265,7 @@ class Store implements CalendarTransaction {
     };
   }
   async block(id: string) {
+    if ('shared' in this.scope) throw new NotFoundException();
     const row = await this.tx.timeBlock.findFirst({
       where: this.where({ id }),
     });
@@ -249,6 +273,7 @@ class Store implements CalendarTransaction {
     return this.blockView(row);
   }
   async blocks(position: Position | null, limit: number) {
+    if ('shared' in this.scope) return [];
     const rows = await this.tx.timeBlock.findMany({
       where: this.where({ deletedAt: null, ...after(position) }),
       orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
@@ -257,10 +282,11 @@ class Store implements CalendarTransaction {
     return Promise.all(rows.map((row) => this.blockView(row)));
   }
   async createBlock(data: BlockWrite) {
+    const owner = this.personalOwner();
     const { schedule: s, deletedAt, ...rest } = data;
     const row = await this.tx.timeBlock.create({
       data: {
-        ...this.owner(),
+        ...owner,
         ...rest,
         ...columns(s),
         ...(deletedAt ? { deletedAt: new Date(deletedAt) } : {}),
@@ -290,6 +316,10 @@ class Store implements CalendarTransaction {
     return this.block(before.id);
   }
   async changed(kind: 'EVENT' | 'TIME_BLOCK', id: string) {
+    if ('shared' in this.scope) {
+      await this.scope.changed(id);
+      return;
+    }
     await writeAudit(this.tx, {
       action: kind === 'EVENT' ? 'CALENDAR_EVENT_CHANGE' : 'TIME_BLOCK_CHANGE',
       outcome: 'SUCCEEDED',

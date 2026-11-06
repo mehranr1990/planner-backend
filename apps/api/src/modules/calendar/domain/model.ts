@@ -3,7 +3,8 @@ import type { RecurrenceDefinition } from './recurrence.js';
 export type Entity = {
   id: string;
   spaceId: string;
-  createdByUserId: string;
+  createdByUserId: string | null;
+  createdByActorId?: string;
   revision: number;
   createdAt: string;
   updatedAt: string;

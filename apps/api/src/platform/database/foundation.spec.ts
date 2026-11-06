@@ -245,6 +245,8 @@ describe('scoped persistence and API conventions', () => {
       '202611050020_local_security_closeout',
       '202611050021_independent_teams',
       '202611050022_team_reference_usage',
+      '202611050023_team_work_planning',
+      '202611050024_team_calendar_cascade_order',
     ]);
     for (const sql of [
       '',

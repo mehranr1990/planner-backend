@@ -13,6 +13,7 @@ import { appendOutbox } from '../../../platform/outbox/outbox.js';
 import { transferCatalog } from '../../../platform/database/transfer-catalog.js';
 import { PersonalGoalTransfer } from '../public/personal-transfer.js';
 const known = [
+  'TeamWorkItem_sourceSpaceId_goalId_fkey',
   'GoalGrant_spaceId_scopeId_goalId_fkey',
   'GoalHabitLink_spaceId_goalId_fkey',
   'GoalMetric_spaceId_goalId_fkey',
@@ -42,6 +43,7 @@ export class PersonalGoalTransferRepository extends PersonalGoalTransfer {
         include: {
           _count: {
             select: {
+              TeamWorkItem: true,
               noteReferences: true,
               children: true,
               milestones: true,

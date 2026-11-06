@@ -20,11 +20,45 @@ export class TeamProjects {
   async hint(id: string) {
     return this.projects.hint(id);
   }
-  async candidates(teamId: string, visibleIds: string[]) {
-    return this.db.client.teamProjectReference.findMany({
+  async candidates(
+    teamId: string,
+    visibleIds: string[],
+    tx?: Prisma.TransactionClient,
+  ) {
+    return (tx ?? this.db.client).teamProjectReference.findMany({
       where: { teamId, active: true, spaceId: { in: visibleIds } },
       orderBy: { projectId: 'asc' },
     });
+  }
+  async sourceReference(
+    tx: Prisma.TransactionClient,
+    a: SharedAuthority,
+    teamId: string,
+    target: { kind: 'TASK' | 'GOAL'; spaceId: string; id: string },
+  ) {
+    a.require(tx, teamId, 'task.read');
+    a.require(tx, target.spaceId, 'task.read');
+    const ref = await tx.teamProjectReference.findFirst({
+      where: { teamId, spaceId: target.spaceId, active: true },
+    });
+    if (!ref) throw new NotFoundException();
+    const source =
+      target.kind === 'TASK'
+        ? await tx.projectTask.findFirst({
+            where: {
+              spaceId: target.spaceId,
+              projectId: ref.projectId,
+              taskId: target.id,
+            },
+          })
+        : await tx.projectGoal.findFirst({
+            where: {
+              spaceId: target.spaceId,
+              projectId: ref.projectId,
+              goalId: target.id,
+            },
+          });
+    if (!source) throw new NotFoundException();
   }
   async list(
     tx: Prisma.TransactionClient,

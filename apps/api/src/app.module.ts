@@ -109,7 +109,7 @@ export class AppModule {
         HabitsModule,
         goals,
         projects,
-        TeamsModule.register(projects),
+        TeamsModule.register(projects, tasks, goals, calendar),
         notes,
         JournalModule,
         capture,

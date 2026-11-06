@@ -27,6 +27,7 @@ export class CalendarDataRepository extends CalendarData {
       'calendarEvent',
       (after: string | undefined) =>
         tx.calendarEvent.findMany({
+          omit: { scopeId: true, createdByActorId: true },
           where: {
             spaceId: scope.spaceId,
             ...(after ? { id: { gt: after } } : {}),
@@ -40,6 +41,7 @@ export class CalendarDataRepository extends CalendarData {
       'eventRecurrence',
       (after: string | undefined) =>
         tx.eventRecurrence.findMany({
+          omit: { scopeId: true, createdByActorId: true },
           where: {
             spaceId: scope.spaceId,
             ...(after ? { id: { gt: after } } : {}),

@@ -480,6 +480,55 @@ export class SharedKernel {
         : null,
     };
   }
+  opaquePosition(
+    context: string,
+    stamp: string,
+    userId: string,
+    token?: string,
+  ) {
+    if (token === undefined) return undefined;
+    let value: {
+      kind: 'OPAQUE';
+      context: string;
+      stamp: string;
+      userId: string;
+      position: string;
+    };
+    try {
+      value = z
+        .strictObject({
+          kind: z.literal('OPAQUE'),
+          context: z.string().max(200),
+          stamp: z.string().regex(/^[a-f0-9]{64}$/),
+          userId: z.uuid(),
+          position: z.string().max(6000),
+        })
+        .parse(this.control.verifyCursor(token));
+    } catch {
+      throw new BadRequestException({ code: 'INVALID_CURSOR' });
+    }
+    if (value.context !== context || value.userId !== userId)
+      throw new BadRequestException({ code: 'INVALID_CURSOR' });
+    if (value.stamp !== stamp)
+      throw new ConflictException({ code: 'CURSOR_AUTHORITY_CHANGED' });
+    return value.position;
+  }
+  opaqueCursor(
+    context: string,
+    stamp: string,
+    userId: string,
+    position: string | null,
+  ) {
+    return position === null
+      ? null
+      : this.control.signCursor({
+          kind: 'OPAQUE',
+          context,
+          stamp,
+          userId,
+          position,
+        });
+  }
   scopeCursor(
     tx: Prisma.TransactionClient,
     a: SharedAuthority,

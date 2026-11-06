@@ -12,6 +12,7 @@ import type { AuthorizedSpace } from '../../../platform/authorization/authorized
 import { CALENDAR_REPOSITORY } from './calendar.port.js';
 import type {
   CalendarPort,
+  CalendarIdentity,
   CalendarTransaction,
   Position,
 } from './calendar.port.js';
@@ -64,9 +65,9 @@ function fail(code: string): never {
 }
 const output = <T extends object>(value: T) => ({ ...value, ...policies });
 @Injectable()
-export class CalendarService {
+export class CalendarService<Scope extends CalendarIdentity = AuthorizedSpace> {
   constructor(
-    @Inject(CALENDAR_REPOSITORY) private readonly repo: CalendarPort,
+    @Inject(CALENDAR_REPOSITORY) private readonly repo: CalendarPort<Scope>,
   ) {}
   private revision(
     value: { revision: number; deletedAt: string | null },
@@ -122,7 +123,7 @@ export class CalendarService {
     return tx.event(event.id);
   }
   createEvent(
-    scope: AuthorizedSpace,
+    scope: Scope,
     key: string | undefined,
     input: c.CalendarEventCreate,
   ) {
@@ -135,11 +136,11 @@ export class CalendarService {
       async (tx) => output(await this.create(tx, input)),
     );
   }
-  event(scope: AuthorizedSpace, id: string) {
+  event(scope: Scope, id: string) {
     return this.repo.run(scope, async (tx) => output(await tx.event(id)));
   }
   patchEvent(
-    scope: AuthorizedSpace,
+    scope: Scope,
     id: string,
     revision: number,
     patch: c.CalendarEventPatch,
@@ -163,7 +164,7 @@ export class CalendarService {
       return output(updated);
     });
   }
-  deleteEvent(scope: AuthorizedSpace, id: string, revision: number) {
+  deleteEvent(scope: Scope, id: string, revision: number) {
     return this.repo.run(scope, async (tx) => {
       const before = await tx.event(id);
       this.revision(before, revision);
@@ -189,11 +190,7 @@ export class CalendarService {
       fail('TASK_NOT_ACTIONABLE');
     return task;
   }
-  createBlock(
-    scope: AuthorizedSpace,
-    key: string | undefined,
-    input: c.TimeBlockCreate,
-  ) {
+  createBlock(scope: Scope, key: string | undefined, input: c.TimeBlockCreate) {
     if (!key) throw new BadRequestException();
     return this.repo.once(
       scope,
@@ -214,11 +211,11 @@ export class CalendarService {
       },
     );
   }
-  block(scope: AuthorizedSpace, id: string) {
+  block(scope: Scope, id: string) {
     return this.repo.run(scope, async (tx) => output(await tx.block(id)));
   }
   patchBlock(
-    scope: AuthorizedSpace,
+    scope: Scope,
     id: string,
     revision: number,
     patch: c.TimeBlockPatch,
@@ -243,7 +240,7 @@ export class CalendarService {
       return output(updated);
     });
   }
-  deleteBlock(scope: AuthorizedSpace, id: string, revision: number) {
+  deleteBlock(scope: Scope, id: string, revision: number) {
     return this.repo.run(scope, async (tx) => {
       const before = await tx.block(id);
       this.revision(before, revision);
@@ -258,11 +255,7 @@ export class CalendarService {
       await tx.changed('TIME_BLOCK', id);
     });
   }
-  private decode(
-    scope: AuthorizedSpace,
-    context: unknown,
-    cursor?: string,
-  ): CursorState {
+  private decode(scope: Scope, context: unknown, cursor?: string): CursorState {
     const filter = hash(context);
     if (!cursor)
       return {
@@ -296,7 +289,7 @@ export class CalendarService {
     return Buffer.from(JSON.stringify(state)).toString('base64url');
   }
   list(
-    scope: AuthorizedSpace,
+    scope: Scope,
     kind: 'EVENT' | 'BLOCK',
     query: { limit?: string; cursor?: string },
   ) {
@@ -368,7 +361,7 @@ export class CalendarService {
     return date + 'T' + version.identityTime;
   }
   editSeries(
-    scope: AuthorizedSpace,
+    scope: Scope,
     id: string,
     revision: number,
     key: string | undefined,
@@ -503,7 +496,7 @@ export class CalendarService {
   }
   private async page(
     tx: CalendarTransaction,
-    scope: AuthorizedSpace,
+    scope: Scope,
     query: c.CalendarRangeQuery,
     state?: CursorState,
   ) {
@@ -568,7 +561,7 @@ export class CalendarService {
       state: cursor,
     };
   }
-  view(scope: AuthorizedSpace, query: c.CalendarRangeQuery) {
+  view(scope: Scope, query: c.CalendarRangeQuery) {
     return this.repo.run(scope, async (tx) => {
       const page = await this.page(tx, scope, query);
       return {
@@ -580,7 +573,7 @@ export class CalendarService {
       };
     });
   }
-  conflicts(scope: AuthorizedSpace, query: c.CalendarRangeQuery) {
+  conflicts(scope: Scope, query: c.CalendarRangeQuery) {
     return this.repo.run(scope, async (tx) => {
       const context = ['conflicts', query.from, query.to, query.timezone],
         cursor = this.decode(scope, context, query.cursor),

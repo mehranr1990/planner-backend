@@ -3,6 +3,15 @@ import type { Event, Version, Block } from '../domain/model.js';
 import type { Schedule } from '../domain/calendar.js';
 import type { RecurrenceDefinition } from '../domain/recurrence.js';
 export const CALENDAR_REPOSITORY = Symbol('CALENDAR_REPOSITORY');
+export type SharedCalendarContext = {
+  shared: true;
+  spaceId: string;
+  actor: import('../../../platform/auth/request-actor.js').RequestActor;
+  actorId: string;
+  changed: (id: string) => Promise<void>;
+  creating: () => Promise<void>;
+  created: (id: string) => Promise<void>;
+};
 export type EventWrite = {
   title: string;
   description: string | null;
@@ -51,13 +60,16 @@ export interface CalendarTransaction {
   task(id: string): Promise<LinkedTask | null>;
   changed(kind: 'EVENT' | 'TIME_BLOCK', id: string): Promise<void>;
 }
-export interface CalendarPort {
+export type CalendarIdentity = { spaceId: string; actor: { userId: string } };
+export interface CalendarPort<
+  Scope extends CalendarIdentity = AuthorizedSpace,
+> {
   run<T>(
-    scope: AuthorizedSpace,
+    scope: Scope,
     work: (tx: CalendarTransaction) => Promise<T>,
   ): Promise<T>;
   once<T extends Record<string, unknown>>(
-    scope: AuthorizedSpace,
+    scope: Scope,
     operation: string,
     key: string,
     request: unknown,

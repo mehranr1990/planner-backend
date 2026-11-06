@@ -1,4 +1,12 @@
 import {
+  teamCalendarOrderName,
+  assertReviewedTeamCalendarOrder,
+} from './reviewed-team-work-migration.ts';
+import {
+  teamWorkMigrationName,
+  assertReviewedTeamWorkMigration,
+} from './reviewed-team-work-migration.ts';
+import {
   teamReferenceUsageName,
   assertReviewedTeamReferenceUsage,
 } from './reviewed-teams-migration.ts';
@@ -112,7 +120,11 @@ export function reviewMigrations(directory = 'prisma/migrations'): string[] {
       path.join(directory, name, 'migration.sql'),
       'utf8',
     );
-    if (name === teamReferenceUsageName)
+    if (name === teamCalendarOrderName)
+      assertReviewedTeamCalendarOrder(name, sql);
+    else if (name === teamWorkMigrationName)
+      assertReviewedTeamWorkMigration(name, sql);
+    else if (name === teamReferenceUsageName)
       assertReviewedTeamReferenceUsage(name, sql);
     else if (name === teamsMigrationName)
       assertReviewedTeamsMigration(name, sql);

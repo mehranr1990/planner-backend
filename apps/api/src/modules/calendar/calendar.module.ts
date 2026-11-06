@@ -18,13 +18,16 @@ export class CalendarModule {
       module: CalendarModule,
       imports: [DatabaseModule, AuditModule, SpacesModule, tasks],
       providers: [
+        { provide: SharedCalendar, useClass: SharedCalendarRepository },
         { provide: SharedScheduling, useClass: SharedSchedulingRepository },
         { provide: CalendarData, useClass: CalendarDataRepository },
         CalendarService,
         { provide: CALENDAR_REPOSITORY, useClass: CalendarRepository },
       ],
       controllers: [CalendarController],
-      exports: [CalendarData, SharedScheduling],
+      exports: [CalendarData, SharedScheduling, SharedCalendar],
     };
   }
 }
+import { SharedCalendar } from './public/shared-calendar.js';
+import { SharedCalendarRepository } from './infrastructure/shared-calendar.repository.js';

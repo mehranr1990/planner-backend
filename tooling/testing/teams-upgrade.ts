@@ -1,3 +1,4 @@
+import { verifyTeamWorkUpgrade } from './team-work-upgrade.ts';
 import {
   teamReferenceUsageName,
   assertReviewedTeamReferenceUsage,
@@ -118,14 +119,11 @@ export async function verifyTeamsUpgrade(input: {
     a.table + '|' + a.name < b.table + '|' + b.name ? -1 : 1,
   );
   const digest = createHash('sha256').update(JSON.stringify(fks)).digest('hex');
-  const expected = fs
-    .readFileSync(
-      'apps/api/src/platform/lifecycle/shared-cleanup-catalog.ts',
-      'utf8',
-    )
-    .match(/'([a-f0-9]{64})'/)![1];
+  const expected =
+    'b62245279caa9008934d9b375834c40f32d2e214ce2ffaacb77a0df5b89fb965';
   assert.equal(digest, expected);
   process.stdout.write(
     'PASS: P3-01 preserves all 135 prior table data sets, 44 checksums and prior constraints except the four reviewed context/usage CHECK extensions; interrupted rollback, resume/repeat deploy and cleanup FK catalog.\n',
   );
+  await verifyTeamWorkUpgrade(input);
 }

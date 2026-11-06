@@ -38,6 +38,7 @@
     "smoke:p2-04": "node --env-file-if-exists=.env.test.local tooling/scripts/p2-04-smoke.ts",
     "smoke:p2-05": "node --env-file-if-exists=.env.test.local tooling/scripts/p2-05-smoke.ts",
     "smoke:p2-06": "node --env-file-if-exists=.env.test.local tooling/scripts/p2-06-smoke.ts",
+    "smoke:p3-02": "node --env-file-if-exists=.env.test.local tooling/scripts/p3-02-smoke.ts",
     "smoke:p3-01": "node --env-file-if-exists=.env.test.local tooling/scripts/p3-01-smoke.ts",
     "smoke:p2-07": "node --env-file-if-exists=.env.test.local tooling/scripts/p2-07-smoke.ts",
     "auth:schema:check": "node tooling/scripts/auth-schema-check.ts",
