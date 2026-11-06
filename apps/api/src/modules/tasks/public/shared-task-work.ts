@@ -4,6 +4,11 @@ import type { Prisma } from '../../../generated/prisma/client.js';
 import type { SharedAuthority } from '../../spaces/public/index.js';
 import type { TaskToolContext } from './project-tools.js';
 export abstract class SharedTaskWork {
+  abstract scopeMetrics(
+    tx: Prisma.TransactionClient,
+    a: SharedAuthority,
+    spaceId: string,
+  ): Promise<z.infer<typeof c.ProjectTaskMetricSchema>[]>;
   abstract estimate(
     tx: Prisma.TransactionClient,
     a: SharedAuthority,

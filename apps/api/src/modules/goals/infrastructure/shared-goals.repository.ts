@@ -16,6 +16,14 @@ const view = (row: Goal) =>
   });
 @Injectable()
 export class SharedGoalsRepository extends SharedGoals {
+  async scopeCount(
+    tx: Prisma.TransactionClient,
+    a: SharedAuthority,
+    spaceId: string,
+  ) {
+    a.require(tx, spaceId, 'task.read');
+    return tx.goal.count({ where: { spaceId, scopeId: spaceId } });
+  }
   async project(
     tx: Prisma.TransactionClient,
     a: SharedAuthority,

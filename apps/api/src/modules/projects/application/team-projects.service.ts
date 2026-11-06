@@ -3,6 +3,7 @@ import {
   Injectable,
   ConflictException,
   NotFoundException,
+  PayloadTooLargeException,
 } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import type { Prisma } from '../../../generated/prisma/client.js';
@@ -10,9 +11,83 @@ import type { RequestActor } from '../../../platform/auth/request-actor.js';
 import { SharedAuthority, SharedKernel } from '../../spaces/public/index.js';
 import { DatabaseService } from '../../../platform/database/database.service.js';
 import { ProjectsService } from './projects.service.js';
+import { SharedTaskWork } from '../../tasks/public/index.js';
 @Injectable()
 export class TeamProjects {
+  async analytics(
+    tx: Prisma.TransactionClient,
+    a: SharedAuthority,
+    teamId: string,
+    projectId: string,
+    window: {
+      fromDate: string;
+      toDate: string;
+      timezone: string;
+      from: Date;
+      to: Date;
+    },
+  ) {
+    a.require(tx, teamId, 'task.read');
+    const ref = await tx.teamProjectReference.findFirst({
+      where: { teamId, projectId, active: true },
+    });
+    if (!ref) throw new NotFoundException();
+    a.require(tx, ref.spaceId, 'task.read');
+    const where = { spaceId: ref.spaceId, scopeId: ref.spaceId, projectId };
+    const links = await tx.projectTask.findMany({
+      where: { ...where, Task: { deletedAt: null } },
+      select: { taskId: true },
+      take: 10001,
+    });
+    const goalCount = await tx.projectGoal.count({ where });
+    const allocations = await tx.projectWorkAllocation.findMany({
+      where: {
+        ...where,
+        timezone: window.timezone,
+        date: { gte: new Date(window.fromDate), lt: new Date(window.toDate) },
+        TaskAssignment: { decision: 'ACCEPTED', endedAt: null },
+      },
+      take: 10001,
+    });
+    if (links.length + allocations.length + goalCount > 10000)
+      throw new PayloadTooLargeException();
+    const tasks = await this.work.metrics(
+      tx,
+      a,
+      ref.spaceId,
+      links.map((r) => r.taskId),
+    );
+    const logs = await this.work.effort(
+      tx,
+      a,
+      ref.spaceId,
+      links.map((r) => r.taskId),
+      window.from,
+      window.to,
+    );
+    const eligible = [];
+    for (const row of allocations) {
+      if (
+        await this.kernel.visibleWorkMember(
+          tx,
+          a,
+          ref.spaceId,
+          row.accessId,
+          row.generation,
+        )
+      )
+        eligible.push(row);
+    }
+    return {
+      spaceId: ref.spaceId,
+      tasks,
+      logs,
+      goalCount,
+      allocations: eligible,
+    };
+  }
   constructor(
+    @Inject(SharedTaskWork) private readonly work: SharedTaskWork,
     @Inject(DatabaseService) private readonly db: DatabaseService,
     @Inject(SharedKernel) private readonly kernel: SharedKernel,
     @Inject(ProjectsService) private readonly projects: ProjectsService,

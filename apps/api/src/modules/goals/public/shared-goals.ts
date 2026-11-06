@@ -3,6 +3,11 @@ import type * as c from '@mehran/api-contracts';
 import type { Prisma } from '../../../generated/prisma/client.js';
 import type { SharedAuthority } from '../../spaces/public/index.js';
 export abstract class SharedGoals {
+  abstract scopeCount(
+    tx: Prisma.TransactionClient,
+    a: SharedAuthority,
+    spaceId: string,
+  ): Promise<number>;
   abstract project(
     tx: Prisma.TransactionClient,
     a: SharedAuthority,

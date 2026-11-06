@@ -12,8 +12,8 @@ describe('approved API compatibility', () => {
   it('resolves recursive request/result definitions and rejects dangling refs and duplicate operations', () => {
     const doc = createOpenApiDocument();
     expect(assertOpenApiContract(doc)).toEqual({
-      references: 4186,
-      operations: 495,
+      references: 4246,
+      operations: 501,
     });
     const broken = structuredClone(doc) as { paths: Record<string, unknown> };
     broken.paths['/probe'] = {
@@ -27,7 +27,7 @@ describe('approved API compatibility', () => {
     expect(() => assertOpenApiContract(broken)).toThrow('duplicate');
   });
   it('freezes all current P1-12 operations and component schemas', () => {
-    for (const batch of ['p2-04', 'p2-05', 'p2-06', 'p2-07', 'p3-01'])
+    for (const batch of ['p2-04', 'p2-05', 'p2-06', 'p2-07', 'p3-01', 'p3-02'])
       assertApiCompatible(
         createOpenApiDocument(),
         JSON.parse(

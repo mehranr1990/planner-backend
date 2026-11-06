@@ -164,14 +164,13 @@ export async function verifyTeamWorkUpgrade(input: {
     a.table + '|' + a.name < b.table + '|' + b.name ? -1 : 1,
   );
   const digest = createHash('sha256').update(JSON.stringify(fks)).digest('hex');
-  const expected = fs
-    .readFileSync(
-      'apps/api/src/platform/lifecycle/shared-cleanup-catalog.ts',
-      'utf8',
-    )
-    .match(/'([a-f0-9]{64})'/)![1];
+  const expected =
+    'b2d668e8d8b30b376884bb397039d09cfdd758083b8a335aab48fb89c5d924f5';
   assert.equal(digest, expected);
+  await verifyTeamCapacityUpgrade(input);
   process.stdout.write(
     'PASS: P3-02 preserves all 137 prior table data sets, populated Personal Calendar/recurrence, 46 historical checksums and prior constraints except two branch-guarded nullability relaxations and additive usage CHECK; interrupted rollback, resume and repeat deploy.\n',
   );
 }
+
+import { verifyTeamCapacityUpgrade } from './team-capacity-upgrade.ts';

@@ -30,13 +30,22 @@ export class TeamsModule {
         goals,
         calendar,
       ],
-      providers: [TeamsService, TeamGuard, TeamWorkService],
+      providers: [
+        TeamsService,
+        TeamGuard,
+        TeamWorkService,
+        TeamAnalyticsService,
+      ],
       controllers: [
         TeamsController,
         TeamInvitationController,
         TeamWorkController,
+        TeamAnalyticsController,
       ],
-      exports: [TeamsService, TeamWorkService],
+      exports: [TeamsService, TeamWorkService, TeamAnalyticsService],
     };
   }
 }
+
+import { TeamAnalyticsService } from './application/team-analytics.service.js';
+import { TeamAnalyticsController } from './http/team-analytics.controller.js';

@@ -1836,6 +1836,7 @@ model AccessScope {
 
 // SQL enforces additional branch, lifecycle and immutable-history constraints.
 model ContextAccess {
+ TeamCapacityDay TeamCapacityDay[]
   ContextInvitation_ContextInvitation_spaceId_scopeId_acceptedAccessId_acceptedActorIdToContextAccess ContextInvitation[]     @relation("ContextInvitation_spaceId_scopeId_acceptedAccessId_acceptedActorIdToContextAccess")
   ContextInvitation_ContextInvitation_spaceId_scopeId_acceptedAccessIdToContextAccess                 ContextInvitation[]     @relation("ContextInvitation_spaceId_scopeId_acceptedAccessIdToContextAccess")
   ContextInvitation_ContextInvitation_spaceId_scopeId_inviterAccessIdToContextAccess                  ContextInvitation[]     @relation("ContextInvitation_spaceId_scopeId_inviterAccessIdToContextAccess")
@@ -1893,6 +1894,7 @@ model ContextAccess {
 
 // SQL enforces additional branch, lifecycle and immutable-history constraints.
 model ContextAccessInterval {
+ TeamCapacityDay TeamCapacityDay[]
   ContextInvitation_ContextInvitation_acceptedAccessId_acceptedGenerationToContextAccessInterval   ContextInvitation[] @relation("ContextInvitation_acceptedAccessId_acceptedGenerationToContextAccessInterval")
   ContextInvitation_ContextInvitation_inviterAccessId_inviterGenerationToContextAccessInterval     ContextInvitation[] @relation("ContextInvitation_inviterAccessId_inviterGenerationToContextAccessInterval")
   ContextInvitation_ContextInvitation_recipientAccessId_recipientGenerationToContextAccessInterval ContextInvitation[] @relation("ContextInvitation_recipientAccessId_recipientGenerationToContextAccessInterval")
@@ -3344,6 +3346,7 @@ model SharedLifecycleEffect {
 }
 
 model Team {
+ TeamCapacityDay TeamCapacityDay[]
  TeamPlan TeamPlan[]
  TeamWorkItem TeamWorkItem[]
   id                   String                 @id @db.Uuid
@@ -3416,4 +3419,21 @@ model TeamWorkItem {
  SharedActor SharedActor @relation(fields:[spaceId,createdByActorId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction)
  @@unique([spaceId,id])
  @@index([spaceId,planId,id],map:"TeamWorkItem_page")
+}
+
+model TeamCapacityDay {
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ accessId String @db.Uuid
+ generation Int
+ date DateTime @db.Date
+ timezone String @db.VarChar(100)
+ availableMinutes Int?
+ revision Int @default(1)
+ Team Team @relation(fields:[spaceId],references:[spaceId],onDelete:NoAction,onUpdate:NoAction,map:"TeamCapacityDay_team")
+ ContextAccess ContextAccess @relation(fields:[spaceId,scopeId,accessId],references:[spaceId,scopeId,id],onDelete:NoAction,onUpdate:NoAction,map:"TeamCapacityDay_member")
+ ContextAccessInterval ContextAccessInterval @relation(fields:[accessId,generation],references:[accessId,generation],onDelete:NoAction,onUpdate:NoAction,map:"TeamCapacityDay_generation")
+ @@unique([spaceId,accessId,generation,date,timezone])
+ @@index([spaceId,timezone,date,id],map:"TeamCapacityDay_range")
 }

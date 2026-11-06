@@ -1,4 +1,5 @@
 import type { AuthorizedSpace } from '../../../platform/authorization/authorized-space.js';
+import type { RequestActor } from '../../../platform/auth/request-actor.js';
 import type { Event, Version, Block } from '../domain/model.js';
 import type { Schedule } from '../domain/calendar.js';
 import type { RecurrenceDefinition } from '../domain/recurrence.js';
@@ -6,7 +7,7 @@ export const CALENDAR_REPOSITORY = Symbol('CALENDAR_REPOSITORY');
 export type SharedCalendarContext = {
   shared: true;
   spaceId: string;
-  actor: import('../../../platform/auth/request-actor.js').RequestActor;
+  actor: RequestActor;
   actorId: string;
   changed: (id: string) => Promise<void>;
   creating: () => Promise<void>;

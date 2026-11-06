@@ -5,6 +5,7 @@ import {
   NotFoundException,
   BadRequestException,
   ForbiddenException,
+  PayloadTooLargeException,
 } from '@nestjs/common';
 import * as c from '@mehran/api-contracts';
 import type { z } from 'zod';
@@ -42,6 +43,26 @@ const logView = (r: SharedTaskWorkLog) =>
   });
 @Injectable()
 export class SharedTaskWorkRepository extends SharedTaskWork {
+  async scopeMetrics(
+    tx: Prisma.TransactionClient,
+    a: SharedAuthority,
+    spaceId: string,
+  ) {
+    a.require(tx, spaceId, 'task.read');
+    const rows = await tx.task.findMany({
+      where: { spaceId, scopeId: spaceId, deletedAt: null },
+      select: { id: true },
+      orderBy: { id: 'asc' },
+      take: 10001,
+    });
+    if (rows.length > 10000) throw new PayloadTooLargeException();
+    return this.metrics(
+      tx,
+      a,
+      spaceId,
+      rows.map((r) => r.id),
+    );
+  }
   constructor(@Inject(SharedKernel) private readonly kernel: SharedKernel) {
     super();
   }

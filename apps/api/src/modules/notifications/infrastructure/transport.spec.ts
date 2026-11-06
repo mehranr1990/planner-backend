@@ -19,7 +19,11 @@ const config = () => {
     NOTIFICATION_EMAIL_ENABLED: 'true',
     PUSH_MODE: 'webpush',
     PUSH_VAPID_PUBLIC_KEY: key.getPublicKey().toString('base64url'),
-    PUSH_VAPID_PRIVATE_KEY: key.getPrivateKey().toString('base64url'),
+    // ECDH omits leading zero bytes; VAPID requires a fixed-width 32-byte scalar.
+    PUSH_VAPID_PRIVATE_KEY: Buffer.concat([
+      Buffer.alloc(32 - key.getPrivateKey().length),
+      key.getPrivateKey(),
+    ]).toString('base64url'),
     PUSH_VAPID_SUBJECT: 'mailto:owner@example.test',
   });
 };

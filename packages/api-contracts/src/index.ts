@@ -71,3 +71,4 @@ export * from './project-transfer.js';
 export * from './project-lifecycle.js';
 export * from './teams.js';
 export * from './team-work.js';
+export * from './team-analytics.js';
