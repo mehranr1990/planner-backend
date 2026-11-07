@@ -14,6 +14,7 @@ import { SpacePolicyService } from '../../apps/api/dist/platform/authorization/s
 import { SharedControl } from '../../apps/api/dist/platform/storage/shared-control.js';
 import {
   SharedKernel,
+  CompanyErasure,
   freeSharedFeaturePolicy,
 } from '../../apps/api/dist/modules/spaces/public/index.js';
 import { SpacesService } from '../../apps/api/dist/modules/spaces/application/spaces.service.js';
@@ -45,6 +46,7 @@ async function runtime(environment: NodeJS.ProcessEnv) {
     control,
     privacy,
     freeSharedFeaturePolicy,
+    new CompanyErasure(),
   );
   const spaces = new SpacesService(
     new SpacesRepository(db),

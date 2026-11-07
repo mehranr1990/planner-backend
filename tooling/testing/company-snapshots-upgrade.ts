@@ -1,3 +1,4 @@
+import { verifyCompanyStaffUpgrade } from './company-staff-upgrade.ts';
 import fs from 'node:fs';
 import assert from 'node:assert/strict';
 import { randomUUID, createHash } from 'node:crypto';
@@ -178,14 +179,10 @@ export async function verifyCompanySnapshotsUpgrade(input: {
   );
   assert.equal(
     createHash('sha256').update(JSON.stringify(fks)).digest('hex'),
-    fs
-      .readFileSync(
-        'apps/api/src/platform/lifecycle/shared-cleanup-catalog.ts',
-        'utf8',
-      )
-      .match(/'([a-f0-9]{64})'/)![1],
+    'd1ac2453d5ebdd6b82f3ba6021d549a8e77f31f75055492a3bc2b33bdab3ad5b',
   );
   process.stdout.write(
     'PASS: P4-01 companion preserves all 151 populated datasets, 52 checksums, Company hierarchy/admission and legacy pending offer state/recipient/proof bytes; rollback/repeat deploy and final FK catalog. Unsupported old Company offers remain denied by application validation.\n',
   );
+  await verifyCompanyStaffUpgrade(input);
 }

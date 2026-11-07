@@ -1,3 +1,4 @@
+import { companyStaffPaths } from './company-staff-openapi.js';
 import { companyPaths } from './companies-openapi.js';
 import { teamAnalyticsPaths } from './team-analytics-openapi.js';
 import { teamWorkPaths } from './team-work-openapi.js';
@@ -254,6 +255,7 @@ export function createOpenApiDocument() {
       ...teamInteractionsPaths(),
       ...teamLifecyclePaths(),
       ...companyPaths(),
+      ...companyStaffPaths(),
       ...workPaths(),
       ...projectToolPaths(),
       ...projectExecutionPaths(),

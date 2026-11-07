@@ -1,4 +1,7 @@
-import { freeSharedFeaturePolicy } from '../../src/modules/spaces/public/index.js';
+import {
+  CompanyErasure,
+  freeSharedFeaturePolicy,
+} from '../../src/modules/spaces/public/index.js';
 import 'reflect-metadata';
 import { beforeAll, afterAll, describe, it, expect, vi } from 'vitest';
 import { randomUUID, createHash } from 'node:crypto';
@@ -257,6 +260,7 @@ describe('P2-01 shared kernel acceptance in an exclusively owned schema', () => 
       control,
       new PrivacyGate(),
       freeSharedFeaturePolicy,
+      new CompanyErasure(),
     );
     spaces = new SpacesService(
       new SpacesRepository(db),
@@ -315,6 +319,7 @@ describe('P2-01 shared kernel acceptance in an exclusively owned schema', () => 
       control,
       new PrivacyGate(),
       freeSharedFeaturePolicy,
+      new CompanyErasure(),
     );
     await expect(
       gated.provision(owner, randomUUID(), policyVersion),

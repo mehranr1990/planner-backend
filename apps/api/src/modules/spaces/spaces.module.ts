@@ -1,4 +1,5 @@
 import { CompanyAccess } from './application/company-access.service.js';
+import { CompanyErasure } from './public/company-erasure.js';
 import { Module } from '@nestjs/common';
 import { DatabaseModule } from '../../platform/database/database.module.js';
 import { SpacesRepository } from './infrastructure/spaces.repository.js';
@@ -26,6 +27,7 @@ import {
 @Module({
   imports: [DatabaseModule, AuditModule],
   providers: [
+    CompanyErasure,
     CompanyAccess,
     SharedKernel,
     SharedLifecycleService,
@@ -42,6 +44,7 @@ import {
   ],
   controllers: [SpaceCollaborationController, InvitationRecipientController],
   exports: [
+    CompanyErasure,
     CompanyAccess,
     SpacesService,
     SharedKernel,

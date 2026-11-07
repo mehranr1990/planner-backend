@@ -22,6 +22,7 @@ import { PrivacyGate } from '../../../platform/authorization/privacy-gate.js';
 import { SharedControl } from '../../../platform/storage/shared-control.js';
 import type { SharedControlRecord } from '../../../platform/storage/shared-control.js';
 import { SharedAuthority } from '../public/shared-authority.js';
+import { CompanyErasure } from '../public/company-erasure.js';
 import type { SharedCleanupScope } from '../../../platform/lifecycle/shared-cleanup.js';
 import { assertSharedCleanupCatalog } from '../../../platform/lifecycle/shared-cleanup-catalog.js';
 import { SharedFeaturePolicy } from '../public/shared-features.js';
@@ -117,6 +118,7 @@ export class SharedKernel {
     @Inject(SharedControl) private readonly control: SharedControl,
     @Inject(PrivacyGate) private readonly privacy: PrivacyGate,
     @Inject(SharedFeaturePolicy) private readonly features: SharedFeaturePolicy,
+    @Inject(CompanyErasure) private readonly companyErasure: CompanyErasure,
   ) {}
   private enabled() {
     this.privacy.assert();
@@ -2873,6 +2875,8 @@ export class SharedKernel {
             await this.invalidateOffers(tx, spaceId, effective);
           }
           if (erase) {
+            if (custody.kind === 'COMPANY')
+              await this.companyErasure.erase(tx, spaceId, actorId);
             await tx.contextAccess.updateMany({
               where: { actorId, spaceId, state: { in: ['LEFT', 'REVOKED'] } },
               data: { state: 'ERASED', revision: { increment: 1 } },

@@ -186,9 +186,12 @@ export const companyOperations: Operation[] = [
     status200: true,
   },
 ];
-export function companyPaths() {
+export function companyPaths(
+  operations = companyOperations,
+  description = 'Current authorized P4-01 result',
+) {
   const paths: Record<string, Record<string, unknown>> = {};
-  for (const op of companyOperations) {
+  for (const op of operations) {
     const path = '/api/v1' + op.path,
       pointer = '#/paths/' + pointerSegment(path) + '/' + op.method;
     const schema = (value: z.ZodType, at: string) =>
@@ -252,7 +255,7 @@ export function companyPaths() {
       });
     const responses: Record<string, unknown> = {
       [op.method === 'post' && !op.status200 ? 201 : 200]: {
-        description: 'Current authorized P4-01 result',
+        description,
         headers: {
           'Cache-Control': { schema: { type: 'string', const: 'no-store' } },
           ...(op.etag || op.policyTag

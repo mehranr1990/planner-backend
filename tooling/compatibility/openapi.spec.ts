@@ -12,8 +12,8 @@ describe('approved API compatibility', () => {
   it('resolves recursive request/result definitions and rejects dangling refs and duplicate operations', () => {
     const doc = createOpenApiDocument();
     expect(assertOpenApiContract(doc)).toEqual({
-      references: 4806,
-      operations: 557,
+      references: 5056,
+      operations: 582,
     });
     const broken = structuredClone(doc) as { paths: Record<string, unknown> };
     broken.paths['/probe'] = {
@@ -27,6 +27,9 @@ describe('approved API compatibility', () => {
     expect(() => assertOpenApiContract(broken)).toThrow('duplicate');
   });
   it('freezes all current P1-12 operations and component schemas', () => {
+    // Each repeated key must agree across every historical baseline. Compare the
+    // complete union once, avoiding eleven regenerations/hashes of the same API.
+    const combined: Record<string, string> = {};
     for (const batch of [
       'p2-04',
       'p2-05',
@@ -36,42 +39,33 @@ describe('approved API compatibility', () => {
       'p3-02',
       'p3-03',
       'p3-04',
-    ])
-      assertApiCompatible(
-        createOpenApiDocument(),
-        JSON.parse(
-          fs.readFileSync(
-            `tooling/compatibility/${batch}-api-signatures.json`,
-            'utf8',
-          ),
-        ) as Record<string, string>,
-      );
+      'p2-03',
+      'p1-12',
+      'p2-02',
+    ]) {
+      const baseline = JSON.parse(
+        fs.readFileSync(
+          'tooling/compatibility/' + batch + '-api-signatures.json',
+          'utf8',
+        ),
+      ) as Record<string, string>;
+      for (const [contract, hash] of Object.entries(baseline)) {
+        if (combined[contract] !== undefined && combined[contract] !== hash)
+          throw new Error('Conflicting historical API contract: ' + contract);
+        combined[contract] = hash;
+      }
+    }
+    assertApiCompatible(createOpenApiDocument(), combined);
+  });
+  it('preserves accepted P4-01 contracts', () => {
     assertApiCompatible(
       createOpenApiDocument(),
       JSON.parse(
         fs.readFileSync(
-          'tooling/compatibility/p2-03-api-signatures.json',
+          'tooling/compatibility/p4-01-api-signatures.json',
           'utf8',
         ),
-      ) as Record<string, string>,
-    );
-    assertApiCompatible(
-      createOpenApiDocument(),
-      JSON.parse(
-        fs.readFileSync(
-          'tooling/compatibility/p1-12-api-signatures.json',
-          'utf8',
-        ),
-      ) as Record<string, string>,
-    );
-    assertApiCompatible(
-      createOpenApiDocument(),
-      JSON.parse(
-        fs.readFileSync(
-          'tooling/compatibility/p2-02-api-signatures.json',
-          'utf8',
-        ),
-      ) as Record<string, string>,
+      ),
     );
   });
   it('preserves accepted P3-05 contracts', () => {

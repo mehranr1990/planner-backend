@@ -23,4 +23,5 @@ export type {
 } from './shared-features.js';
 
 export { CompanyAccess } from '../application/company-access.service.js';
+export { CompanyErasure } from './company-erasure.js';
 export type { CompanyTransaction } from '../application/company-access.service.js';

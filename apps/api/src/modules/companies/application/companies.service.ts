@@ -475,6 +475,16 @@ export class CompaniesService {
       return this.access.members(ctx, scopeId, q);
     });
   }
+  /** Staff content requires actual child admission even for Company administrators. */
+  async staffVisibility(
+    ctx: CompanyTransaction,
+    scopeId: string,
+    ordinary = true,
+  ) {
+    await this.access.seat(ctx, scopeId);
+    await this.path(ctx, scopeId);
+    if (ordinary) await this.visible(ctx, scopeId, 'directory.read', false);
+  }
   async invite(
     actor: RequestActor,
     id: string,

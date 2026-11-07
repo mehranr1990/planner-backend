@@ -1799,6 +1799,12 @@ model PushSubscription {
 
 // SQL enforces additional branch, lifecycle and immutable-history constraints.
 model AccessScope {
+ CompanyEmployeeCaseEntry_context CompanyEmployeeCaseEntry[] @relation("CompanyEmployeeCaseEntry_context")
+ CompanyEmployeeCase_context CompanyEmployeeCase[] @relation("CompanyEmployeeCase_context")
+ CompanyResourceAllocation_context CompanyResourceAllocation[] @relation("CompanyResourceAllocation_context")
+ CompanyResource_context CompanyResource[] @relation("CompanyResource_context")
+ CompanyAvailabilityDay_context CompanyAvailabilityDay[] @relation("CompanyAvailabilityDay_context")
+ CompanyStaffProfile_context CompanyStaffProfile[] @relation("CompanyStaffProfile_context")
  CompanyInvitationScope ContextInvitation[] @relation("CompanyInvitationScope")
  Company Company[]
  CompanyDepartment CompanyDepartment[]
@@ -1844,6 +1850,13 @@ model AccessScope {
 
 // SQL enforces additional branch, lifecycle and immutable-history constraints.
 model ContextAccess {
+ CompanyEmployeeCase_reviewerMember CompanyEmployeeCase[] @relation("CompanyEmployeeCase_reviewerMember")
+ CompanyEmployeeCase_subjectMember CompanyEmployeeCase[] @relation("CompanyEmployeeCase_subjectMember")
+ CompanyEmployeeCase_authorMember CompanyEmployeeCase[] @relation("CompanyEmployeeCase_authorMember")
+ CompanyResourceAllocation_memberMember CompanyResourceAllocation[] @relation("CompanyResourceAllocation_memberMember")
+ CompanyAvailabilityDay_memberMember CompanyAvailabilityDay[] @relation("CompanyAvailabilityDay_memberMember")
+ CompanyStaffProfile_supervisor CompanyStaffProfile[] @relation("CompanyStaffProfile_supervisor")
+ CompanyStaffProfile_memberMember CompanyStaffProfile[] @relation("CompanyStaffProfile_memberMember")
  CompanyInvitationTarget ContextInvitation[] @relation("CompanyInvitationTarget")
  CompanyInvitationAccepted ContextInvitation[] @relation("CompanyInvitationAccepted")
  CompanyContextAdmission_Child CompanyContextAdmission[] @relation("CompanyAdmissionChild")
@@ -1915,6 +1928,13 @@ model ContextAccess {
 
 // SQL enforces additional branch, lifecycle and immutable-history constraints.
 model ContextAccessInterval {
+ CompanyEmployeeCase_reviewerInterval CompanyEmployeeCase[] @relation("CompanyEmployeeCase_reviewerInterval")
+ CompanyEmployeeCase_subjectInterval CompanyEmployeeCase[] @relation("CompanyEmployeeCase_subjectInterval")
+ CompanyEmployeeCase_authorInterval CompanyEmployeeCase[] @relation("CompanyEmployeeCase_authorInterval")
+ CompanyResourceAllocation_memberInterval CompanyResourceAllocation[] @relation("CompanyResourceAllocation_memberInterval")
+ CompanyAvailabilityDay_memberInterval CompanyAvailabilityDay[] @relation("CompanyAvailabilityDay_memberInterval")
+ CompanyStaffProfile_supervisorInterval CompanyStaffProfile[] @relation("CompanyStaffProfile_supervisorInterval")
+ CompanyStaffProfile_memberInterval CompanyStaffProfile[] @relation("CompanyStaffProfile_memberInterval")
  CompanyInvitationTarget ContextInvitation[] @relation("CompanyInvitationTargetInterval")
  CompanyContextAdmission_Child CompanyContextAdmission[] @relation("CompanyAdmissionChildInterval")
  CompanyContextAdmission_Root CompanyContextAdmission[] @relation("CompanyAdmissionRootInterval")
@@ -2018,6 +2038,9 @@ model ResourceGrant {
 
 // SQL enforces additional branch, lifecycle and immutable-history constraints.
 model SharedActor {
+ CompanyEmployeeCaseEntry_creator CompanyEmployeeCaseEntry[] @relation("CompanyEmployeeCaseEntry_creator")
+ CompanyResourceAllocation_creator CompanyResourceAllocation[] @relation("CompanyResourceAllocation_creator")
+ CompanyResource_creator CompanyResource[] @relation("CompanyResource_creator")
  Company Company[]
  CompanyDepartment CompanyDepartment[]
  CompanyUnit CompanyUnit[]
@@ -3616,6 +3639,12 @@ model TeamMeetingInvitation {
 }
 
 model Company {
+ CompanyEmployeeCaseEntry_company CompanyEmployeeCaseEntry[] @relation("CompanyEmployeeCaseEntry_company")
+ CompanyEmployeeCase_company CompanyEmployeeCase[] @relation("CompanyEmployeeCase_company")
+ CompanyResourceAllocation_company CompanyResourceAllocation[] @relation("CompanyResourceAllocation_company")
+ CompanyResource_company CompanyResource[] @relation("CompanyResource_company")
+ CompanyAvailabilityDay_company CompanyAvailabilityDay[] @relation("CompanyAvailabilityDay_company")
+ CompanyStaffProfile_company CompanyStaffProfile[] @relation("CompanyStaffProfile_company")
  id String @id @db.Uuid
  spaceId String @unique @db.Uuid
  scopeId String @db.Uuid
@@ -3702,4 +3731,147 @@ model CompanyContextAdmission {
  ChildInterval ContextAccessInterval @relation("CompanyAdmissionChildInterval",fields:[accessId,generation],references:[accessId,generation],onDelete:NoAction,onUpdate:NoAction)
  RootInterval ContextAccessInterval @relation("CompanyAdmissionRootInterval",fields:[rootAccessId,rootGeneration],references:[accessId,generation],onDelete:NoAction,onUpdate:NoAction)
  @@id([accessId,generation])
+}
+
+model CompanyStaffProfile {
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ memberAccessId String @db.Uuid
+ memberGeneration Int
+ position String? @db.VarChar(300)
+ supervisorAccessId String? @db.Uuid
+ supervisorGeneration Int?
+ workStatus String @db.VarChar(8)
+ workEmail String? @db.VarChar(320)
+ redactedAt DateTime? @db.Timestamptz(3)
+ revision Int @default(1)
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ updatedAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ company Company @relation("CompanyStaffProfile_company",fields:[spaceId],references:[spaceId],onDelete:NoAction,onUpdate:NoAction,map:"CompanyStaffProfile_company")
+ context AccessScope @relation("CompanyStaffProfile_context",fields:[spaceId,scopeId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction,map:"CompanyStaffProfile_context")
+ memberMember ContextAccess @relation("CompanyStaffProfile_memberMember",fields:[spaceId,scopeId,memberAccessId],references:[spaceId,scopeId,id],onDelete:NoAction,onUpdate:NoAction,map:"CompanyStaffProfile_memberMember")
+ memberInterval ContextAccessInterval @relation("CompanyStaffProfile_memberInterval",fields:[memberAccessId,memberGeneration],references:[accessId,generation],onDelete:NoAction,onUpdate:NoAction,map:"CompanyStaffProfile_memberInterval")
+ supervisor ContextAccess? @relation("CompanyStaffProfile_supervisor",fields:[spaceId,supervisorAccessId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction,map:"CompanyStaffProfile_supervisor")
+ supervisorInterval ContextAccessInterval? @relation("CompanyStaffProfile_supervisorInterval",fields:[supervisorAccessId,supervisorGeneration],references:[accessId,generation],onDelete:NoAction,onUpdate:NoAction,map:"CompanyStaffProfile_supervisorInterval")
+ @@unique([spaceId,scopeId,id])
+ @@unique([spaceId,scopeId,memberAccessId,memberGeneration])
+ @@index([spaceId,scopeId,id],map:"CompanyStaffProfile_page")
+}
+
+model CompanyAvailabilityDay {
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ memberAccessId String @db.Uuid
+ memberGeneration Int
+ date DateTime @db.Date
+ timezone String @db.VarChar(100)
+ availableMinutes Int?
+ revision Int @default(1)
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ updatedAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ company Company @relation("CompanyAvailabilityDay_company",fields:[spaceId],references:[spaceId],onDelete:NoAction,onUpdate:NoAction,map:"CompanyAvailabilityDay_company")
+ context AccessScope @relation("CompanyAvailabilityDay_context",fields:[spaceId,scopeId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction,map:"CompanyAvailabilityDay_context")
+ memberMember ContextAccess @relation("CompanyAvailabilityDay_memberMember",fields:[spaceId,scopeId,memberAccessId],references:[spaceId,scopeId,id],onDelete:NoAction,onUpdate:NoAction,map:"CompanyAvailabilityDay_memberMember")
+ memberInterval ContextAccessInterval @relation("CompanyAvailabilityDay_memberInterval",fields:[memberAccessId,memberGeneration],references:[accessId,generation],onDelete:NoAction,onUpdate:NoAction,map:"CompanyAvailabilityDay_memberInterval")
+ @@unique([spaceId,scopeId,id])
+ @@unique([spaceId,scopeId,memberAccessId,memberGeneration,date,timezone])
+ @@index([spaceId,scopeId,id],map:"CompanyAvailabilityDay_page")
+}
+
+model CompanyResource {
+ allocations CompanyResourceAllocation[] @relation("CompanyResourceAllocation_resource")
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ createdByActorId String @db.Uuid
+ title String @db.VarChar(300)
+ description String? @db.VarChar(10000)
+ state String @db.VarChar(8)
+ revision Int @default(1)
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ updatedAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ company Company @relation("CompanyResource_company",fields:[spaceId],references:[spaceId],onDelete:NoAction,onUpdate:NoAction,map:"CompanyResource_company")
+ context AccessScope @relation("CompanyResource_context",fields:[spaceId,scopeId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction,map:"CompanyResource_context")
+ creator SharedActor @relation("CompanyResource_creator",fields:[spaceId,createdByActorId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction,map:"CompanyResource_creator")
+ @@unique([spaceId,scopeId,id])
+ @@index([spaceId,scopeId,id],map:"CompanyResource_page")
+}
+
+model CompanyResourceAllocation {
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ resourceId String @db.Uuid
+ memberAccessId String @db.Uuid
+ memberGeneration Int
+ createdByActorId String @db.Uuid
+ startAt DateTime @db.Timestamptz(3)
+ endAt DateTime @db.Timestamptz(3)
+ state String @db.VarChar(9)
+ endedAt DateTime? @db.Timestamptz(3)
+ revision Int @default(1)
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ updatedAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ company Company @relation("CompanyResourceAllocation_company",fields:[spaceId],references:[spaceId],onDelete:NoAction,onUpdate:NoAction,map:"CompanyResourceAllocation_company")
+ context AccessScope @relation("CompanyResourceAllocation_context",fields:[spaceId,scopeId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction,map:"CompanyResourceAllocation_context")
+ memberMember ContextAccess @relation("CompanyResourceAllocation_memberMember",fields:[spaceId,scopeId,memberAccessId],references:[spaceId,scopeId,id],onDelete:NoAction,onUpdate:NoAction,map:"CompanyResourceAllocation_memberMember")
+ memberInterval ContextAccessInterval @relation("CompanyResourceAllocation_memberInterval",fields:[memberAccessId,memberGeneration],references:[accessId,generation],onDelete:NoAction,onUpdate:NoAction,map:"CompanyResourceAllocation_memberInterval")
+ creator SharedActor @relation("CompanyResourceAllocation_creator",fields:[spaceId,createdByActorId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction,map:"CompanyResourceAllocation_creator")
+ resource CompanyResource @relation("CompanyResourceAllocation_resource",fields:[spaceId,scopeId,resourceId],references:[spaceId,scopeId,id],onDelete:NoAction,onUpdate:NoAction,map:"CompanyResourceAllocation_resource")
+ @@unique([spaceId,scopeId,id])
+ @@index([spaceId,scopeId,id],map:"CompanyResourceAllocation_page")
+ // SQL owns the partial ALLOCATED overlap index and serialized interval guard.
+}
+
+model CompanyEmployeeCase {
+ entries CompanyEmployeeCaseEntry[] @relation("CompanyEmployeeCaseEntry_case")
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ authorAccessId String @db.Uuid
+ authorGeneration Int
+ subjectAccessId String @db.Uuid
+ subjectGeneration Int
+ reviewerAccessId String @db.Uuid
+ reviewerGeneration Int
+ reason String? @db.VarChar(10000)
+ evidence String? @db.VarChar(10000)
+ state String @db.VarChar(8)
+ redactedAt DateTime? @db.Timestamptz(3)
+ revision Int @default(1)
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ updatedAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ company Company @relation("CompanyEmployeeCase_company",fields:[spaceId],references:[spaceId],onDelete:NoAction,onUpdate:NoAction,map:"CompanyEmployeeCase_company")
+ context AccessScope @relation("CompanyEmployeeCase_context",fields:[spaceId,scopeId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction,map:"CompanyEmployeeCase_context")
+ authorMember ContextAccess @relation("CompanyEmployeeCase_authorMember",fields:[spaceId,scopeId,authorAccessId],references:[spaceId,scopeId,id],onDelete:NoAction,onUpdate:NoAction,map:"CompanyEmployeeCase_authorMember")
+ authorInterval ContextAccessInterval @relation("CompanyEmployeeCase_authorInterval",fields:[authorAccessId,authorGeneration],references:[accessId,generation],onDelete:NoAction,onUpdate:NoAction,map:"CompanyEmployeeCase_authorInterval")
+ subjectMember ContextAccess @relation("CompanyEmployeeCase_subjectMember",fields:[spaceId,scopeId,subjectAccessId],references:[spaceId,scopeId,id],onDelete:NoAction,onUpdate:NoAction,map:"CompanyEmployeeCase_subjectMember")
+ subjectInterval ContextAccessInterval @relation("CompanyEmployeeCase_subjectInterval",fields:[subjectAccessId,subjectGeneration],references:[accessId,generation],onDelete:NoAction,onUpdate:NoAction,map:"CompanyEmployeeCase_subjectInterval")
+ reviewerMember ContextAccess @relation("CompanyEmployeeCase_reviewerMember",fields:[spaceId,scopeId,reviewerAccessId],references:[spaceId,scopeId,id],onDelete:NoAction,onUpdate:NoAction,map:"CompanyEmployeeCase_reviewerMember")
+ reviewerInterval ContextAccessInterval @relation("CompanyEmployeeCase_reviewerInterval",fields:[reviewerAccessId,reviewerGeneration],references:[accessId,generation],onDelete:NoAction,onUpdate:NoAction,map:"CompanyEmployeeCase_reviewerInterval")
+ @@unique([spaceId,scopeId,id])
+ @@index([spaceId,scopeId,id],map:"CompanyEmployeeCase_page")
+ @@index([spaceId,scopeId,subjectAccessId,subjectGeneration,id],map:"CompanyEmployeeCase_participants")
+}
+
+model CompanyEmployeeCaseEntry {
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ caseId String @db.Uuid
+ createdByActorId String @db.Uuid
+ kind String @db.VarChar(10)
+ body String? @db.VarChar(10000)
+ revision Int @default(1)
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ updatedAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ company Company @relation("CompanyEmployeeCaseEntry_company",fields:[spaceId],references:[spaceId],onDelete:NoAction,onUpdate:NoAction,map:"CompanyEmployeeCaseEntry_company")
+ context AccessScope @relation("CompanyEmployeeCaseEntry_context",fields:[spaceId,scopeId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction,map:"CompanyEmployeeCaseEntry_context")
+ case CompanyEmployeeCase @relation("CompanyEmployeeCaseEntry_case",fields:[spaceId,scopeId,caseId],references:[spaceId,scopeId,id],onDelete:NoAction,onUpdate:NoAction,map:"CompanyEmployeeCaseEntry_case")
+ creator SharedActor @relation("CompanyEmployeeCaseEntry_creator",fields:[spaceId,createdByActorId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction,map:"CompanyEmployeeCaseEntry_creator")
+ @@unique([spaceId,scopeId,id])
+ @@index([spaceId,scopeId,id],map:"CompanyEmployeeCaseEntry_page")
+ @@index([spaceId,scopeId,caseId,id],map:"CompanyEmployeeCaseEntry_case_page")
 }

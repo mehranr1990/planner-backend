@@ -5,6 +5,7 @@ import {
   ForbiddenException,
   ConflictException,
   BadRequestException,
+  PayloadTooLargeException,
 } from '@nestjs/common';
 import { randomUUID, randomBytes, createHash } from 'node:crypto';
 import type { z } from 'zod';
@@ -85,11 +86,12 @@ export class CompanyAccess {
     actor: RequestActor,
     spaceId: string,
     work: (ctx: CompanyTransaction) => Promise<T>,
+    users: string[] = [],
   ) {
     return this.kernel.participate(
       actor,
       spaceId,
-      [],
+      users,
       async (tx, now, locked) =>
         work(
           await this.context(tx, actor, spaceId, now, locked, async () => {
@@ -207,6 +209,12 @@ export class CompanyAccess {
       | 'company.unit'
       | 'company.policy-version'
       | 'company.context-membership'
+      | 'company.staff-profile'
+      | 'company.availability-day'
+      | 'company.resource'
+      | 'company.allocation'
+      | 'company.employee-case'
+      | 'company.case-entry'
       | 'shared.membership',
     delta = 1,
     subject = ctx.root.actorId,
@@ -221,6 +229,98 @@ export class CompanyAccess {
       auditId,
       feature ? { actorId: subject, feature, delta } : undefined,
     );
+  }
+  async staffHints(spaceId: string) {
+    this.kernel.assertEnabled();
+    const actors = await this.db.client.sharedActor.findMany({
+      where: {
+        spaceId,
+        state: 'ACTIVE',
+        userId: { not: null },
+        ContextAccess: {
+          some: {
+            spaceId,
+            scopeId: spaceId,
+            state: 'ACTIVE',
+            memberRole: { not: null },
+          },
+        },
+      },
+      select: { userId: true },
+      take: 1001,
+    });
+    if (actors.length > 1000) throw new PayloadTooLargeException();
+    return actors.flatMap((a) => (a.userId ? [a.userId] : []));
+  }
+  async staffMembers(ctx: CompanyTransaction, scopeId: string) {
+    const rows = await ctx.tx.$queryRaw<
+      {
+        accessId: string;
+        generation: number;
+        actorId: string;
+        userId: string;
+      }[]
+    >`
+      SELECT a.id "accessId",a.generation,a."actorId",u.id "userId"
+      FROM "ContextAccess" a JOIN "SharedActor" actor ON actor.id=a."actorId" AND actor.state='ACTIVE'
+      JOIN "User" u ON u.id=actor."userId" AND u."emailVerified"=true
+      JOIN "Space" p ON p."ownerUserId"=u.id AND p.kind='PERSONAL' AND p."accessClosedAt" IS NULL
+      JOIN "ContextAccess" root ON root."spaceId"=a."spaceId" AND root."scopeId"=a."spaceId" AND root."actorId"=a."actorId" AND root.state='ACTIVE' AND root."memberRole" IS NOT NULL
+      WHERE a."spaceId"=${ctx.spaceId}::uuid AND a."scopeId"=${scopeId}::uuid AND a.state='ACTIVE' AND a."memberRole" IS NOT NULL
+      AND NOT EXISTS(SELECT 1 FROM "SharedExitWork" e WHERE e."userId"=u.id AND e."closedAt">=root."joinedAt")
+      AND (a."scopeId"=a."spaceId" OR EXISTS(SELECT 1 FROM "CompanyContextAdmission" b WHERE b."accessId"=a.id AND b.generation=a.generation AND b."rootAccessId"=root.id AND b."rootGeneration"=root.generation))
+      ORDER BY a.id LIMIT 1001`;
+    if (rows.length > 1000) throw new PayloadTooLargeException();
+    if (rows.some((r) => !ctx.locked.includes(r.userId)))
+      throw new ConflictException({ code: 'COMPANY_MEMBER_HINTS_CHANGED' });
+    return rows;
+  }
+  async staffMember(
+    ctx: CompanyTransaction,
+    scopeId: string,
+    member: { accessId: string; generation: number },
+  ) {
+    const current = (await this.staffMembers(ctx, scopeId)).find(
+      (r) =>
+        r.accessId === member.accessId && r.generation === member.generation,
+    );
+    if (!current) throw new NotFoundException();
+    const seat = await this.seat(ctx, scopeId, current.userId);
+    return { ...current, role: seat.role };
+  }
+  async staffEmail(ctx: CompanyTransaction, userId: string) {
+    if (!ctx.locked.includes(userId)) throw new ConflictException();
+    const identity = await this.identity.current(ctx.tx, userId);
+    return identity?.emailVerified ? identity.email : null;
+  }
+  async staffReviewer(ctx: CompanyTransaction, member: { userId: string }) {
+    const seat = await this.seat(ctx, ctx.spaceId, member.userId);
+    return ['OWNER', 'ORG_ADMIN'].includes(seat.role ?? '');
+  }
+  async staffErasureAllowed(tx: Tx, spaceId: string) {
+    const custody = await tx.sharedCustody.findUniqueOrThrow({
+      where: { spaceId },
+    });
+    const row = await tx.sharedRetentionPolicy.findUniqueOrThrow({
+      where: { version: custody.retentionPolicyVersion },
+    });
+    const policy = row.configuration as {
+      holds?: { state: string }[];
+      obligations?: { state: string }[];
+    };
+    if (
+      policy.holds?.some((h) => h.state === 'ACTIVE') ||
+      policy.obligations?.some((o) => o.state === 'OUTSTANDING')
+    )
+      throw new ConflictException({
+        code: 'SENSITIVE_ERASURE_DISPOSITION_REQUIRED',
+      });
+  }
+  async staffActorAdmissions(tx: Tx, spaceId: string, actorId: string) {
+    return tx.contextAccess.findMany({
+      where: { spaceId, actorId },
+      select: { id: true },
+    });
   }
   async membership(tx: Tx, row: ContextAccess) {
     const custody = await tx.sharedCustody.findUniqueOrThrow({

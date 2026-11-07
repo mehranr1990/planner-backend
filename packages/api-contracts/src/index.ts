@@ -78,3 +78,4 @@ export * from './team-interactions.js';
 export * from './team-lifecycle.js';
 
 export * from './companies.js';
+export * from './company-staff.js';
