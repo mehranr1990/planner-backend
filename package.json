@@ -63,7 +63,8 @@
     "smoke:p4-01": "node --env-file-if-exists=.env.test.local tooling/scripts/p4-01-smoke.ts",
     "smoke:p4-02": "node --env-file-if-exists=.env.test.local tooling/scripts/p4-02-smoke.ts",
     "smoke:p4-03": "node --env-file-if-exists=.env.test.local tooling/scripts/p4-03-smoke.ts",
-    "smoke:p4-04": "node --env-file-if-exists=.env.test.local tooling/scripts/p4-04-smoke.ts"
+    "smoke:p4-04": "node --env-file-if-exists=.env.test.local tooling/scripts/p4-04-smoke.ts",
+    "smoke:p4-05": "node --env-file-if-exists=.env.test.local tooling/scripts/p4-05-smoke.ts"
   },
   "devDependencies": {
     "@nestjs/throttler": "6.7.1",

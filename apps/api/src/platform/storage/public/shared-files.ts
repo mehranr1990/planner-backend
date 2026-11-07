@@ -197,6 +197,7 @@ export class SharedFiles {
     s: SharedFileScope,
     now: Date,
     claim: boolean,
+    ids?: string[],
   ) {
     s.verify(tx, true);
     const cutoff = new Date(
@@ -207,6 +208,7 @@ export class SharedFiles {
           spaceId: s.spaceId,
           scopeId: s.scopeId,
           ownerUserId: null,
+          ...(ids ? { id: { in: ids } } : {}),
           purgedAt: null,
           OR: [
             { status: 'INITIATED', uploadExpiresAt: { lt: cutoff } },

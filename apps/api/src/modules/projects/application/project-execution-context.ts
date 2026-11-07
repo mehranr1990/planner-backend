@@ -42,7 +42,9 @@ export type ExecutionContext = TaskToolContext & {
     caps?: SharedRequest['capability'][],
   ) => Promise<{ accessId: string; generation: number; actorId: string }>;
 };
-export const projectWhere = (s: ExecutionContext) => ({
+export const projectWhere = (
+  s: Pick<ExecutionContext, 'spaceId' | 'scopeId' | 'pid'>,
+) => ({
   spaceId: s.spaceId,
   scopeId: s.scopeId,
   projectId: s.pid,

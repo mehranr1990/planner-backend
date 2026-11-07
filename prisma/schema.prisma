@@ -381,6 +381,7 @@ enum StoredFileStatus {
 }
 
 model StoredFile {
+ CompanyKnowledgeVersion_file CompanyKnowledgeVersion[] @relation("CompanyKnowledgeVersion_file")
  CompanyExpenseReceipt_file CompanyExpenseReceipt[] @relation("CompanyExpenseReceipt_file")
   id                              String           @id @default(uuid()) @db.Uuid
   spaceId                         String           @db.Uuid
@@ -1800,6 +1801,9 @@ model PushSubscription {
 
 // SQL enforces additional branch, lifecycle and immutable-history constraints.
 model AccessScope {
+ CompanyKnowledgeVersion_context CompanyKnowledgeVersion[] @relation("CompanyKnowledgeVersion_context")
+ CompanyKnowledgeDocument_context CompanyKnowledgeDocument[] @relation("CompanyKnowledgeDocument_context")
+ CompanyKnowledgeFolder_context CompanyKnowledgeFolder[] @relation("CompanyKnowledgeFolder_context")
  CompanyReimbursementEffect_context CompanyReimbursementEffect[] @relation("CompanyReimbursementEffect_context")
  CompanyAcknowledgementCorrection_context CompanyAcknowledgementCorrection[] @relation("CompanyAcknowledgementCorrection_context")
  CompanyPaymentAcknowledgement_context CompanyPaymentAcknowledgement[] @relation("CompanyPaymentAcknowledgement_context")
@@ -1872,6 +1876,7 @@ model AccessScope {
 
 // SQL enforces additional branch, lifecycle and immutable-history constraints.
 model ContextAccess {
+ CompanyKnowledgeVersion_uploader CompanyKnowledgeVersion[] @relation("CompanyKnowledgeVersion_uploader")
  CompanyFinancialApprovalEvent_reviewer CompanyFinancialApprovalEvent[] @relation("CompanyFinancialApprovalEvent_reviewer")
  CompanyAcknowledgementCorrection_author CompanyAcknowledgementCorrection[] @relation("CompanyAcknowledgementCorrection_author")
  CompanyPaymentAcknowledgement_author CompanyPaymentAcknowledgement[] @relation("CompanyPaymentAcknowledgement_author")
@@ -1962,6 +1967,7 @@ model ContextAccess {
 
 // SQL enforces additional branch, lifecycle and immutable-history constraints.
 model ContextAccessInterval {
+ CompanyKnowledgeVersion_interval CompanyKnowledgeVersion[] @relation("CompanyKnowledgeVersion_interval")
  CompanyFinancialApprovalEvent_reviewerInterval CompanyFinancialApprovalEvent[] @relation("CompanyFinancialApprovalEvent_reviewerInterval")
  CompanyAcknowledgementCorrection_authorInterval CompanyAcknowledgementCorrection[] @relation("CompanyAcknowledgementCorrection_authorInterval")
  CompanyPaymentAcknowledgement_authorInterval CompanyPaymentAcknowledgement[] @relation("CompanyPaymentAcknowledgement_authorInterval")
@@ -3696,6 +3702,9 @@ model TeamMeetingInvitation {
 }
 
 model Company {
+ CompanyKnowledgeVersion_company CompanyKnowledgeVersion[] @relation("CompanyKnowledgeVersion_company")
+ CompanyKnowledgeDocument_company CompanyKnowledgeDocument[] @relation("CompanyKnowledgeDocument_company")
+ CompanyKnowledgeFolder_company CompanyKnowledgeFolder[] @relation("CompanyKnowledgeFolder_company")
  CompanyReimbursementEffect_company CompanyReimbursementEffect[] @relation("CompanyReimbursementEffect_company")
  CompanyAcknowledgementCorrection_company CompanyAcknowledgementCorrection[] @relation("CompanyAcknowledgementCorrection_company")
  CompanyPaymentAcknowledgement_company CompanyPaymentAcknowledgement[] @relation("CompanyPaymentAcknowledgement_company")
@@ -4490,4 +4499,76 @@ model CompanyReimbursementEffect {
  @@index([bucketId,id],map:"CompanyReimbursementEffect_bucketId_lookup")
  @@index([requestId,id],map:"CompanyReimbursementEffect_requestId_lookup")
  @@index([paymentId,id],map:"CompanyReimbursementEffect_paymentId_lookup")
+}
+
+
+model CompanyKnowledgeFolder {
+ CompanyKnowledgeDocument_folder CompanyKnowledgeDocument[] @relation("CompanyKnowledgeDocument_folder")
+ CompanyKnowledgeFolder_parent CompanyKnowledgeFolder[] @relation("CompanyKnowledgeFolder_parent")
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ parentId String? @db.Uuid
+ title String @db.VarChar(300)
+ archived Boolean @default(false)
+ revision Int @default(1)
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ updatedAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ company Company @relation("CompanyKnowledgeFolder_company",fields:[spaceId],references:[spaceId],onDelete:NoAction,onUpdate:NoAction,map:"CompanyKnowledgeFolder_company")
+ context AccessScope @relation("CompanyKnowledgeFolder_context",fields:[spaceId,scopeId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction,map:"CompanyKnowledgeFolder_context")
+ parent CompanyKnowledgeFolder? @relation("CompanyKnowledgeFolder_parent",fields:[spaceId,scopeId,parentId],references:[spaceId,scopeId,id],onDelete:NoAction,onUpdate:NoAction,map:"CompanyKnowledgeFolder_parent")
+ @@unique([spaceId,scopeId,id],map:"CompanyKnowledgeFolder_scope")
+ @@index([spaceId,scopeId,id],map:"CompanyKnowledgeFolder_page")
+}
+
+
+model CompanyKnowledgeDocument {
+ CompanyKnowledgeVersion_document CompanyKnowledgeVersion[] @relation("CompanyKnowledgeVersion_document")
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ folderId String @db.Uuid
+ title String @db.VarChar(300)
+ description String? @db.VarChar(10000)
+ archived Boolean @default(false)
+ publishedVersionId String? @db.Uuid
+ revision Int @default(1)
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ updatedAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ company Company @relation("CompanyKnowledgeDocument_company",fields:[spaceId],references:[spaceId],onDelete:NoAction,onUpdate:NoAction,map:"CompanyKnowledgeDocument_company")
+ context AccessScope @relation("CompanyKnowledgeDocument_context",fields:[spaceId,scopeId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction,map:"CompanyKnowledgeDocument_context")
+ folder CompanyKnowledgeFolder @relation("CompanyKnowledgeDocument_folder",fields:[spaceId,scopeId,folderId],references:[spaceId,scopeId,id],onDelete:NoAction,onUpdate:NoAction,map:"CompanyKnowledgeDocument_folder")
+ published CompanyKnowledgeVersion? @relation("CompanyKnowledgeDocument_published",fields:[spaceId,scopeId,id,publishedVersionId],references:[spaceId,scopeId,documentId,id],onDelete:NoAction,onUpdate:NoAction,map:"CompanyKnowledgeDocument_published")
+ @@unique([spaceId,scopeId,id],map:"CompanyKnowledgeDocument_scope")
+ @@index([spaceId,scopeId,id],map:"CompanyKnowledgeDocument_page")
+}
+
+
+model CompanyKnowledgeVersion {
+ CompanyKnowledgeDocument_published CompanyKnowledgeDocument[] @relation("CompanyKnowledgeDocument_published")
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ documentId String @db.Uuid
+ fileId String @db.Uuid
+ uploaderAccessId String @db.Uuid
+ uploaderGeneration Int
+ title String @db.VarChar(300)
+ description String? @db.VarChar(10000)
+ publishedAt DateTime? @db.Timestamptz(3)
+ pinnedRevision Int?
+ pinnedHash String? @db.VarChar(64)
+ revision Int @default(1)
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ updatedAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ company Company @relation("CompanyKnowledgeVersion_company",fields:[spaceId],references:[spaceId],onDelete:NoAction,onUpdate:NoAction,map:"CompanyKnowledgeVersion_company")
+ context AccessScope @relation("CompanyKnowledgeVersion_context",fields:[spaceId,scopeId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction,map:"CompanyKnowledgeVersion_context")
+ document CompanyKnowledgeDocument @relation("CompanyKnowledgeVersion_document",fields:[spaceId,scopeId,documentId],references:[spaceId,scopeId,id],onDelete:NoAction,onUpdate:NoAction,map:"CompanyKnowledgeVersion_document")
+ file StoredFile @relation("CompanyKnowledgeVersion_file",fields:[spaceId,scopeId,fileId],references:[spaceId,scopeId,id],onDelete:NoAction,onUpdate:NoAction,map:"CompanyKnowledgeVersion_file")
+ uploader ContextAccess @relation("CompanyKnowledgeVersion_uploader",fields:[spaceId,scopeId,uploaderAccessId],references:[spaceId,scopeId,id],onDelete:NoAction,onUpdate:NoAction,map:"CompanyKnowledgeVersion_uploader")
+ interval ContextAccessInterval @relation("CompanyKnowledgeVersion_interval",fields:[uploaderAccessId,uploaderGeneration],references:[accessId,generation],onDelete:NoAction,onUpdate:NoAction,map:"CompanyKnowledgeVersion_interval")
+ @@unique([spaceId,scopeId,id],map:"CompanyKnowledgeVersion_scope")
+ @@index([spaceId,scopeId,id],map:"CompanyKnowledgeVersion_page")
+ @@unique([spaceId,scopeId,documentId,id],map:"CompanyKnowledgeVersion_document_key")
+ @@unique([spaceId,scopeId,fileId],map:"CompanyKnowledgeVersion_file_key")
 }

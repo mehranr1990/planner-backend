@@ -118,6 +118,44 @@ export class CompanyAccess {
         work(await this.context(tx, actor, spaceId, now, locked, begin)),
     );
   }
+  async readAcross<T>(
+    actor: RequestActor,
+    spaceId: string,
+    projects: string[],
+    work: (ctx: CompanyTransaction, a: SharedAuthority) => Promise<T>,
+  ) {
+    const users = await this.staffHints(spaceId);
+    return this.kernel.run(
+      actor,
+      { userIds: users, spaceIds: [...new Set([spaceId, ...projects])] },
+      [{ spaceId, scopeId: spaceId, capability: 'task.read' }],
+      async (tx, a) => {
+        const now = (
+          await tx.$queryRaw<{ now: Date }[]>`SELECT clock_timestamp() AS now`
+        )[0]!.now;
+        return work(
+          await this.context(
+            tx,
+            actor,
+            spaceId,
+            now,
+            [...new Set([...users, actor.userId])],
+            async () => {
+              throw new Error('Read cannot begin mutation');
+            },
+          ),
+          a,
+        );
+      },
+      undefined,
+      [...new Set(projects)].map((id) => ({
+        spaceId: id,
+        scopeId: id,
+        capability: 'task.read' as const,
+      })),
+      true,
+    );
+  }
   async writeAcross<T>(
     actor: RequestActor,
     spaceId: string,
@@ -247,12 +285,123 @@ export class CompanyAccess {
       authority.close();
     }
   }
+  async exportLimits(ctx: CompanyTransaction, scopeId: string) {
+    const seat = await this.seat(ctx, scopeId);
+    if (
+      !this.isAdmin(ctx) &&
+      !(scopeId !== ctx.spaceId && seat.role === 'DEPT_MANAGER')
+    )
+      throw new ForbiddenException();
+    const scopes = await ctx.tx.accessScope.findMany({
+      where: { spaceId: ctx.spaceId, id: { in: [ctx.spaceId, scopeId] } },
+    });
+    let maxRecords = 10000,
+      maxBytes = 10485760;
+    for (const scope of scopes) {
+      const p = await ctx.tx.contextCapabilityPolicy.findUniqueOrThrow({
+        where: {
+          spaceId_scopeId_version: {
+            spaceId: ctx.spaceId,
+            scopeId: scope.id,
+            version: scope.currentPolicyVersion,
+          },
+        },
+      });
+      maxRecords = Math.min(maxRecords, p.exportMaxRecords);
+      maxBytes = Math.min(maxBytes, p.exportMaxBytes);
+    }
+    return { maxRecords, maxBytes };
+  }
+  async auditProjection(
+    ctx: CompanyTransaction,
+    scopeId: string,
+    groups: { actions: string[]; ids: string[] }[],
+  ) {
+    const seat = await this.seat(ctx, scopeId);
+    if (
+      !this.isAdmin(ctx) &&
+      !(scopeId !== ctx.spaceId && seat.role === 'DEPT_MANAGER')
+    )
+      throw new ForbiddenException();
+    const metadataIds = [
+      scopeId,
+      ...(
+        await ctx.tx.contextAccess.findMany({
+          where: { spaceId: ctx.spaceId, scopeId },
+          select: { id: true },
+          take: 1001,
+        })
+      ).map((r) => r.id),
+      ...(
+        await ctx.tx.contextInvitation.findMany({
+          where: { spaceId: ctx.spaceId, scopeId },
+          select: { id: true },
+          take: 10001,
+        })
+      ).map((r) => r.id),
+    ];
+    const metadataActions = [
+      'company.membership.change',
+      'company.invitation.create',
+      'company.invitation.revoke',
+      'company.invitation.decide',
+      'company.context.leave',
+      'company.context.update',
+      'company.policy.publish',
+      ...(scopeId === ctx.spaceId ? ['company.create', 'company.update'] : []),
+    ];
+    const allowed = [
+      'company.knowledge.',
+      'company.finance.',
+      'company.resource.',
+      'company.allocation.',
+      'company.availability.',
+      'company.report.',
+      'company.export.',
+    ];
+    if (
+      groups.some((g) =>
+        g.actions.some((a) => !allowed.some((p) => a.startsWith(p))),
+      )
+    )
+      throw new ForbiddenException();
+    const rows = await ctx.tx.sharedAuditEvent.findMany({
+      where: {
+        spaceId: ctx.spaceId,
+        OR: groups
+          .map((g) => ({
+            action: { in: g.actions },
+            resourceId: { in: g.ids },
+          }))
+          .concat([
+            {
+              action: { in: metadataActions },
+              resourceId: { in: metadataIds },
+            },
+          ]),
+      },
+      take: 10001,
+      orderBy: { id: 'asc' },
+      select: {
+        id: true,
+        actorId: true,
+        action: true,
+        resourceId: true,
+        occurredAt: true,
+      },
+    });
+    if (rows.length > 10000) throw new PayloadTooLargeException();
+    return rows.map((r) => ({ ...r, occurredAt: r.occurredAt.toISOString() }));
+  }
   async effect(
     ctx: CompanyTransaction,
     action: string,
     id: string,
     auditId: string,
     feature?:
+      | 'company.knowledge-folder'
+      | 'company.knowledge-document'
+      | 'company.knowledge-version'
       | 'company.financial-workflow'
       | 'company.financial-workflow-version'
       | 'company.financial-approval'

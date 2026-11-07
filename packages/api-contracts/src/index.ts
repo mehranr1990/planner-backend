@@ -82,3 +82,5 @@ export * from './company-staff.js';
 export * from './company-finance.js';
 
 export * from './company-settlements.js';
+
+export * from './company-knowledge.js';

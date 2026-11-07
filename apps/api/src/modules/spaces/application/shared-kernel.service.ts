@@ -1660,6 +1660,7 @@ export class SharedKernel {
     ) => Promise<T>,
     onRetry?: () => Promise<void>,
     optionalRequests: SharedRequest[] = [],
+    omitUnavailableSources = false,
   ) {
     this.enabled();
     if (!actor.sessionId) throw new ForbiddenException();
@@ -1718,7 +1719,11 @@ export class SharedKernel {
           try {
             access.push(await this.authorize(tx, actor, request, users));
           } catch (error) {
-            if (!(error instanceof ForbiddenException)) throw error;
+            if (
+              !(error instanceof ForbiddenException) &&
+              !(omitUnavailableSources && error instanceof NotFoundException)
+            )
+              throw error;
           }
         }
         const authority = new SharedAuthority(tx, access);

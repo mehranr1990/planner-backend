@@ -1,3 +1,4 @@
+import { verifyCompanyKnowledgeUpgrade } from './company-knowledge-upgrade.ts';
 import fs from 'node:fs';
 import assert from 'node:assert/strict';
 import { randomUUID, createHash } from 'node:crypto';
@@ -276,14 +277,10 @@ export async function verifyCompanySettlementsUpgrade(input: {
   );
   assert.equal(
     createHash('sha256').update(JSON.stringify(fks)).digest('hex'),
-    fs
-      .readFileSync(
-        'apps/api/src/platform/lifecycle/shared-cleanup-catalog.ts',
-        'utf8',
-      )
-      .match(/'([a-f0-9]{64})'/)![1],
+    'abdcc24a65fa82a3d09c241101f07a5346108b4e28aab727c3ffa2d4e6c53fd9',
   );
   process.stdout.write(
     'PASS: P4-04 preserves all 169 populated predecessor datasets, 55 checksums and existing constraints except additive usage CHECK; interrupted rollback, repeat deploy, ten populated new tables, independent acknowledgement history and 571-FK cleanup catalog.\n',
   );
+  await verifyCompanyKnowledgeUpgrade(input);
 }

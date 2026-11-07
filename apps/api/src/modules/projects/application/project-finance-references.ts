@@ -10,6 +10,9 @@ import type { Prisma } from '../../../generated/prisma/client.js';
 import type { RequestActor } from '../../../platform/auth/request-actor.js';
 import { SharedAuthority, SharedKernel } from '../../spaces/public/index.js';
 import { DatabaseService } from '../../../platform/database/database.service.js';
+import { ProjectWorkMetricsService } from './project-work-metrics.service.js';
+import type { z } from 'zod';
+import type * as c from '@mehran/api-contracts';
 import { ProjectsService } from './projects.service.js';
 /** Projects owns source links and their disposal. Financial anchors belong to Companies. */
 @Injectable()
@@ -18,6 +21,8 @@ export class ProjectFinanceReferences {
     @Inject(SharedKernel) private readonly kernel: SharedKernel,
     @Inject(DatabaseService) private readonly db: DatabaseService,
     @Inject(ProjectsService) private readonly projects: ProjectsService,
+    @Inject(ProjectWorkMetricsService)
+    private readonly metrics: ProjectWorkMetricsService,
   ) {}
   hint(id: string) {
     return this.projects.hint(id);
@@ -101,6 +106,43 @@ export class ProjectFinanceReferences {
         if (error instanceof NotFoundException) return null;
         throw error;
       });
+  }
+  async portfolioHints(companySpaceId: string, references: string[]) {
+    if (references.length > 100) throw new PayloadTooLargeException();
+    return this.db.client.companyProjectFinanceLink.findMany({
+      where: { companySpaceId, referenceId: { in: references } },
+      select: { spaceId: true },
+      take: 101,
+    });
+  }
+  async portfolio(
+    tx: Prisma.TransactionClient,
+    a: SharedAuthority,
+    companySpaceId: string,
+    references: string[],
+    window: z.infer<typeof c.ProjectReportWindowSchema>,
+    now: Date,
+  ) {
+    a.require(tx, companySpaceId, 'task.read');
+    const rows = await tx.companyProjectFinanceLink.findMany({
+      where: { companySpaceId, referenceId: { in: references } },
+      orderBy: { referenceId: 'asc' },
+      take: 101,
+    });
+    if (rows.length > 100) throw new PayloadTooLargeException();
+    const result = [];
+    for (const r of rows) {
+      if (!a.has(tx, r.spaceId, 'task.read')) continue;
+      const p = await tx.project.findUnique({ where: { id: r.projectId } });
+      if (!p) continue;
+      result.push({
+        referenceId: r.referenceId,
+        projectId: p.id,
+        title: p.title,
+        report: await this.metrics.reportAuthorized(tx, a, p.id, window, now),
+      });
+    }
+    return result;
   }
   async count(
     tx: Prisma.TransactionClient,

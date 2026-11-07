@@ -445,7 +445,10 @@ export class ProjectWorkMetricsService {
     });
   }
   private async report(
-    s: ExecutionContext,
+    s: Pick<
+      ExecutionContext,
+      'tx' | 'a' | 'pid' | 'spaceId' | 'scopeId' | 'now'
+    >,
     input: z.infer<typeof c.ProjectReportWindowSchema>,
   ) {
     const links = await s.tx.projectTask.findMany({
@@ -485,6 +488,18 @@ export class ProjectWorkMetricsService {
       }),
       tasks,
     };
+  }
+  async reportAuthorized(
+    tx: ExecutionContext['tx'],
+    a: ExecutionContext['a'],
+    pid: string,
+    input: z.infer<typeof c.ProjectReportWindowSchema>,
+    now: Date,
+  ) {
+    a.require(tx, pid, 'task.read');
+    return (
+      await this.report({ tx, a, pid, spaceId: pid, scopeId: pid, now }, input)
+    ).report;
   }
   currentReport(
     actor: RequestActor,

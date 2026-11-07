@@ -40,13 +40,20 @@ export class CompaniesModule {
       module: CompaniesModule,
       imports: [projects, storage],
       providers: [
+        CompanyKnowledgeService,
+        CompanyKnowledgeFilesService,
+        CompanyReportsService,
         CompanyFinanceService,
         CompanyReceiptService,
         CompanyFinanceExtensions,
         CompanyReimbursementsService,
         CompanyFinancialApprovalsService,
       ],
-      controllers: [CompanyFinanceController, CompanySettlementsController],
+      controllers: [
+        CompanyFinanceController,
+        CompanySettlementsController,
+        CompanyKnowledgeController,
+      ],
       exports: [
         CompanyFinanceService,
         CompanyReceiptService,
@@ -65,3 +72,8 @@ import { CompanyFinanceExtensions } from './application/company-finance.extensio
 import { CompanyReimbursementsService } from './application/company-reimbursements.service.js';
 import { CompanyFinancialApprovalsService } from './application/company-financial-approvals.service.js';
 import { CompanySettlementsController } from './http/company-settlements.controller.js';
+
+import { CompanyKnowledgeService } from './application/company-knowledge.service.js';
+import { CompanyKnowledgeFilesService } from './application/company-knowledge-files.service.js';
+import { CompanyReportsService } from './application/company-reports.service.js';
+import { CompanyKnowledgeController } from './http/company-knowledge.controller.js';

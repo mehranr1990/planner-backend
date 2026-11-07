@@ -163,6 +163,7 @@ export class CompanyStaffContext {
     operation: string,
     q: StaffPage,
     load: () => Promise<T[]>,
+    maximum = 1000,
   ) {
     const authority = new SharedAuthority(s.tx, [s.root]);
     try {
@@ -179,7 +180,7 @@ export class CompanyStaffContext {
         q.after,
       );
       const loaded = await load();
-      if (loaded.length > 1000) throw new PayloadTooLargeException();
+      if (loaded.length > maximum) throw new PayloadTooLargeException();
       const rows = loaded
         .filter((r) => !after || r.id > after)
         .sort((a, b) => (a.id < b.id ? -1 : 1));
