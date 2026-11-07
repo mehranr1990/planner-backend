@@ -253,6 +253,7 @@ describe('scoped persistence and API conventions', () => {
       '202611060028_company_foundation',
       '202611060029_company_invitation_snapshots',
       '202611070030_company_staff_and_resources',
+      '202611070031_company_finance',
     ]);
     for (const sql of [
       '',

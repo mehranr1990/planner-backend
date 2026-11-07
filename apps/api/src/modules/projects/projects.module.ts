@@ -52,6 +52,7 @@ export class ProjectsModule {
         storage,
       ],
       providers: [
+        ProjectFinanceReferences,
         TeamProjects,
         ProjectContentService,
         ProjectExportService,
@@ -80,6 +81,7 @@ export class ProjectsModule {
         WorkProjectionController,
       ],
       exports: [
+        ProjectFinanceReferences,
         TeamProjects,
         ProjectsService,
         WorkService,
@@ -94,3 +96,5 @@ export class ProjectsModule {
   }
 }
 import { TeamProjects } from './application/team-projects.service.js';
+
+import { ProjectFinanceReferences } from './application/project-finance-references.js';

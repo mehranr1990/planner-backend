@@ -110,7 +110,7 @@ export class AppModule {
         HabitsModule,
         goals,
         projects,
-        CompaniesModule,
+        CompaniesModule.register(projects, storage),
         TeamsModule.register(
           projects,
           tasks,

@@ -109,6 +109,14 @@ export class CollaborationService {
     ) => Promise<T>,
     lifecycle = false,
     lifecycleKind: 'PROJECT' | 'TEAM' = 'PROJECT',
+    fence?: (
+      body: (
+        tx: Prisma.TransactionClient,
+        now: Date,
+        locked: string[],
+      ) => Promise<T>,
+      abort: () => Promise<void>,
+    ) => Promise<T>,
   ) {
     if (lifecycle && !action.startsWith('lifecycle.'))
       throw new BadRequestException();
@@ -147,23 +155,25 @@ export class CollaborationService {
         return record.id;
       });
     try {
-      const result = actor
-        ? lifecycle
-          ? await this.kernel.lifecycleParticipant(
-              actor,
+      const result = fence
+        ? await fence(body, abort)
+        : actor
+          ? lifecycle
+            ? await this.kernel.lifecycleParticipant(
+                actor,
+                spaceId,
+                users,
+                body,
+                abort,
+                lifecycleKind,
+              )
+            : await this.kernel.participate(actor, spaceId, users, body, abort)
+          : await this.kernel.offerMaintenance(
               spaceId,
               users,
-              body,
+              (tx, now) => body(tx, now, [...new Set(users)].sort()),
               abort,
-              lifecycleKind,
-            )
-          : await this.kernel.participate(actor, spaceId, users, body, abort)
-        : await this.kernel.offerMaintenance(
-            spaceId,
-            users,
-            (tx, now) => body(tx, now, [...new Set(users)].sort()),
-            abort,
-          );
+            );
       committed = true;
       for (const r of intents)
         await this.control.append({

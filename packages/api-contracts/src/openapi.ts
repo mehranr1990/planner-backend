@@ -256,6 +256,7 @@ export function createOpenApiDocument() {
       ...teamLifecyclePaths(),
       ...companyPaths(),
       ...companyStaffPaths(),
+      ...companyFinancePaths(),
       ...workPaths(),
       ...projectToolPaths(),
       ...projectExecutionPaths(),
@@ -287,3 +288,5 @@ export function createOpenApiDocument() {
 import { teamInteractionsPaths } from './team-interactions-openapi.js';
 
 import { teamLifecyclePaths } from './team-lifecycle-openapi.js';
+
+import { companyFinancePaths } from './company-finance-openapi.js';

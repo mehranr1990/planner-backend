@@ -118,6 +118,54 @@ export class CompanyAccess {
         work(await this.context(tx, actor, spaceId, now, locked, begin)),
     );
   }
+  async writeAcross<T>(
+    actor: RequestActor,
+    spaceId: string,
+    projectSpaceId: string,
+    action: string,
+    target: string,
+    work: (ctx: CompanyTransaction, authority: SharedAuthority) => Promise<T>,
+  ) {
+    const users = await this.staffHints(spaceId);
+    let authority: SharedAuthority;
+    return this.collaboration.signed(
+      actor,
+      spaceId,
+      users,
+      action,
+      target,
+      async (tx, now, locked, begin) =>
+        work(
+          await this.context(tx, actor, spaceId, now, locked, begin),
+          authority,
+        ),
+      false,
+      'PROJECT',
+      (body, abort) =>
+        this.kernel.run(
+          actor,
+          { userIds: users, spaceIds: [spaceId, projectSpaceId] },
+          [
+            { spaceId, scopeId: spaceId, capability: 'task.read' },
+            {
+              spaceId: projectSpaceId,
+              scopeId: projectSpaceId,
+              capability: 'settings.manage',
+            },
+          ],
+          async (tx, a) => {
+            authority = a;
+            const now = (
+              await tx.$queryRaw<
+                { now: Date }[]
+              >`SELECT clock_timestamp() AS now`
+            )[0]!.now;
+            return body(tx, now, [...new Set([...users, actor.userId])]);
+          },
+          abort,
+        ),
+    );
+  }
   async seat(
     ctx: CompanyTransaction,
     scopeId: string,
@@ -205,6 +253,13 @@ export class CompanyAccess {
     id: string,
     auditId: string,
     feature?:
+      | 'company.expense'
+      | 'company.budget'
+      | 'company.commitment'
+      | 'company.finance-category'
+      | 'company.finance-reference'
+      | 'company.expense-version'
+      | 'file.shared'
       | 'company.department'
       | 'company.unit'
       | 'company.policy-version'

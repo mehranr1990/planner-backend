@@ -381,6 +381,7 @@ enum StoredFileStatus {
 }
 
 model StoredFile {
+ CompanyExpenseReceipt_file CompanyExpenseReceipt[] @relation("CompanyExpenseReceipt_file")
   id                              String           @id @default(uuid()) @db.Uuid
   spaceId                         String           @db.Uuid
   ownerUserId                     String?          @db.Uuid
@@ -1799,6 +1800,17 @@ model PushSubscription {
 
 // SQL enforces additional branch, lifecycle and immutable-history constraints.
 model AccessScope {
+ CompanyExpenseReceipt_context CompanyExpenseReceipt[] @relation("CompanyExpenseReceipt_context")
+ CompanyExpenseReviewEvent_context CompanyExpenseReviewEvent[] @relation("CompanyExpenseReviewEvent_context")
+ CompanyBudgetEffect_context CompanyBudgetEffect[] @relation("CompanyBudgetEffect_context")
+ CompanyExpenseAllocation_context CompanyExpenseAllocation[] @relation("CompanyExpenseAllocation_context")
+ CompanyExpenseVersion_context CompanyExpenseVersion[] @relation("CompanyExpenseVersion_context")
+ CompanyExpense_context CompanyExpense[] @relation("CompanyExpense_context")
+ CompanyCommitment_context CompanyCommitment[] @relation("CompanyCommitment_context")
+ CompanyBudgetAdjustment_context CompanyBudgetAdjustment[] @relation("CompanyBudgetAdjustment_context")
+ CompanyBudget_context CompanyBudget[] @relation("CompanyBudget_context")
+ CompanyFinanceProjectReference_context CompanyFinanceProjectReference[] @relation("CompanyFinanceProjectReference_context")
+ CompanyExpenseCategory_context CompanyExpenseCategory[] @relation("CompanyExpenseCategory_context")
  CompanyEmployeeCaseEntry_context CompanyEmployeeCaseEntry[] @relation("CompanyEmployeeCaseEntry_context")
  CompanyEmployeeCase_context CompanyEmployeeCase[] @relation("CompanyEmployeeCase_context")
  CompanyResourceAllocation_context CompanyResourceAllocation[] @relation("CompanyResourceAllocation_context")
@@ -1850,6 +1862,10 @@ model AccessScope {
 
 // SQL enforces additional branch, lifecycle and immutable-history constraints.
 model ContextAccess {
+ CompanyExpenseReviewEvent_reviewer CompanyExpenseReviewEvent[] @relation("CompanyExpenseReviewEvent_reviewer")
+ CompanyExpenseVersion_payer CompanyExpenseVersion[] @relation("CompanyExpenseVersion_payer")
+ CompanyExpenseVersion_reviewer CompanyExpenseVersion[] @relation("CompanyExpenseVersion_reviewer")
+ CompanyExpenseVersion_requester CompanyExpenseVersion[] @relation("CompanyExpenseVersion_requester")
  CompanyEmployeeCase_reviewerMember CompanyEmployeeCase[] @relation("CompanyEmployeeCase_reviewerMember")
  CompanyEmployeeCase_subjectMember CompanyEmployeeCase[] @relation("CompanyEmployeeCase_subjectMember")
  CompanyEmployeeCase_authorMember CompanyEmployeeCase[] @relation("CompanyEmployeeCase_authorMember")
@@ -1928,6 +1944,10 @@ model ContextAccess {
 
 // SQL enforces additional branch, lifecycle and immutable-history constraints.
 model ContextAccessInterval {
+ CompanyExpenseReviewEvent_reviewerInterval CompanyExpenseReviewEvent[] @relation("CompanyExpenseReviewEvent_reviewerInterval")
+ CompanyExpenseVersion_payerInterval CompanyExpenseVersion[] @relation("CompanyExpenseVersion_payerInterval")
+ CompanyExpenseVersion_reviewerInterval CompanyExpenseVersion[] @relation("CompanyExpenseVersion_reviewerInterval")
+ CompanyExpenseVersion_requesterInterval CompanyExpenseVersion[] @relation("CompanyExpenseVersion_requesterInterval")
  CompanyEmployeeCase_reviewerInterval CompanyEmployeeCase[] @relation("CompanyEmployeeCase_reviewerInterval")
  CompanyEmployeeCase_subjectInterval CompanyEmployeeCase[] @relation("CompanyEmployeeCase_subjectInterval")
  CompanyEmployeeCase_authorInterval CompanyEmployeeCase[] @relation("CompanyEmployeeCase_authorInterval")
@@ -2038,6 +2058,12 @@ model ResourceGrant {
 
 // SQL enforces additional branch, lifecycle and immutable-history constraints.
 model SharedActor {
+ CompanyExpenseReviewEvent_creator CompanyExpenseReviewEvent[] @relation("CompanyExpenseReviewEvent_creator")
+ CompanyBudgetEffect_creator CompanyBudgetEffect[] @relation("CompanyBudgetEffect_creator")
+ CompanyCommitment_creator CompanyCommitment[] @relation("CompanyCommitment_creator")
+ CompanyBudgetAdjustment_creator CompanyBudgetAdjustment[] @relation("CompanyBudgetAdjustment_creator")
+ CompanyProjectFinanceLink_creator CompanyProjectFinanceLink[] @relation("CompanyProjectFinanceLink_creator")
+ CompanyFinanceProjectReference_creator CompanyFinanceProjectReference[] @relation("CompanyFinanceProjectReference_creator")
  CompanyEmployeeCaseEntry_creator CompanyEmployeeCaseEntry[] @relation("CompanyEmployeeCaseEntry_creator")
  CompanyResourceAllocation_creator CompanyResourceAllocation[] @relation("CompanyResourceAllocation_creator")
  CompanyResource_creator CompanyResource[] @relation("CompanyResource_creator")
@@ -2382,6 +2408,7 @@ model GoalGrant {
 }
 
 model Project {
+ CompanyProjectFinanceLink_source CompanyProjectFinanceLink[] @relation("CompanyProjectFinanceLink_source")
   TeamProjectReference TeamProjectReference[] @relation("ReferenceScope")
   TeamProjectReferenceId TeamProjectReference[] @relation("ReferenceId")
   @@unique([spaceId,id], map: "Project_space_id_pair")
@@ -3639,6 +3666,17 @@ model TeamMeetingInvitation {
 }
 
 model Company {
+ CompanyExpenseReceipt_company CompanyExpenseReceipt[] @relation("CompanyExpenseReceipt_company")
+ CompanyExpenseReviewEvent_company CompanyExpenseReviewEvent[] @relation("CompanyExpenseReviewEvent_company")
+ CompanyBudgetEffect_company CompanyBudgetEffect[] @relation("CompanyBudgetEffect_company")
+ CompanyExpenseAllocation_company CompanyExpenseAllocation[] @relation("CompanyExpenseAllocation_company")
+ CompanyExpenseVersion_company CompanyExpenseVersion[] @relation("CompanyExpenseVersion_company")
+ CompanyExpense_company CompanyExpense[] @relation("CompanyExpense_company")
+ CompanyCommitment_company CompanyCommitment[] @relation("CompanyCommitment_company")
+ CompanyBudgetAdjustment_company CompanyBudgetAdjustment[] @relation("CompanyBudgetAdjustment_company")
+ CompanyBudget_company CompanyBudget[] @relation("CompanyBudget_company")
+ CompanyFinanceProjectReference_company CompanyFinanceProjectReference[] @relation("CompanyFinanceProjectReference_company")
+ CompanyExpenseCategory_company CompanyExpenseCategory[] @relation("CompanyExpenseCategory_company")
  CompanyEmployeeCaseEntry_company CompanyEmployeeCaseEntry[] @relation("CompanyEmployeeCaseEntry_company")
  CompanyEmployeeCase_company CompanyEmployeeCase[] @relation("CompanyEmployeeCase_company")
  CompanyResourceAllocation_company CompanyResourceAllocation[] @relation("CompanyResourceAllocation_company")
@@ -3874,4 +3912,274 @@ model CompanyEmployeeCaseEntry {
  @@unique([spaceId,scopeId,id])
  @@index([spaceId,scopeId,id],map:"CompanyEmployeeCaseEntry_page")
  @@index([spaceId,scopeId,caseId,id],map:"CompanyEmployeeCaseEntry_case_page")
+}
+
+model CompanyExpenseCategory {
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ title String @db.VarChar(300)
+ archived Boolean @default(false)
+ revision Int @default(1)
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ updatedAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ company Company @relation("CompanyExpenseCategory_company",fields:[spaceId],references:[spaceId],onDelete:NoAction,onUpdate:NoAction,map:"CompanyExpenseCategory_company")
+ context AccessScope @relation("CompanyExpenseCategory_context",fields:[spaceId,scopeId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction,map:"CompanyExpenseCategory_context")
+ @@unique([spaceId,scopeId,id],map:"CompanyExpenseCategory_u0")
+ CompanyExpenseVersion_category CompanyExpenseVersion[] @relation("CompanyExpenseVersion_category")
+}
+
+model CompanyFinanceProjectReference {
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ createdByActorId String @db.Uuid
+ revision Int @default(1)
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ updatedAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ company Company @relation("CompanyFinanceProjectReference_company",fields:[spaceId],references:[spaceId],onDelete:NoAction,onUpdate:NoAction,map:"CompanyFinanceProjectReference_company")
+ context AccessScope @relation("CompanyFinanceProjectReference_context",fields:[spaceId,scopeId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction,map:"CompanyFinanceProjectReference_context")
+ creator SharedActor @relation("CompanyFinanceProjectReference_creator",fields:[spaceId,createdByActorId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction,map:"CompanyFinanceProjectReference_creator")
+ @@unique([spaceId,scopeId,id],map:"CompanyFinanceProjectReference_u0")
+ CompanyProjectFinanceLink_anchor CompanyProjectFinanceLink[] @relation("CompanyProjectFinanceLink_anchor")
+ CompanyBudget_project CompanyBudget[] @relation("CompanyBudget_project")
+ CompanyExpenseVersion_project CompanyExpenseVersion[] @relation("CompanyExpenseVersion_project")
+}
+
+model CompanyProjectFinanceLink {
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ companySpaceId String @db.Uuid
+ companyScopeId String @db.Uuid
+ referenceId String @db.Uuid
+ projectId String @db.Uuid
+ createdByActorId String @db.Uuid
+ revision Int @default(1)
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ updatedAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ source Project @relation("CompanyProjectFinanceLink_source",fields:[spaceId,scopeId,projectId],references:[spaceId,scopeId,id],onDelete:NoAction,onUpdate:NoAction,map:"CompanyProjectFinanceLink_source")
+ anchor CompanyFinanceProjectReference @relation("CompanyProjectFinanceLink_anchor",fields:[companySpaceId,companyScopeId,referenceId],references:[spaceId,scopeId,id],onDelete:NoAction,onUpdate:NoAction,map:"CompanyProjectFinanceLink_anchor")
+ creator SharedActor @relation("CompanyProjectFinanceLink_creator",fields:[spaceId,createdByActorId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction,map:"CompanyProjectFinanceLink_creator")
+ @@unique([spaceId,scopeId,id],map:"CompanyProjectFinanceLink_u0")
+ @@unique([companySpaceId,companyScopeId,referenceId],map:"CompanyProjectFinanceLink_u1")
+}
+
+model CompanyBudget {
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ title String @db.VarChar(300)
+ currency String @db.VarChar(3)
+ scale Int
+ limit Decimal @db.Decimal(28, 4)
+ startDate DateTime @db.Date
+ endDate DateTime @db.Date
+ timezone String @db.VarChar(100)
+ projectReferenceId String? @db.Uuid
+ archived Boolean @default(false)
+ revision Int @default(1)
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ updatedAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ company Company @relation("CompanyBudget_company",fields:[spaceId],references:[spaceId],onDelete:NoAction,onUpdate:NoAction,map:"CompanyBudget_company")
+ context AccessScope @relation("CompanyBudget_context",fields:[spaceId,scopeId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction,map:"CompanyBudget_context")
+ project CompanyFinanceProjectReference? @relation("CompanyBudget_project",fields:[spaceId,scopeId,projectReferenceId],references:[spaceId,scopeId,id],onDelete:NoAction,onUpdate:NoAction,map:"CompanyBudget_project")
+ @@unique([spaceId,scopeId,id],map:"CompanyBudget_u0")
+ @@unique([spaceId,id],map:"CompanyBudget_u1")
+ CompanyBudgetAdjustment_budget CompanyBudgetAdjustment[] @relation("CompanyBudgetAdjustment_budget")
+ CompanyCommitment_budget CompanyCommitment[] @relation("CompanyCommitment_budget")
+ CompanyExpenseAllocation_budget CompanyExpenseAllocation[] @relation("CompanyExpenseAllocation_budget")
+ CompanyBudgetEffect_budget CompanyBudgetEffect[] @relation("CompanyBudgetEffect_budget")
+}
+
+model CompanyBudgetAdjustment {
+ @@index([budgetId,id],map:"CompanyBudgetAdjustment_budgetId_lookup")
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ budgetId String @db.Uuid
+ amount Decimal @db.Decimal(28, 4)
+ createdByActorId String @db.Uuid
+ revision Int @default(1)
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ updatedAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ company Company @relation("CompanyBudgetAdjustment_company",fields:[spaceId],references:[spaceId],onDelete:NoAction,onUpdate:NoAction,map:"CompanyBudgetAdjustment_company")
+ context AccessScope @relation("CompanyBudgetAdjustment_context",fields:[spaceId,scopeId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction,map:"CompanyBudgetAdjustment_context")
+ creator SharedActor @relation("CompanyBudgetAdjustment_creator",fields:[spaceId,createdByActorId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction,map:"CompanyBudgetAdjustment_creator")
+ budget CompanyBudget @relation("CompanyBudgetAdjustment_budget",fields:[spaceId,budgetId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction,map:"CompanyBudgetAdjustment_budget")
+ @@unique([spaceId,scopeId,id],map:"CompanyBudgetAdjustment_u0")
+}
+
+model CompanyCommitment {
+ @@index([budgetId,id],map:"CompanyCommitment_budgetId_lookup")
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ budgetId String @db.Uuid
+ amount Decimal @db.Decimal(28, 4)
+ state String @db.VarChar(8)
+ createdByActorId String @db.Uuid
+ revision Int @default(1)
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ updatedAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ company Company @relation("CompanyCommitment_company",fields:[spaceId],references:[spaceId],onDelete:NoAction,onUpdate:NoAction,map:"CompanyCommitment_company")
+ context AccessScope @relation("CompanyCommitment_context",fields:[spaceId,scopeId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction,map:"CompanyCommitment_context")
+ creator SharedActor @relation("CompanyCommitment_creator",fields:[spaceId,createdByActorId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction,map:"CompanyCommitment_creator")
+ budget CompanyBudget @relation("CompanyCommitment_budget",fields:[spaceId,budgetId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction,map:"CompanyCommitment_budget")
+ @@unique([spaceId,scopeId,id],map:"CompanyCommitment_u0")
+ @@unique([spaceId,budgetId,id],map:"CompanyCommitment_u1")
+ CompanyExpenseAllocation_commitment CompanyExpenseAllocation[] @relation("CompanyExpenseAllocation_commitment")
+ CompanyBudgetEffect_commitment CompanyBudgetEffect[] @relation("CompanyBudgetEffect_commitment")
+}
+
+model CompanyExpense {
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ effectiveVersionId String? @db.Uuid
+ state String @db.VarChar(8)
+ revision Int @default(1)
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ updatedAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ company Company @relation("CompanyExpense_company",fields:[spaceId],references:[spaceId],onDelete:NoAction,onUpdate:NoAction,map:"CompanyExpense_company")
+ context AccessScope @relation("CompanyExpense_context",fields:[spaceId,scopeId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction,map:"CompanyExpense_context")
+ effective CompanyExpenseVersion? @relation("CompanyExpense_effective",fields:[spaceId,scopeId,effectiveVersionId],references:[spaceId,scopeId,id],onDelete:NoAction,onUpdate:NoAction,map:"CompanyExpense_effective")
+ @@unique([spaceId,scopeId,id],map:"CompanyExpense_u0")
+ CompanyExpenseVersion_expense CompanyExpenseVersion[] @relation("CompanyExpenseVersion_expense")
+}
+
+model CompanyExpenseVersion {
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ expenseId String @db.Uuid
+ number Int
+ kind String @db.VarChar(10)
+ state String @db.VarChar(10)
+ requesterAccessId String @db.Uuid
+ requesterGeneration Int
+ reviewerAccessId String? @db.Uuid
+ reviewerGeneration Int?
+ payerAccessId String? @db.Uuid
+ payerGeneration Int?
+ currency String @db.VarChar(3)
+ scale Int
+ amount Decimal @db.Decimal(28, 4)
+ categoryId String @db.Uuid
+ occurredDate DateTime @db.Date
+ timezone String @db.VarChar(100)
+ vendor String? @db.VarChar(300)
+ projectReferenceId String? @db.Uuid
+ submittedAt DateTime? @db.Timestamptz(3)
+ decidedAt DateTime? @db.Timestamptz(3)
+ revision Int @default(1)
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ updatedAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ company Company @relation("CompanyExpenseVersion_company",fields:[spaceId],references:[spaceId],onDelete:NoAction,onUpdate:NoAction,map:"CompanyExpenseVersion_company")
+ context AccessScope @relation("CompanyExpenseVersion_context",fields:[spaceId,scopeId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction,map:"CompanyExpenseVersion_context")
+ requester ContextAccess @relation("CompanyExpenseVersion_requester",fields:[spaceId,scopeId,requesterAccessId],references:[spaceId,scopeId,id],onDelete:NoAction,onUpdate:NoAction,map:"CompanyExpenseVersion_requester")
+ requesterInterval ContextAccessInterval @relation("CompanyExpenseVersion_requesterInterval",fields:[requesterAccessId,requesterGeneration],references:[accessId,generation],onDelete:NoAction,onUpdate:NoAction,map:"CompanyExpenseVersion_requesterInterval")
+ reviewer ContextAccess? @relation("CompanyExpenseVersion_reviewer",fields:[spaceId,scopeId,reviewerAccessId],references:[spaceId,scopeId,id],onDelete:NoAction,onUpdate:NoAction,map:"CompanyExpenseVersion_reviewer")
+ reviewerInterval ContextAccessInterval? @relation("CompanyExpenseVersion_reviewerInterval",fields:[reviewerAccessId,reviewerGeneration],references:[accessId,generation],onDelete:NoAction,onUpdate:NoAction,map:"CompanyExpenseVersion_reviewerInterval")
+ payer ContextAccess? @relation("CompanyExpenseVersion_payer",fields:[spaceId,scopeId,payerAccessId],references:[spaceId,scopeId,id],onDelete:NoAction,onUpdate:NoAction,map:"CompanyExpenseVersion_payer")
+ payerInterval ContextAccessInterval? @relation("CompanyExpenseVersion_payerInterval",fields:[payerAccessId,payerGeneration],references:[accessId,generation],onDelete:NoAction,onUpdate:NoAction,map:"CompanyExpenseVersion_payerInterval")
+ expense CompanyExpense @relation("CompanyExpenseVersion_expense",fields:[spaceId,scopeId,expenseId],references:[spaceId,scopeId,id],onDelete:NoAction,onUpdate:NoAction,map:"CompanyExpenseVersion_expense")
+ project CompanyFinanceProjectReference? @relation("CompanyExpenseVersion_project",fields:[spaceId,scopeId,projectReferenceId],references:[spaceId,scopeId,id],onDelete:NoAction,onUpdate:NoAction,map:"CompanyExpenseVersion_project")
+ category CompanyExpenseCategory @relation("CompanyExpenseVersion_category",fields:[spaceId,scopeId,categoryId],references:[spaceId,scopeId,id],onDelete:NoAction,onUpdate:NoAction,map:"CompanyExpenseVersion_category")
+ @@unique([spaceId,scopeId,id],map:"CompanyExpenseVersion_u0")
+ @@unique([spaceId,scopeId,expenseId,number],map:"CompanyExpenseVersion_u1")
+ CompanyExpense_effective CompanyExpense[] @relation("CompanyExpense_effective")
+ CompanyExpenseAllocation_version CompanyExpenseAllocation[] @relation("CompanyExpenseAllocation_version")
+ CompanyBudgetEffect_version CompanyBudgetEffect[] @relation("CompanyBudgetEffect_version")
+ CompanyExpenseReviewEvent_version CompanyExpenseReviewEvent[] @relation("CompanyExpenseReviewEvent_version")
+ CompanyExpenseReceipt_version CompanyExpenseReceipt[] @relation("CompanyExpenseReceipt_version")
+}
+
+model CompanyExpenseAllocation {
+ @@index([versionId,id],map:"CompanyExpenseAllocation_versionId_lookup")
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ versionId String @db.Uuid
+ budgetId String @db.Uuid
+ commitmentId String? @db.Uuid
+ amount Decimal @db.Decimal(28, 4)
+ revision Int @default(1)
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ updatedAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ company Company @relation("CompanyExpenseAllocation_company",fields:[spaceId],references:[spaceId],onDelete:NoAction,onUpdate:NoAction,map:"CompanyExpenseAllocation_company")
+ context AccessScope @relation("CompanyExpenseAllocation_context",fields:[spaceId,scopeId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction,map:"CompanyExpenseAllocation_context")
+ budget CompanyBudget @relation("CompanyExpenseAllocation_budget",fields:[spaceId,budgetId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction,map:"CompanyExpenseAllocation_budget")
+ commitment CompanyCommitment? @relation("CompanyExpenseAllocation_commitment",fields:[spaceId,budgetId,commitmentId],references:[spaceId,budgetId,id],onDelete:NoAction,onUpdate:NoAction,map:"CompanyExpenseAllocation_commitment")
+ version CompanyExpenseVersion @relation("CompanyExpenseAllocation_version",fields:[spaceId,scopeId,versionId],references:[spaceId,scopeId,id],onDelete:NoAction,onUpdate:NoAction,map:"CompanyExpenseAllocation_version")
+ @@unique([spaceId,scopeId,id],map:"CompanyExpenseAllocation_u0")
+}
+
+model CompanyBudgetEffect {
+ @@index([versionId,id],map:"CompanyBudgetEffect_versionId_lookup")
+ @@index([commitmentId,id],map:"CompanyBudgetEffect_commitmentId_lookup")
+ @@index([budgetId,id],map:"CompanyBudgetEffect_budgetId_lookup")
+ reversalOfId String? @db.Uuid
+ reversal CompanyBudgetEffect? @relation("CompanyBudgetEffect_reversal",fields:[spaceId,scopeId,reversalOfId],references:[spaceId,scopeId,id],onDelete:NoAction,onUpdate:NoAction,map:"CompanyBudgetEffect_reversal")
+ reversals CompanyBudgetEffect[] @relation("CompanyBudgetEffect_reversal")
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ budgetId String @db.Uuid
+ commitmentId String? @db.Uuid
+ versionId String? @db.Uuid
+ spent Decimal @db.Decimal(28, 4)
+ reserved Decimal @db.Decimal(28, 4)
+ createdByActorId String @db.Uuid
+ revision Int @default(1)
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ updatedAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ company Company @relation("CompanyBudgetEffect_company",fields:[spaceId],references:[spaceId],onDelete:NoAction,onUpdate:NoAction,map:"CompanyBudgetEffect_company")
+ context AccessScope @relation("CompanyBudgetEffect_context",fields:[spaceId,scopeId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction,map:"CompanyBudgetEffect_context")
+ creator SharedActor @relation("CompanyBudgetEffect_creator",fields:[spaceId,createdByActorId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction,map:"CompanyBudgetEffect_creator")
+ budget CompanyBudget @relation("CompanyBudgetEffect_budget",fields:[spaceId,budgetId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction,map:"CompanyBudgetEffect_budget")
+ commitment CompanyCommitment? @relation("CompanyBudgetEffect_commitment",fields:[spaceId,budgetId,commitmentId],references:[spaceId,budgetId,id],onDelete:NoAction,onUpdate:NoAction,map:"CompanyBudgetEffect_commitment")
+ version CompanyExpenseVersion? @relation("CompanyBudgetEffect_version",fields:[spaceId,scopeId,versionId],references:[spaceId,scopeId,id],onDelete:NoAction,onUpdate:NoAction,map:"CompanyBudgetEffect_version")
+ @@unique([spaceId,scopeId,id],map:"CompanyBudgetEffect_u0")
+}
+
+model CompanyExpenseReviewEvent {
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ versionId String @db.Uuid
+ reviewerAccessId String? @db.Uuid
+ reviewerGeneration Int?
+ action String @db.VarChar(12)
+ createdByActorId String @db.Uuid
+ revision Int @default(1)
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ updatedAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ company Company @relation("CompanyExpenseReviewEvent_company",fields:[spaceId],references:[spaceId],onDelete:NoAction,onUpdate:NoAction,map:"CompanyExpenseReviewEvent_company")
+ context AccessScope @relation("CompanyExpenseReviewEvent_context",fields:[spaceId,scopeId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction,map:"CompanyExpenseReviewEvent_context")
+ creator SharedActor @relation("CompanyExpenseReviewEvent_creator",fields:[spaceId,createdByActorId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction,map:"CompanyExpenseReviewEvent_creator")
+ reviewer ContextAccess? @relation("CompanyExpenseReviewEvent_reviewer",fields:[spaceId,scopeId,reviewerAccessId],references:[spaceId,scopeId,id],onDelete:NoAction,onUpdate:NoAction,map:"CompanyExpenseReviewEvent_reviewer")
+ reviewerInterval ContextAccessInterval? @relation("CompanyExpenseReviewEvent_reviewerInterval",fields:[reviewerAccessId,reviewerGeneration],references:[accessId,generation],onDelete:NoAction,onUpdate:NoAction,map:"CompanyExpenseReviewEvent_reviewerInterval")
+ version CompanyExpenseVersion @relation("CompanyExpenseReviewEvent_version",fields:[spaceId,scopeId,versionId],references:[spaceId,scopeId,id],onDelete:NoAction,onUpdate:NoAction,map:"CompanyExpenseReviewEvent_version")
+ @@unique([spaceId,scopeId,id],map:"CompanyExpenseReviewEvent_u0")
+}
+
+model CompanyExpenseReceipt {
+ @@index([versionId,id],map:"CompanyExpenseReceipt_versionId_lookup")
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ versionId String @db.Uuid
+ fileId String @db.Uuid
+ pinnedRevision Int?
+ pinnedHash String? @db.VarChar(64)
+ revision Int @default(1)
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ updatedAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ company Company @relation("CompanyExpenseReceipt_company",fields:[spaceId],references:[spaceId],onDelete:NoAction,onUpdate:NoAction,map:"CompanyExpenseReceipt_company")
+ context AccessScope @relation("CompanyExpenseReceipt_context",fields:[spaceId,scopeId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction,map:"CompanyExpenseReceipt_context")
+ version CompanyExpenseVersion @relation("CompanyExpenseReceipt_version",fields:[spaceId,scopeId,versionId],references:[spaceId,scopeId,id],onDelete:NoAction,onUpdate:NoAction,map:"CompanyExpenseReceipt_version")
+ file StoredFile @relation("CompanyExpenseReceipt_file",fields:[spaceId,scopeId,fileId],references:[spaceId,scopeId,id],onDelete:NoAction,onUpdate:NoAction,map:"CompanyExpenseReceipt_file")
+ @@unique([spaceId,scopeId,id],map:"CompanyExpenseReceipt_u0")
+ @@unique([spaceId,scopeId,fileId],map:"CompanyExpenseReceipt_u1")
 }

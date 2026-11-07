@@ -12,8 +12,8 @@ describe('approved API compatibility', () => {
   it('resolves recursive request/result definitions and rejects dangling refs and duplicate operations', () => {
     const doc = createOpenApiDocument();
     expect(assertOpenApiContract(doc)).toEqual({
-      references: 5056,
-      operations: 582,
+      references: 5356,
+      operations: 612,
     });
     const broken = structuredClone(doc) as { paths: Record<string, unknown> };
     broken.paths['/probe'] = {
@@ -56,6 +56,17 @@ describe('approved API compatibility', () => {
       }
     }
     assertApiCompatible(createOpenApiDocument(), combined);
+  });
+  it('preserves accepted P4-02 contracts', () => {
+    assertApiCompatible(
+      createOpenApiDocument(),
+      JSON.parse(
+        fs.readFileSync(
+          'tooling/compatibility/p4-02-api-signatures.json',
+          'utf8',
+        ),
+      ),
+    );
   });
   it('preserves accepted P4-01 contracts', () => {
     assertApiCompatible(

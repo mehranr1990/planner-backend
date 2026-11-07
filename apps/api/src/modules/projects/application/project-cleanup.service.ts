@@ -57,6 +57,7 @@ export class ProjectCleanupService {
   private async content(tx: Prisma.TransactionClient, s: SharedCleanupScope) {
     if (
       !(await sharedDeleteBatch(tx, s, [
+        'CompanyProjectFinanceLink',
         'TeamProjectReference',
         'ProjectActivity',
         'ProjectCommentVersion',
