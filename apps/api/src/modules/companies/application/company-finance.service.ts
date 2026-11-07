@@ -42,6 +42,8 @@ export class CompanyFinanceService {
     @Inject(ProjectFinanceReferences)
     private readonly projects: ProjectFinanceReferences,
     @Inject(SharedFiles) private readonly files: SharedFiles,
+    @Inject(CompanyFinanceExtensions)
+    private readonly extensions: CompanyFinanceExtensions,
   ) {}
   manager(s: FinanceContext) {
     return (
@@ -86,6 +88,14 @@ export class CompanyFinanceService {
     work: (s: FinanceContext) => Promise<T>,
   ) {
     const features = {
+      'workflow.create': 'company.financial-workflow',
+      'workflow.version.create': 'company.financial-workflow-version',
+      'workflow.expense.submit': 'company.financial-approval',
+      'workflow.reimbursement.submit': 'company.financial-approval',
+      'workflow.restart': 'company.financial-approval',
+      'reimbursement.create': 'company.reimbursement-request',
+      'payment.propose': 'company.payment-acknowledgement',
+      'acknowledgement.correct': 'company.acknowledgement-correction',
       'category.create': 'company.finance-category',
       'budget.create': 'company.budget',
       'commitment.create': 'company.commitment',
@@ -985,67 +995,77 @@ export class CompanyFinanceService {
       scopeId,
       reassign ? 'expense.reassign' : 'expense.submit',
       target,
-      async (s) => {
-        const r = await this.expenseRow(s, target);
-        this.op.match(r.revision, revision);
-        const v = await this.version(s, target);
-        this.requester(s, v);
-        if (v.state !== (reassign ? 'SUBMITTED' : 'DRAFT'))
-          throw new ConflictException();
-        await this.reviewer(s, v, input.reviewer);
-        if (v.payerAccessId)
-          await this.op.member(s, {
-            accessId: v.payerAccessId,
-            generation: v.payerGeneration!,
-          });
-        await s.change();
-        if (!reassign) {
-          for (const receipt of await s.tx.companyExpenseReceipt.findMany({
-            where: { versionId: v.id },
-          })) {
-            const file = await this.files.row(
-              s.tx,
-              this.fileScope(s),
-              receipt.fileId,
-            );
-            if (file.status === 'DELETED') continue;
-            if (file.status !== 'READY' || !file.sha256)
-              throw new ConflictException({ code: 'RECEIPT_NOT_READY' });
-            await s.tx.companyExpenseReceipt.update({
-              where: { id: receipt.id },
-              data: {
-                pinnedRevision: file.revision,
-                pinnedHash: file.sha256,
-                ...this.op.changed(s),
-              },
-            });
-          }
-        }
-        await s.tx.companyExpenseVersion.update({
-          where: { id: v.id },
+      (s) => this.submitWithin(s, target, revision, input, reassign),
+    );
+  }
+  async submitWithin(
+    s: FinanceContext,
+    target: string,
+    revision: number,
+    input: z.infer<typeof c.CompanyExpenseSubmitSchema>,
+    reassign = false,
+    controlled = false,
+  ) {
+    const r = await this.expenseRow(s, target);
+    this.op.match(r.revision, revision);
+    const v = await this.version(s, target);
+    this.requester(s, v);
+    if (!controlled || reassign) await this.extensions.assertExpense(s, v.id);
+    if (v.state !== (reassign ? 'SUBMITTED' : 'DRAFT'))
+      throw new ConflictException();
+    await this.reviewer(s, v, input.reviewer);
+    if (v.payerAccessId)
+      await this.op.member(s, {
+        accessId: v.payerAccessId,
+        generation: v.payerGeneration!,
+      });
+    await s.change();
+    if (!reassign) {
+      for (const receipt of await s.tx.companyExpenseReceipt.findMany({
+        where: { versionId: v.id },
+      })) {
+        const file = await this.files.row(
+          s.tx,
+          this.fileScope(s),
+          receipt.fileId,
+        );
+        if (file.status === 'DELETED') continue;
+        if (file.status !== 'READY' || !file.sha256)
+          throw new ConflictException({ code: 'RECEIPT_NOT_READY' });
+        await s.tx.companyExpenseReceipt.update({
+          where: { id: receipt.id },
           data: {
-            state: 'SUBMITTED',
-            submittedAt: v.submittedAt ?? s.now,
-            reviewerAccessId: input.reviewer.accessId,
-            reviewerGeneration: input.reviewer.generation,
+            pinnedRevision: file.revision,
+            pinnedHash: file.sha256,
             ...this.op.changed(s),
           },
         });
-        await s.tx.companyExpenseReviewEvent.create({
-          data: {
-            ...this.op.where(s),
-            id: randomUUID(),
-            versionId: v.id,
-            action: reassign ? 'REASSIGN' : 'SUBMIT',
-            reviewerAccessId: input.reviewer.accessId,
-            reviewerGeneration: input.reviewer.generation,
-            createdByActorId: s.root.actorId,
-          },
-        });
-        return this.bump(s, r);
+      }
+    }
+    await s.tx.companyExpenseVersion.update({
+      where: { id: v.id },
+      data: {
+        state: 'SUBMITTED',
+        submittedAt: v.submittedAt ?? s.now,
+        reviewerAccessId: input.reviewer.accessId,
+        reviewerGeneration: input.reviewer.generation,
+        ...this.op.changed(s),
       },
-    );
+    });
+    await s.tx.companyExpenseReviewEvent.create({
+      data: {
+        ...this.op.where(s),
+        id: randomUUID(),
+        versionId: v.id,
+        action: reassign ? 'REASSIGN' : 'SUBMIT',
+        reviewerAccessId: input.reviewer.accessId,
+        reviewerGeneration: input.reviewer.generation,
+        createdByActorId: s.root.actorId,
+      },
+    });
+    return this.bump(s, r);
   }
+
   fileScope(s: FinanceContext) {
     return {
       spaceId: s.spaceId,
@@ -1077,6 +1097,7 @@ export class CompanyFinanceService {
         if (!['DRAFT', 'SUBMITTED'].includes(v.state))
           throw new ConflictException();
         await s.change();
+        await this.extensions.cancel(s, { expenseVersionId: v.id });
         await s.tx.companyExpenseVersion.update({
           where: { id: v.id },
           data: { state: 'CANCELED', ...this.op.changed(s) },
@@ -1233,92 +1254,98 @@ export class CompanyFinanceService {
     revision: number,
     input: z.infer<typeof c.CompanyExpenseDecisionSchema>,
   ) {
-    return this.write(
-      actor,
-      id,
-      scopeId,
-      'expense.decide',
-      target,
-      async (s) => {
-        const r = await this.expenseRow(s, target);
-        this.op.match(r.revision, revision);
-        const v = await this.version(s, target);
-        await this.audience(s, v);
-        if (
-          v.state !== 'SUBMITTED' ||
-          !v.reviewerAccessId ||
-          !this.op.self(s, {
-            accessId: v.reviewerAccessId,
-            generation: v.reviewerGeneration!,
-          })
-        )
-          throw new ForbiddenException();
-        await this.reviewer(s, v, {
-          accessId: v.reviewerAccessId,
-          generation: v.reviewerGeneration!,
-        });
-        const requester = await this.op.member(s, {
-          accessId: v.requesterAccessId,
-          generation: v.requesterGeneration,
-        });
-        if (
-          ![
-            'OWNER',
-            'ORG_ADMIN',
-            'DEPT_MANAGER',
-            'TEAM_LEAD',
-            'MEMBER',
-          ].includes(requester.role ?? '') &&
-          !(await this.op.access.staffReviewer(s, requester))
-        )
-          throw new ForbiddenException();
-        if (v.payerAccessId)
-          await this.op.member(s, {
-            accessId: v.payerAccessId,
-            generation: v.payerGeneration!,
-          });
-        await s.change();
-        if (input.decision === 'APPROVE') {
-          if (r.effectiveVersionId)
-            await this.reverseEffects(
-              s,
-              await this.version(s, target, r.effectiveVersionId),
-              v.id,
-            );
-          if (v.kind !== 'REVERSAL') await this.approveEffects(s, v);
-        }
-        await s.tx.companyExpenseVersion.update({
-          where: { id: v.id },
-          data: {
-            state: input.decision === 'APPROVE' ? 'APPROVED' : 'REJECTED',
-            decidedAt: s.now,
-            ...this.op.changed(s),
-          },
-        });
-        await s.tx.companyExpenseReviewEvent.create({
-          data: {
-            ...this.op.where(s),
-            id: randomUUID(),
-            versionId: v.id,
-            action: input.decision,
-            reviewerAccessId: v.reviewerAccessId,
-            reviewerGeneration: v.reviewerGeneration,
-            createdByActorId: s.root.actorId,
-          },
-        });
-        return this.bump(
-          s,
-          r,
-          input.decision === 'APPROVE'
-            ? v.kind === 'REVERSAL'
-              ? 'REVERSED'
-              : 'APPROVED'
-            : undefined,
-          input.decision === 'APPROVE' && v.kind !== 'REVERSAL'
-            ? v.id
-            : undefined,
-        );
-      },
+    return this.write(actor, id, scopeId, 'expense.decide', target, (s) =>
+      this.decideWithin(s, target, revision, input),
     );
   }
+  async decideWithin(
+    s: FinanceContext,
+    target: string,
+    revision: number,
+    input: z.infer<typeof c.CompanyExpenseDecisionSchema>,
+    controlled = false,
+  ) {
+    const r = await this.expenseRow(s, target);
+    this.op.match(r.revision, revision);
+    const v = await this.version(s, target);
+    await this.audience(s, v);
+    await this.extensions.assertExpense(s, v.id, controlled);
+    if (
+      v.state !== 'SUBMITTED' ||
+      !v.reviewerAccessId ||
+      !this.op.self(s, {
+        accessId: v.reviewerAccessId,
+        generation: v.reviewerGeneration!,
+      })
+    )
+      throw new ForbiddenException();
+    await this.reviewer(s, v, {
+      accessId: v.reviewerAccessId,
+      generation: v.reviewerGeneration!,
+    });
+    const requester = await this.op.member(s, {
+      accessId: v.requesterAccessId,
+      generation: v.requesterGeneration,
+    });
+    if (
+      !['OWNER', 'ORG_ADMIN', 'DEPT_MANAGER', 'TEAM_LEAD', 'MEMBER'].includes(
+        requester.role ?? '',
+      ) &&
+      !(await this.op.access.staffReviewer(s, requester))
+    )
+      throw new ForbiddenException();
+    if (v.payerAccessId)
+      await this.op.member(s, {
+        accessId: v.payerAccessId,
+        generation: v.payerGeneration!,
+      });
+    await s.change();
+    if (input.decision === 'APPROVE') {
+      if (r.effectiveVersionId)
+        await this.reverseEffects(
+          s,
+          await this.version(s, target, r.effectiveVersionId),
+          v.id,
+        );
+      if (v.kind !== 'REVERSAL') await this.approveEffects(s, v);
+    }
+    await s.tx.companyExpenseVersion.update({
+      where: { id: v.id },
+      data: {
+        state: input.decision === 'APPROVE' ? 'APPROVED' : 'REJECTED',
+        decidedAt: s.now,
+        ...this.op.changed(s),
+      },
+    });
+    await s.tx.companyExpenseReviewEvent.create({
+      data: {
+        ...this.op.where(s),
+        id: randomUUID(),
+        versionId: v.id,
+        action: input.decision,
+        reviewerAccessId: v.reviewerAccessId,
+        reviewerGeneration: v.reviewerGeneration,
+        createdByActorId: s.root.actorId,
+      },
+    });
+    const result = await this.bump(
+      s,
+      r,
+      input.decision === 'APPROVE'
+        ? v.kind === 'REVERSAL'
+          ? 'REVERSED'
+          : 'APPROVED'
+        : undefined,
+      input.decision === 'APPROVE' && v.kind !== 'REVERSAL' ? v.id : undefined,
+    );
+    if (input.decision === 'APPROVE')
+      await this.extensions.changed(
+        s,
+        r.id,
+        v.kind === 'REVERSAL' ? null : await this.version(s, target, v.id),
+      );
+    return result;
+  }
 }
+
+import { CompanyFinanceExtensions } from './company-finance.extensions.js';

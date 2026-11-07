@@ -39,9 +39,20 @@ export class CompaniesModule {
     return {
       module: CompaniesModule,
       imports: [projects, storage],
-      providers: [CompanyFinanceService, CompanyReceiptService],
-      controllers: [CompanyFinanceController],
-      exports: [CompanyFinanceService, CompanyReceiptService],
+      providers: [
+        CompanyFinanceService,
+        CompanyReceiptService,
+        CompanyFinanceExtensions,
+        CompanyReimbursementsService,
+        CompanyFinancialApprovalsService,
+      ],
+      controllers: [CompanyFinanceController, CompanySettlementsController],
+      exports: [
+        CompanyFinanceService,
+        CompanyReceiptService,
+        CompanyReimbursementsService,
+        CompanyFinancialApprovalsService,
+      ],
     };
   }
 }
@@ -49,3 +60,8 @@ export class CompaniesModule {
 import { CompanyFinanceService } from './application/company-finance.service.js';
 import { CompanyReceiptService } from './application/company-receipt.service.js';
 import { CompanyFinanceController } from './http/company-finance.controller.js';
+
+import { CompanyFinanceExtensions } from './application/company-finance.extensions.js';
+import { CompanyReimbursementsService } from './application/company-reimbursements.service.js';
+import { CompanyFinancialApprovalsService } from './application/company-financial-approvals.service.js';
+import { CompanySettlementsController } from './http/company-settlements.controller.js';

@@ -1,4 +1,8 @@
 import {
+  companySettlementsMigrationName,
+  assertReviewedCompanySettlementsMigration,
+} from './reviewed-company-settlements-migration.ts';
+import {
   companyFinanceMigrationName,
   assertReviewedCompanyFinanceMigration,
 } from './reviewed-company-finance-migration.ts';
@@ -136,7 +140,9 @@ export function reviewMigrations(directory = 'prisma/migrations'): string[] {
       path.join(directory, name, 'migration.sql'),
       'utf8',
     );
-    if (name === companyFinanceMigrationName)
+    if (name === companySettlementsMigrationName)
+      assertReviewedCompanySettlementsMigration(name, sql);
+    else if (name === companyFinanceMigrationName)
       assertReviewedCompanyFinanceMigration(name, sql);
     else if (name === companyStaffMigrationName)
       assertReviewedCompanyStaffMigration(name, sql);

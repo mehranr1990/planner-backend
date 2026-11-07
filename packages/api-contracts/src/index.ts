@@ -80,3 +80,5 @@ export * from './team-lifecycle.js';
 export * from './companies.js';
 export * from './company-staff.js';
 export * from './company-finance.js';
+
+export * from './company-settlements.js';

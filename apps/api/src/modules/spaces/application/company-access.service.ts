@@ -253,6 +253,12 @@ export class CompanyAccess {
     id: string,
     auditId: string,
     feature?:
+      | 'company.financial-workflow'
+      | 'company.financial-workflow-version'
+      | 'company.financial-approval'
+      | 'company.reimbursement-request'
+      | 'company.payment-acknowledgement'
+      | 'company.acknowledgement-correction'
       | 'company.expense'
       | 'company.budget'
       | 'company.commitment'
@@ -342,6 +348,23 @@ export class CompanyAccess {
     if (!current) throw new NotFoundException();
     const seat = await this.seat(ctx, scopeId, current.userId);
     return { ...current, role: seat.role };
+  }
+  async financeActor(
+    ctx: CompanyTransaction,
+    scopeId: string,
+    member: { accessId: string; generation: number },
+  ) {
+    const row = await ctx.tx.contextAccess.findFirst({
+      where: {
+        id: member.accessId,
+        spaceId: ctx.spaceId,
+        scopeId,
+        intervals: { some: { generation: member.generation } },
+      },
+      select: { actorId: true },
+    });
+    if (!row) throw new NotFoundException();
+    return row.actorId;
   }
   async staffEmail(ctx: CompanyTransaction, userId: string) {
     if (!ctx.locked.includes(userId)) throw new ConflictException();
