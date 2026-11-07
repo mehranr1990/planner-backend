@@ -1,3 +1,4 @@
+import { CompaniesModule } from './modules/companies/public/index.js';
 import { SyncModule } from './modules/sync/public/index.js';
 import { ProjectsModule } from './modules/projects/public/index.js';
 import { AccountLifecycleModule } from './modules/account/public/lifecycle-module.js';
@@ -109,6 +110,7 @@ export class AppModule {
         HabitsModule,
         goals,
         projects,
+        CompaniesModule,
         TeamsModule.register(
           projects,
           tasks,

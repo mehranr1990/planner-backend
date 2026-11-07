@@ -3,6 +3,7 @@ const uuid = z.uuid();
 const instant = z.iso.datetime();
 export const SharedReplaySchema = z.strictObject({
   kind: z.literal('REPLAY'),
+  companyRestricted: z.literal(true).optional(),
   id: uuid,
   spaceId: uuid,
   version: z.string().regex(/^[1-9][0-9]*$/),
@@ -31,7 +32,16 @@ export const SharedReplaySchema = z.strictObject({
         actorId: uuid,
         state: z.string().max(24),
         memberRole: z
-          .enum(['ADMIN', 'MANAGER', 'LEAD', 'MEMBER', 'VIEWER'])
+          .enum([
+            'ADMIN',
+            'MANAGER',
+            'LEAD',
+            'MEMBER',
+            'VIEWER',
+            'ORG_ADMIN',
+            'DEPT_MANAGER',
+            'TEAM_LEAD',
+          ])
           .nullable(),
         generation: z.number().int().positive(),
         joinedAt: instant,

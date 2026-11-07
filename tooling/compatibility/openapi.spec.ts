@@ -12,8 +12,8 @@ describe('approved API compatibility', () => {
   it('resolves recursive request/result definitions and rejects dangling refs and duplicate operations', () => {
     const doc = createOpenApiDocument();
     expect(assertOpenApiContract(doc)).toEqual({
-      references: 4576,
-      operations: 534,
+      references: 4806,
+      operations: 557,
     });
     const broken = structuredClone(doc) as { paths: Record<string, unknown> };
     broken.paths['/probe'] = {
@@ -72,6 +72,17 @@ describe('approved API compatibility', () => {
           'utf8',
         ),
       ) as Record<string, string>,
+    );
+  });
+  it('preserves accepted P3-05 contracts', () => {
+    assertApiCompatible(
+      createOpenApiDocument(),
+      JSON.parse(
+        fs.readFileSync(
+          'tooling/compatibility/p3-05-api-signatures.json',
+          'utf8',
+        ),
+      ),
     );
   });
   it('retains every P0-01/P0-02/P0-03 request, response, session-security and error contract', () => {

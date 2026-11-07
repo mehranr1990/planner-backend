@@ -50,6 +50,7 @@ export async function captureSharedReplay(
     ? await tx.contextAccess.findMany({
         where: {
           spaceId: event.spaceId,
+          ...(c.kind === 'COMPANY' ? { scopeId: event.spaceId } : {}),
           OR: [
             ...(event.resourceId
               ? [{ id: event.resourceId }, { actorId: event.resourceId }]
@@ -78,6 +79,7 @@ export async function captureSharedReplay(
   }
   return SharedReplaySchema.parse({
     kind: 'REPLAY',
+    ...(c?.kind === 'COMPANY' ? { companyRestricted: true } : {}),
     id: event.id,
     spaceId: event.spaceId,
     version: event.version,
@@ -137,6 +139,8 @@ export async function applySharedReplay(
   const c = await tx.sharedCustody.findUniqueOrThrow({ where: { spaceId } });
   if (c.retentionPolicyVersion !== r.custody.retentionPolicyVersion)
     throw new Error('Replay retention policy mismatch');
+  if (c.kind === 'COMPANY' && !r.companyRestricted)
+    throw new Error('Company replay requires restrictive domain evidence');
   const recovering = r.action === 'lifecycle.recover';
   const deleted = r.custody.state === 'DELETED';
   if (deleted) {
@@ -295,6 +299,7 @@ export async function applySharedReplay(
       ...(!recovering && ['ACTIVE', 'ARCHIVED'].includes(r.custody.state)
         ? { state: r.custody.state }
         : {}),
+      ...(r.companyRestricted ? { state: 'CLOSED' } : {}),
       authorizationVersion: BigInt(r.version),
     },
   });

@@ -1799,6 +1799,12 @@ model PushSubscription {
 
 // SQL enforces additional branch, lifecycle and immutable-history constraints.
 model AccessScope {
+ CompanyInvitationScope ContextInvitation[] @relation("CompanyInvitationScope")
+ Company Company[]
+ CompanyDepartment CompanyDepartment[]
+ CompanyUnit CompanyUnit[]
+ CompanyScopePolicy CompanyScopePolicy[]
+
  restoreGeneration Int @default(0)
  CalendarEvent CalendarEvent[]
  EventRecurrence EventRecurrence[]
@@ -1838,6 +1844,13 @@ model AccessScope {
 
 // SQL enforces additional branch, lifecycle and immutable-history constraints.
 model ContextAccess {
+ CompanyInvitationTarget ContextInvitation[] @relation("CompanyInvitationTarget")
+ CompanyInvitationAccepted ContextInvitation[] @relation("CompanyInvitationAccepted")
+ CompanyContextAdmission_Child CompanyContextAdmission[] @relation("CompanyAdmissionChild")
+ CompanyContextAdmission_Root CompanyContextAdmission[] @relation("CompanyAdmissionRoot")
+ CompanyInvitationIssuer ContextInvitation[] @relation("CompanyInvitationIssuer")
+ CompanyInvitationRecipient ContextInvitation[] @relation("CompanyInvitationRecipient")
+
  TeamMeetingInvitation_recipientMember TeamMeetingInvitation[] @relation("TeamMeetingInvitation_recipientMember")
  TeamMeetingInvitation_inviterMember TeamMeetingInvitation[] @relation("TeamMeetingInvitation_inviterMember")
  TeamDisclosureRecipient_Member TeamDisclosureRecipient[] @relation("TeamDisclosureRecipient_Member")
@@ -1857,7 +1870,7 @@ model ContextAccess {
   scopeId                                                                                             String                  @db.Uuid
   actorId                                                                                             String                  @db.Uuid
   state                                                                                               String                  @db.VarChar(12)
-  memberRole                                                                                          String?                 @db.VarChar(10)
+  memberRole                                                                                          String?                 @db.VarChar(12)
   generation                                                                                          Int                     @default(1)
   revision                                                                                            Int                     @default(1)
   joinedAt                                                                                            DateTime                @db.Timestamptz(3)
@@ -1902,6 +1915,12 @@ model ContextAccess {
 
 // SQL enforces additional branch, lifecycle and immutable-history constraints.
 model ContextAccessInterval {
+ CompanyInvitationTarget ContextInvitation[] @relation("CompanyInvitationTargetInterval")
+ CompanyContextAdmission_Child CompanyContextAdmission[] @relation("CompanyAdmissionChildInterval")
+ CompanyContextAdmission_Root CompanyContextAdmission[] @relation("CompanyAdmissionRootInterval")
+ CompanyInvitationIssuer ContextInvitation[] @relation("CompanyInvitationIssuerInterval")
+ CompanyInvitationRecipient ContextInvitation[] @relation("CompanyInvitationRecipientInterval")
+
  TeamMeetingInvitation_recipientInterval TeamMeetingInvitation[] @relation("TeamMeetingInvitation_recipientInterval")
  TeamMeetingInvitation_inviterInterval TeamMeetingInvitation[] @relation("TeamMeetingInvitation_inviterInterval")
  TeamDisclosureRecipient_Interval TeamDisclosureRecipient[] @relation("TeamDisclosureRecipient_Interval")
@@ -1999,6 +2018,11 @@ model ResourceGrant {
 
 // SQL enforces additional branch, lifecycle and immutable-history constraints.
 model SharedActor {
+ Company Company[]
+ CompanyDepartment CompanyDepartment[]
+ CompanyUnit CompanyUnit[]
+ CompanyScopePolicy CompanyScopePolicy[]
+
  TeamMeeting_Actor TeamMeeting[] @relation("TeamMeeting_Actor")
  TeamCaseEntry_Actor TeamCaseEntry[] @relation("TeamCaseEntry_Actor")
  TeamPlans TeamPlan[] @relation("TeamPlanCreator")
@@ -2083,6 +2107,8 @@ model SharedAuditEvent {
 
 // SQL enforces additional branch, lifecycle and immutable-history constraints.
 model SharedCustody {
+ Company Company?
+
  TeamWorkItem TeamWorkItem[]
   Team Team?
   spaceId                String                @id @db.Uuid
@@ -2218,6 +2244,26 @@ model SharedUsageEntry {
 
 // P2-02: additional check/partial uniqueness rules are enforced by reviewed SQL.
 model ContextInvitation {
+ companyTargetAccessId String? @db.Uuid
+ companyTargetGeneration Int?
+ companyTargetRevision Int?
+ companyAdmissionVersion Int?
+ CompanyTarget ContextAccess? @relation("CompanyInvitationTarget",fields:[companyTargetAccessId],references:[id],onDelete:NoAction,onUpdate:NoAction)
+ CompanyTargetInterval ContextAccessInterval? @relation("CompanyInvitationTargetInterval",fields:[companyTargetAccessId,companyTargetGeneration],references:[accessId,generation],onDelete:NoAction,onUpdate:NoAction)
+ companyScopeId String? @db.Uuid
+ companyAcceptedAccessId String? @db.Uuid
+ CompanyScope AccessScope? @relation("CompanyInvitationScope",fields:[spaceId,companyScopeId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction)
+ CompanyAccepted ContextAccess? @relation("CompanyInvitationAccepted",fields:[companyAcceptedAccessId],references:[id],onDelete:NoAction,onUpdate:NoAction)
+ companyIssuerAccessId String? @db.Uuid
+ companyIssuerGeneration Int?
+ companyRecipientRootAccessId String? @db.Uuid
+ companyRecipientRootGeneration Int?
+ companyRestoreGeneration Int?
+ CompanyIssuer ContextAccess? @relation("CompanyInvitationIssuer",fields:[companyIssuerAccessId],references:[id],onDelete:NoAction,onUpdate:NoAction)
+ CompanyRecipient ContextAccess? @relation("CompanyInvitationRecipient",fields:[companyRecipientRootAccessId],references:[id],onDelete:NoAction,onUpdate:NoAction)
+ CompanyIssuerInterval ContextAccessInterval? @relation("CompanyInvitationIssuerInterval",fields:[companyIssuerAccessId,companyIssuerGeneration],references:[accessId,generation],onDelete:NoAction,onUpdate:NoAction)
+ CompanyRecipientInterval ContextAccessInterval? @relation("CompanyInvitationRecipientInterval",fields:[companyRecipientRootAccessId,companyRecipientRootGeneration],references:[accessId,generation],onDelete:NoAction,onUpdate:NoAction)
+
   id                                                                                                   String                 @id @db.Uuid
   spaceId                                                                                              String                 @db.Uuid
   scopeId                                                                                              String                 @db.Uuid
@@ -2228,7 +2274,7 @@ model ContextInvitation {
   recipientAccessId                                                                                    String?                @db.Uuid
   recipientGeneration                                                                                  Int?
   recipientRevision                                                                                    Int?
-  memberRole                                                                                           String                 @db.VarChar(10)
+  memberRole                                                                                           String                 @db.VarChar(12)
   state                                                                                                String                 @default("PENDING") @db.VarChar(10)
   revision                                                                                             Int                    @default(1)
   proofHash                                                                                            String?                @unique @db.Char(64)
@@ -3567,4 +3613,93 @@ model TeamMeetingInvitation {
  recipientMember ContextAccess @relation("TeamMeetingInvitation_recipientMember",fields:[spaceId,scopeId,recipientAccessId],references:[spaceId,scopeId,id],onDelete:NoAction,onUpdate:NoAction,map:"TeamMeetingInvitation_recipientMember")
  recipientInterval ContextAccessInterval @relation("TeamMeetingInvitation_recipientInterval",fields:[recipientAccessId,recipientGeneration],references:[accessId,generation],onDelete:NoAction,onUpdate:NoAction,map:"TeamMeetingInvitation_recipientInterval")
  @@index([spaceId,id],map:"TeamMeetingInvitation_page")
+}
+
+model Company {
+ id String @id @db.Uuid
+ spaceId String @unique @db.Uuid
+ scopeId String @db.Uuid
+ createdByActorId String @db.Uuid
+ title String @db.VarChar(300)
+ description String? @db.VarChar(10000)
+ revision Int @default(1)
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ updatedAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ creationKey String @db.Char(64)
+ creationFingerprint String @db.Char(64)
+ AccessScope AccessScope @relation(fields:[spaceId,scopeId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction)
+ SharedActor SharedActor @relation(fields:[spaceId,createdByActorId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction)
+ SharedCustody SharedCustody @relation(fields:[spaceId],references:[spaceId],onDelete:NoAction,onUpdate:NoAction)
+ CompanyDepartment CompanyDepartment[]
+ CompanyUnit CompanyUnit[]
+ @@unique([spaceId,id])
+}
+
+model CompanyDepartment {
+ id String @id @db.Uuid
+ spaceId String  @db.Uuid
+ scopeId String @db.Uuid
+ createdByActorId String @db.Uuid
+ title String @db.VarChar(300)
+ description String? @db.VarChar(10000)
+ revision Int @default(1)
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ updatedAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ creationKey String @db.Char(64)
+ creationFingerprint String @db.Char(64)
+ AccessScope AccessScope @relation(fields:[spaceId,scopeId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction)
+ SharedActor SharedActor @relation(fields:[spaceId,createdByActorId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction)
+ Company Company @relation(fields:[spaceId],references:[spaceId],onDelete:NoAction,onUpdate:NoAction)
+ CompanyUnit CompanyUnit[]
+ @@unique([spaceId,creationKey])
+ @@unique([spaceId,id])
+}
+
+model CompanyUnit {
+ id String @id @db.Uuid
+ spaceId String  @db.Uuid
+ scopeId String @db.Uuid
+ createdByActorId String @db.Uuid
+ title String @db.VarChar(300)
+ description String? @db.VarChar(10000)
+ revision Int @default(1)
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ updatedAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ departmentId String @db.Uuid
+ creationKey String @db.Char(64)
+ creationFingerprint String @db.Char(64)
+ AccessScope AccessScope @relation(fields:[spaceId,scopeId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction)
+ SharedActor SharedActor @relation(fields:[spaceId,createdByActorId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction)
+ Company Company @relation(fields:[spaceId],references:[spaceId],onDelete:NoAction,onUpdate:NoAction)
+ CompanyDepartment CompanyDepartment @relation(fields:[spaceId,departmentId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction)
+ @@unique([spaceId,creationKey])
+ @@unique([spaceId,id])
+}
+
+model CompanyScopePolicy {
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ version Int
+ rules Json
+ createdByActorId String @db.Uuid
+ auditId String @unique @db.Uuid
+ publishedAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ AccessScope AccessScope @relation(fields:[spaceId,scopeId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction)
+ SharedActor SharedActor @relation(fields:[spaceId,createdByActorId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction)
+ @@id([spaceId,scopeId,version])
+}
+model CompanyContextAdmission {
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ accessId String @db.Uuid
+ generation Int
+ actorId String @db.Uuid
+ rootScopeId String @db.Uuid
+ rootAccessId String @db.Uuid
+ rootGeneration Int
+ Child ContextAccess @relation("CompanyAdmissionChild",fields:[spaceId,scopeId,accessId,actorId],references:[spaceId,scopeId,id,actorId],onDelete:NoAction,onUpdate:NoAction)
+ Root ContextAccess @relation("CompanyAdmissionRoot",fields:[spaceId,rootScopeId,rootAccessId,actorId],references:[spaceId,scopeId,id,actorId],onDelete:NoAction,onUpdate:NoAction)
+ ChildInterval ContextAccessInterval @relation("CompanyAdmissionChildInterval",fields:[accessId,generation],references:[accessId,generation],onDelete:NoAction,onUpdate:NoAction)
+ RootInterval ContextAccessInterval @relation("CompanyAdmissionRootInterval",fields:[rootAccessId,rootGeneration],references:[accessId,generation],onDelete:NoAction,onUpdate:NoAction)
+ @@id([accessId,generation])
 }

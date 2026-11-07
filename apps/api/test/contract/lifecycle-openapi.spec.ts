@@ -29,11 +29,16 @@ describe('P1-12 lifecycle and limited sync contracts', () => {
       // Independent Projects are authorized by P2-03; Personal sync stays limited.
       '/projects',
       '/teams', // Independent Teams are authorized by P3-01.
+      '/companies', // Company foundation is authorized by P4-01.
     ])
       expect(paths['/api/v1' + path]).toBeDefined();
     for (const path of [
       '/sync/teams',
-      '/companies',
+      '/sync/companies',
+      '/companies/{id}/employee-files',
+      '/companies/{id}/expenses',
+      '/companies/{id}/teams',
+      '/companies/{id}/projects',
       '/sync/projects',
       '/sync/finance',
       '/sync/journal',

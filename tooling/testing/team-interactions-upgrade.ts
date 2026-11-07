@@ -130,12 +130,7 @@ export async function verifyTeamInteractionsUpgrade(input: {
   );
   assert.equal(
     createHash('sha256').update(JSON.stringify(fks)).digest('hex'),
-    fs
-      .readFileSync(
-        'apps/api/src/platform/lifecycle/shared-cleanup-catalog.ts',
-        'utf8',
-      )
-      .match(/'([a-f0-9]{64})'/)![1],
+    '0f5a23925dc2b9623565c973eb70c7ad6d68f538ca012e546bd166f644b18916',
   );
   process.stdout.write(
     'PASS: P3-04 preserves 140 prior table datasets, populated Team work/Calendar/planning/capacity, 49 immutable checksums and prior constraints except additive usage CHECK; interrupted rollback, zero restore-generation default, repeat deploy and exact cleanup catalog.\n',

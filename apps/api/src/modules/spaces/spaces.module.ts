@@ -1,3 +1,4 @@
+import { CompanyAccess } from './application/company-access.service.js';
 import { Module } from '@nestjs/common';
 import { DatabaseModule } from '../../platform/database/database.module.js';
 import { SpacesRepository } from './infrastructure/spaces.repository.js';
@@ -25,6 +26,7 @@ import {
 @Module({
   imports: [DatabaseModule, AuditModule],
   providers: [
+    CompanyAccess,
     SharedKernel,
     SharedLifecycleService,
     SharedIdentity,
@@ -40,6 +42,7 @@ import {
   ],
   controllers: [SpaceCollaborationController, InvitationRecipientController],
   exports: [
+    CompanyAccess,
     SpacesService,
     SharedKernel,
     SharedLifecycleService,

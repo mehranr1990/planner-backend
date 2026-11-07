@@ -47,7 +47,7 @@ describe('P1-11 authorized analytics and reward contracts', () => {
       expect(op.responses).toHaveProperty('409');
     }
   });
-  it('includes approved lifecycle/sync and independent Teams while excluding Company and Team sync', () => {
+  it('includes approved lifecycle/sync and independent Teams while excluding later Company features and Team sync', () => {
     for (const path of [
       '/sync/push',
       '/sync/pull',
@@ -56,7 +56,15 @@ describe('P1-11 authorized analytics and reward contracts', () => {
     ])
       expect(paths).toHaveProperty('/api/v1' + path);
     expect(paths).toHaveProperty('/api/v1/teams'); // P3-01 is explicitly authorized.
-    for (const path of ['/companies', '/sync/teams'])
+    expect(paths).toHaveProperty('/api/v1/companies'); // P4-01 is explicitly authorized.
+    for (const path of [
+      '/sync/teams',
+      '/sync/companies',
+      '/companies/{id}/employee-files',
+      '/companies/{id}/expenses',
+      '/companies/{id}/teams',
+      '/companies/{id}/projects',
+    ])
       expect(paths).not.toHaveProperty('/api/v1' + path);
   });
 });

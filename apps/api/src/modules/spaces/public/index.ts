@@ -21,3 +21,6 @@ export type {
   SharedFeatureKey,
   SharedFeatureDecisionInput,
 } from './shared-features.js';
+
+export { CompanyAccess } from '../application/company-access.service.js';
+export type { CompanyTransaction } from '../application/company-access.service.js';

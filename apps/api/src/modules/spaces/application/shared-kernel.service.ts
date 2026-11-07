@@ -36,6 +36,7 @@ import type { SharedRestoreScope } from '../../../platform/lifecycle/shared-repl
 import {
   defaultPolicy,
   teamDefaultPolicy,
+  companyDefaultPolicy,
   roleInContext,
   permits,
   validateRoleDefaults,
@@ -312,11 +313,17 @@ export class SharedKernel {
     feature: SharedFeatureKey,
     ownerUserId?: string,
   ) {
+    if (feature === 'company.context-membership')
+      return (
+        await tx.$queryRaw<
+          { count: number }[]
+        >`SELECT count(*)::int count FROM "CompanyContextAdmission" b JOIN "ContextAccess" a ON a.id=b."accessId" AND a.generation=b.generation JOIN "ContextAccess" r ON r.id=b."rootAccessId" AND r.generation=b."rootGeneration" JOIN "SharedActor" u ON u.id=a."actorId" JOIN "Space" p ON p."ownerUserId"=u."userId" AND p.kind='PERSONAL' WHERE b."spaceId"=${spaceId}::uuid AND a.state IN ('ACTIVE','SUSPENDED') AND r.state='ACTIVE' AND r."memberRole" IS NOT NULL AND u.state='ACTIVE' AND p."accessClosedAt" IS NULL AND NOT EXISTS(SELECT 1 FROM "SharedExitWork" e WHERE e."userId"=u."userId" AND e."closedAt">=r."joinedAt")`
+      )[0]!.count;
     if (feature === 'shared.custody')
       return (
         await tx.$queryRaw<
           { count: number }[]
-        >`SELECT count(*)::int AS count FROM "SharedCustody" c JOIN "ContextAccess" a ON a.id=c."primaryOwnerAccessId" JOIN "SharedActor" s ON s.id=a."actorId" WHERE s."userId"=${ownerUserId ?? null}::uuid AND c.kind IN ('PROJECT','TEAM') AND c.state IN ('ACTIVE','ARCHIVED') AND a.state='ACTIVE' AND s.state='ACTIVE'`
+        >`SELECT count(*)::int AS count FROM "SharedCustody" c JOIN "ContextAccess" a ON a.id=c."primaryOwnerAccessId" JOIN "SharedActor" s ON s.id=a."actorId" WHERE s."userId"=${ownerUserId ?? null}::uuid AND c.kind IN ('PROJECT','TEAM','COMPANY') AND c.state IN ('ACTIVE','ARCHIVED') AND a.state='ACTIVE' AND s.state='ACTIVE'`
       )[0]!.count;
     if (feature === 'shared.membership') {
       let count = 0;
@@ -394,7 +401,7 @@ export class SharedKernel {
   }
   async readableContextHints(
     actor: RequestActor,
-    kind: 'PROJECT' | 'TEAM' = 'PROJECT',
+    kind: 'PROJECT' | 'TEAM' | 'COMPANY' = 'PROJECT',
   ) {
     this.enabled();
     if (!actor.sessionId) throw new ForbiddenException();
@@ -421,7 +428,7 @@ export class SharedKernel {
       JOIN "SharedActor" custodian ON custodian.id=owner."actorId"
       JOIN "Space" account ON account."ownerUserId"=custodian."userId" AND account.kind='PERSONAL'
       JOIN "Space" ownaccount ON ownaccount."ownerUserId"=u."userId" AND ownaccount.kind='PERSONAL'
-      WHERE c.kind=${kind} AND u."userId"=${userId}::uuid AND u.state='ACTIVE' AND a.state='ACTIVE' AND a."memberRole" IS NOT NULL
+      WHERE c.kind=${kind} AND s.kind='ROOT' AND u."userId"=${userId}::uuid AND u.state='ACTIVE' AND a.state='ACTIVE' AND a."memberRole" IS NOT NULL
       AND c.state IN ('ACTIVE','ARCHIVED') AND s.state IN ('ACTIVE','ARCHIVED') AND account."accessClosedAt" IS NULL AND ownaccount."accessClosedAt" IS NULL
       AND (p."roleDefaults" -> (CASE WHEN a.id=c."primaryOwnerAccessId" THEN 'OWNER' ELSE a."memberRole" END)) ? 'task.read' ORDER BY s.id`;
       return {
@@ -1505,6 +1512,39 @@ export class SharedKernel {
       (await this.endedByClosure(tx, actor.userId, access.joinedAt))
     )
       throw new NotFoundException();
+    if (custody.kind === 'COMPANY' && request.scopeId !== request.spaceId) {
+      const root = await tx.contextAccess.findUnique({
+        where: {
+          spaceId_scopeId_actorId: {
+            spaceId: request.spaceId,
+            scopeId: request.spaceId,
+            actorId: access.actorId,
+          },
+        },
+      });
+      const binding = await tx.companyContextAdmission.findUnique({
+        where: {
+          accessId_generation: {
+            accessId: access.id,
+            generation: access.generation,
+          },
+        },
+      });
+      const rootScope = await tx.accessScope.findUniqueOrThrow({
+        where: { id: request.spaceId },
+      });
+      if (
+        !root ||
+        root.state !== 'ACTIVE' ||
+        !root.memberRole ||
+        rootScope.state !== 'ACTIVE' ||
+        !binding ||
+        binding.rootAccessId !== root.id ||
+        binding.rootGeneration !== root.generation ||
+        (await this.endedByClosure(tx, actor.userId, root.joinedAt))
+      )
+        throw new NotFoundException();
+    }
     // Only admitted actors may learn why their boundary is frozen.
     const primary = await tx.contextAccess.findUnique({
       where: { id: custody.primaryOwnerAccessId! },
@@ -1546,7 +1586,10 @@ export class SharedKernel {
     if (
       !validateRoleDefaults(policy.roleDefaults) ||
       !roleInContext(access.memberRole, custody.kind) ||
-      (custody.kind === 'TEAM') !== Object.hasOwn(policy.roleDefaults, 'LEAD')
+      (custody.kind === 'TEAM') !==
+        Object.hasOwn(policy.roleDefaults, 'LEAD') ||
+      (custody.kind === 'COMPANY') !==
+        Object.hasOwn(policy.roleDefaults, 'ORG_ADMIN')
     )
       throw new ForbiddenException();
     const role =
@@ -2427,7 +2470,7 @@ export class SharedKernel {
         accessId: string;
       },
     ) => Promise<void>,
-    kind: 'PROJECT' | 'TEAM' = 'PROJECT',
+    kind: 'PROJECT' | 'TEAM' | 'COMPANY' = 'PROJECT',
   ) {
     this.enabled();
     uuid.parse(spaceId);
@@ -2501,7 +2544,7 @@ export class SharedKernel {
           scopeId: spaceId,
           actorId,
           state: 'ACTIVE',
-          memberRole: 'ADMIN',
+          memberRole: kind === 'COMPANY' ? 'ORG_ADMIN' : 'ADMIN',
           joinedAt: now,
         },
       });
@@ -2513,7 +2556,12 @@ export class SharedKernel {
           spaceId,
           scopeId: spaceId,
           version: 1,
-          roleDefaults: kind === 'TEAM' ? teamDefaultPolicy : defaultPolicy,
+          roleDefaults:
+            kind === 'COMPANY'
+              ? companyDefaultPolicy
+              : kind === 'TEAM'
+                ? teamDefaultPolicy
+                : defaultPolicy,
           exportMaxRecords: 10000,
           exportMaxBytes: 10485760,
           publishedByActorId: actorId,
@@ -2726,6 +2774,7 @@ export class SharedKernel {
           const members = await tx.contextAccess.findMany({
             where: {
               spaceId,
+              scopeId: spaceId,
               memberRole: { not: null },
               state: { in: ['ACTIVE', 'SUSPENDED'] },
             },
@@ -2781,7 +2830,7 @@ export class SharedKernel {
             ['CLOSING_GRACE', 'OWNER_EXIT_FROZEN'].includes(state)
           ) {
             const all = await tx.contextAccess.findMany({
-              where: { spaceId, memberRole: { not: null } },
+              where: { spaceId, scopeId: spaceId, memberRole: { not: null } },
             });
             let effective = closedAt;
             for (const entry of all) {

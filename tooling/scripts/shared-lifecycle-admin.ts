@@ -46,6 +46,10 @@ try {
         .get(DatabaseService)
         .client.sharedCustody.findUniqueOrThrow({ where: { spaceId } })
     ).kind;
+    if (kind === 'COMPANY')
+      throw new Error(
+        'Company restore requires its separately reviewed domain reconciliation gate',
+      );
     const cleanup =
       kind === 'TEAM'
         ? app.get(TeamCleanupService)

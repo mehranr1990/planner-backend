@@ -1,6 +1,15 @@
 export const roles = ['OWNER', 'ADMIN', 'MANAGER', 'MEMBER', 'VIEWER'] as const;
-export type SharedRole = (typeof roles)[number] | 'LEAD';
-export type MemberRole = Exclude<SharedRole, 'OWNER'>;
+export const companyRoles = [
+  'OWNER',
+  'ORG_ADMIN',
+  'DEPT_MANAGER',
+  'TEAM_LEAD',
+  'MEMBER',
+  'VIEWER',
+] as const;
+export type SharedRole =
+  (typeof roles)[number] | 'LEAD' | (typeof companyRoles)[number];
+export type MemberRole = Exclude<(typeof roles)[number] | 'LEAD', 'OWNER'>;
 export const ordinaryCapabilities = [
   'task.read',
   'task.create',
@@ -35,10 +44,15 @@ export const fixedCapabilities = [
 export type SharedCapability =
   OrdinaryCapability | (typeof fixedCapabilities)[number];
 export type RoleDefaults = Record<
-  'OWNER' | 'ADMIN' | 'MEMBER' | 'VIEWER',
+  'OWNER' | 'MEMBER' | 'VIEWER',
   OrdinaryCapability[]
 > &
-  Partial<Record<'MANAGER' | 'LEAD', OrdinaryCapability[]>>;
+  Partial<
+    Record<
+      'ADMIN' | 'MANAGER' | 'LEAD' | 'ORG_ADMIN' | 'DEPT_MANAGER' | 'TEAM_LEAD',
+      OrdinaryCapability[]
+    >
+  >;
 export const defaultPolicy: RoleDefaults = {
   OWNER: [...ordinaryCapabilities],
   ADMIN: [...ordinaryCapabilities],
@@ -57,17 +71,27 @@ export const defaultPolicy: RoleDefaults = {
 };
 export const teamDefaultPolicy: RoleDefaults = {
   OWNER: [...defaultPolicy.OWNER],
-  ADMIN: [...defaultPolicy.ADMIN],
+  ADMIN: [...defaultPolicy.ADMIN!],
   LEAD: [...defaultPolicy.MANAGER!],
   MEMBER: [...defaultPolicy.MEMBER],
   VIEWER: [...defaultPolicy.VIEWER],
 };
+export const companyDefaultPolicy: RoleDefaults = {
+  OWNER: ['task.read'],
+  ORG_ADMIN: ['task.read'],
+  DEPT_MANAGER: ['task.read'],
+  TEAM_LEAD: ['task.read'],
+  MEMBER: ['task.read'],
+  VIEWER: ['task.read'],
+};
 export function roleInContext(role: string | null, kind: string) {
   return (
     role === null ||
-    (kind === 'TEAM'
-      ? ['ADMIN', 'LEAD', 'MEMBER', 'VIEWER']
-      : ['ADMIN', 'MANAGER', 'MEMBER', 'VIEWER']
+    (kind === 'COMPANY'
+      ? ['ORG_ADMIN', 'DEPT_MANAGER', 'TEAM_LEAD', 'MEMBER', 'VIEWER']
+      : kind === 'TEAM'
+        ? ['ADMIN', 'LEAD', 'MEMBER', 'VIEWER']
+        : ['ADMIN', 'MANAGER', 'MEMBER', 'VIEWER']
     ).includes(role)
   );
 }
@@ -84,11 +108,13 @@ export function withinCeiling(
 export function validateRoleDefaults(value: unknown): value is RoleDefaults {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const record = value as Record<string, unknown>;
-  const catalog = Object.hasOwn(record, 'LEAD')
-    ? (['OWNER', 'ADMIN', 'LEAD', 'MEMBER', 'VIEWER'] as const)
-    : roles;
+  const catalog = Object.hasOwn(record, 'ORG_ADMIN')
+    ? companyRoles
+    : Object.hasOwn(record, 'LEAD')
+      ? (['OWNER', 'ADMIN', 'LEAD', 'MEMBER', 'VIEWER'] as const)
+      : roles;
   return (
-    Object.keys(record).length === roles.length &&
+    Object.keys(record).length === catalog.length &&
     catalog.every((role) => {
       const caps = record[role];
       return (
@@ -109,6 +135,22 @@ export function permits(
   policy: RoleDefaults,
 ) {
   if (!role) return false;
+  if (
+    ['ORG_ADMIN', 'DEPT_MANAGER', 'TEAM_LEAD'].includes(role) &&
+    !ordinaryCapabilities.includes(capability as OrdinaryCapability)
+  ) {
+    if (['membership.leave', 'custody.accept'].includes(capability))
+      return true;
+    if (role === 'ORG_ADMIN')
+      return [
+        'membership.member',
+        'membership.manager',
+        'policy.publish',
+        'settings.manage',
+        'custody.archive',
+      ].includes(capability);
+    return role === 'DEPT_MANAGER' && capability === 'membership.member';
+  }
   if (capability === 'membership.leave') return true;
   if (capability === 'custody.accept') return true;
   if (ordinaryCapabilities.includes(capability as OrdinaryCapability))
@@ -131,10 +173,13 @@ export function permits(
     return ['OWNER', 'ADMIN', 'MANAGER', 'LEAD'].includes(role);
   return capability === 'comment.create' && role !== 'VIEWER';
 }
-export function roleAdministration(role: MemberRole) {
-  return role === 'ADMIN'
+export function roleAdministration(role: Exclude<SharedRole, 'OWNER'>) {
+  return role === 'ADMIN' || role === 'ORG_ADMIN'
     ? 'membership.admin'
-    : role === 'MANAGER' || role === 'LEAD'
+    : role === 'MANAGER' ||
+        role === 'LEAD' ||
+        role === 'DEPT_MANAGER' ||
+        role === 'TEAM_LEAD'
       ? 'membership.manager'
       : 'membership.member';
 }

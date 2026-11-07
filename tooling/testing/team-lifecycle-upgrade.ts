@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import assert from 'node:assert/strict';
 import type { Client } from 'pg';
+import { verifyCompanyFoundationUpgrade } from './company-foundation-upgrade.ts';
 import {
   teamLifecycleMigrationName,
   assertReviewedTeamLifecycleMigration,
@@ -83,4 +84,5 @@ export async function verifyTeamLifecycleUpgrade(input: {
   process.stdout.write(
     'PASS: P3-05 preserves all 146 populated predecessor datasets, 50 checksums and every constraint; rollback and repeat deploy; purge function changes only the accepted custody-kind predicate.\n',
   );
+  await verifyCompanyFoundationUpgrade(input);
 }

@@ -59,7 +59,8 @@
     "personal-data:admin": "node --env-file=.env tooling/scripts/personal-data-admin.ts",
     "smoke:p3-03": "node --env-file-if-exists=.env.test.local tooling/scripts/p3-03-smoke.ts",
     "smoke:p3-04": "node --env-file-if-exists=.env.test.local tooling/scripts/p3-04-smoke.ts",
-    "smoke:p3-05": "node --env-file-if-exists=.env.test.local tooling/scripts/p3-05-smoke.ts"
+    "smoke:p3-05": "node --env-file-if-exists=.env.test.local tooling/scripts/p3-05-smoke.ts",
+    "smoke:p4-01": "node --env-file-if-exists=.env.test.local tooling/scripts/p4-01-smoke.ts"
   },
   "devDependencies": {
     "@nestjs/throttler": "6.7.1",

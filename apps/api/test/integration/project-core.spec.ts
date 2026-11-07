@@ -395,7 +395,25 @@ describe('P2-03 independent Projects and authorized shared sources', () => {
     const tables = await client.$queryRaw<
       { tablename: string }[]
     >`SELECT tablename FROM pg_tables WHERE schemaname=current_schema()`;
-    expect(tables.some((t) => t.tablename === 'Company')).toBe(false);
+    expect(tables.some((t) => t.tablename === 'Company')).toBe(true); // Authorized P4-01 foundation.
+    expect(
+      await client.company.count({ where: { spaceId: first.spaceId } }),
+    ).toBe(0);
+    expect(
+      await client.companyDepartment.count({
+        where: { spaceId: first.spaceId },
+      }),
+    ).toBe(0);
+    expect(
+      await client.companyUnit.count({ where: { spaceId: first.spaceId } }),
+    ).toBe(0);
+    expect(
+      (
+        await client.sharedCustody.findUniqueOrThrow({
+          where: { spaceId: first.spaceId },
+        })
+      ).kind,
+    ).toBe('PROJECT');
     expect(tables.some((t) => t.tablename === 'Team')).toBe(true); // Authorized P3-01 expansion.
     expect(await client.team.count({ where: { spaceId: first.spaceId } })).toBe(
       0,
