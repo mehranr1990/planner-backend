@@ -84,3 +84,6 @@ export * from './company-finance.js';
 export * from './company-settlements.js';
 
 export * from './company-knowledge.js';
+export * from './company-lifecycle.js';
+
+export * from './company-associations.js';

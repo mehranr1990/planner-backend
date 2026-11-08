@@ -1,3 +1,4 @@
+import { TaskCustodyGraph } from './application/tasks-custody-graph.js';
 import { TasksData } from './public/personal-data.js';
 import { PersonalTaskTransfer } from './public/personal-transfer.js';
 import { SharedTasksCleanup } from './public/shared-cleanup.js';
@@ -51,6 +52,7 @@ export class TasksModule {
       module: TasksModule,
       imports: [DatabaseModule, AuditModule, SpacesModule, storage],
       providers: [
+        TaskCustodyGraph,
         { provide: SharedTasksCleanup, useClass: SharedTasksCleanupRepository },
         {
           provide: PersonalTaskTransfer,
@@ -85,6 +87,7 @@ export class TasksModule {
         LabelsController,
       ],
       exports: [
+        TaskCustodyGraph,
         SharedTasksCleanup,
         PersonalTaskTransfer,
         SharedTaskWork,

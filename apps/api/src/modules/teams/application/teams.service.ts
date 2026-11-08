@@ -66,7 +66,12 @@ export class TeamsService {
     return c.TeamSchema.strip().parse({
       ...row,
       state,
-      association: { kind: 'INDEPENDENT' },
+      association: await this.kernel.contextAssociation(
+        tx,
+        a,
+        row.spaceId,
+        row.scopeId,
+      ),
       createdAt: row.createdAt.toISOString(),
       updatedAt: row.updatedAt.toISOString(),
     });
@@ -268,20 +273,20 @@ export class TeamsService {
     const requests = [
       this.request(id),
       ...candidates.map((r) => ({
-        ...this.request(r.spaceId),
+        ...this.request(r.projectId),
         allowArchived: true,
       })),
     ];
     return this.kernel.run(
       actor,
-      { userIds: [], spaceIds: [id, ...candidates.map((r) => r.spaceId)] },
+      { userIds: [], spaceIds: [id, ...candidates.map((r) => r.projectId)] },
       requests,
       async (tx, a) => {
         const rows = await this.projects.list(
           tx,
           a,
           id,
-          candidates.map((r) => r.spaceId),
+          candidates.map((r) => r.projectId),
         );
         const access = a.require(tx, id, 'task.read');
         const stamp = hash([
@@ -328,7 +333,7 @@ export class TeamsService {
       { userIds: [], spaceIds: [id, project.spaceId] },
       [
         this.request(id, 'settings.manage'),
-        this.request(project.spaceId, 'settings.manage'),
+        this.request(project.scopeId, 'settings.manage'),
       ],
       (tx, a) =>
         this.projects.reference(tx, a, actor, id, projectId, revision, active),

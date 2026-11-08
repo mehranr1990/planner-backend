@@ -12,6 +12,11 @@ import { randomUUID } from 'node:crypto';
 import type { Readable } from 'node:stream';
 import type { FileUpload } from '@mehran/api-contracts';
 import type { Prisma, StoredFile } from '../../../generated/prisma/client.js';
+import {
+  snapshotCustodyGraph,
+  moveCustodyGraph,
+} from '../../database/custody-graph.js';
+import type { CustodyGraphScope } from '../../database/custody-graph.js';
 import { APP_CONFIG } from '../../../bootstrap/configuration.module.js';
 import type { AppConfig } from '../../../bootstrap/environment.js';
 import { STORAGE_PORT, StorageFailure } from '../storage.port.js';
@@ -33,6 +38,54 @@ export type SharedFileScope = {
 export type SharedUploadTicket = { file: StoredFile; attempt: string };
 @Injectable()
 export class SharedFiles {
+  async custodySnapshot(
+    tx: Prisma.TransactionClient,
+    scope: CustodyGraphScope,
+  ) {
+    scope.verify(tx, false);
+    const files = await tx.storedFile.findMany({
+      where: { spaceId: scope.sourceSpaceId },
+      select: {
+        id: true,
+        status: true,
+        uploadAttemptId: true,
+        sha256: true,
+        actualSize: true,
+        purgedAt: true,
+      },
+      take: 2001,
+      orderBy: { id: 'asc' },
+    });
+    if (files.length > 2000)
+      throw new PayloadTooLargeException({ code: 'CUSTODY_GRAPH_LIMIT' });
+    if (
+      files.some(
+        (f) =>
+          f.status === 'INITIATED' ||
+          f.uploadAttemptId ||
+          (f.status === 'READY' && (!f.sha256 || f.actualSize === null)),
+      )
+    )
+      throw new ConflictException({
+        code: 'CUSTODY_FILE_RECONCILIATION_REQUIRED',
+      });
+    return {
+      parts: await snapshotCustodyGraph(tx, scope, [
+        { table: 'StoredFile', select: ['spaceId'], move: ['spaceId'] },
+      ]),
+      files: files.map((f) => ({
+        id: f.id,
+        sha256: f.sha256,
+        size: f.actualSize,
+        purged: f.purgedAt !== null,
+      })),
+    };
+  }
+  custodyMove(tx: Prisma.TransactionClient, scope: CustodyGraphScope) {
+    return moveCustodyGraph(tx, scope, [
+      { table: 'StoredFile', select: ['spaceId'], move: ['spaceId'] },
+    ]);
+  }
   constructor(
     @Inject(STORAGE_PORT) private readonly storage: StoragePort,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
@@ -41,6 +94,7 @@ export class SharedFiles {
     tx: Prisma.TransactionClient,
     scope: SharedRestoreScope,
     id: string | null,
+    allScopes = false,
   ) {
     scope.verify(tx);
     if (id)
@@ -48,7 +102,7 @@ export class SharedFiles {
         where: {
           id,
           spaceId: scope.spaceId,
-          scopeId: scope.spaceId,
+          ...(allScopes ? {} : { scopeId: scope.spaceId }),
           ownerUserId: null,
           status: { not: 'DELETED' },
         },
@@ -61,7 +115,7 @@ export class SharedFiles {
     return tx.storedFile.findMany({
       where: {
         spaceId: scope.spaceId,
-        scopeId: scope.spaceId,
+        ...(allScopes ? {} : { scopeId: scope.spaceId }),
         ownerUserId: null,
         status: 'DELETED',
         purgedAt: null,
@@ -97,12 +151,17 @@ export class SharedFiles {
   async purgePlan(
     tx: Prisma.TransactionClient,
     s: SharedCleanupScope,
+    allScopes = false,
   ): Promise<CleanupFile[]> {
     s.verify(tx);
     const rows = await tx.storedFile.findMany({
       where: {
         spaceId: s.spaceId,
-        scopeId: s.spaceId,
+        ...(s.scopeId
+          ? { scopeId: s.scopeId }
+          : allScopes
+            ? {}
+            : { scopeId: s.spaceId }),
         ownerUserId: null,
         purgedAt: null,
       },
@@ -131,6 +190,7 @@ export class SharedFiles {
     tx: Prisma.TransactionClient,
     s: SharedCleanupScope,
     files: CleanupFile[],
+    allScopes = false,
   ) {
     s.verify(tx);
     if (files.length > 25) throw new ConflictException();
@@ -139,7 +199,11 @@ export class SharedFiles {
         where: {
           id: file.id,
           spaceId: s.spaceId,
-          scopeId: s.spaceId,
+          ...(s.scopeId
+            ? { scopeId: s.scopeId }
+            : allScopes
+              ? {}
+              : { scopeId: s.spaceId }),
           ownerUserId: null,
           status: 'DELETED',
           objectKey: file.key,
@@ -161,7 +225,11 @@ export class SharedFiles {
     s.verify(tx);
     if (
       await tx.storedFile.count({
-        where: { spaceId: s.spaceId, purgedAt: null },
+        where: {
+          spaceId: s.spaceId,
+          ...(s.scopeId ? { scopeId: s.scopeId } : {}),
+          purgedAt: null,
+        },
       })
     )
       throw new ConflictException();

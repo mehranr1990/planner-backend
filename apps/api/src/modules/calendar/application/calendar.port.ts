@@ -7,6 +7,7 @@ export const CALENDAR_REPOSITORY = Symbol('CALENDAR_REPOSITORY');
 export type SharedCalendarContext = {
   shared: true;
   spaceId: string;
+  scopeId: string;
   actor: RequestActor;
   actorId: string;
   changed: (id: string) => Promise<void>;

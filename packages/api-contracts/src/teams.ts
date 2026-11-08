@@ -10,6 +10,7 @@ import {
   ProjectPatchSchema,
   ProjectPageQuerySchema,
   ProjectSchema,
+  DomainCustodyAssociationSchema,
 } from './projects.js';
 export const TeamMemberRoleSchema = z.enum([
   'ADMIN',
@@ -67,7 +68,7 @@ export const TeamCreateSchema = ProjectCreateSchema;
 export const TeamPatchSchema = ProjectPatchSchema;
 export const TeamPageQuerySchema = ProjectPageQuerySchema;
 export const TeamSchema = ProjectSchema.omit({ association: true }).extend({
-  association: z.strictObject({ kind: z.literal('INDEPENDENT') }),
+  association: DomainCustodyAssociationSchema,
 });
 export const TeamPageSchema = z.strictObject({
   items: z.array(TeamSchema),

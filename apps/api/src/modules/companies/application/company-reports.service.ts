@@ -285,7 +285,7 @@ export class CompanyReportsService {
     return this.op.access.readAcross(
       actor,
       id,
-      hints.map((r) => r.spaceId),
+      hints.map((r) => r.scopeId),
       async (ctx, a) => {
         await this.knowledge.visibility(ctx, scopeId, ordinary);
         const s: StaffContext = {

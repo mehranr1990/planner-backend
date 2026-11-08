@@ -14,18 +14,18 @@ import type {
 import { Store } from './calendar.repository.js';
 import * as c from '@mehran/api-contracts';
 import { policies } from '../domain/model.js';
-function sharedView(value: unknown, spaceId: string): unknown {
-  if (Array.isArray(value)) return value.map((v) => sharedView(v, spaceId));
+function sharedView(value: unknown, scopeId: string): unknown {
+  if (Array.isArray(value)) return value.map((v) => sharedView(v, scopeId));
   if (!value || typeof value !== 'object') return value;
   const row = value as Record<string, unknown>;
   if ('createdByUserId' in row)
     return c.TeamCalendarEventSchema.strip().parse({
       ...row,
       ...policies,
-      scopeId: spaceId,
+      scopeId: scopeId,
     });
   return Object.fromEntries(
-    Object.entries(row).map(([k, v]) => [k, sharedView(v, spaceId)]),
+    Object.entries(row).map(([k, v]) => [k, sharedView(v, scopeId)]),
   );
 }
 @Injectable()
@@ -36,7 +36,7 @@ export class SharedCalendarRepository extends SharedCalendar {
     if (!(await sharedDeleteBatch(tx, scope, ['EventRecurrence'])))
       return false;
     const removed =
-      await tx.$executeRaw`DELETE FROM "CalendarEvent" WHERE id IN (SELECT e.id FROM "CalendarEvent" e WHERE e."spaceId"=${scope.spaceId}::uuid AND NOT EXISTS(SELECT 1 FROM "CalendarEvent" child WHERE child."spaceId"=e."spaceId" AND (child."seriesId"=e.id OR child."previousSeriesId"=e.id)) ORDER BY e.id LIMIT 200)`;
+      await tx.$executeRaw`DELETE FROM "CalendarEvent" WHERE id IN (SELECT e.id FROM "CalendarEvent" e WHERE e."spaceId"=${scope.spaceId}::uuid AND (${scope.scopeId ?? null}::uuid IS NULL OR e."scopeId"=${scope.scopeId ?? null}::uuid) AND NOT EXISTS(SELECT 1 FROM "CalendarEvent" child WHERE child."spaceId"=e."spaceId" AND (child."seriesId"=e.id OR child."previousSeriesId"=e.id)) ORDER BY e.id LIMIT 200)`;
     return removed === 0;
   }
   constructor(
@@ -52,15 +52,17 @@ export class SharedCalendarRepository extends SharedCalendar {
     spaceId: string,
     command: SharedCalendarCommand,
   ) {
+    const scopeId = a.scope(tx, spaceId);
+    const actualSpaceId = a.space(tx, spaceId);
     const write = !['READ', 'LIST', 'VIEW'].includes(command.kind),
       access = a.require(tx, spaceId, write ? 'work.manage' : 'task.read');
     a.require(tx, spaceId, 'task.read');
-    await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${'calendar:' + spaceId},0))::text`;
+    await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${'calendar:' + actualSpaceId},0))::text`;
     const effect = (id: string, feature?: string) =>
       this.kernel.offerEffect(
         tx,
         actor,
-        spaceId,
+        scopeId,
         access.actorId,
         feature ? 'calendar.event.create' : 'calendar.event.change',
         id,
@@ -69,14 +71,15 @@ export class SharedCalendarRepository extends SharedCalendar {
       );
     const scope: SharedCalendarContext = {
       shared: true,
-      spaceId,
+      spaceId: actualSpaceId,
+      scopeId,
       actor,
       actorId: access.actorId,
       changed: async (id) => {
         await effect(id);
       },
       creating: () =>
-        this.kernel.featureGrowth(tx, spaceId, 'calendar.shared-event'),
+        this.kernel.featureGrowth(tx, actualSpaceId, 'calendar.shared-event'),
       created: async (id) => {
         await effect(id, 'calendar.shared-event');
       },
@@ -92,10 +95,10 @@ export class SharedCalendarRepository extends SharedCalendar {
       case 'CREATE':
         return sharedView(
           await engine.createEvent(scope, command.key, command.input),
-          spaceId,
+          scopeId,
         );
       case 'READ':
-        return sharedView(await engine.event(scope, command.id), spaceId);
+        return sharedView(await engine.event(scope, command.id), scopeId);
       case 'PATCH':
         return sharedView(
           await engine.patchEvent(
@@ -104,7 +107,7 @@ export class SharedCalendarRepository extends SharedCalendar {
             command.revision,
             command.input,
           ),
-          spaceId,
+          scopeId,
         );
       case 'DELETE':
         await engine.deleteEvent(scope, command.id, command.revision);
@@ -118,7 +121,7 @@ export class SharedCalendarRepository extends SharedCalendar {
             command.key,
             command.input,
           ),
-          spaceId,
+          scopeId,
         );
       case 'SERIES_RESULT': {
         const event = await engine.event(scope, command.id);
@@ -136,8 +139,8 @@ export class SharedCalendarRepository extends SharedCalendar {
           command.input.scope === 'THIS_AND_FUTURE'
             ? await tx.calendarEvent.findFirst({
                 where: {
-                  spaceId,
-                  scopeId: spaceId,
+                  spaceId: actualSpaceId,
+                  scopeId,
                   previousSeriesId: command.id,
                 },
               })
@@ -150,13 +153,13 @@ export class SharedCalendarRepository extends SharedCalendar {
               ? await engine.event(scope, successor.id)
               : null,
           },
-          spaceId,
+          scopeId,
         );
       }
       case 'LIST':
         return sharedView(
           await engine.list(scope, 'EVENT', command.query),
-          spaceId,
+          scopeId,
         );
       case 'VIEW':
         return engine.view(scope, command.query);

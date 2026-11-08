@@ -91,7 +91,11 @@ export class ProjectsService {
     a.require(tx, spaceId, 'task.read', target);
     if (
       !(await tx.project.findFirst({
-        where: { id: target.id, spaceId, scopeId: spaceId },
+        where: {
+          id: target.id,
+          spaceId: a.space(tx, spaceId),
+          scopeId: a.scope(tx, spaceId),
+        },
       }))
     )
       throw new NotFoundException();
@@ -99,7 +103,7 @@ export class ProjectsService {
   async policy(actor: RequestActor, id: string) {
     const row = await this.hint(id);
     return c.ProjectPolicySchema.parse(
-      await this.kernel.readPolicy(actor, row.spaceId),
+      await this.kernel.readPolicy(actor, row.scopeId),
     );
   }
   async publishPolicy(
@@ -126,7 +130,7 @@ export class ProjectsService {
     const row = await this.hint(id);
     return this.grants.createOffer(
       actor,
-      row.spaceId,
+      row.scopeId,
       input,
       key,
       this.validateGrantTarget,
@@ -139,7 +143,7 @@ export class ProjectsService {
     revision: number,
   ) {
     const row = await this.hint(id);
-    return this.grants.revoke(actor, row.spaceId, grantId, revision);
+    return this.grants.revoke(actor, row.scopeId, grantId, revision);
   }
   async createContentGrantOffer(
     actor: RequestActor,
@@ -150,7 +154,7 @@ export class ProjectsService {
     const row = await this.hint(id);
     return this.grants.createOffer(
       actor,
-      row.spaceId,
+      row.scopeId,
       input,
       key,
       this.validateGrantTarget,
@@ -164,28 +168,33 @@ export class ProjectsService {
     revision: number,
   ) {
     const row = await this.hint(id);
-    return this.grants.revokeOffer(actor, row.spaceId, offerId, revision);
+    return this.grants.revokeOffer(actor, row.scopeId, offerId, revision);
   }
   async leaveCollaboration(actor: RequestActor, id: string, revision: number) {
     const row = await this.hint(id);
-    return this.kernel.departGuest(actor, row.spaceId, revision);
+    return this.kernel.departGuest(actor, row.scopeId, revision);
   }
   async lifecycleStatus(actor: RequestActor, id: string) {
     const row = await this.hint(id);
     return c.ProjectLifecycleSchema.parse(
-      await this.kernel.projectStatus(actor, row.spaceId),
+      await this.kernel.projectStatus(actor, row.scopeId),
     );
   }
   async readGrantOffer(actor: RequestActor, id: string, offerId: string) {
     const row = await this.hint(id);
-    return this.grants.readOffer(actor, row.spaceId, offerId);
+    return this.grants.readOffer(actor, row.scopeId, offerId);
   }
   async view(tx: Prisma.TransactionClient, row: Project, a: SharedAuthority) {
     const state = await this.kernel.contextState(tx, a, row.spaceId, row.id);
     return c.ProjectSchema.strip().parse({
       ...row,
       state,
-      association: { kind: 'INDEPENDENT' },
+      association: await this.kernel.contextAssociation(
+        tx,
+        a,
+        row.spaceId,
+        row.scopeId,
+      ),
       createdAt: row.createdAt.toISOString(),
       updatedAt: row.updatedAt.toISOString(),
     });
@@ -233,11 +242,17 @@ export class ProjectsService {
     id: string,
     feature?: string,
   ) {
-    const access = a.require(tx, r.spaceId, r.capability, r.resource);
+    const access = a.require(
+      tx,
+      r.spaceId,
+      r.capability,
+      r.resource,
+      r.scopeId,
+    );
     if (!action.startsWith('project.member.'))
       await appendProjectActivity(
         tx,
-        r.spaceId,
+        r.scopeId,
         access.actorId,
         action,
         id,
@@ -251,7 +266,7 @@ export class ProjectsService {
     await this.kernel.offerEffect(
       tx,
       actor,
-      r.spaceId,
+      r.scopeId,
       access.actorId,
       action,
       id,
@@ -276,7 +291,8 @@ export class ProjectsService {
         operation,
         key:
           'generation:' +
-          a.require(tx, r.spaceId, r.capability, r.resource).generation +
+          a.require(tx, r.spaceId, r.capability, r.resource, r.scopeId)
+            .generation +
           ':' +
           key(rawKey),
         fingerprint: hash(input),
@@ -458,7 +474,7 @@ export class ProjectsService {
     const row = await this.hint(id);
     return this.kernel.projectLifecycle(
       actor,
-      row.spaceId,
+      row.scopeId,
       action,
       async (tx) => {
         const current = await tx.project.findUniqueOrThrow({ where: { id } });
@@ -1140,7 +1156,7 @@ export class ProjectsService {
     const row = await this.hint(id),
       r = this.request(row, 'work.manage'),
       memberUser = await this.kernel.memberUserHint(
-        row.spaceId,
+        row.scopeId,
         input.accessId,
       );
     return this.run(
@@ -1166,7 +1182,7 @@ export class ProjectsService {
               throw new NotFoundException();
             const access = await this.kernel.eligibleMember(
               tx,
-              row.spaceId,
+              row.scopeId,
               input.accessId,
               memberUser,
             );

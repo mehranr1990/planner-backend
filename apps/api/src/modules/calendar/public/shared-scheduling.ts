@@ -11,6 +11,7 @@ export type PrivateSharedBlock = {
 export abstract class SharedScheduling {
   abstract cleanupHints(
     spaceId: string,
+    scopeId?: string,
   ): Promise<{ blockIds: string[]; userIds: string[] }>;
   abstract cleanup(
     tx: Prisma.TransactionClient,

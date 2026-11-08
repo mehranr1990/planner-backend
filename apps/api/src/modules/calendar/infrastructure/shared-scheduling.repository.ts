@@ -13,6 +13,7 @@ import { appendSharedSourceDeparture } from '../../../platform/outbox/outbox.js'
 import type { SharedCleanupScope } from '../../../platform/lifecycle/shared-cleanup.js';
 import { DatabaseService } from '../../../platform/database/database.service.js';
 import { SharedFeaturePolicy } from '../../spaces/public/index.js';
+import { SharedTasks } from '../../tasks/public/index.js';
 import { SharedScheduling } from '../public/shared-scheduling.js';
 import type { z } from 'zod';
 import * as c from '@mehran/api-contracts';
@@ -21,12 +22,13 @@ export class SharedSchedulingRepository extends SharedScheduling {
   constructor(
     @Inject(DatabaseService) private readonly db: DatabaseService,
     @Inject(SharedFeaturePolicy) private readonly features: SharedFeaturePolicy,
+    @Inject(SharedTasks) private readonly tasks: SharedTasks,
   ) {
     super();
   }
-  async cleanupHints(spaceId: string) {
+  async cleanupHints(spaceId: string, scopeId?: string) {
     const rows = await this.db.client.timeBlockSharedTaskLink.findMany({
-      where: { spaceId },
+      where: { spaceId, ...(scopeId ? { scopeId } : {}) },
       orderBy: { blockId: 'asc' },
       take: 25,
       select: { blockId: true, ownerUserId: true },
@@ -44,7 +46,11 @@ export class SharedSchedulingRepository extends SharedScheduling {
     s.verify(tx);
     if (blockIds.length > 25) throw new ConflictException();
     const rows = await tx.timeBlockSharedTaskLink.findMany({
-      where: { spaceId: s.spaceId, blockId: { in: blockIds } },
+      where: {
+        spaceId: s.spaceId,
+        ...(s.scopeId ? { scopeId: s.scopeId } : {}),
+        blockId: { in: blockIds },
+      },
       orderBy: { personalSpaceId: 'asc' },
     });
     for (const row of rows) {
@@ -67,7 +73,10 @@ export class SharedSchedulingRepository extends SharedScheduling {
     }
     return (
       (await tx.timeBlockSharedTaskLink.count({
-        where: { spaceId: s.spaceId },
+        where: {
+          spaceId: s.spaceId,
+          ...(s.scopeId ? { scopeId: s.scopeId } : {}),
+        },
       })) === 0
     );
   }
@@ -125,6 +134,11 @@ export class SharedSchedulingRepository extends SharedScheduling {
     });
     if (input) {
       if (existing) throw new ConflictException();
+      const location = await this.tasks.location(
+        tx,
+        input.taskId,
+        input.spaceId,
+      );
       const decision = await this.features.decide(
         {
           feature: 'calendar.shared-link',
@@ -143,7 +157,7 @@ export class SharedSchedulingRepository extends SharedScheduling {
           personalSpaceId: scope.spaceId,
           ownerUserId: scope.actor.userId,
           spaceId: input.spaceId,
-          scopeId: input.spaceId,
+          scopeId: location.scopeId,
           taskId: input.taskId,
           selectedTaskRevision: input.sourceRevision,
         },

@@ -4,6 +4,16 @@ const instant = z.iso.datetime();
 export const SharedReplaySchema = z.strictObject({
   kind: z.literal('REPLAY'),
   companyRestricted: z.literal(true).optional(),
+  /** ADR 0040: old strict readers must reject Company-child custody snapshots. */
+  companyChildCustody: z.literal('V1').optional(),
+  retiredToCompany: z
+    .strictObject({
+      transferId: uuid,
+      companyId: uuid,
+      manifestHash: z.string().regex(/^[a-f0-9]{64}$/),
+      sourceKind: z.enum(['PROJECT', 'TEAM']),
+    })
+    .optional(),
   id: uuid,
   spaceId: uuid,
   version: z.string().regex(/^[1-9][0-9]*$/),

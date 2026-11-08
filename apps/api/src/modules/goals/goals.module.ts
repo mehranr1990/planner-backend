@@ -1,3 +1,4 @@
+import { GoalCustodyGraph } from './application/goals-custody-graph.js';
 import { GoalsData } from './public/personal-data.js';
 import { PersonalGoalTransfer } from './public/personal-transfer.js';
 import { SharedGoalsCleanup } from './public/shared-cleanup.js';
@@ -38,6 +39,7 @@ export class GoalsModule {
         tasks,
       ],
       providers: [
+        GoalCustodyGraph,
         { provide: SharedGoalsCleanup, useClass: SharedGoalsCleanupRepository },
         {
           provide: PersonalGoalTransfer,
@@ -52,6 +54,7 @@ export class GoalsModule {
       ],
       controllers: [GoalsController, LifeAreasController],
       exports: [
+        GoalCustodyGraph,
         GoalsData,
         AnalyticsGoals,
         PersonalGoals,

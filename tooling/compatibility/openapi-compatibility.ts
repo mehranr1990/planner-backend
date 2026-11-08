@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { historicalCompanyCustodyResponses } from './company-custody-responses.ts';
 
 type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
 function stable(value: Json): string {
@@ -124,7 +125,7 @@ export function assertApiCompatible(
   document: unknown,
   baseline: Record<string, string>,
 ): void {
-  const current = apiSignatures(document);
+  const current = apiSignatures(historicalCompanyCustodyResponses(document));
   for (const [contract, hash] of Object.entries(baseline)) {
     if (current[contract] !== hash)
       throw new Error(

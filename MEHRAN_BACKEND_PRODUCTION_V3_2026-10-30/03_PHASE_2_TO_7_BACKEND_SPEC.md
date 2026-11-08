@@ -21,6 +21,16 @@ Performance: transparent task/work KPIs with clear source/denominator. Recogniti
 **Acceptance examples:** same person different roles in two teams; team membership insufficient to read unrelated Project; team dashboard never includes private mood/finances; manager views project work time but not personal Focus history; recognition visibility scoped; blocked team departure leaves no active grant; team-to-company attachment doesn't bulk reveal past secrets.
 
 ## Phase 4 — Companies
+
+P4-06 execution amendment, owner-approved 2026-11-08:
+[ADR 0043](../docs/adr/0043-company-transfer-deferral-and-stabilization.md)
+defers executable Company-child custody transfer and its participant/history
+migration to a separately authorized enhancement. Company lifecycle and independent
+bilateral association/separate attachment remain required, including current
+Company/context admissions for both approving Owners, preserved independent
+memberships and no inherited source access. Existing preparation and safeguards
+remain; no historical migration or data is removed. Original future design text
+below is retained. This amendment authorizes no activation, deployment or Phase 5.
 Organization with one shared custody boundary and internal Department/Unit/Team contexts under independently authorized per-resource grants. Multiple independent companies per account; roles Owner/Org Admin/Dept Manager/Team Lead/Member/Viewer; mandatory/default/optional policies, explicit override capability for default only. Admin/employee profile separate from sensitive personnel case file; work position, supervisor, status, verified work contacts, documents with granular grants and access audit. Employee disciplinary/corrective records privacy and retention distinct from public kudos. Basic availability, resource/equipment allocation, and optional capacity checks; **no full HR/payroll**.
 
 Corporate finance: shared Expense proposals, receipt and payer metadata, categorization/department/project link, versioned review/approve/reject, exact budget allocation, commitments, member reimbursement request and separate acknowledged settlement. Company/department/project budget and variance. No automatic personal ledger mutation; personal paid expenses recorded via explicit, idempotent owner action. Do not claim accounting-grade general ledger/tax/invoicing support. Approval engine versioned with transitions, assigned reviewer, escalation/rejection/history and relevant grant checks. Reports permitted KPI, portfolio, capacity, expense and budget; private knowledge base folder/file versions/search; authorized scoped exports and audit. Transfer Owner through membership/acceptance/reauth/succession without legal transfer, archive/restoration with retention.

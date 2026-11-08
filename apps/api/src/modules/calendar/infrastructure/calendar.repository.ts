@@ -92,14 +92,14 @@ export class Store implements CalendarTransaction {
   ) {}
   private where<T extends object>(input: T) {
     return 'shared' in this.scope
-      ? { ...input, spaceId: this.scope.spaceId, scopeId: this.scope.spaceId }
+      ? { ...input, spaceId: this.scope.spaceId, scopeId: this.scope.scopeId }
       : scopedWhere(this.scope, input);
   }
   private owner() {
     if ('shared' in this.scope)
       return {
         spaceId: this.scope.spaceId,
-        scopeId: this.scope.spaceId,
+        scopeId: this.scope.scopeId,
         createdByUserId: null,
         createdByActorId: this.scope.actorId,
       };

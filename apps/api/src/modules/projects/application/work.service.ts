@@ -88,19 +88,31 @@ export class WorkService {
     taskId: string,
   ) {
     const link = await tx.projectTask.findFirst({
-      where: { projectId: pid, taskId },
+      where: {
+        projectId: pid,
+        taskId,
+        spaceId: a.space(tx, pid),
+        scopeId: pid,
+      },
     });
     if (!link) throw new NotFoundException();
-    return this.tasks.read(tx, a, link.spaceId, taskId);
+    return this.tasks.read(tx, a.forScope(tx, link.spaceId, pid), pid, taskId);
   }
   private async row(
     tx: Prisma.TransactionClient,
+    a: SharedAuthority,
     pid: string,
     taskId: string,
     id: string,
   ) {
     const row = await tx.taskAssignment.findFirst({
-      where: { id, projectId: pid, taskId, spaceId: pid, scopeId: pid },
+      where: {
+        id,
+        projectId: pid,
+        taskId,
+        spaceId: a.space(tx, pid),
+        scopeId: pid,
+      },
     });
     if (!row) throw new NotFoundException();
     return row;
@@ -119,15 +131,15 @@ export class WorkService {
       begin: () => Promise<string>,
     ) => Promise<T>,
   ) {
-    const project = await this.projects.hint(pid);
+    await this.projects.hint(pid);
     return this.collaboration.signed(
       actor,
-      project.spaceId,
+      pid,
       users,
       action,
       target,
       async (tx, now, locked, begin) => {
-        const request = this.request(project.spaceId, cap);
+        const request = this.request(pid, cap);
         const access = await this.kernel.participantAuthority(
           tx,
           actor,
@@ -139,10 +151,10 @@ export class WorkService {
           tx,
           actor,
           actor.userId,
-          this.request(project.spaceId, 'task.read'),
+          this.request(pid, 'task.read'),
           locked,
         );
-        const authority = new SharedAuthority(tx, [access, read]);
+        const authority = new SharedAuthority(tx, [access, read], pid);
         try {
           let changed = false;
           const result = await work(tx, authority, now, async () => {
@@ -224,7 +236,12 @@ export class WorkService {
         );
         if (
           (await tx.taskAssignment.count({
-            where: { spaceId: pid, taskId, endedAt: null },
+            where: {
+              spaceId: a.space(tx, pid),
+              scopeId: pid,
+              taskId,
+              endedAt: null,
+            },
           })) >= 100
         )
           throw new BadRequestException({ code: 'ASSIGNMENT_SAFETY_LIMIT' });
@@ -232,13 +249,14 @@ export class WorkService {
           throw new ConflictException();
         let old: Row | null = null;
         if (replaces) {
-          old = await this.row(tx, pid, taskId, replaces.id);
+          old = await this.row(tx, a, pid, taskId, replaces.id);
           if (old.kind !== input.kind || old.revision !== replaces.revision)
             throw new ConflictException();
         }
         const current = await tx.taskAssignment.findFirst({
           where: {
-            spaceId: pid,
+            spaceId: a.space(tx, pid),
+            scopeId: pid,
             taskId,
             endedAt: null,
             OR: [
@@ -284,7 +302,7 @@ export class WorkService {
         const created = await tx.taskAssignment.create({
           data: {
             ...input,
-            spaceId: pid,
+            spaceId: a.space(tx, pid),
             scopeId: pid,
             projectId: pid,
             taskId,
@@ -354,11 +372,12 @@ export class WorkService {
       [this.request(pid, 'task.read', true)],
       async (tx, a) => {
         const source = await this.source(tx, a, pid, taskId),
-          row = await this.row(tx, pid, taskId, id),
-          access = a.require(tx, pid, 'task.read');
+          row = await this.row(tx, a, pid, taskId, id);
         if (
-          row.recipientAccessId !== access.accessId ||
-          row.recipientGeneration !== access.generation
+          !(await this.kernel.audienceMatches(tx, a, pid, {
+            accessId: row.recipientAccessId,
+            generation: row.recipientGeneration,
+          }))
         ) {
           // A current assignment administrator may inspect its source-scoped history.
           const manager = await this.kernel.assignmentManager(tx, a, pid);
@@ -441,11 +460,13 @@ export class WorkService {
       id,
       async (tx, a, now, begin) => {
         await this.source(tx, a, pid, taskId);
-        const before = await this.row(tx, pid, taskId, id),
+        const before = await this.row(tx, a, pid, taskId, id),
           access = a.require(tx, pid, cap);
         if (
-          before.recipientAccessId !== access.accessId ||
-          before.recipientGeneration !== access.generation
+          !(await this.kernel.audienceMatches(tx, a, pid, {
+            accessId: before.recipientAccessId,
+            generation: before.recipientGeneration,
+          }))
         )
           throw new NotFoundException();
         if (
@@ -463,10 +484,10 @@ export class WorkService {
           respondToAssignment(
             before as TaskAssignment,
             {
-              spaceId: pid,
-              scopeId: pid,
-              accessId: access.accessId,
-              generation: access.generation,
+              spaceId: before.spaceId,
+              scopeId: before.scopeId,
+              accessId: before.recipientAccessId,
+              generation: before.recipientGeneration,
             },
             revision,
             response,
@@ -521,7 +542,7 @@ export class WorkService {
       id,
       async (tx, a, now, begin) => {
         await this.source(tx, a, pid, taskId);
-        const row = await this.row(tx, pid, taskId, id),
+        const row = await this.row(tx, a, pid, taskId, id),
           access = a.require(tx, pid, 'assignment.assign');
         if (row.endReason === 'REVOKED') return view(row);
         const ended = rule(() =>
@@ -660,10 +681,19 @@ export class WorkService {
       hints.requests,
       async (tx, a) => {
         for (const r of hints.requests) {
-          const access = a.require(tx, r.spaceId, r.capability, r.resource),
-            member = hints.members.find((m) => m.id === r.spaceId),
+          const access = a.require(
+              tx,
+              r.spaceId,
+              r.capability,
+              r.resource,
+              r.scopeId,
+            ),
+            member = hints.members.find((m) => m.id === r.scopeId),
             resource = hints.resources.find(
-              (s) => s.spaceId === r.spaceId && s.id === r.resource?.id,
+              (s) =>
+                s.spaceId === r.spaceId &&
+                s.scopeId === r.scopeId &&
+                s.id === r.resource?.id,
             );
           if (
             String(access.authorizationVersion) !==
@@ -681,19 +711,26 @@ export class WorkService {
       },
     );
   }
-  private ownAssignments(
+  private async ownAssignments(
     tx: Prisma.TransactionClient,
+    a: SharedAuthority,
     hints: Awaited<ReturnType<SharedKernel['workHints']>>,
     decision?: string,
     projectId?: string,
   ) {
+    const targets = await Promise.all(
+      hints.members.map(async (m) => ({
+        spaceId: m.spaceId,
+        scopeId: m.id,
+        OR: (await this.kernel.historicalAudience(tx, a, m.id)).map((pair) => ({
+          recipientAccessId: pair.accessId,
+          recipientGeneration: pair.generation,
+        })),
+      })),
+    );
     return tx.taskAssignment.findMany({
       where: {
-        OR: hints.members.map((m) => ({
-          spaceId: m.id,
-          recipientAccessId: m.accessId,
-          recipientGeneration: m.generation,
-        })),
+        OR: targets,
         ...(decision ? { decision, endedAt: null } : {}),
         ...(projectId ? { projectId } : {}),
       },
@@ -710,7 +747,7 @@ export class WorkService {
       q,
       false,
       async (tx, a, h, after) => {
-        const rows = await this.ownAssignments(tx, h, 'PENDING'),
+        const rows = await this.ownAssignments(tx, a, h, 'PENDING'),
           items = [];
         for (const row of rows
           .filter((r) => !after || r.id > after)
@@ -750,13 +787,20 @@ export class WorkService {
       q,
       false,
       async (tx, a, h, after) => {
-        const rows = await this.ownAssignments(tx, h, 'ACCEPTED', q.projectId),
+        const rows = await this.ownAssignments(
+            tx,
+            a,
+            h,
+            'ACCEPTED',
+            q.projectId,
+          ),
           byTask = new Map(rows.map((r) => [r.taskId, r]));
         const sources = await this.tasks.project(
           tx,
           a,
           [...byTask.values()].map((r) => ({
             spaceId: r.spaceId,
+            scopeId: r.scopeId,
             id: r.taskId,
           })),
           {
@@ -785,8 +829,12 @@ export class WorkService {
       const links = await tx.projectGoal.findMany({
         where: {
           OR: [
-            { spaceId: { in: h.ids } },
-            ...h.resources.map((r) => ({ spaceId: r.spaceId, goalId: r.id })),
+            { scopeId: { in: h.ids } },
+            ...h.resources.map((r) => ({
+              spaceId: r.spaceId,
+              scopeId: r.scopeId,
+              goalId: r.id,
+            })),
           ],
           ...(q.projectId ? { projectId: q.projectId } : {}),
         },
@@ -795,7 +843,11 @@ export class WorkService {
         goals = await this.goals.project(
           tx,
           a,
-          links.map((l) => ({ spaceId: l.spaceId, id: l.goalId })),
+          links.map((l) => ({
+            spaceId: l.spaceId,
+            scopeId: l.scopeId,
+            id: l.goalId,
+          })),
           {
             limit: q.limit + 1,
             ...(after ? { after } : {}),
@@ -823,13 +875,17 @@ export class WorkService {
       false,
       async (tx, a, h, after) => {
         const assignments = (
-          await this.ownAssignments(tx, h, 'ACCEPTED')
+          await this.ownAssignments(tx, a, h, 'ACCEPTED')
         ).filter((r) => !q.projectIds || q.projectIds.includes(r.projectId));
         const byId = new Map(assignments.map((r) => [r.taskId, r]));
         const sources = await this.tasks.project(
           tx,
           a,
-          assignments.map((r) => ({ spaceId: r.spaceId, id: r.taskId })),
+          assignments.map((r) => ({
+            spaceId: r.spaceId,
+            scopeId: r.scopeId,
+            id: r.taskId,
+          })),
           {
             limit: q.limit + 1,
             ...(after ? { after } : {}),
@@ -924,7 +980,11 @@ export class WorkService {
       async (tx, a) => {
         const notice = await this.notifications.read(tx, a, pid, id, revision);
         const row = await tx.taskAssignment.findFirst({
-          where: { id: notice.assignmentId, spaceId: pid },
+          where: {
+            id: notice.assignmentId,
+            spaceId: a.space(tx, pid),
+            scopeId: pid,
+          },
         });
         if (!row) throw new NotFoundException();
         await this.source(tx, a, row.projectId, row.taskId);
@@ -943,9 +1003,10 @@ export class WorkService {
     const scope = await this.spaces.authorizePersonal(actor);
     if (change?.value) {
       const input = change.value,
+        location = await this.tasks.hint(input.taskId, input.spaceId),
         r: SharedRequest = {
           spaceId: input.spaceId,
-          scopeId: input.spaceId,
+          scopeId: location.scopeId,
           capability: 'task.read',
           resource: { kind: 'TASK', id: input.taskId },
         };
@@ -954,12 +1015,13 @@ export class WorkService {
         { userIds: [], spaceIds: [input.spaceId] },
         [r],
         async (tx, a) => {
-          const source = await this.tasks.read(
+          const current = await this.tasks.location(
             tx,
-            a,
-            input.spaceId,
             input.taskId,
+            input.spaceId,
           );
+          if (current.scopeId !== r.scopeId) throw new NotFoundException();
+          const source = await this.tasks.read(tx, a, r.scopeId, input.taskId);
           if (source.revision !== input.sourceRevision)
             throw new ConflictException();
           const row = await this.scheduling.change(
@@ -981,9 +1043,10 @@ export class WorkService {
     if (!row.link)
       return { ...row, source: null, availability: 'UNLINKED' as const };
     try {
+      const location = await this.tasks.hint(row.link.taskId, row.link.spaceId);
       const r: SharedRequest = {
         spaceId: row.link.spaceId,
-        scopeId: row.link.spaceId,
+        scopeId: location.scopeId,
         capability: 'task.read',
         resource: { kind: 'TASK', id: row.link.taskId },
         allowArchived: true,
@@ -992,7 +1055,7 @@ export class WorkService {
         actor,
         { userIds: [], spaceIds: [r.spaceId] },
         [r],
-        (tx, a) => this.tasks.read(tx, a, r.spaceId, row.link!.taskId),
+        (tx, a) => this.tasks.read(tx, a, r.scopeId, row.link!.taskId),
       );
       return { ...row, source, availability: 'AVAILABLE' as const };
     } catch (error) {

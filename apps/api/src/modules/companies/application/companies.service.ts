@@ -33,10 +33,10 @@ export class CompaniesService {
     @Inject(SharedKernel) private readonly kernel: SharedKernel,
     @Inject(CompanyAccess) readonly access: CompanyAccess,
   ) {}
-  private company(row: Company) {
+  private company(row: Company, state: 'ACTIVE' | 'ARCHIVED' = 'ACTIVE') {
     return c.CompanySchema.strip().parse({
       ...row,
-      state: 'ACTIVE',
+      state,
       createdAt: row.createdAt.toISOString(),
       updatedAt: row.updatedAt.toISOString(),
     });
@@ -186,6 +186,11 @@ export class CompaniesService {
       await this.visible(ctx, id, 'structure.read');
       return this.company(
         await ctx.tx.company.findUniqueOrThrow({ where: { id } }),
+        (
+          await ctx.tx.sharedCustody.findUniqueOrThrow({
+            where: { spaceId: id },
+          })
+        ).state as 'ACTIVE' | 'ARCHIVED',
       );
     });
   }

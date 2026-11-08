@@ -18,6 +18,44 @@ export async function captureSharedReplay(
   const c = await tx.sharedCustody.findUnique({
     where: { spaceId: event.spaceId },
   });
+  if (!c) {
+    const transfer = await tx.companyCustodyTransfer.findFirst({
+      where: { sourceCustodyId: event.spaceId, state: 'APPLIED' },
+    });
+    if (transfer) {
+      if (
+        event.id !== transfer.id ||
+        event.resourceId !== transfer.id ||
+        event.action !== 'company.custody.transfer.retire' ||
+        BigInt(event.version) !== transfer.sourceVersion + 1n
+      )
+        throw new Error('Conflicting custody retirement evidence');
+      return SharedReplaySchema.parse({
+        kind: 'REPLAY',
+        companyChildCustody: 'V1',
+        id: event.id,
+        spaceId: event.spaceId,
+        version: event.version,
+        action: event.action,
+        resourceId: event.resourceId,
+        retiredToCompany: {
+          transferId: transfer.id,
+          companyId: transfer.companyId,
+          manifestHash: transfer.manifestHash,
+          sourceKind: transfer.sourceProjectId ? 'PROJECT' : 'TEAM',
+        },
+        custody: {
+          state: 'OWNER_EXIT_FROZEN',
+          primaryOwnerAccessId: transfer.sourceOwnerAccessId,
+          closureGeneration: 0,
+          retentionPolicyVersion: transfer.retentionPolicyVersion,
+        },
+        policy: null,
+        accesses: [],
+        job: null,
+      });
+    }
+  }
   const job = c
     ? await tx.sharedLifecycleJob.findUnique({
         where: {
@@ -80,6 +118,12 @@ export async function captureSharedReplay(
   return SharedReplaySchema.parse({
     kind: 'REPLAY',
     ...(c?.kind === 'COMPANY' ? { companyRestricted: true } : {}),
+    ...(c?.kind === 'COMPANY' &&
+    (await tx.companyCustodyTransfer.count({
+      where: { companyId: event.spaceId, state: 'APPLIED' },
+    }))
+      ? { companyChildCustody: 'V1' }
+      : {}),
     id: event.id,
     spaceId: event.spaceId,
     version: event.version,
@@ -130,6 +174,12 @@ export async function applySharedReplay(
   tx: Prisma.TransactionClient,
   r: SharedReplay,
 ) {
+  // A pre-transfer snapshot cannot reconstruct consented admissions or graph
+  // migration from a restrictive witness. Keep its signed version fence closed.
+  if (r.retiredToCompany)
+    throw new Error(
+      'Retired independent custody requires a compatible transferred snapshot',
+    );
   const spaceId = r.spaceId;
   // New disclosure/invitation authorities never survive a restored authorization snapshot.
   await tx.accessScope.update({

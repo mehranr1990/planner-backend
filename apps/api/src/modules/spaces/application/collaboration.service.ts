@@ -90,6 +90,18 @@ export class CollaborationService {
     await this.control.records();
   }
   async requireContextKind(spaceId: string, kind: 'PROJECT' | 'TEAM') {
+    const domain = await this.db.client.domainScopeCustody.findUnique({
+      where: { scopeId: spaceId },
+    });
+    if (domain) {
+      if (
+        kind === 'PROJECT'
+          ? domain.projectId === spaceId
+          : domain.teamId === spaceId
+      )
+        return;
+      throw new NotFoundException();
+    }
     const row = await this.db.client.sharedCustody.findUnique({
       where: { spaceId },
     });
@@ -108,7 +120,7 @@ export class CollaborationService {
       begin: () => Promise<string>,
     ) => Promise<T>,
     lifecycle = false,
-    lifecycleKind: 'PROJECT' | 'TEAM' = 'PROJECT',
+    lifecycleKind: 'PROJECT' | 'TEAM' | 'COMPANY' = 'PROJECT',
     fence?: (
       body: (
         tx: Prisma.TransactionClient,
@@ -120,6 +132,7 @@ export class CollaborationService {
   ) {
     if (lifecycle && !action.startsWith('lifecycle.'))
       throw new BadRequestException();
+    const physicalSpaceId = await this.kernel.custodySpace(spaceId);
     const intents: SharedControlRecord[] = [];
     let committed = false;
     const abort = async () => {
@@ -139,11 +152,11 @@ export class CollaborationService {
       work(tx, now, locked, async () => {
         if (intents[0]) return intents[0].id;
         const custody = await tx.sharedCustody.findUniqueOrThrow({
-          where: { spaceId },
+          where: { spaceId: physicalSpaceId },
         });
         const record: SharedControlRecord = {
           id: randomUUID(),
-          spaceId,
+          spaceId: physicalSpaceId,
           version: String(custody.authorizationVersion + 1n),
           action,
           resourceId: target,
@@ -192,6 +205,21 @@ export class CollaborationService {
       throw error;
     }
   }
+  private async contextKind(tx: Prisma.TransactionClient, scopeId: string) {
+    const domain = await tx.domainScopeCustody.findUnique({
+      where: { scopeId },
+    });
+    if (domain) return domain.kind;
+    return (
+      await tx.sharedCustody.findUniqueOrThrow({ where: { spaceId: scopeId } })
+    ).kind;
+  }
+  private async location(tx: Prisma.TransactionClient, scopeId: string) {
+    return {
+      spaceId: await this.kernel.custodySpaceInTransaction(tx, scopeId),
+      scopeId,
+    };
+  }
   private async userForAccess(tx: Prisma.TransactionClient, id: string) {
     const access = await tx.contextAccess.findUnique({ where: { id } });
     const actor =
@@ -224,11 +252,13 @@ export class CollaborationService {
     fingerprint: string,
     resultId: string,
   ) {
+    const scopeId = spaceId;
+    spaceId = await this.kernel.custodySpaceInTransaction(tx, scopeId);
     await tx.sharedMutationReceipt.create({
       data: {
         id: randomUUID(),
         spaceId,
-        scopeId: spaceId,
+        scopeId,
         actorId,
         operation,
         keyHash: key,
@@ -244,6 +274,9 @@ export class CollaborationService {
     const custody = await tx.sharedCustody.findUniqueOrThrow({
       where: { spaceId: access.spaceId },
     });
+    const child = await tx.domainScopeCustody.findUnique({
+      where: { scopeId: access.scopeId },
+    });
     return c.ContextMembershipSchema.parse({
       id: access.id,
       spaceId: access.spaceId,
@@ -254,7 +287,8 @@ export class CollaborationService {
       generation: access.generation,
       revision: access.revision,
       role:
-        access.id === custody.primaryOwnerAccessId
+        access.id ===
+        (child?.primaryOwnerAccessId ?? custody.primaryOwnerAccessId)
           ? 'OWNER'
           : access.memberRole,
     });
@@ -293,9 +327,7 @@ export class CollaborationService {
       'invitation.create',
       id,
       async (tx, now, locked, begin) => {
-        const custodyKind = (
-          await tx.sharedCustody.findUniqueOrThrow({ where: { spaceId } })
-        ).kind;
+        const custodyKind = await this.contextKind(tx, spaceId);
         if (!roleInContext(body.memberRole, custodyKind))
           throw new BadRequestException();
         const authority = await this.kernel.participantAuthority(
@@ -309,9 +341,13 @@ export class CollaborationService {
           },
           locked,
         );
+        const location = {
+          spaceId: authority.spaceId,
+          scopeId: authority.scopeId,
+        };
         const prior = await tx.contextInvitation.findFirst({
           where: {
-            spaceId,
+            ...location,
             inviterAccessId: authority.accessId,
             inviterGeneration: authority.generation,
             keyHash: keyValue,
@@ -337,18 +373,25 @@ export class CollaborationService {
         )
           throw new ConflictException({ code: 'IDENTITY_CHANGED_RESTART' });
         if (!email && !recipient) throw new NotFoundException();
+        if (location.spaceId !== location.scopeId) {
+          if (!recipient) throw new NotFoundException();
+          await this.kernel.companyRootAdmission(
+            tx,
+            location.spaceId,
+            recipient.id,
+          );
+        }
         const targetActor =
           recipient &&
           (await tx.sharedActor.findFirst({
-            where: { spaceId, userId: recipient.id },
+            where: { spaceId: location.spaceId, userId: recipient.id },
           }));
         const target =
           targetActor &&
           (await tx.contextAccess.findUnique({
             where: {
               spaceId_scopeId_actorId: {
-                spaceId,
-                scopeId: spaceId,
+                ...location,
                 actorId: targetActor.id,
               },
             },
@@ -375,8 +418,7 @@ export class CollaborationService {
         const result = await tx.contextInvitation.create({
           data: {
             id,
-            spaceId,
-            scopeId: spaceId,
+            ...location,
             inviterAccessId: authority.accessId,
             inviterGeneration: authority.generation,
             recipientUserId: recipient?.id ?? null,
@@ -425,7 +467,7 @@ export class CollaborationService {
       [],
       async (tx, _now, locked) => {
         const row = await tx.contextInvitation.findFirst({
-          where: { id, spaceId },
+          where: { id, ...(await this.location(tx, spaceId)) },
         });
         if (!row) throw new NotFoundException();
         await this.kernel.participantAuthority(
@@ -445,7 +487,7 @@ export class CollaborationService {
   }
   async preview(
     proof: string | undefined,
-    kind: 'PROJECT' | 'TEAM' = 'PROJECT',
+    kind: 'PROJECT' | 'TEAM' | 'COMPANY' = 'PROJECT',
   ) {
     this.kernel.assertEnabled();
     const hint = await this.db.client.contextInvitation.findUnique({
@@ -464,7 +506,7 @@ export class CollaborationService {
         row.state !== 'PENDING' ||
         row.expiresAt <= now ||
         custody.state !== 'ACTIVE' ||
-        custody.kind !== kind
+        (await this.contextKind(tx, row.scopeId)) !== kind
       )
         throw new NotFoundException();
       const issuer = await tx.contextAccess.findUnique({
@@ -491,9 +533,14 @@ export class CollaborationService {
             },
           },
         });
-      const primary = custody.primaryOwnerAccessId
+      const domain = await tx.domainScopeCustody.findUnique({
+        where: { scopeId: row.scopeId },
+      });
+      const primaryId =
+        domain?.primaryOwnerAccessId ?? custody.primaryOwnerAccessId;
+      const primary = primaryId
         ? await tx.contextAccess.findUnique({
-            where: { id: custody.primaryOwnerAccessId },
+            where: { id: primaryId },
           })
         : null;
       const primaryActor = primary
@@ -517,14 +564,47 @@ export class CollaborationService {
         account.accessClosedAt ||
         !validateRoleDefaults(policy.roleDefaults) ||
         !permits(
-          issuer.id === custody.primaryOwnerAccessId
-            ? 'OWNER'
-            : (issuer.memberRole as MemberRole),
+          issuer.id === primaryId ? 'OWNER' : (issuer.memberRole as MemberRole),
           roleAdministration(row.memberRole as MemberRole),
           policy.roleDefaults,
         )
       )
         throw new NotFoundException();
+      if (domain) {
+        if (
+          domain.state !== 'ACTIVE' ||
+          !issuerActor?.userId ||
+          !primaryActor?.userId
+        )
+          throw new NotFoundException();
+        await this.kernel.toolParticipant(
+          tx,
+          row.scopeId,
+          issuer.id,
+          issuer.generation,
+          issuerActor.userId,
+          [],
+        );
+        await this.kernel.toolParticipant(
+          tx,
+          row.scopeId,
+          primary!.id,
+          primary!.generation,
+          primaryActor.userId,
+          [],
+        );
+        const companyOwner = await this.userForAccess(
+          tx,
+          custody.primaryOwnerAccessId!,
+        );
+        if (!companyOwner) throw new NotFoundException();
+        await this.kernel.eligibleMember(
+          tx,
+          row.spaceId,
+          custody.primaryOwnerAccessId!,
+          companyOwner,
+        );
+      }
       return (
         kind === 'TEAM'
           ? c.TeamInvitationPreviewSchema
@@ -549,7 +629,7 @@ export class CollaborationService {
     proof: string | undefined,
     revision: number,
     accept: boolean,
-    kind: 'PROJECT' | 'TEAM' = 'PROJECT',
+    kind: 'PROJECT' | 'TEAM' | 'COMPANY' = 'PROJECT',
   ) {
     const hint = await this.invitationHint(id, proof),
       issuerUser = await this.userForAccess(
@@ -558,7 +638,7 @@ export class CollaborationService {
       );
     return this.signed(
       actor,
-      hint.spaceId,
+      hint.scopeId,
       issuerUser ? [issuerUser] : [],
       accept ? 'invitation.accept' : 'invitation.decline',
       id,
@@ -566,13 +646,7 @@ export class CollaborationService {
         const row = await tx.contextInvitation.findUniqueOrThrow({
           where: { id },
         });
-        if (
-          (
-            await tx.sharedCustody.findUniqueOrThrow({
-              where: { spaceId: row.spaceId },
-            })
-          ).kind !== kind
-        )
+        if ((await this.contextKind(tx, row.scopeId)) !== kind)
           throw new NotFoundException();
         if (row.proofHash !== proofHash(proof)) throw new NotFoundException();
         if (row.state === 'ACCEPTED' && accept) {
@@ -665,6 +739,14 @@ export class CollaborationService {
             },
             locked,
           );
+        const root =
+          accept && row.scopeId !== row.spaceId
+            ? await this.kernel.companyRootAdmission(
+                tx,
+                row.spaceId,
+                actor.userId,
+              )
+            : null;
         const auditId = await begin(),
           addsMember =
             accept &&
@@ -711,6 +793,35 @@ export class CollaborationService {
               data: { memberRole: row.memberRole, revision: { increment: 1 } },
             });
         }
+        if (accept && root && access) {
+          const binding = await tx.companyContextAdmission.findUnique({
+            where: {
+              accessId_generation: {
+                accessId: access.id,
+                generation: access.generation,
+              },
+            },
+          });
+          if (
+            binding &&
+            (binding.rootAccessId !== root.id ||
+              binding.rootGeneration !== root.generation)
+          )
+            throw new ConflictException({ code: 'ROOT_ADMISSION_CHANGED' });
+          if (!binding)
+            await tx.companyContextAdmission.create({
+              data: {
+                spaceId: row.spaceId,
+                scopeId: row.scopeId,
+                accessId: access.id,
+                generation: access.generation,
+                actorId: local.id,
+                rootScopeId: row.spaceId,
+                rootAccessId: root.id,
+                rootGeneration: root.generation,
+              },
+            });
+        }
         const result = await tx.contextInvitation.update({
           where: { id },
           data: {
@@ -732,7 +843,7 @@ export class CollaborationService {
         await this.kernel.offerEffect(
           tx,
           actor,
-          row.spaceId,
+          row.scopeId,
           local.id,
           accept ? 'invitation.accept' : 'invitation.decline',
           id,
@@ -744,7 +855,7 @@ export class CollaborationService {
         await this.receipt(
           tx,
           now,
-          row.spaceId,
+          row.scopeId,
           local.id,
           accept ? 'invitation.accept' : 'invitation.decline',
           hash(id),
@@ -773,7 +884,7 @@ export class CollaborationService {
       id,
       async (tx, now, locked, begin) => {
         const row = await tx.contextInvitation.findFirst({
-          where: { id, spaceId },
+          where: { id, ...(await this.location(tx, spaceId)) },
         });
         if (!row) throw new NotFoundException();
         const authority = await this.kernel.participantAuthority(
@@ -845,10 +956,11 @@ export class CollaborationService {
         this.db.client,
         input.successorAccessId,
       );
+    const actualSpaceId = await this.kernel.custodySpace(spaceId);
     const expired = (
       await this.db.client.$queryRaw<
         { id: string }[]
-      >`SELECT id FROM "OwnerHandover" WHERE "spaceId"=${spaceId}::uuid AND state='PENDING' AND "expiresAt"<=clock_timestamp() LIMIT 1`
+      >`SELECT id FROM "OwnerHandover" WHERE "spaceId"=${actualSpaceId}::uuid AND "scopeId"=${spaceId}::uuid AND state='PENDING' AND "expiresAt"<=clock_timestamp() LIMIT 1`
     )[0];
     if (expired) await this.expire('handover', expired.id);
     return this.signed(
@@ -865,9 +977,13 @@ export class CollaborationService {
           { spaceId, scopeId: spaceId, capability: 'custody.handover' },
           locked,
         );
+        const location = {
+          spaceId: authority.spaceId,
+          scopeId: authority.scopeId,
+        };
         const prior = await tx.ownerHandover.findFirst({
           where: {
-            spaceId,
+            ...location,
             fromAccessId: authority.accessId,
             fromGeneration: authority.generation,
             keyHash: keyValue,
@@ -878,7 +994,7 @@ export class CollaborationService {
           return handoverView(prior);
         }
         const target = await tx.contextAccess.findFirst({
-          where: { id: input.successorAccessId, spaceId, scopeId: spaceId },
+          where: { id: input.successorAccessId, ...location },
         });
         const currentUser = target && (await this.userForAccess(tx, target.id));
         if (
@@ -902,20 +1018,17 @@ export class CollaborationService {
         );
         if (
           await tx.ownerHandover.findFirst({
-            where: { spaceId, state: 'PENDING' },
+            where: { ...location, state: 'PENDING' },
           })
         )
           throw new ConflictException({ code: 'HANDOVER_ALREADY_PENDING' });
         await this.limit.take('handover.context:' + spaceId, 5, tx);
-        const custody = await tx.sharedCustody.findUniqueOrThrow({
-            where: { spaceId },
-          }),
+        const custody = await this.kernel.lifecycleCustody(tx, spaceId),
           auditId = await begin();
         const result = await tx.ownerHandover.create({
           data: {
             id,
-            spaceId,
-            scopeId: spaceId,
+            ...location,
             fromAccessId: authority.accessId,
             fromGeneration: authority.generation,
             toAccessId: target.id,
@@ -957,7 +1070,7 @@ export class CollaborationService {
       [],
       async (tx, _now, locked) => {
         const row = await tx.ownerHandover.findFirst({
-          where: { id, spaceId },
+          where: { id, ...(await this.location(tx, spaceId)) },
         });
         if (!row) throw new NotFoundException();
         const authority = await this.kernel.participantAuthority(
@@ -986,7 +1099,7 @@ export class CollaborationService {
     password?: string,
   ) {
     const hint = await this.db.client.ownerHandover.findFirst({
-      where: { id, spaceId },
+      where: { id, ...(await this.location(this.db.client, spaceId)) },
     });
     if (!hint) throw new NotFoundException();
     const users = (
@@ -1049,9 +1162,7 @@ export class CollaborationService {
         );
         if (initiating.accessId !== row.fromAccessId)
           throw new ConflictException();
-        const custody = await tx.sharedCustody.findUniqueOrThrow({
-          where: { spaceId },
-        });
+        const custody = await this.kernel.lifecycleCustody(tx, spaceId);
         if (decision === 'accept') {
           if (
             authority.generation !== row.toGeneration ||
@@ -1068,9 +1179,8 @@ export class CollaborationService {
         if (row.expiresAt <= acceptedAt) throw new ConflictException();
         const auditId = await begin();
         if (decision === 'accept')
-          await tx.sharedCustody.update({
-            where: { spaceId },
-            data: { primaryOwnerAccessId: authority.accessId },
+          await this.kernel.updateLifecycleCustody(tx, spaceId, {
+            primaryOwnerAccessId: authority.accessId,
           });
         const result = await tx.ownerHandover.update({
           where: { id },
@@ -1099,7 +1209,7 @@ export class CollaborationService {
           'handover.' + decision,
           id,
           auditId,
-          decision === 'accept'
+          decision === 'accept' && custody.spaceId === custody.scopeId
             ? {
                 actorId: initiating.actorId,
                 feature: 'shared.custody',
@@ -1107,7 +1217,7 @@ export class CollaborationService {
               }
             : undefined,
         );
-        if (decision === 'accept') {
+        if (decision === 'accept' && custody.spaceId === custody.scopeId) {
           const acquired = randomUUID();
           await tx.sharedAuditEvent.create({
             data: {

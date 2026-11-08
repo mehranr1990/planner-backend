@@ -1,5 +1,6 @@
 import {
   Injectable,
+  Inject,
   NotFoundException,
   ConflictException,
 } from '@nestjs/common';
@@ -8,6 +9,7 @@ import type {
   Prisma,
   SharedAssignmentNotification,
 } from '../../../generated/prisma/client.js';
+import { SharedKernel } from '../../spaces/public/index.js';
 import type { SharedAuthority } from '../../spaces/public/index.js';
 import { SharedWorkNotifications } from '../public/shared-work-notifications.js';
 import { sharedDeleteBatch } from '../../../platform/lifecycle/shared-cleanup.js';
@@ -22,6 +24,9 @@ const view = (row: SharedAssignmentNotification) =>
   });
 @Injectable()
 export class SharedWorkNotificationsRepository extends SharedWorkNotifications {
+  constructor(@Inject(SharedKernel) private readonly kernel: SharedKernel) {
+    super();
+  }
   cleanup(tx: Prisma.TransactionClient, s: SharedCleanupScope) {
     return sharedDeleteBatch(tx, s, ['SharedAssignmentNotification']);
   }
@@ -36,9 +41,24 @@ export class SharedWorkNotificationsRepository extends SharedWorkNotifications {
       kind: z.infer<typeof c.SharedAssignmentNotificationSchema>['kind'];
     },
   ) {
-    a.require(tx, input.spaceId, 'task.read');
+    const proof = a.require(tx, input.spaceId, 'task.read');
+    const alias = await tx.domainScopeActorAlias.findFirst({
+      where: {
+        spaceId: proof.spaceId,
+        scopeId: proof.scopeId,
+        historicalActorId: input.recipientActorId,
+        transfer: { state: 'APPLIED' },
+      },
+      select: { canonicalActorId: true },
+    });
     await tx.sharedAssignmentNotification.create({
-      data: { id: randomUUID(), scopeId: input.spaceId, ...input },
+      data: {
+        id: randomUUID(),
+        ...input,
+        spaceId: proof.spaceId,
+        scopeId: proof.scopeId,
+        recipientActorId: alias?.canonicalActorId ?? input.recipientActorId,
+      },
     });
   }
   async list(
@@ -50,10 +70,18 @@ export class SharedWorkNotificationsRepository extends SharedWorkNotifications {
     limit: number,
   ) {
     if (!spaces.length || !assignments.length) return [];
-    const targets = spaces.map((spaceId) => ({
-      spaceId,
-      recipientActorId: a.require(tx, spaceId, 'task.read').actorId,
-    }));
+    const targets = await Promise.all(
+      spaces.map(async (scopeId) => {
+        const proof = a.require(tx, scopeId, 'task.read');
+        return {
+          spaceId: proof.spaceId,
+          scopeId: proof.scopeId,
+          recipientActorId: {
+            in: await this.kernel.historicalActors(tx, a, scopeId),
+          },
+        };
+      }),
+    );
     return (
       await tx.sharedAssignmentNotification.findMany({
         where: {
@@ -73,9 +101,16 @@ export class SharedWorkNotificationsRepository extends SharedWorkNotifications {
     id: string,
     revision: number,
   ) {
-    const actorId = a.require(tx, spaceId, 'task.read').actorId;
+    const proof = a.require(tx, spaceId, 'task.read');
     const row = await tx.sharedAssignmentNotification.findFirst({
-      where: { id, spaceId, recipientActorId: actorId },
+      where: {
+        id,
+        spaceId: proof.spaceId,
+        scopeId: proof.scopeId,
+        recipientActorId: {
+          in: await this.kernel.historicalActors(tx, a, spaceId),
+        },
+      },
     });
     if (!row) throw new NotFoundException();
     if (row.revision !== revision) throw new ConflictException();

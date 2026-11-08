@@ -55,16 +55,20 @@ export class SharedTasksCleanupRepository extends SharedTasksCleanup {
     )
       return false;
     if (
-      !(await sharedDeleteBatch(tx, s, [
-        'TaskAttachment',
-        'TaskLabel',
-        'TaskChange',
-        'TaskChecklistItem',
-      ]))
+      !(await sharedDeleteBatch(
+        tx,
+        s,
+        ['TaskAttachment', 'TaskLabel', 'TaskChange', 'TaskChecklistItem'],
+        {
+          TaskAttachment: { table: 'Task', foreignKey: 'taskId' },
+          TaskLabel: { table: 'Task', foreignKey: 'taskId' },
+          TaskChecklistItem: { table: 'Task', foreignKey: 'taskId' },
+        },
+      ))
     )
       return false;
     const count =
-      await tx.$executeRaw`DELETE FROM "Task" WHERE id IN (SELECT t.id FROM "Task" t WHERE t."spaceId"=${s.spaceId}::uuid AND NOT EXISTS(SELECT 1 FROM "Task" c WHERE c."spaceId"=t."spaceId" AND c."parentTaskId"=t.id) ORDER BY t.id LIMIT 200)`;
+      await tx.$executeRaw`DELETE FROM "Task" WHERE id IN (SELECT t.id FROM "Task" t WHERE t."spaceId"=${s.spaceId}::uuid AND (${s.scopeId ?? null}::uuid IS NULL OR t."scopeId"=${s.scopeId ?? null}::uuid) AND NOT EXISTS(SELECT 1 FROM "Task" c WHERE c."spaceId"=t."spaceId" AND c."parentTaskId"=t.id) ORDER BY t.id LIMIT 200)`;
     return count === 0;
   }
 }

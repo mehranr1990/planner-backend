@@ -47,11 +47,16 @@ export const TeamWorkSummarySchema = z.strictObject({
   workLogCount: count,
   goalCount: count,
 });
-export const TeamPortfolioSourceSchema = z.strictObject({
+const IndependentTeamPortfolioSourceSchema = z.strictObject({
   kind: z.enum(['TEAM', 'PROJECT']),
   spaceId: id,
   summary: TeamWorkSummarySchema,
 });
+/** ADR 0042: physical custody and stable source identity are distinct after transfer. */
+export const TeamPortfolioSourceSchema = z.union([
+  IndependentTeamPortfolioSourceSchema,
+  IndependentTeamPortfolioSourceSchema.safeExtend({ scopeId: id }),
+]);
 export const TeamPortfolioSchema = z.strictObject({
   teamId: id,
   ...TeamAnalyticsQuerySchema.shape,

@@ -50,7 +50,11 @@ export class SharedTaskWorkRepository extends SharedTaskWork {
   ) {
     a.require(tx, spaceId, 'task.read');
     const rows = await tx.task.findMany({
-      where: { spaceId, scopeId: spaceId, deletedAt: null },
+      where: {
+        spaceId: a.space(tx, spaceId),
+        scopeId: a.scope(tx, spaceId),
+        deletedAt: null,
+      },
       select: { id: true },
       orderBy: { id: 'asc' },
       take: 10001,
@@ -125,7 +129,12 @@ export class SharedTaskWorkRepository extends SharedTaskWork {
     if (ids.length > 10000 || new Set(ids).size !== ids.length)
       throw new BadRequestException();
     const rows = await tx.task.findMany({
-      where: { spaceId, scopeId: spaceId, id: { in: ids }, deletedAt: null },
+      where: {
+        spaceId: a.space(tx, spaceId),
+        scopeId: a.scope(tx, spaceId),
+        id: { in: ids },
+        deletedAt: null,
+      },
       select: {
         id: true,
         revision: true,
@@ -372,8 +381,8 @@ export class SharedTaskWorkRepository extends SharedTaskWork {
     if (ids.length > 10000) throw new BadRequestException();
     const rows = await tx.sharedTaskWorkLog.findMany({
       where: {
-        spaceId,
-        scopeId: spaceId,
+        spaceId: a.space(tx, spaceId),
+        scopeId: a.scope(tx, spaceId),
         taskId: { in: ids },
         voidedAt: null,
         startedAt: { lt: to },

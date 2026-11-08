@@ -1,5 +1,7 @@
+import { SharedTasks } from '../../tasks/public/index.js';
 import {
   Injectable,
+  Inject,
   NotFoundException,
   ConflictException,
 } from '@nestjs/common';
@@ -9,6 +11,7 @@ import type { Prisma, Goal } from '../../../generated/prisma/client.js';
 import { SharedAuthority } from '../../spaces/public/index.js';
 import { SharedGoals } from '../public/shared-goals.js';
 import { calculate } from '../domain/progress.js';
+import { DatabaseService } from '../../../platform/database/database.service.js';
 const view = (row: Goal) =>
   c.SharedGoalSchema.strip().parse({
     ...row,
@@ -16,18 +19,37 @@ const view = (row: Goal) =>
   });
 @Injectable()
 export class SharedGoalsRepository extends SharedGoals {
+  constructor(
+    @Inject(SharedTasks) private readonly tasks: SharedTasks,
+    @Inject(DatabaseService) private readonly db: DatabaseService,
+  ) {
+    super();
+  }
+  hint(id: string, spaceId: string) {
+    return this.location(this.db.client, id, spaceId);
+  }
+  async location(tx: Prisma.TransactionClient, id: string, spaceId: string) {
+    const row = await tx.goal.findFirst({
+      where: { id, spaceId, scopeId: { not: null } },
+      select: { spaceId: true, scopeId: true },
+    });
+    if (!row?.scopeId) throw new NotFoundException();
+    return { spaceId: row.spaceId, scopeId: row.scopeId };
+  }
   async scopeCount(
     tx: Prisma.TransactionClient,
     a: SharedAuthority,
     spaceId: string,
   ) {
     a.require(tx, spaceId, 'task.read');
-    return tx.goal.count({ where: { spaceId, scopeId: spaceId } });
+    return tx.goal.count({
+      where: { spaceId: a.space(tx, spaceId), scopeId: a.scope(tx, spaceId) },
+    });
   }
   async project(
     tx: Prisma.TransactionClient,
     a: SharedAuthority,
-    sources: { spaceId: string; id: string }[],
+    sources: { spaceId: string; scopeId?: string; id: string }[],
     q: {
       after?: string;
       limit: number;
@@ -35,7 +57,13 @@ export class SharedGoalsRepository extends SharedGoals {
     },
   ) {
     for (const s of sources)
-      a.require(tx, s.spaceId, 'task.read', { kind: 'GOAL', id: s.id });
+      a.require(
+        tx,
+        s.spaceId,
+        'task.read',
+        { kind: 'GOAL', id: s.id },
+        s.scopeId ?? s.spaceId,
+      );
     if (!sources.length) return [];
     return (
       await tx.goal.findMany({
@@ -43,7 +71,7 @@ export class SharedGoalsRepository extends SharedGoals {
           OR: sources.map((s) => ({
             id: s.id,
             spaceId: s.spaceId,
-            scopeId: s.spaceId,
+            scopeId: s.scopeId ?? s.spaceId,
           })),
           ...(q.after ? { id: { gt: q.after } } : {}),
           ...(q.status ? { status: q.status } : {}),
@@ -61,7 +89,7 @@ export class SharedGoalsRepository extends SharedGoals {
   ) {
     a.require(tx, space, 'task.read', { kind: 'GOAL', id });
     const row = await tx.goal.findFirst({
-      where: { id, spaceId: space, scopeId: space },
+      where: { id, spaceId: a.space(tx, space), scopeId: a.scope(tx, space) },
     });
     if (!row) throw new NotFoundException();
     return view(row);
@@ -75,8 +103,8 @@ export class SharedGoalsRepository extends SharedGoals {
     a.require(tx, space, 'task.read');
     const rows = await tx.goal.findMany({
       where: {
-        spaceId: space,
-        scopeId: space,
+        spaceId: a.space(tx, space),
+        scopeId: a.scope(tx, space),
         ...(q.after ? { id: { gt: q.after } } : {}),
       },
       orderBy: { id: 'asc' },
@@ -98,8 +126,8 @@ export class SharedGoalsRepository extends SharedGoals {
       await tx.goal.create({
         data: {
           id: input.id,
-          spaceId: space,
-          scopeId: space,
+          spaceId: a.space(tx, space),
+          scopeId: a.scope(tx, space),
           createdByUserId: null,
           createdByActorId: access.actorId,
           title: input.title,
@@ -121,7 +149,7 @@ export class SharedGoalsRepository extends SharedGoals {
   ) {
     a.require(tx, space, 'goal.manage', { kind: 'GOAL', id });
     const before = await tx.goal.findFirst({
-      where: { id, spaceId: space, scopeId: space },
+      where: { id, spaceId: a.space(tx, space), scopeId: a.scope(tx, space) },
     });
     if (!before) throw new NotFoundException();
     if (before.revision !== revision) throw new ConflictException();
@@ -157,15 +185,21 @@ export class SharedGoalsRepository extends SharedGoals {
   ) {
     a.require(tx, space, 'goal.manage');
     a.require(tx, space, 'task.read', { kind: 'TASK', id: taskId });
+    const selectedTask = await this.tasks.read(tx, a, space, taskId);
+    if (selectedTask.revision !== sourceRevision) throw new ConflictException();
     const goal = await tx.goal.findFirst({
-      where: { id: goalId, spaceId: space, scopeId: space },
+      where: {
+        id: goalId,
+        spaceId: a.space(tx, space),
+        scopeId: a.scope(tx, space),
+      },
     });
     if (!goal) throw new NotFoundException();
     if (goal.revision !== revision) throw new ConflictException();
     await tx.goalTaskLink.upsert({
       where: { goalId_taskId: { goalId, taskId } },
       create: {
-        spaceId: space,
+        spaceId: a.space(tx, space),
         goalId,
         taskId,
         selectedSourceRevision: sourceRevision,

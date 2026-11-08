@@ -29,6 +29,17 @@ P4-04 Reimbursement/payment acknowledgement and controlled workflow approval ver
 P4-05 Knowledge base files/versioning, company reports, permitted portfolio and authorized export/audit.
 P4-06 Controlled attachment/transfer of existing independent Teams and Projects to Company (separate preview, consent, migration), ownership handover, departure, archiving, records retention and full cross-company security/recovery checks.
 
+Owner-approved P4-06 execution amendment (2026-11-08):
+[ADR 0043](../docs/adr/0043-company-transfer-deferral-and-stabilization.md)
+finalizes lifecycle and independent administrative association/separate attachment,
+with current Company/context admissions for both approving Owners. Preserve source
+custody and memberships, all completed safeguards and reusable transfer preparation.
+Actual Company-child transfer, participant/history migration and transferred-child
+acceptance are deferred to a separately authorized enhancement, not Phase 5.
+Executable transfer remains unreachable. All mandatory local quality, migration
+preservation, compatibility and compiled API/worker restart gates still apply.
+The original roadmap requirement above is retained as the future design record.
+
 ## Phase 5: 6 proposed batches
 P5-01 Conversation/participant authorization, DM/private group/work channels, ordering/receipts and idempotent text messages (REST durable).
 P5-02 Reply/thread/reactions/edit/delete/forward/pin/mention, safe search and moderation/report, privacy/retention policy.

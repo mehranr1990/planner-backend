@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { Prisma } from '../../../generated/prisma/client.js';
 type Target = { kind: 'PROJECT' | 'TASK' | 'GOAL' | 'DOCUMENT'; id: string };
 /** Metadata only; callers hold current source authority and the custody fence. */
-export function appendProjectActivity(
+export async function appendProjectActivity(
   tx: Prisma.TransactionClient,
   pid: string,
   actorId: string,
@@ -10,11 +10,14 @@ export function appendProjectActivity(
   resourceId: string,
   target: Target = { kind: 'PROJECT', id: pid },
 ) {
+  const project = await tx.project.findUniqueOrThrow({
+    where: { id: pid },
+    select: { spaceId: true, scopeId: true },
+  });
   return tx.projectActivity.create({
     data: {
       id: randomUUID(),
-      spaceId: pid,
-      scopeId: pid,
+      ...project,
       projectId: pid,
       actorId,
       action,

@@ -110,7 +110,7 @@ export class TeamInteractionContext {
                 req(id, cap),
                 locked,
               );
-        const a = new SharedAuthority(tx, [read, access]);
+        const a = new SharedAuthority(tx, [read, access], id);
         let auditId: string | undefined;
         try {
           const s: Interaction = {
@@ -166,6 +166,7 @@ export class TeamInteractionContext {
     );
   }
   async eligible(s: Interaction, m: Member, admin: boolean | 'WORK' = false) {
+    m = await this.kernel.historicalMember(s.tx, s.a, s.id, m);
     if (
       !(await this.kernel.visibleWorkMember(
         s.tx,
@@ -204,6 +205,9 @@ export class TeamInteractionContext {
   }
   access(s: Interaction) {
     return s.a.require(s.tx, s.id, 'task.read');
+  }
+  scope(s: Interaction) {
+    return { spaceId: s.a.space(s.tx, s.id), scopeId: s.id };
   }
   match(actual: number, expected: number) {
     if (actual !== expected)

@@ -493,7 +493,17 @@ export class ProjectContentService {
           'comment.create',
           contentProof(pid, t),
         ).actorId;
-        if (row.createdByActorId !== actorId) throw new ForbiddenException();
+        if (
+          !(
+            await this.op.kernel.historicalActors(
+              s.tx,
+              s.a,
+              pid,
+              contentProof(pid, t),
+            )
+          ).includes(row.createdByActorId)
+        )
+          throw new ForbiddenException();
         matchRevision(row.revision, expected);
         await s.grow('project.comment-version');
         await s.begin();
@@ -622,8 +632,14 @@ export class ProjectContentService {
       });
       if (!row) throw new NotFoundException();
       if (
-        row.createdByActorId !==
-        s.a.require(s.tx, pid, 'task.read', contentProof(pid, t)).actorId
+        !(
+          await this.op.kernel.historicalActors(
+            s.tx,
+            s.a,
+            pid,
+            contentProof(pid, t),
+          )
+        ).includes(row.createdByActorId)
       )
         throw new ForbiddenException();
       const result = await this.op.page(

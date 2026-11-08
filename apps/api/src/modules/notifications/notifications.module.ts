@@ -1,3 +1,4 @@
+import { NotificationCustodyGraph } from './application/notifications-custody-graph.js';
 import { NotificationsData } from './public/personal-data.js';
 import { SharedWorkNotifications } from './public/shared-work-notifications.js';
 import { SharedWorkNotificationsRepository } from './infrastructure/shared-work-notifications.repository.js';
@@ -30,6 +31,7 @@ export class NotificationsModule {
         tasks,
       ],
       providers: [
+        NotificationCustodyGraph,
         {
           provide: SharedWorkNotifications,
           useClass: SharedWorkNotificationsRepository,
@@ -43,7 +45,12 @@ export class NotificationsModule {
         { provide: NotificationTransport, useClass: ChannelTransport },
       ],
       controllers: [NotificationsController],
-      exports: [NotificationsData, NotificationWorker, SharedWorkNotifications],
+      exports: [
+        NotificationCustodyGraph,
+        NotificationsData,
+        NotificationWorker,
+        SharedWorkNotifications,
+      ],
     };
   }
 }

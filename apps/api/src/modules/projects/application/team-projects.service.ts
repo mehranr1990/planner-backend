@@ -17,7 +17,7 @@ export class TeamProjects {
   async cleanup(tx: Prisma.TransactionClient, scope: SharedCleanupScope) {
     scope.verify(tx);
     const count =
-      await tx.$executeRaw`DELETE FROM "TeamProjectReference" WHERE ctid IN (SELECT ctid FROM "TeamProjectReference" WHERE "teamId"=${scope.spaceId}::uuid LIMIT 200)`;
+      await tx.$executeRaw`DELETE FROM "TeamProjectReference" WHERE ctid IN (SELECT ctid FROM "TeamProjectReference" WHERE "teamId"=${scope.scopeId ?? scope.spaceId}::uuid LIMIT 200)`;
     return count === 0;
   }
   async analytics(
@@ -38,8 +38,8 @@ export class TeamProjects {
       where: { teamId, projectId, active: true },
     });
     if (!ref) throw new NotFoundException();
-    a.require(tx, ref.spaceId, 'task.read');
-    const where = { spaceId: ref.spaceId, scopeId: ref.spaceId, projectId };
+    a.require(tx, ref.spaceId, 'task.read', undefined, projectId);
+    const where = { spaceId: ref.spaceId, scopeId: projectId, projectId };
     const links = await tx.projectTask.findMany({
       where: { ...where, Task: { deletedAt: null } },
       select: { taskId: true },
@@ -60,13 +60,13 @@ export class TeamProjects {
     const tasks = await this.work.metrics(
       tx,
       a,
-      ref.spaceId,
+      projectId,
       links.map((r) => r.taskId),
     );
     const logs = await this.work.effort(
       tx,
       a,
-      ref.spaceId,
+      projectId,
       links.map((r) => r.taskId),
       window.from,
       window.to,
@@ -77,7 +77,7 @@ export class TeamProjects {
         await this.kernel.visibleWorkMember(
           tx,
           a,
-          ref.spaceId,
+          projectId,
           row.accessId,
           row.generation,
         )
@@ -86,6 +86,7 @@ export class TeamProjects {
     }
     return {
       spaceId: ref.spaceId,
+      scopeId: projectId,
       tasks,
       logs,
       goalCount,
@@ -107,7 +108,7 @@ export class TeamProjects {
     tx?: Prisma.TransactionClient,
   ) {
     return (tx ?? this.db.client).teamProjectReference.findMany({
-      where: { teamId, active: true, spaceId: { in: visibleIds } },
+      where: { teamId, active: true, projectId: { in: visibleIds } },
       orderBy: { projectId: 'asc' },
     });
   }
@@ -115,12 +116,22 @@ export class TeamProjects {
     tx: Prisma.TransactionClient,
     a: SharedAuthority,
     teamId: string,
-    target: { kind: 'TASK' | 'GOAL'; spaceId: string; id: string },
+    target: {
+      kind: 'TASK' | 'GOAL';
+      spaceId: string;
+      scopeId: string;
+      id: string;
+    },
   ) {
     a.require(tx, teamId, 'task.read');
-    a.require(tx, target.spaceId, 'task.read');
+    a.require(tx, target.spaceId, 'task.read', undefined, target.scopeId);
     const ref = await tx.teamProjectReference.findFirst({
-      where: { teamId, spaceId: target.spaceId, active: true },
+      where: {
+        teamId,
+        projectId: target.scopeId,
+        spaceId: target.spaceId,
+        active: true,
+      },
     });
     if (!ref) throw new NotFoundException();
     const source =
@@ -149,12 +160,12 @@ export class TeamProjects {
   ) {
     a.require(tx, teamId, 'task.read');
     const rows = await tx.teamProjectReference.findMany({
-      where: { teamId, active: true, spaceId: { in: visibleIds } },
+      where: { teamId, active: true, projectId: { in: visibleIds } },
       orderBy: { projectId: 'asc' },
     });
     const result = [];
     for (const row of rows) {
-      a.require(tx, row.spaceId, 'task.read');
+      a.require(tx, row.spaceId, 'task.read', undefined, row.projectId);
       const project = await tx.project.findUniqueOrThrow({
         where: { id: row.projectId },
       });
@@ -182,7 +193,13 @@ export class TeamProjects {
     const project = await tx.project.findUnique({ where: { id: projectId } });
     if (!project) throw new NotFoundException();
     const ta = a.require(tx, teamId, 'settings.manage');
-    const pa = a.require(tx, project.spaceId, 'settings.manage');
+    const pa = a.require(
+      tx,
+      project.spaceId,
+      'settings.manage',
+      undefined,
+      project.scopeId,
+    );
     const prior = await tx.teamProjectReference.findUnique({
       where: { teamId_projectId: { teamId, projectId } },
     });

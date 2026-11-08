@@ -35,11 +35,15 @@ export class CompaniesModule {
   static register(
     projects: DynamicModule,
     storage: DynamicModule,
+    teams: DynamicModule,
   ): DynamicModule {
     return {
       module: CompaniesModule,
-      imports: [projects, storage],
+      imports: [projects, storage, teams],
       providers: [
+        CompanyAssociationsService,
+        CompanyCleanupService,
+        CompanyLifecycleService,
         CompanyKnowledgeService,
         CompanyKnowledgeFilesService,
         CompanyReportsService,
@@ -50,11 +54,15 @@ export class CompaniesModule {
         CompanyFinancialApprovalsService,
       ],
       controllers: [
+        CompanyAssociationsController,
+        CompanyLifecycleController,
         CompanyFinanceController,
         CompanySettlementsController,
         CompanyKnowledgeController,
       ],
       exports: [
+        CompanyCleanupService,
+        CompanyLifecycleService,
         CompanyFinanceService,
         CompanyReceiptService,
         CompanyReimbursementsService,
@@ -77,3 +85,11 @@ import { CompanyKnowledgeService } from './application/company-knowledge.service
 import { CompanyKnowledgeFilesService } from './application/company-knowledge-files.service.js';
 import { CompanyReportsService } from './application/company-reports.service.js';
 import { CompanyKnowledgeController } from './http/company-knowledge.controller.js';
+
+import { CompanyLifecycleService } from './application/company-lifecycle.service.js';
+import { CompanyLifecycleController } from './http/company-lifecycle.controller.js';
+
+import { CompanyCleanupService } from './application/company-cleanup.service.js';
+
+import { CompanyAssociationsService } from './application/company-associations.service.js';
+import { CompanyAssociationsController } from './http/company-associations.controller.js';

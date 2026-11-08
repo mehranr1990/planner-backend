@@ -31,6 +31,7 @@ export const sharedFeatureKeys = [
   'team.disclosure',
   'team.meeting',
   'team.meeting-invitation',
+  'company.association',
   'company.knowledge-folder',
   'company.knowledge-document',
   'company.knowledge-version',

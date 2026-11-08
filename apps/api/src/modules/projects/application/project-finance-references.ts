@@ -1,3 +1,4 @@
+import type { SharedCleanupScope } from '../../../platform/lifecycle/shared-cleanup.js';
 import {
   ForbiddenException,
   Inject,
@@ -36,7 +37,13 @@ export class ProjectFinanceReferences {
   ) {
     const p = await tx.project.findUnique({ where: { id: projectId } });
     if (!p) throw new NotFoundException();
-    const source = a.require(tx, p.spaceId, 'settings.manage');
+    const source = a.require(
+      tx,
+      p.spaceId,
+      'settings.manage',
+      undefined,
+      p.scopeId,
+    );
     if (!['OWNER', 'ADMIN'].includes(source.role ?? ''))
       throw new ForbiddenException();
     a.require(tx, company.spaceId, 'task.read');
@@ -55,7 +62,7 @@ export class ProjectFinanceReferences {
     await this.kernel.offerEffect(
       tx,
       actor,
-      p.spaceId,
+      p.scopeId,
       source.actorId,
       'company.finance.reference',
       company.id,
@@ -83,7 +90,8 @@ export class ProjectFinanceReferences {
           },
         ],
         async (tx, a) => {
-          if (!a.has(tx, hint.spaceId, 'task.read')) return null;
+          if (!a.has(tx, hint.spaceId, 'task.read', undefined, hint.scopeId))
+            return null;
           const row = await tx.companyProjectFinanceLink.findFirst({
             where: { id: hint.id, companySpaceId, referenceId },
           });
@@ -97,7 +105,7 @@ export class ProjectFinanceReferences {
         [
           {
             spaceId: hint.spaceId,
-            scopeId: hint.spaceId,
+            scopeId: hint.scopeId,
             capability: 'task.read',
           },
         ],
@@ -111,7 +119,7 @@ export class ProjectFinanceReferences {
     if (references.length > 100) throw new PayloadTooLargeException();
     return this.db.client.companyProjectFinanceLink.findMany({
       where: { companySpaceId, referenceId: { in: references } },
-      select: { spaceId: true },
+      select: { spaceId: true, scopeId: true },
       take: 101,
     });
   }
@@ -132,7 +140,7 @@ export class ProjectFinanceReferences {
     if (rows.length > 100) throw new PayloadTooLargeException();
     const result = [];
     for (const r of rows) {
-      if (!a.has(tx, r.spaceId, 'task.read')) continue;
+      if (!a.has(tx, r.spaceId, 'task.read', undefined, r.scopeId)) continue;
       const p = await tx.project.findUnique({ where: { id: r.projectId } });
       if (!p) continue;
       result.push({
@@ -143,6 +151,12 @@ export class ProjectFinanceReferences {
       });
     }
     return result;
+  }
+  async cleanupCompany(tx: Prisma.TransactionClient, s: SharedCleanupScope) {
+    s.verify(tx);
+    const deleted =
+      await tx.$executeRaw`DELETE FROM "CompanyProjectFinanceLink" WHERE id IN (SELECT id FROM "CompanyProjectFinanceLink" WHERE "companySpaceId"=${s.spaceId}::uuid ORDER BY id LIMIT 200)`;
+    return deleted === 0;
   }
   async count(
     tx: Prisma.TransactionClient,

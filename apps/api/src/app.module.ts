@@ -66,6 +66,14 @@ export class AppModule {
       notifications,
       storage,
     );
+    const teams = TeamsModule.register(
+      projects,
+      tasks,
+      goals,
+      calendar,
+      notifications,
+      storage,
+    );
     return {
       module: AppModule,
       imports: [
@@ -110,15 +118,8 @@ export class AppModule {
         HabitsModule,
         goals,
         projects,
-        CompaniesModule.register(projects, storage),
-        TeamsModule.register(
-          projects,
-          tasks,
-          goals,
-          calendar,
-          notifications,
-          storage,
-        ),
+        CompaniesModule.register(projects, storage, teams),
+        teams,
         notes,
         JournalModule,
         capture,

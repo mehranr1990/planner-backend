@@ -1801,6 +1801,13 @@ model PushSubscription {
 
 // SQL enforces additional branch, lifecycle and immutable-history constraints.
 model AccessScope {
+  DomainScopeCustody_parent DomainScopeCustody[] @relation("DomainScopeCustody_parent")
+  DomainScopeCustody_scope DomainScopeCustody[] @relation("DomainScopeCustody_scope")
+  CompanyCustodyTransfer_context CompanyCustodyTransfer[] @relation("CompanyCustodyTransfer_context")
+ TeamCompanyAssociation_context TeamCompanyAssociation[] @relation("TeamCompanyAssociation_context")
+ TeamCompanyAssociation_scope TeamCompanyAssociation[] @relation("TeamCompanyAssociation_scope")
+ ProjectCompanyAssociation_context ProjectCompanyAssociation[] @relation("ProjectCompanyAssociation_context")
+ ProjectCompanyAssociation_scope ProjectCompanyAssociation[] @relation("ProjectCompanyAssociation_scope")
  CompanyKnowledgeVersion_context CompanyKnowledgeVersion[] @relation("CompanyKnowledgeVersion_context")
  CompanyKnowledgeDocument_context CompanyKnowledgeDocument[] @relation("CompanyKnowledgeDocument_context")
  CompanyKnowledgeFolder_context CompanyKnowledgeFolder[] @relation("CompanyKnowledgeFolder_context")
@@ -1876,6 +1883,16 @@ model AccessScope {
 
 // SQL enforces additional branch, lifecycle and immutable-history constraints.
 model ContextAccess {
+  DomainScopeAdmissionAlias_destinationScope DomainScopeAdmissionAlias[] @relation("DomainScopeAdmissionAlias_destinationScope")
+  DomainScopeCustody_owner DomainScopeCustody[] @relation("DomainScopeCustody_owner")
+ TeamCompanyAssociation_destinationAdmission TeamCompanyAssociation[] @relation("TeamCompanyAssociation_destinationAdmission")
+ TeamCompanyAssociation_sourceAdmission TeamCompanyAssociation[] @relation("TeamCompanyAssociation_sourceAdmission")
+ TeamCompanyAssociation_companyOwner TeamCompanyAssociation[] @relation("TeamCompanyAssociation_companyOwner")
+ TeamCompanyAssociation_sourceOwner TeamCompanyAssociation[] @relation("TeamCompanyAssociation_sourceOwner")
+ ProjectCompanyAssociation_destinationAdmission ProjectCompanyAssociation[] @relation("ProjectCompanyAssociation_destinationAdmission")
+ ProjectCompanyAssociation_sourceAdmission ProjectCompanyAssociation[] @relation("ProjectCompanyAssociation_sourceAdmission")
+ ProjectCompanyAssociation_companyOwner ProjectCompanyAssociation[] @relation("ProjectCompanyAssociation_companyOwner")
+ ProjectCompanyAssociation_sourceOwner ProjectCompanyAssociation[] @relation("ProjectCompanyAssociation_sourceOwner")
  CompanyKnowledgeVersion_uploader CompanyKnowledgeVersion[] @relation("CompanyKnowledgeVersion_uploader")
  CompanyFinancialApprovalEvent_reviewer CompanyFinancialApprovalEvent[] @relation("CompanyFinancialApprovalEvent_reviewer")
  CompanyAcknowledgementCorrection_author CompanyAcknowledgementCorrection[] @relation("CompanyAcknowledgementCorrection_author")
@@ -1967,6 +1984,20 @@ model ContextAccess {
 
 // SQL enforces additional branch, lifecycle and immutable-history constraints.
 model ContextAccessInterval {
+  DomainScopeAdmissionAlias_destination DomainScopeAdmissionAlias[] @relation("DomainScopeAdmissionAlias_destination")
+  DomainScopeAdmissionAlias_historical DomainScopeAdmissionAlias[] @relation("DomainScopeAdmissionAlias_historical")
+  CompanyCustodyConsent_destination CompanyCustodyConsent[] @relation("CompanyCustodyConsent_destination")
+  CompanyCustodyConsent_source CompanyCustodyConsent[] @relation("CompanyCustodyConsent_source")
+  CompanyCustodyTransfer_companyOwner CompanyCustodyTransfer[] @relation("CompanyCustodyTransfer_companyOwner")
+  CompanyCustodyTransfer_sourceOwner CompanyCustodyTransfer[] @relation("CompanyCustodyTransfer_sourceOwner")
+ TeamCompanyAssociation_destinationInterval TeamCompanyAssociation[] @relation("TeamCompanyAssociation_destinationInterval")
+ TeamCompanyAssociation_sourceAdmissionInterval TeamCompanyAssociation[] @relation("TeamCompanyAssociation_sourceAdmissionInterval")
+ TeamCompanyAssociation_companyInterval TeamCompanyAssociation[] @relation("TeamCompanyAssociation_companyInterval")
+ TeamCompanyAssociation_sourceInterval TeamCompanyAssociation[] @relation("TeamCompanyAssociation_sourceInterval")
+ ProjectCompanyAssociation_destinationInterval ProjectCompanyAssociation[] @relation("ProjectCompanyAssociation_destinationInterval")
+ ProjectCompanyAssociation_sourceAdmissionInterval ProjectCompanyAssociation[] @relation("ProjectCompanyAssociation_sourceAdmissionInterval")
+ ProjectCompanyAssociation_companyInterval ProjectCompanyAssociation[] @relation("ProjectCompanyAssociation_companyInterval")
+ ProjectCompanyAssociation_sourceInterval ProjectCompanyAssociation[] @relation("ProjectCompanyAssociation_sourceInterval")
  CompanyKnowledgeVersion_interval CompanyKnowledgeVersion[] @relation("CompanyKnowledgeVersion_interval")
  CompanyFinancialApprovalEvent_reviewerInterval CompanyFinancialApprovalEvent[] @relation("CompanyFinancialApprovalEvent_reviewerInterval")
  CompanyAcknowledgementCorrection_authorInterval CompanyAcknowledgementCorrection[] @relation("CompanyAcknowledgementCorrection_authorInterval")
@@ -2090,6 +2121,10 @@ model ResourceGrant {
 
 // SQL enforces additional branch, lifecycle and immutable-history constraints.
 model SharedActor {
+  originCustodyId          String?                   @db.Uuid
+  DomainScopeActorAlias_canonical DomainScopeActorAlias[] @relation("DomainScopeActorAlias_canonical")
+  DomainScopeActorAlias_historical DomainScopeActorAlias[] @relation("DomainScopeActorAlias_historical")
+  CompanyCustodyConsent_actor CompanyCustodyConsent[] @relation("CompanyCustodyConsent_actor")
  CompanyReimbursementBucket_beneficiary CompanyReimbursementBucket[] @relation("CompanyReimbursementBucket_beneficiary")
  CompanyReimbursementEffect_creator CompanyReimbursementEffect[] @relation("CompanyReimbursementEffect_creator")
  CompanyFinancialApprovalEvent_creator CompanyFinancialApprovalEvent[] @relation("CompanyFinancialApprovalEvent_creator")
@@ -2175,6 +2210,8 @@ model SharedActor {
 
 // SQL enforces additional branch, lifecycle and immutable-history constraints.
 model SharedAuditEvent {
+ scopeId String? @db.Uuid
+ originCustodyId String? @db.Uuid
   id                String             @id @db.Uuid
   spaceId           String             @db.Uuid
   actorId           String             @db.Uuid
@@ -2237,6 +2274,7 @@ model SharedLifecycleJob {
   id                     String                @id @db.Uuid
   custodyId              String                @db.Uuid
   spaceId                String?               @db.Uuid
+  scopeId                String?               @db.Uuid
   generation             Int
   state                  String                @db.VarChar(24)
   effectiveDepartureAt   DateTime              @db.Timestamptz(3)
@@ -2288,6 +2326,8 @@ model SharedMutationReceipt {
 
 // SQL enforces additional branch, lifecycle and immutable-history constraints.
 model SharedOutboxEvent {
+ scopeId String? @db.Uuid
+ originCustodyId String? @db.Uuid
   id                   String           @id @db.Uuid
   spaceId              String           @db.Uuid
   actorId              String           @db.Uuid
@@ -2305,6 +2345,9 @@ model SharedOutboxEvent {
 
 // SQL enforces additional branch, lifecycle and immutable-history constraints.
 model SharedRetentionPolicy {
+  CompanyCustodyTransfer_companyRetention CompanyCustodyTransfer[] @relation("CompanyCustodyTransfer_companyRetention")
+  DomainScopeCustody_retention DomainScopeCustody[] @relation("DomainScopeCustody_retention")
+  CompanyCustodyTransfer_retention CompanyCustodyTransfer[] @relation("CompanyCustodyTransfer_retention")
   version            String               @id @db.VarChar(80)
   configuration      Json
   approvalReference  String               @db.VarChar(200)
@@ -2315,6 +2358,8 @@ model SharedRetentionPolicy {
 
 // SQL enforces additional branch, lifecycle and immutable-history constraints.
 model SharedUsageEntry {
+ scopeId String? @db.Uuid
+ originCustodyId String? @db.Uuid
   id               String           @id @db.Uuid
   spaceId          String           @db.Uuid
   subjectActorId   String           @db.Uuid
@@ -2444,6 +2489,9 @@ model GoalGrant {
 }
 
 model Project {
+  DomainScopeCustody_project DomainScopeCustody[] @relation("DomainScopeCustody_project")
+  CompanyCustodyTransfer_project CompanyCustodyTransfer[] @relation("CompanyCustodyTransfer_project")
+ ProjectCompanyAssociation_source ProjectCompanyAssociation[] @relation("ProjectCompanyAssociation_source")
  CompanyProjectFinanceLink_source CompanyProjectFinanceLink[] @relation("CompanyProjectFinanceLink_source")
   TeamProjectReference TeamProjectReference[] @relation("ReferenceScope")
   TeamProjectReferenceId TeamProjectReference[] @relation("ReferenceId")
@@ -3480,6 +3528,8 @@ model ProjectTransfer {
 
 
 model SharedLifecycleEffect {
+  spaceId              String?            @db.Uuid
+  originCustodyId       String?            @db.Uuid
   id                   String             @id @db.Uuid
   jobId                String             @db.Uuid
   custodyId            String             @db.Uuid
@@ -3494,6 +3544,10 @@ model SharedLifecycleEffect {
 }
 
 model Team {
+  DomainScopeCustody_team DomainScopeCustody[] @relation("DomainScopeCustody_team")
+  CompanyCustodyTransfer_team CompanyCustodyTransfer[] @relation("CompanyCustodyTransfer_team")
+ @@unique([spaceId,id],map:"Team_space_id_pair")
+ TeamCompanyAssociation_source TeamCompanyAssociation[] @relation("TeamCompanyAssociation_source")
  TeamMeeting_Team TeamMeeting[] @relation("TeamMeeting_Team")
  TeamCase_Team TeamCase[] @relation("TeamCase_Team")
  TeamCapacityDay TeamCapacityDay[]
@@ -3514,6 +3568,7 @@ model Team {
   AccessScope          AccessScope            @relation(fields: [spaceId, scopeId], references: [spaceId, id], onDelete: NoAction, onUpdate: NoAction)
   SharedActor          SharedActor            @relation(fields: [spaceId, createdByActorId], references: [spaceId, id], onDelete: NoAction, onUpdate: NoAction)
   TeamProjectReference TeamProjectReference[]
+ @@unique([spaceId,scopeId],map:"Team_domain_scope_key")
 }
 
 model TeamProjectReference {
@@ -3531,6 +3586,7 @@ model TeamProjectReference {
 }
 
 model TeamPlan {
+ scopeId String @db.Uuid @default(dbgenerated("NULL::uuid"))
  id String @id @db.Uuid
  spaceId String @db.Uuid
  kind String @db.VarChar(10)
@@ -3544,13 +3600,16 @@ model TeamPlan {
  reviewSummary String? @db.VarChar(10000)
  reviewedByActorId String? @db.Uuid
  reviewedAt DateTime? @db.Timestamptz(3)
- Team Team @relation(fields:[spaceId],references:[spaceId],onDelete:NoAction,onUpdate:NoAction)
+ Team Team @relation(fields:[spaceId,scopeId],references:[spaceId,scopeId],onDelete:NoAction,onUpdate:NoAction,map:"TeamPlan_spaceId_fkey")
  Creator SharedActor @relation("TeamPlanCreator",fields:[spaceId,createdByActorId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction)
  Reviewer SharedActor? @relation("TeamPlanReviewer",fields:[spaceId,reviewedByActorId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction)
  TeamWorkItem TeamWorkItem[]
  @@unique([spaceId,id])
+ @@unique([spaceId,scopeId,id],map:"TeamPlan_domain_scope_key")
 }
 model TeamWorkItem {
+ sourceScopeId String @db.Uuid @default(dbgenerated("NULL::uuid"))
+ scopeId String @db.Uuid @default(dbgenerated("NULL::uuid"))
  id String @id @db.Uuid
  spaceId String @db.Uuid
  planId String? @db.Uuid
@@ -3561,11 +3620,11 @@ model TeamWorkItem {
  position Int @default(0)
  revision Int @default(1)
  createdByActorId String @db.Uuid
- Team Team @relation(fields:[spaceId],references:[spaceId],onDelete:NoAction,onUpdate:NoAction)
- TeamPlan TeamPlan? @relation(fields:[spaceId,planId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction)
+ Team Team @relation(fields:[spaceId,scopeId],references:[spaceId,scopeId],onDelete:NoAction,onUpdate:NoAction,map:"TeamWorkItem_spaceId_fkey")
+ TeamPlan TeamPlan? @relation(fields:[spaceId,scopeId,planId],references:[spaceId,scopeId,id],onDelete:NoAction,onUpdate:NoAction,map:"TeamWorkItem_spaceId_planId_fkey")
  SharedCustody SharedCustody @relation(fields:[sourceSpaceId],references:[spaceId],onDelete:NoAction,onUpdate:NoAction)
- Task Task? @relation(fields:[sourceSpaceId,taskId],references:[spaceId,id],onDelete:Cascade,onUpdate:NoAction)
- Goal Goal? @relation(fields:[sourceSpaceId,goalId],references:[spaceId,id],onDelete:Cascade,onUpdate:NoAction)
+ Task Task? @relation(fields:[sourceSpaceId,sourceScopeId,taskId],references:[spaceId,scopeId,id],onDelete:Cascade,onUpdate:NoAction,map:"TeamWorkItem_sourceSpaceId_taskId_fkey")
+ Goal Goal? @relation(fields:[sourceSpaceId,sourceScopeId,goalId],references:[spaceId,scopeId,id],onDelete:Cascade,onUpdate:NoAction,map:"TeamWorkItem_sourceSpaceId_goalId_fkey")
  SharedActor SharedActor @relation(fields:[spaceId,createdByActorId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction)
  @@unique([spaceId,id])
  @@index([spaceId,planId,id],map:"TeamWorkItem_page")
@@ -3581,7 +3640,7 @@ model TeamCapacityDay {
  timezone String @db.VarChar(100)
  availableMinutes Int?
  revision Int @default(1)
- Team Team @relation(fields:[spaceId],references:[spaceId],onDelete:NoAction,onUpdate:NoAction,map:"TeamCapacityDay_team")
+ Team Team @relation(fields:[spaceId,scopeId],references:[spaceId,scopeId],onDelete:NoAction,onUpdate:NoAction,map:"TeamCapacityDay_team")
  ContextAccess ContextAccess @relation(fields:[spaceId,scopeId,accessId],references:[spaceId,scopeId,id],onDelete:NoAction,onUpdate:NoAction,map:"TeamCapacityDay_member")
  ContextAccessInterval ContextAccessInterval @relation(fields:[accessId,generation],references:[accessId,generation],onDelete:NoAction,onUpdate:NoAction,map:"TeamCapacityDay_generation")
  @@unique([spaceId,accessId,generation,date,timezone])
@@ -3604,7 +3663,7 @@ model TeamCase {
  state String @default("OPEN") @db.VarChar(12)
  revision Int @default(1)
  createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
- Team Team @relation("TeamCase_Team",fields:[spaceId],references:[spaceId],onDelete:NoAction,onUpdate:NoAction,map:"TeamCase_Team")
+ Team Team @relation("TeamCase_Team",fields:[spaceId,scopeId],references:[spaceId,scopeId],onDelete:NoAction,onUpdate:NoAction,map:"TeamCase_Team")
  authorMember ContextAccess @relation("TeamCase_authorMember",fields:[spaceId,scopeId,authorAccessId],references:[spaceId,scopeId,id],onDelete:NoAction,onUpdate:NoAction,map:"TeamCase_authorMember")
  authorInterval ContextAccessInterval @relation("TeamCase_authorInterval",fields:[authorAccessId,authorGeneration],references:[accessId,generation],onDelete:NoAction,onUpdate:NoAction,map:"TeamCase_authorInterval")
  subjectMember ContextAccess @relation("TeamCase_subjectMember",fields:[spaceId,scopeId,subjectAccessId],references:[spaceId,scopeId,id],onDelete:NoAction,onUpdate:NoAction,map:"TeamCase_subjectMember")
@@ -3615,9 +3674,11 @@ model TeamCase {
  TeamDisclosure_Case TeamDisclosure[] @relation("TeamDisclosure_Case")
  @@unique([spaceId,id])
  @@index([spaceId,id],map:"TeamCase_page")
+ @@unique([spaceId,scopeId,id],map:"TeamCase_domain_scope_key")
 }
 
 model TeamCaseEntry {
+ scopeId String @db.Uuid @default(dbgenerated("NULL::uuid"))
  id String @db.Uuid @id
  spaceId String @db.Uuid
  caseId String @db.Uuid
@@ -3625,12 +3686,13 @@ model TeamCaseEntry {
  body String @db.VarChar(10000)
  createdByActorId String @db.Uuid
  createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
- Case TeamCase @relation("TeamCaseEntry_Case",fields:[spaceId,caseId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction,map:"TeamCaseEntry_Case")
+ Case TeamCase @relation("TeamCaseEntry_Case",fields:[spaceId,scopeId,caseId],references:[spaceId,scopeId,id],onDelete:NoAction,onUpdate:NoAction,map:"TeamCaseEntry_Case")
  Actor SharedActor @relation("TeamCaseEntry_Actor",fields:[spaceId,createdByActorId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction,map:"TeamCaseEntry_Actor")
  @@index([spaceId,id],map:"TeamCaseEntry_page")
 }
 
 model TeamDisclosure {
+ scopeId String @db.Uuid @default(dbgenerated("NULL::uuid"))
  id String @db.Uuid @id
  spaceId String @db.Uuid
  caseId String @db.Uuid
@@ -3645,10 +3707,11 @@ model TeamDisclosure {
  reviewNote String? @db.VarChar(10000)
  reviewedAt DateTime? @db.Timestamptz(3)
  subjectConsentedAt DateTime? @db.Timestamptz(3)
- Case TeamCase @relation("TeamDisclosure_Case",fields:[spaceId,caseId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction,map:"TeamDisclosure_Case")
+ Case TeamCase @relation("TeamDisclosure_Case",fields:[spaceId,scopeId,caseId],references:[spaceId,scopeId,id],onDelete:NoAction,onUpdate:NoAction,map:"TeamDisclosure_Case")
  TeamDisclosureRecipient_Disclosure TeamDisclosureRecipient[] @relation("TeamDisclosureRecipient_Disclosure")
  @@unique([spaceId,id])
  @@index([spaceId,id],map:"TeamDisclosure_page")
+ @@unique([spaceId,scopeId,id],map:"TeamDisclosure_domain_scope_key")
 }
 
 model TeamDisclosureRecipient {
@@ -3657,26 +3720,28 @@ model TeamDisclosureRecipient {
  disclosureId String @db.Uuid
  accessId String @db.Uuid
  generation Int
- Disclosure TeamDisclosure @relation("TeamDisclosureRecipient_Disclosure",fields:[spaceId,disclosureId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction,map:"TeamDisclosureRecipient_Disclosure")
+ Disclosure TeamDisclosure @relation("TeamDisclosureRecipient_Disclosure",fields:[spaceId,scopeId,disclosureId],references:[spaceId,scopeId,id],onDelete:NoAction,onUpdate:NoAction,map:"TeamDisclosureRecipient_Disclosure")
  Member ContextAccess @relation("TeamDisclosureRecipient_Member",fields:[spaceId,scopeId,accessId],references:[spaceId,scopeId,id],onDelete:NoAction,onUpdate:NoAction,map:"TeamDisclosureRecipient_Member")
  Interval ContextAccessInterval @relation("TeamDisclosureRecipient_Interval",fields:[accessId,generation],references:[accessId,generation],onDelete:NoAction,onUpdate:NoAction,map:"TeamDisclosureRecipient_Interval")
  @@id([spaceId,disclosureId,accessId])
 }
 
 model TeamMeeting {
+ scopeId String @db.Uuid @default(dbgenerated("NULL::uuid"))
  id String @db.Uuid @id
  spaceId String @db.Uuid
  eventId String @db.Uuid
  agenda String @db.VarChar(10000)
  revision Int @default(1)
  createdByActorId String @db.Uuid
- Team Team @relation("TeamMeeting_Team",fields:[spaceId],references:[spaceId],onDelete:NoAction,onUpdate:NoAction,map:"TeamMeeting_Team")
- Event CalendarEvent @relation("TeamMeeting_Event",fields:[spaceId,eventId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction,map:"TeamMeeting_Event")
+ Team Team @relation("TeamMeeting_Team",fields:[spaceId,scopeId],references:[spaceId,scopeId],onDelete:NoAction,onUpdate:NoAction,map:"TeamMeeting_Team")
+ Event CalendarEvent @relation("TeamMeeting_Event",fields:[spaceId,scopeId,eventId],references:[spaceId,scopeId,id],onDelete:NoAction,onUpdate:NoAction,map:"TeamMeeting_Event")
  Actor SharedActor @relation("TeamMeeting_Actor",fields:[spaceId,createdByActorId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction,map:"TeamMeeting_Actor")
  TeamMeetingInvitation_Meeting TeamMeetingInvitation[] @relation("TeamMeetingInvitation_Meeting")
  @@unique([spaceId,id])
  @@unique([spaceId,eventId])
  @@index([spaceId,id],map:"TeamMeeting_page")
+ @@unique([spaceId,scopeId,id],map:"TeamMeeting_domain_scope_key")
 }
 
 model TeamMeetingInvitation {
@@ -3693,7 +3758,7 @@ model TeamMeetingInvitation {
  state String @default("PENDING") @db.VarChar(12)
  revision Int @default(1)
  restoreGeneration Int
- Meeting TeamMeeting @relation("TeamMeetingInvitation_Meeting",fields:[spaceId,meetingId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction,map:"TeamMeetingInvitation_Meeting")
+ Meeting TeamMeeting @relation("TeamMeetingInvitation_Meeting",fields:[spaceId,scopeId,meetingId],references:[spaceId,scopeId,id],onDelete:NoAction,onUpdate:NoAction,map:"TeamMeetingInvitation_Meeting")
  inviterMember ContextAccess @relation("TeamMeetingInvitation_inviterMember",fields:[spaceId,scopeId,inviterAccessId],references:[spaceId,scopeId,id],onDelete:NoAction,onUpdate:NoAction,map:"TeamMeetingInvitation_inviterMember")
  inviterInterval ContextAccessInterval @relation("TeamMeetingInvitation_inviterInterval",fields:[inviterAccessId,inviterGeneration],references:[accessId,generation],onDelete:NoAction,onUpdate:NoAction,map:"TeamMeetingInvitation_inviterInterval")
  recipientMember ContextAccess @relation("TeamMeetingInvitation_recipientMember",fields:[spaceId,scopeId,recipientAccessId],references:[spaceId,scopeId,id],onDelete:NoAction,onUpdate:NoAction,map:"TeamMeetingInvitation_recipientMember")
@@ -3702,6 +3767,10 @@ model TeamMeetingInvitation {
 }
 
 model Company {
+  DomainScopeCustody_company DomainScopeCustody[] @relation("DomainScopeCustody_company")
+  CompanyCustodyTransfer_company CompanyCustodyTransfer[] @relation("CompanyCustodyTransfer_company")
+ TeamCompanyAssociation_company TeamCompanyAssociation[] @relation("TeamCompanyAssociation_company")
+ ProjectCompanyAssociation_company ProjectCompanyAssociation[] @relation("ProjectCompanyAssociation_company")
  CompanyKnowledgeVersion_company CompanyKnowledgeVersion[] @relation("CompanyKnowledgeVersion_company")
  CompanyKnowledgeDocument_company CompanyKnowledgeDocument[] @relation("CompanyKnowledgeDocument_company")
  CompanyKnowledgeFolder_company CompanyKnowledgeFolder[] @relation("CompanyKnowledgeFolder_company")
@@ -4571,4 +4640,205 @@ model CompanyKnowledgeVersion {
  @@index([spaceId,scopeId,id],map:"CompanyKnowledgeVersion_page")
  @@unique([spaceId,scopeId,documentId,id],map:"CompanyKnowledgeVersion_document_key")
  @@unique([spaceId,scopeId,fileId],map:"CompanyKnowledgeVersion_file_key")
+}
+
+model ProjectCompanyAssociation {
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ sourceId String @db.Uuid
+ companySpaceId String @db.Uuid
+ companyScopeId String @db.Uuid
+ sourceAccessId String @db.Uuid
+ sourceGeneration Int
+ companyAccessId String @db.Uuid
+ companyGeneration Int
+ sourceCompanyAccessId String @db.Uuid
+ sourceCompanyGeneration Int
+ destinationAccessId String @db.Uuid
+ destinationGeneration Int
+ sourceEpoch Int
+ companyEpoch Int
+ state String @db.VarChar(16) @default("PENDING")
+ revision Int @default(1)
+ expiresAt DateTime? @db.Timestamptz(3)
+ createdAt DateTime @db.Timestamptz(3) @default(dbgenerated("clock_timestamp()"))
+ updatedAt DateTime @db.Timestamptz(3) @default(dbgenerated("clock_timestamp()"))
+ source Project @relation("ProjectCompanyAssociation_source",fields:[spaceId,sourceId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction,map:"ProjectCompanyAssociation_source")
+ scope AccessScope @relation("ProjectCompanyAssociation_scope",fields:[spaceId,scopeId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction,map:"ProjectCompanyAssociation_scope")
+ company Company @relation("ProjectCompanyAssociation_company",fields:[companySpaceId],references:[spaceId],onDelete:NoAction,onUpdate:NoAction,map:"ProjectCompanyAssociation_company")
+ context AccessScope @relation("ProjectCompanyAssociation_context",fields:[companySpaceId,companyScopeId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction,map:"ProjectCompanyAssociation_context")
+ sourceOwner ContextAccess @relation("ProjectCompanyAssociation_sourceOwner",fields:[spaceId,scopeId,sourceAccessId],references:[spaceId,scopeId,id],onDelete:NoAction,onUpdate:NoAction,map:"ProjectCompanyAssociation_sourceOwner")
+ companyOwner ContextAccess @relation("ProjectCompanyAssociation_companyOwner",fields:[companySpaceId,companyAccessId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction,map:"ProjectCompanyAssociation_companyOwner")
+ sourceAdmission ContextAccess @relation("ProjectCompanyAssociation_sourceAdmission",fields:[companySpaceId,companyScopeId,sourceCompanyAccessId],references:[spaceId,scopeId,id],onDelete:NoAction,onUpdate:NoAction,map:"ProjectCompanyAssociation_sourceAdmission")
+ destinationAdmission ContextAccess @relation("ProjectCompanyAssociation_destinationAdmission",fields:[companySpaceId,companyScopeId,destinationAccessId],references:[spaceId,scopeId,id],onDelete:NoAction,onUpdate:NoAction,map:"ProjectCompanyAssociation_destinationAdmission")
+ sourceInterval ContextAccessInterval @relation("ProjectCompanyAssociation_sourceInterval",fields:[sourceAccessId,sourceGeneration],references:[accessId,generation],onDelete:NoAction,onUpdate:NoAction,map:"ProjectCompanyAssociation_sourceInterval")
+ companyInterval ContextAccessInterval @relation("ProjectCompanyAssociation_companyInterval",fields:[companyAccessId,companyGeneration],references:[accessId,generation],onDelete:NoAction,onUpdate:NoAction,map:"ProjectCompanyAssociation_companyInterval")
+ sourceAdmissionInterval ContextAccessInterval @relation("ProjectCompanyAssociation_sourceAdmissionInterval",fields:[sourceCompanyAccessId,sourceCompanyGeneration],references:[accessId,generation],onDelete:NoAction,onUpdate:NoAction,map:"ProjectCompanyAssociation_sourceAdmissionInterval")
+ destinationInterval ContextAccessInterval @relation("ProjectCompanyAssociation_destinationInterval",fields:[destinationAccessId,destinationGeneration],references:[accessId,generation],onDelete:NoAction,onUpdate:NoAction,map:"ProjectCompanyAssociation_destinationInterval")
+ @@index([companySpaceId,companyScopeId,id],map:"ProjectCompanyAssociation_company_page")
+}
+
+model TeamCompanyAssociation {
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ sourceId String @db.Uuid
+ companySpaceId String @db.Uuid
+ companyScopeId String @db.Uuid
+ sourceAccessId String @db.Uuid
+ sourceGeneration Int
+ companyAccessId String @db.Uuid
+ companyGeneration Int
+ sourceCompanyAccessId String @db.Uuid
+ sourceCompanyGeneration Int
+ destinationAccessId String @db.Uuid
+ destinationGeneration Int
+ sourceEpoch Int
+ companyEpoch Int
+ state String @db.VarChar(16) @default("PENDING")
+ revision Int @default(1)
+ expiresAt DateTime? @db.Timestamptz(3)
+ createdAt DateTime @db.Timestamptz(3) @default(dbgenerated("clock_timestamp()"))
+ updatedAt DateTime @db.Timestamptz(3) @default(dbgenerated("clock_timestamp()"))
+ source Team @relation("TeamCompanyAssociation_source",fields:[spaceId,sourceId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction,map:"TeamCompanyAssociation_source")
+ scope AccessScope @relation("TeamCompanyAssociation_scope",fields:[spaceId,scopeId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction,map:"TeamCompanyAssociation_scope")
+ company Company @relation("TeamCompanyAssociation_company",fields:[companySpaceId],references:[spaceId],onDelete:NoAction,onUpdate:NoAction,map:"TeamCompanyAssociation_company")
+ context AccessScope @relation("TeamCompanyAssociation_context",fields:[companySpaceId,companyScopeId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction,map:"TeamCompanyAssociation_context")
+ sourceOwner ContextAccess @relation("TeamCompanyAssociation_sourceOwner",fields:[spaceId,scopeId,sourceAccessId],references:[spaceId,scopeId,id],onDelete:NoAction,onUpdate:NoAction,map:"TeamCompanyAssociation_sourceOwner")
+ companyOwner ContextAccess @relation("TeamCompanyAssociation_companyOwner",fields:[companySpaceId,companyAccessId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction,map:"TeamCompanyAssociation_companyOwner")
+ sourceAdmission ContextAccess @relation("TeamCompanyAssociation_sourceAdmission",fields:[companySpaceId,companyScopeId,sourceCompanyAccessId],references:[spaceId,scopeId,id],onDelete:NoAction,onUpdate:NoAction,map:"TeamCompanyAssociation_sourceAdmission")
+ destinationAdmission ContextAccess @relation("TeamCompanyAssociation_destinationAdmission",fields:[companySpaceId,companyScopeId,destinationAccessId],references:[spaceId,scopeId,id],onDelete:NoAction,onUpdate:NoAction,map:"TeamCompanyAssociation_destinationAdmission")
+ sourceInterval ContextAccessInterval @relation("TeamCompanyAssociation_sourceInterval",fields:[sourceAccessId,sourceGeneration],references:[accessId,generation],onDelete:NoAction,onUpdate:NoAction,map:"TeamCompanyAssociation_sourceInterval")
+ companyInterval ContextAccessInterval @relation("TeamCompanyAssociation_companyInterval",fields:[companyAccessId,companyGeneration],references:[accessId,generation],onDelete:NoAction,onUpdate:NoAction,map:"TeamCompanyAssociation_companyInterval")
+ sourceAdmissionInterval ContextAccessInterval @relation("TeamCompanyAssociation_sourceAdmissionInterval",fields:[sourceCompanyAccessId,sourceCompanyGeneration],references:[accessId,generation],onDelete:NoAction,onUpdate:NoAction,map:"TeamCompanyAssociation_sourceAdmissionInterval")
+ destinationInterval ContextAccessInterval @relation("TeamCompanyAssociation_destinationInterval",fields:[destinationAccessId,destinationGeneration],references:[accessId,generation],onDelete:NoAction,onUpdate:NoAction,map:"TeamCompanyAssociation_destinationInterval")
+ @@index([companySpaceId,companyScopeId,id],map:"TeamCompanyAssociation_company_page")
+}
+
+// ADR 0040: immutable reviewed whole-root custody protocol.
+model CompanyCustodyTransfer {
+  startedAt DateTime? @db.Timestamptz(3)
+  companyRetentionPolicyVersion String @db.VarChar(80) @default(dbgenerated("NULL::character varying"))
+  DomainScopeAdmissionAlias_transfer DomainScopeAdmissionAlias[] @relation("DomainScopeAdmissionAlias_transfer")
+  DomainScopeActorAlias_transfer DomainScopeActorAlias[] @relation("DomainScopeActorAlias_transfer")
+  DomainScopeCustody_transfer DomainScopeCustody[] @relation("DomainScopeCustody_transfer")
+  CompanyCustodyConsent_transfer CompanyCustodyConsent[] @relation("CompanyCustodyConsent_transfer")
+  id String @db.Uuid
+  sourceCustodyId String @db.Uuid
+  sourceProjectId String? @db.Uuid
+  sourceTeamId String? @db.Uuid
+  companyId String @db.Uuid
+  parentScopeId String @db.Uuid
+  sourceOwnerAccessId String @db.Uuid
+  sourceOwnerGeneration Int
+  companyOwnerAccessId String @db.Uuid
+  companyOwnerGeneration Int
+  sourceVersion BigInt
+  companyVersion BigInt
+  retentionPolicyVersion String @db.VarChar(80)
+  manifest Json
+  manifestHash String @db.Char(64)
+  creationKey String @db.Char(64)
+  fingerprint String @db.Char(64)
+  state String @db.VarChar(24)
+  revision Int
+  createdAt DateTime @db.Timestamptz(3)
+  expiresAt DateTime @db.Timestamptz(3)
+  appliedAt DateTime? @db.Timestamptz(3)
+  @@id([id])
+  @@unique([sourceCustodyId,sourceOwnerAccessId,sourceOwnerGeneration,creationKey])
+  project Project? @relation("CompanyCustodyTransfer_project",fields:[sourceProjectId],references:[id],onDelete:NoAction,onUpdate:NoAction,map:"CompanyCustodyTransfer_project")
+  team Team? @relation("CompanyCustodyTransfer_team",fields:[sourceTeamId],references:[id],onDelete:NoAction,onUpdate:NoAction,map:"CompanyCustodyTransfer_team")
+  company Company @relation("CompanyCustodyTransfer_company",fields:[companyId],references:[id],onDelete:NoAction,onUpdate:NoAction,map:"CompanyCustodyTransfer_company")
+  context AccessScope @relation("CompanyCustodyTransfer_context",fields:[companyId,parentScopeId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction,map:"CompanyCustodyTransfer_context")
+  sourceOwner ContextAccessInterval @relation("CompanyCustodyTransfer_sourceOwner",fields:[sourceOwnerAccessId,sourceOwnerGeneration],references:[accessId,generation],onDelete:NoAction,onUpdate:NoAction,map:"CompanyCustodyTransfer_sourceOwner")
+  companyOwner ContextAccessInterval @relation("CompanyCustodyTransfer_companyOwner",fields:[companyOwnerAccessId,companyOwnerGeneration],references:[accessId,generation],onDelete:NoAction,onUpdate:NoAction,map:"CompanyCustodyTransfer_companyOwner")
+  retention SharedRetentionPolicy @relation("CompanyCustodyTransfer_retention",fields:[retentionPolicyVersion],references:[version],onDelete:NoAction,onUpdate:NoAction,map:"CompanyCustodyTransfer_retention")
+  companyRetention SharedRetentionPolicy @relation("CompanyCustodyTransfer_companyRetention",fields:[companyRetentionPolicyVersion],references:[version],onDelete:NoAction,onUpdate:NoAction,map:"CompanyCustodyTransfer_companyRetention")
+}
+
+// ADR 0040: immutable reviewed whole-root custody protocol.
+model CompanyCustodyConsent {
+  transferId String @db.Uuid
+  sourceActorId String @db.Uuid
+  purpose String @db.VarChar(24)
+  sourceAccessId String? @db.Uuid
+  sourceGeneration Int
+  destinationRootAccessId String? @db.Uuid
+  destinationRootGeneration Int
+  destinationRole String? @db.VarChar(12)
+  manifestHash String @db.Char(64)
+  decision String @db.VarChar(24)
+  revision Int
+  decidedAt DateTime? @db.Timestamptz(3)
+  reauthenticatedAt DateTime? @db.Timestamptz(3)
+  @@id([transferId,sourceActorId,purpose])
+  transfer CompanyCustodyTransfer @relation("CompanyCustodyConsent_transfer",fields:[transferId],references:[id],onDelete:NoAction,onUpdate:NoAction,map:"CompanyCustodyConsent_transfer")
+  actor SharedActor @relation("CompanyCustodyConsent_actor",fields:[sourceActorId],references:[id],onDelete:NoAction,onUpdate:NoAction,map:"CompanyCustodyConsent_actor")
+  source ContextAccessInterval? @relation("CompanyCustodyConsent_source",fields:[sourceAccessId,sourceGeneration],references:[accessId,generation],onDelete:NoAction,onUpdate:NoAction,map:"CompanyCustodyConsent_source")
+  destination ContextAccessInterval? @relation("CompanyCustodyConsent_destination",fields:[destinationRootAccessId,destinationRootGeneration],references:[accessId,generation],onDelete:NoAction,onUpdate:NoAction,map:"CompanyCustodyConsent_destination")
+}
+
+// ADR 0040: immutable reviewed whole-root custody protocol.
+model DomainScopeCustody {
+  kind String @db.VarChar(7)
+  DomainScopeAdmissionAlias_custody DomainScopeAdmissionAlias[] @relation("DomainScopeAdmissionAlias_custody")
+  DomainScopeActorAlias_custody DomainScopeActorAlias[] @relation("DomainScopeActorAlias_custody")
+  scopeId String @db.Uuid
+  spaceId String @db.Uuid
+  parentScopeId String @db.Uuid
+  projectId String? @db.Uuid
+  teamId String? @db.Uuid
+  originCustodyId String @db.Uuid
+  transferId String? @db.Uuid
+  primaryOwnerAccessId String? @db.Uuid
+  state String @db.VarChar(24)
+  revision Int
+  authorizationVersion BigInt
+  retentionPolicyVersion String @db.VarChar(80)
+  closureGeneration Int
+  createdAt DateTime @db.Timestamptz(3)
+  @@id([scopeId])
+  @@unique([spaceId,scopeId])
+  @@unique([transferId])
+  company Company @relation("DomainScopeCustody_company",fields:[spaceId],references:[id],onDelete:NoAction,onUpdate:NoAction,map:"DomainScopeCustody_company")
+  scope AccessScope @relation("DomainScopeCustody_scope",fields:[spaceId,scopeId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction,map:"DomainScopeCustody_scope")
+  parent AccessScope @relation("DomainScopeCustody_parent",fields:[spaceId,parentScopeId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction,map:"DomainScopeCustody_parent")
+  project Project? @relation("DomainScopeCustody_project",fields:[spaceId,projectId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction,map:"DomainScopeCustody_project")
+  team Team? @relation("DomainScopeCustody_team",fields:[spaceId,teamId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction,map:"DomainScopeCustody_team")
+  owner ContextAccess? @relation("DomainScopeCustody_owner",fields:[spaceId,scopeId,primaryOwnerAccessId],references:[spaceId,scopeId,id],onDelete:NoAction,onUpdate:NoAction,map:"DomainScopeCustody_owner")
+  transfer CompanyCustodyTransfer? @relation("DomainScopeCustody_transfer",fields:[transferId],references:[id],onDelete:NoAction,onUpdate:NoAction,map:"DomainScopeCustody_transfer")
+  retention SharedRetentionPolicy @relation("DomainScopeCustody_retention",fields:[retentionPolicyVersion],references:[version],onDelete:NoAction,onUpdate:NoAction,map:"DomainScopeCustody_retention")
+}
+
+// ADR 0040: immutable reviewed whole-root custody protocol.
+model DomainScopeActorAlias {
+  scopeId String @db.Uuid
+  spaceId String @db.Uuid
+  historicalActorId String @db.Uuid
+  canonicalActorId String @db.Uuid
+  transferId String @db.Uuid
+  @@id([scopeId,historicalActorId])
+  custody DomainScopeCustody @relation("DomainScopeActorAlias_custody",fields:[spaceId,scopeId],references:[spaceId,scopeId],onDelete:NoAction,onUpdate:NoAction,map:"DomainScopeActorAlias_custody")
+  historical SharedActor @relation("DomainScopeActorAlias_historical",fields:[spaceId,historicalActorId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction,map:"DomainScopeActorAlias_historical")
+  canonical SharedActor @relation("DomainScopeActorAlias_canonical",fields:[spaceId,canonicalActorId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction,map:"DomainScopeActorAlias_canonical")
+  transfer CompanyCustodyTransfer @relation("DomainScopeActorAlias_transfer",fields:[transferId],references:[id],onDelete:NoAction,onUpdate:NoAction,map:"DomainScopeActorAlias_transfer")
+}
+
+// ADR 0040: immutable reviewed whole-root custody protocol.
+model DomainScopeAdmissionAlias {
+  scopeId String @db.Uuid
+  spaceId String @db.Uuid
+  historicalAccessId String @db.Uuid
+  historicalGeneration Int
+  destinationAccessId String @db.Uuid
+  destinationGeneration Int
+  transferId String @db.Uuid
+  @@id([scopeId,historicalAccessId,historicalGeneration])
+  custody DomainScopeCustody @relation("DomainScopeAdmissionAlias_custody",fields:[spaceId,scopeId],references:[spaceId,scopeId],onDelete:NoAction,onUpdate:NoAction,map:"DomainScopeAdmissionAlias_custody")
+  historical ContextAccessInterval @relation("DomainScopeAdmissionAlias_historical",fields:[historicalAccessId,historicalGeneration],references:[accessId,generation],onDelete:NoAction,onUpdate:NoAction,map:"DomainScopeAdmissionAlias_historical")
+  destination ContextAccessInterval @relation("DomainScopeAdmissionAlias_destination",fields:[destinationAccessId,destinationGeneration],references:[accessId,generation],onDelete:NoAction,onUpdate:NoAction,map:"DomainScopeAdmissionAlias_destination")
+  destinationScope ContextAccess @relation("DomainScopeAdmissionAlias_destinationScope",fields:[spaceId,scopeId,destinationAccessId],references:[spaceId,scopeId,id],onDelete:NoAction,onUpdate:NoAction,map:"DomainScopeAdmissionAlias_destinationScope")
+  transfer CompanyCustodyTransfer @relation("DomainScopeAdmissionAlias_transfer",fields:[transferId],references:[id],onDelete:NoAction,onUpdate:NoAction,map:"DomainScopeAdmissionAlias_transfer")
 }

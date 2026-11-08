@@ -1,3 +1,4 @@
+import { verifyCompanyLifecycleUpgrade } from './company-lifecycle-upgrade.ts';
 import fs from 'node:fs';
 import assert from 'node:assert/strict';
 import { randomUUID, createHash } from 'node:crypto';
@@ -163,14 +164,10 @@ export async function verifyCompanyKnowledgeUpgrade(input: {
   assert.equal(fks.length, 584);
   assert.equal(
     createHash('sha256').update(JSON.stringify(fks)).digest('hex'),
-    fs
-      .readFileSync(
-        'apps/api/src/platform/lifecycle/shared-cleanup-catalog.ts',
-        'utf8',
-      )
-      .match(/'([a-f0-9]{64})'/)![1],
+    '9e1e5dc7b2ebe04f0180fc0892dcab5be1e510a593578597d4d714cef1809094',
   );
   process.stdout.write(
     'PASS: P4-05 preserves 179 populated predecessor datasets, 56 checksums and previous constraints; interrupted rollback, repeat deploy, three populated knowledge tables, immutable file/version evidence and 584-FK catalog.\n',
   );
+  await verifyCompanyLifecycleUpgrade(input);
 }

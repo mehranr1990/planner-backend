@@ -73,11 +73,17 @@ export class ResourceGrants {
     access: ContextAccess | null,
     caps: string[],
   ) {
+    const scopeId = spaceId;
+    spaceId = await this.kernel.custodySpaceInTransaction(tx, scopeId);
+    const child = await tx.domainScopeCustody.findUnique({
+      where: { scopeId },
+    });
     if (
       access?.memberRole === 'VIEWER' &&
       caps.some((cap) => !['read', 'file.read'].includes(cap)) &&
-      (await tx.sharedCustody.findUniqueOrThrow({ where: { spaceId } }))
-        .primaryOwnerAccessId !== access.id
+      (child?.primaryOwnerAccessId ??
+        (await tx.sharedCustody.findUniqueOrThrow({ where: { spaceId } }))
+          .primaryOwnerAccessId) !== access.id
     )
       throw new BadRequestException({ code: 'RECIPIENT_ROLE_CEILING' });
   }
@@ -121,7 +127,7 @@ export class ResourceGrants {
           locked,
         ),
       );
-    return new SharedAuthority(tx, values);
+    return new SharedAuthority(tx, values, spaceId);
   }
   private async actor(
     tx: Prisma.TransactionClient,
@@ -178,11 +184,18 @@ export class ResourceGrants {
           locked,
         );
         try {
-          const issuer = authority.require(tx, spaceId, 'membership.member');
+          const issuer = authority.require(tx, spaceId, 'membership.member'),
+            location = { spaceId: issuer.spaceId, scopeId: issuer.scopeId };
+          if (location.spaceId !== location.scopeId)
+            await this.kernel.companyRootAdmission(
+              tx,
+              location.spaceId,
+              body.recipientUserId,
+            );
           const existing = await tx.resourceGrantOffer.findUnique({
             where: {
               spaceId_issuerAccessId_issuerGeneration_keyHash: {
-                spaceId,
+                spaceId: location.spaceId,
                 issuerAccessId: issuer.accessId,
                 issuerGeneration: issuer.generation,
                 keyHash: hash(key),
@@ -200,10 +213,14 @@ export class ResourceGrants {
           await validate(tx, authority, spaceId, body.target);
           const expiry = new Date(body.grantExpiresAt);
           if (expiry <= now) throw new BadRequestException();
-          const local = await this.actor(tx, spaceId, body.recipientUserId);
+          const local = await this.actor(
+            tx,
+            location.spaceId,
+            body.recipientUserId,
+          );
           const pending = await tx.resourceGrantOffer.count({
             where: {
-              spaceId,
+              ...location,
               recipientActorId: local.id,
               state: 'PENDING',
               expiresAt: { gt: now },
@@ -222,8 +239,7 @@ export class ResourceGrants {
           const admission = await tx.contextAccess.findUnique({
             where: {
               spaceId_scopeId_actorId: {
-                spaceId,
-                scopeId: spaceId,
+                ...location,
                 actorId: local.id,
               },
             },
@@ -242,8 +258,7 @@ export class ResourceGrants {
           const row = await tx.resourceGrantOffer.create({
             data: {
               id: body.id,
-              spaceId,
-              scopeId: spaceId,
+              ...location,
               issuerAccessId: issuer.accessId,
               issuerGeneration: issuer.generation,
               recipientActorId: local.id,
@@ -310,7 +325,7 @@ export class ResourceGrants {
     if (!row) throw new NotFoundException();
     const user = await this.issuerUser(this.db.client, row.issuerAccessId);
     if (!user) throw new NotFoundException();
-    const users = await this.kernel.offerUserHints(row.spaceId, user);
+    const users = await this.kernel.offerUserHints(row.scopeId, user);
     try {
       return await this.kernel.offerMaintenance(
         row.spaceId,
@@ -333,7 +348,7 @@ export class ResourceGrants {
           const authority = await this.issuer(
             tx,
             actor,
-            row.spaceId,
+            row.scopeId,
             user,
             current.issuerGeneration,
             targetOf(current),
@@ -341,7 +356,7 @@ export class ResourceGrants {
             users,
           );
           try {
-            await validate(tx, authority, row.spaceId, targetOf(current));
+            await validate(tx, authority, row.scopeId, targetOf(current));
             return {
               contextLabel: 'Project' as const,
               offerCategory: 'RESOURCE_GRANT' as const,
@@ -373,7 +388,7 @@ export class ResourceGrants {
       user = await this.issuerUser(this.db.client, hint.issuerAccessId);
     return this.collaboration.signed(
       actor,
-      hint.spaceId,
+      hint.scopeId,
       user ? [user] : [],
       accept ? 'grant.offer.accept' : 'grant.offer.decline',
       id,
@@ -406,9 +421,9 @@ export class ResourceGrants {
               r,
               locked,
             ),
-            a = new SharedAuthority(tx, [access]);
+            a = new SharedAuthority(tx, [access], row.scopeId);
           try {
-            await validate(tx, a, row.spaceId, targetOf(row));
+            await validate(tx, a, row.scopeId, targetOf(row));
             return {
               offer: view(row),
               grant,
@@ -434,7 +449,7 @@ export class ResourceGrants {
         const a = await this.issuer(
           tx,
           actor,
-          row.spaceId,
+          row.scopeId,
           user,
           row.issuerGeneration,
           targetOf(row),
@@ -442,7 +457,7 @@ export class ResourceGrants {
           locked,
         );
         try {
-          await validate(tx, a, row.spaceId, targetOf(row));
+          await validate(tx, a, row.scopeId, targetOf(row));
           let admission = await tx.contextAccess.findUnique({
             where: {
               spaceId_scopeId_actorId: {
@@ -462,6 +477,14 @@ export class ResourceGrants {
                   admission.revision !== row.recipientRevision)))
           )
             throw new ConflictException({ code: 'ADMISSION_CHANGED' });
+          const root =
+            accept && row.scopeId !== row.spaceId
+              ? await this.kernel.companyRootAdmission(
+                  tx,
+                  row.spaceId,
+                  actor.userId,
+                )
+              : null;
           if (accept && admission) {
             const target = targetOf(row);
             const count = await tx.resourceGrant.count({
@@ -486,7 +509,7 @@ export class ResourceGrants {
           if (accept)
             await this.recipientCeiling(
               tx,
-              row.spaceId,
+              row.scopeId,
               admission,
               row.capabilities,
             );
@@ -534,6 +557,35 @@ export class ResourceGrants {
                 },
               });
             }
+            if (root) {
+              const binding = await tx.companyContextAdmission.findUnique({
+                where: {
+                  accessId_generation: {
+                    accessId: admission.id,
+                    generation: admission.generation,
+                  },
+                },
+              });
+              if (
+                binding &&
+                (binding.rootAccessId !== root.id ||
+                  binding.rootGeneration !== root.generation)
+              )
+                throw new ConflictException({ code: 'ROOT_ADMISSION_CHANGED' });
+              if (!binding)
+                await tx.companyContextAdmission.create({
+                  data: {
+                    spaceId: row.spaceId,
+                    scopeId: row.scopeId,
+                    accessId: admission.id,
+                    generation: admission.generation,
+                    actorId: local.id,
+                    rootScopeId: row.spaceId,
+                    rootAccessId: root.id,
+                    rootGeneration: root.generation,
+                  },
+                });
+            }
             grantId = randomUUID();
             await tx.resourceGrant.create({
               data: {
@@ -579,7 +631,7 @@ export class ResourceGrants {
           await this.kernel.offerEffect(
             tx,
             actor,
-            row.spaceId,
+            row.scopeId,
             local.id,
             accept ? 'grant.offer.accept' : 'grant.offer.decline',
             id,
@@ -612,7 +664,11 @@ export class ResourceGrants {
       [],
       async (tx, _now, locked) => {
         const row = await tx.resourceGrantOffer.findFirst({
-          where: { id, spaceId },
+          where: {
+            id,
+            spaceId: await this.kernel.custodySpaceInTransaction(tx, spaceId),
+            scopeId: spaceId,
+          },
         });
         if (!row) throw new NotFoundException();
         const a = await this.issuer(
@@ -647,7 +703,11 @@ export class ResourceGrants {
       id,
       async (tx, now, locked, begin) => {
         const row = await tx.resourceGrantOffer.findFirst({
-          where: { id, spaceId },
+          where: {
+            id,
+            spaceId: await this.kernel.custodySpaceInTransaction(tx, spaceId),
+            scopeId: spaceId,
+          },
         });
         if (!row) throw new NotFoundException();
         const a = await this.issuer(
@@ -702,7 +762,11 @@ export class ResourceGrants {
       id,
       async (tx, now, locked, begin) => {
         const before = await tx.resourceGrant.findFirst({
-          where: { id, spaceId },
+          where: {
+            id,
+            spaceId: await this.kernel.custodySpaceInTransaction(tx, spaceId),
+            scopeId: spaceId,
+          },
         });
         if (!before) throw new NotFoundException();
         const safe = await this.grantView(tx, id),
@@ -749,8 +813,8 @@ export class ResourceGrants {
       throw error;
     }
     const rows = await this.db.client.$queryRaw<
-      { id: string; spaceId: string }[]
-    >`SELECT id,"spaceId" FROM "ResourceGrantOffer" WHERE state='PENDING' AND ("expiresAt"<=clock_timestamp() OR "grantExpiresAt"<=clock_timestamp()) ORDER BY "expiresAt",id LIMIT 25`;
+      { id: string; spaceId: string; scopeId: string }[]
+    >`SELECT id,"spaceId","scopeId" FROM "ResourceGrantOffer" WHERE state='PENDING' AND ("expiresAt"<=clock_timestamp() OR "grantExpiresAt"<=clock_timestamp()) ORDER BY "expiresAt",id LIMIT 25`;
     for (const hint of rows)
       await this.collaboration.signed(
         null,
@@ -786,7 +850,7 @@ export class ResourceGrants {
               requestId: randomUUID(),
               correlationId: randomUUID(),
             },
-            row.spaceId,
+            row.scopeId,
             issuer.actorId,
             'grant.offer.expire',
             row.id,

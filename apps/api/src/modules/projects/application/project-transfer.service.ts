@@ -67,6 +67,10 @@ export class ProjectTransferService {
     source: AuthorizedSpace,
     m: Pick<Manifest, 'tasks' | 'goals' | 'consent'>,
   ) {
+    if (s.spaceId !== s.pid)
+      throw new ConflictException({
+        code: 'PERSONAL_TO_COMPANY_TRANSFER_NOT_APPROVED',
+      });
     const candidates = [
       ...(await this.tasks.preview(s.tx, source, m.tasks, m.consent)),
       ...(await this.goals.preview(s.tx, source, m.goals, m.consent)),

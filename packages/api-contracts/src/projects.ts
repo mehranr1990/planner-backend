@@ -15,6 +15,14 @@ export const ProjectPatchSchema = z
     description: description.optional(),
   })
   .refine((v) => Object.keys(v).length > 0);
+export const DomainCustodyAssociationSchema = z.union([
+  z.strictObject({ kind: z.literal('INDEPENDENT') }),
+  z.strictObject({
+    kind: z.literal('COMPANY'),
+    companyId: z.uuid(),
+    parentScopeId: z.uuid(),
+  }),
+]);
 export const ProjectSchema = z.strictObject({
   id: z.uuid(),
   spaceId: z.uuid(),
@@ -29,7 +37,7 @@ export const ProjectSchema = z.strictObject({
     'CLOSING_GRACE',
     'CLOSED',
   ]),
-  association: z.strictObject({ kind: z.literal('INDEPENDENT') }),
+  association: DomainCustodyAssociationSchema,
   createdByActorId: z.uuid(),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),

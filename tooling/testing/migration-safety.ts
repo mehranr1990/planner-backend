@@ -1,4 +1,24 @@
 import {
+  companyScopeCustodyMigrationName,
+  assertReviewedCompanyScopeCustodyMigration,
+} from './reviewed-company-scope-custody-migration.ts';
+import {
+  domainScopeKeysMigrationName,
+  assertReviewedDomainScopeKeysMigration,
+} from './reviewed-domain-scope-keys-migration.ts';
+import {
+  scopedLifecycleJobsMigrationName,
+  assertReviewedScopedLifecycleJobsMigration,
+} from './reviewed-scoped-lifecycle-jobs-migration.ts';
+import {
+  companyAssociationsMigrationName,
+  assertReviewedCompanyAssociationsMigration,
+} from './reviewed-company-associations-migration.ts';
+import {
+  companyLifecycleMigrationName,
+  assertReviewedCompanyLifecycleMigration,
+} from './reviewed-company-lifecycle-migration.ts';
+import {
   companyKnowledgeMigrationName,
   assertReviewedCompanyKnowledgeMigration,
 } from './reviewed-company-knowledge-migration.ts';
@@ -51,6 +71,10 @@ import {
   assertReviewedVoiceMigration,
 } from './reviewed-voice-migration.ts';
 import fs from 'node:fs';
+import {
+  companyDomainRepresentationMigrationName,
+  assertReviewedCompanyDomainRepresentationMigration,
+} from './reviewed-company-domain-representation-migration.ts';
 import {
   projectCollaborationMigrationHashes,
   assertReviewedProjectCollaborationMigration,
@@ -144,7 +168,19 @@ export function reviewMigrations(directory = 'prisma/migrations'): string[] {
       path.join(directory, name, 'migration.sql'),
       'utf8',
     );
-    if (name === companyKnowledgeMigrationName)
+    if (name === companyDomainRepresentationMigrationName)
+      assertReviewedCompanyDomainRepresentationMigration(name, sql);
+    else if (name === scopedLifecycleJobsMigrationName)
+      assertReviewedScopedLifecycleJobsMigration(name, sql);
+    else if (name === domainScopeKeysMigrationName)
+      assertReviewedDomainScopeKeysMigration(name, sql);
+    else if (name === companyScopeCustodyMigrationName)
+      assertReviewedCompanyScopeCustodyMigration(name, sql);
+    else if (name === companyAssociationsMigrationName)
+      assertReviewedCompanyAssociationsMigration(name, sql);
+    else if (name === companyLifecycleMigrationName)
+      assertReviewedCompanyLifecycleMigration(name, sql);
+    else if (name === companyKnowledgeMigrationName)
       assertReviewedCompanyKnowledgeMigration(name, sql);
     else if (name === companySettlementsMigrationName)
       assertReviewedCompanySettlementsMigration(name, sql);

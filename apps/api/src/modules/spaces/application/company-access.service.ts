@@ -67,6 +67,7 @@ export class CompanyAccess {
     now: Date,
     locked: string[],
     begin: () => Promise<string>,
+    allowArchived = false,
   ): Promise<CompanyTransaction> {
     if (
       (await tx.sharedCustody.findUniqueOrThrow({ where: { spaceId } }))
@@ -77,7 +78,7 @@ export class CompanyAccess {
       tx,
       actor,
       actor.userId,
-      { spaceId, scopeId: spaceId, capability: 'task.read' },
+      { spaceId, scopeId: spaceId, capability: 'task.read', allowArchived },
       locked,
     );
     return { tx, actor, spaceId, now, locked, root, begin };
@@ -94,10 +95,20 @@ export class CompanyAccess {
       users,
       async (tx, now, locked) =>
         work(
-          await this.context(tx, actor, spaceId, now, locked, async () => {
-            throw new Error('Read cannot publish effects');
-          }),
+          await this.context(
+            tx,
+            actor,
+            spaceId,
+            now,
+            locked,
+            async () => {
+              throw new Error('Read cannot publish effects');
+            },
+            true,
+          ),
         ),
+      undefined,
+      true,
     );
   }
   write<T>(
@@ -128,7 +139,14 @@ export class CompanyAccess {
     return this.kernel.run(
       actor,
       { userIds: users, spaceIds: [...new Set([spaceId, ...projects])] },
-      [{ spaceId, scopeId: spaceId, capability: 'task.read' }],
+      [
+        {
+          spaceId,
+          scopeId: spaceId,
+          capability: 'task.read',
+          allowArchived: true,
+        },
+      ],
       async (tx, a) => {
         const now = (
           await tx.$queryRaw<{ now: Date }[]>`SELECT clock_timestamp() AS now`
@@ -143,6 +161,7 @@ export class CompanyAccess {
             async () => {
               throw new Error('Read cannot begin mutation');
             },
+            true,
           ),
           a,
         );
@@ -213,7 +232,12 @@ export class CompanyAccess {
       ctx.tx,
       ctx.actor,
       userId,
-      { spaceId: ctx.spaceId, scopeId, capability: 'task.read' },
+      {
+        spaceId: ctx.spaceId,
+        scopeId,
+        capability: 'task.read',
+        allowArchived: true,
+      },
       ctx.locked,
     );
   }

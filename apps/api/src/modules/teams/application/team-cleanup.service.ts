@@ -59,6 +59,7 @@ export class TeamCleanupService {
   private async content(tx: Prisma.TransactionClient, s: SharedCleanupScope) {
     if (!(await this.projects.cleanup(tx, s))) return false;
     return sharedDeleteBatch(tx, s, [
+      'TeamCompanyAssociation',
       'TeamMeetingInvitation',
       'TeamMeeting',
       'TeamDisclosureRecipient',

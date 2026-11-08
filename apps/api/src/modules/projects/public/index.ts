@@ -16,3 +16,7 @@ export { ProjectWorkMetricsService } from '../application/project-work-metrics.s
 export { TeamProjects } from '../application/team-projects.service.js';
 
 export { ProjectFinanceReferences } from '../application/project-finance-references.js';
+
+export { ProjectCompanyAssociations } from '../application/project-company-associations.js';
+
+export { ProjectCustodyGraph } from '../application/projects-custody-graph.js';

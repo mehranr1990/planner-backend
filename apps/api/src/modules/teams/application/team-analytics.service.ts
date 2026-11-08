@@ -23,6 +23,10 @@ import { dayBoundary } from '../../calendar/public/index.js';
 import { TeamsService } from './teams.service.js';
 import { summarizeWork } from '../domain/analytics.js';
 type Tx = Prisma.TransactionClient;
+const ownedScope = (tx: Tx, a: SharedAuthority, id: string) => ({
+  spaceId: a.space(tx, id),
+  scopeId: id,
+});
 type Query = z.infer<typeof c.TeamAnalyticsQuerySchema>;
 const hash = (v: unknown) =>
   createHash('sha256').update(JSON.stringify(v)).digest('hex');
@@ -33,7 +37,7 @@ const request = (
 const view = (r: TeamCapacityDay) =>
   c.TeamCapacitySchema.parse({
     id: r.id,
-    teamId: r.spaceId,
+    teamId: r.scopeId,
     member: { accessId: r.accessId, generation: r.generation },
     date: r.date.toISOString().slice(0, 10),
     timezone: r.timezone,
@@ -108,7 +112,7 @@ export class TeamAnalyticsService {
         );
         const mutate = async () => {
           const old = await tx.teamCapacityDay.findFirst({
-            where: { id: body.id, spaceId: id },
+            where: { id: body.id, ...ownedScope(tx, a, id) },
           });
           if (
             revision === undefined
@@ -131,7 +135,7 @@ export class TeamAnalyticsService {
                   OR: [
                     { id: body.id },
                     {
-                      spaceId: id,
+                      ...ownedScope(tx, a, id),
                       accessId: body.member.accessId,
                       generation: body.member.generation,
                       date: new Date(body.date),
@@ -155,8 +159,7 @@ export class TeamAnalyticsService {
             : await tx.teamCapacityDay.create({
                 data: {
                   id: body.id,
-                  spaceId: id,
-                  scopeId: id,
+                  ...ownedScope(tx, a, id),
                   accessId: body.member.accessId,
                   generation: body.member.generation,
                   date: new Date(body.date),
@@ -198,7 +201,7 @@ export class TeamAnalyticsService {
           );
         } else await mutate();
         const row = await tx.teamCapacityDay.findFirst({
-          where: { id: body.id, spaceId: id },
+          where: { id: body.id, ...ownedScope(tx, a, id) },
         });
         if (!row) throw new NotFoundException();
         return view(row);
@@ -238,7 +241,7 @@ export class TeamAnalyticsService {
       const rows = eligible.length
         ? await tx.teamCapacityDay.findMany({
             where: {
-              spaceId: id,
+              ...ownedScope(tx, a, id),
               timezone: q.timezone,
               date: { gte: new Date(q.fromDate), lt: new Date(q.toDate) },
               OR: eligible,
@@ -298,7 +301,8 @@ export class TeamAnalyticsService {
         const sources: z.infer<typeof c.TeamPortfolioSourceSchema>[] = [
           {
             kind: 'TEAM' as const,
-            spaceId: id,
+            spaceId: a.space(tx, id),
+            ...(a.space(tx, id) !== id ? { scopeId: id } : {}),
             summary: summarizeWork(tasks, logs, goalCount, from, to, asOf),
           },
         ];
@@ -317,6 +321,7 @@ export class TeamAnalyticsService {
           sources.push({
             kind: 'PROJECT',
             spaceId: p.spaceId,
+            ...(p.spaceId !== p.scopeId ? { scopeId: p.scopeId } : {}),
             summary: summarizeWork(
               p.tasks,
               p.logs,
@@ -410,7 +415,7 @@ export class TeamAnalyticsService {
         };
         const capacities = await tx.teamCapacityDay.findMany({
           where: {
-            spaceId: id,
+            ...ownedScope(tx, a, id),
             timezone: q.timezone,
             date: { gte: new Date(q.fromDate), lt: new Date(q.toDate) },
             OR: [...memberByUser.values()],
@@ -428,7 +433,7 @@ export class TeamAnalyticsService {
           for (const alloc of p.allocations) {
             const user = await this.kernel.memberUserInTransaction(
               tx,
-              p.spaceId,
+              p.scopeId,
               alloc.accessId,
             );
             const member = user ? memberByUser.get(user) : undefined,
@@ -472,8 +477,8 @@ export class TeamAnalyticsService {
         if (kind === 'workload') return workload;
         const visibleItems = await tx.teamWorkItem.findMany({
           where: {
-            spaceId: id,
-            sourceSpaceId: { in: [id, ...refs.map((r) => r.spaceId)] },
+            ...ownedScope(tx, a, id),
+            sourceScopeId: { in: [id, ...refs.map((r) => r.projectId)] },
             OR: [
               { taskId: { not: null }, Task: { deletedAt: null } },
               { goalId: { not: null } },
@@ -490,13 +495,13 @@ export class TeamAnalyticsService {
             visibleBacklogItems: visibleItems.filter((r) => !r.planId).length,
             visiblePlannedItems: visibleItems.filter((r) => r.planId).length,
             activePlans: await tx.teamPlan.count({
-              where: { spaceId: id, state: 'ACTIVE' },
+              where: { ...ownedScope(tx, a, id), state: 'ACTIVE' },
             }),
           },
         });
       },
       [],
-      refs.map((r) => ({ ...request(r.spaceId), allowArchived: true })),
+      refs.map((r) => ({ ...request(r.projectId), allowArchived: true })),
     );
   }
 }

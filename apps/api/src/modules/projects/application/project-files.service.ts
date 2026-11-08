@@ -49,8 +49,8 @@ export class ProjectFilesService {
     const target = contentProof(s.pid, t),
       actorId = s.a.require(s.tx, s.pid, 'file.read', target).actorId;
     return {
-      spaceId: s.pid,
-      scopeId: s.pid,
+      spaceId: s.spaceId,
+      scopeId: s.scopeId,
       actorId,
       verify: (tx, write) => {
         s.a.require(tx, s.pid, 'task.read', target);
@@ -473,7 +473,14 @@ export class ProjectFilesService {
         const row = await this.row(s, id, t);
         if (
           row.status !== 'READY' ||
-          row.createdByActorId !== this.scope(s, t).actorId
+          !(
+            await this.content.op.kernel.historicalActors(
+              s.tx,
+              s.a,
+              pid,
+              contentProof(pid, t),
+            )
+          ).includes(row.createdByActorId!)
         )
           throw new ConflictException();
         return this.view(pid, t, row);

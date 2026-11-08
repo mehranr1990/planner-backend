@@ -201,7 +201,7 @@ export class SharedLifecycleService {
     );
   }
   private async current(tx: Prisma.TransactionClient, spaceId: string) {
-    const c = await tx.sharedCustody.findUniqueOrThrow({ where: { spaceId } }),
+    const c = await this.kernel.lifecycleCustody(tx, spaceId),
       job = await tx.sharedLifecycleJob.findUnique({
         where: {
           custodyId_generation: {
@@ -210,7 +210,12 @@ export class SharedLifecycleService {
           },
         },
       });
-    if (!job || job.spaceId !== spaceId) throw new NotFoundException();
+    if (
+      !job ||
+      job.spaceId !== c.spaceId ||
+      job.scopeId !== (c.scopeId !== c.spaceId ? c.scopeId : null)
+    )
+      throw new NotFoundException();
     return { c, job };
   }
   private recoverable(job: SharedLifecycleJob, now: Date, expected: number) {
@@ -224,7 +229,7 @@ export class SharedLifecycleService {
   async status(
     actor: RequestActor,
     spaceId: string,
-    kind: 'PROJECT' | 'TEAM' = 'PROJECT',
+    kind: 'PROJECT' | 'TEAM' | 'COMPANY' = 'PROJECT',
   ) {
     return this.kernel.lifecycleParticipant(
       actor,
@@ -246,6 +251,7 @@ export class SharedLifecycleService {
       },
       undefined,
       kind,
+      true,
     );
   }
   issueProof(
@@ -253,7 +259,7 @@ export class SharedLifecycleService {
     spaceId: string,
     expected: number,
     password: string,
-    kind: 'PROJECT' | 'TEAM' = 'PROJECT',
+    kind: 'PROJECT' | 'TEAM' | 'COMPANY' = 'PROJECT',
   ) {
     return this.collaboration.signed(
       actor,
@@ -262,7 +268,7 @@ export class SharedLifecycleService {
       'lifecycle.recoveryproof',
       spaceId,
       async (tx, now, _locked, begin) => {
-        const { job } = await this.current(tx, spaceId);
+        const { c, job } = await this.current(tx, spaceId);
         this.recoverable(job, now, expected);
         await this.auth.verifyPasswordInside(tx, actor.userId, password);
         const proof = randomBytes(32).toString('base64url'),
@@ -277,9 +283,7 @@ export class SharedLifecycleService {
         });
         const seat = await tx.contextAccess.findUniqueOrThrow({
           where: {
-            id: (
-              await tx.sharedCustody.findUniqueOrThrow({ where: { spaceId } })
-            ).primaryOwnerAccessId!,
+            id: c.primaryOwnerAccessId!,
           },
         });
         await this.kernel.offerEffect(
@@ -311,7 +315,7 @@ export class SharedLifecycleService {
     proof: string | undefined,
     password: string,
     sourceEffect: (tx: Prisma.TransactionClient, now: Date) => Promise<void>,
-    kind: 'PROJECT' | 'TEAM' = 'PROJECT',
+    kind: 'PROJECT' | 'TEAM' | 'COMPANY' = 'PROJECT',
   ) {
     return this.collaboration.signed(
       actor,
@@ -362,8 +366,35 @@ export class SharedLifecycleService {
             joinedAt: now,
           },
         });
+        if (c.scopeId !== c.spaceId) {
+          const root = await this.kernel.companyRootAdmission(
+            tx,
+            c.spaceId,
+            actor.userId,
+          );
+          await tx.companyContextAdmission.create({
+            data: {
+              spaceId: c.spaceId,
+              scopeId: c.scopeId,
+              accessId: seat.id,
+              generation: seat.generation + 1,
+              actorId: seat.actorId,
+              rootScopeId: c.spaceId,
+              rootAccessId: root.id,
+              rootGeneration: root.generation,
+            },
+          });
+          await tx.accessScope.update({
+            where: { id: c.scopeId },
+            data: { restoreGeneration: { increment: 1 } },
+          });
+        }
         await tx.resourceGrant.updateMany({
-          where: { spaceId, revokedAt: null },
+          where: {
+            spaceId: c.spaceId,
+            ...(c.scopeId !== c.spaceId ? { scopeId: c.scopeId } : {}),
+            revokedAt: null,
+          },
           data: { revokedAt: now, revision: { increment: 1 } },
         });
         await tx.sharedLifecycleJob.update({
@@ -376,12 +407,11 @@ export class SharedLifecycleService {
             progress: { stage: 'RECOVERED', recoveredAt: now.toISOString() },
           },
         });
-        await tx.sharedCustody.update({
-          where: { spaceId },
-          data: { state: 'ACTIVE' },
+        await this.kernel.updateLifecycleCustody(tx, spaceId, {
+          state: 'ACTIVE',
         });
         await tx.accessScope.updateMany({
-          where: { spaceId },
+          where: { spaceId: c.spaceId, id: c.scopeId },
           data: { state: 'ACTIVE' },
         });
         await sourceEffect(tx, now);
@@ -439,10 +469,11 @@ export class SharedLifecycleService {
       await tx.$executeRaw`UPDATE "SharedLifecycleJob" SET "spaceId"=NULL,"recoveryHash"=NULL,progress=jsonb_build_object('stage','CANCELED','releases',COALESCE(progress->'releases','{}'::jsonb)),"leaseUntil"=NULL WHERE id IN(SELECT id FROM "SharedLifecycleJob" WHERE "spaceId"=${s.spaceId}::uuid AND state='CANCELED' ORDER BY id LIMIT 200)`;
     return jobs === 0;
   }
-  next(kind: 'PROJECT' | 'TEAM' = 'PROJECT') {
+  next(kind: 'PROJECT' | 'TEAM' | 'COMPANY' = 'PROJECT') {
     return this.db.client.sharedLifecycleJob.findFirst({
       where: {
         spaceId: { not: null },
+        scopeId: null,
         SharedCustody: { kind },
         state: { notIn: ['CANCELED', 'DELETED', 'FAILED'] },
         nextAt: { lte: new Date() },
@@ -459,7 +490,7 @@ export class SharedLifecycleService {
       s: SharedCleanupScope,
       stage: string,
     ) => Promise<LifecycleStep>,
-    kind: 'PROJECT' | 'TEAM' = 'PROJECT',
+    kind: 'PROJECT' | 'TEAM' | 'COMPANY' = 'PROJECT',
   ): Promise<LifecycleAdvance | null> {
     if (!hint.spaceId) return null;
     const spaceId = hint.spaceId;

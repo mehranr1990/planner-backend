@@ -3,6 +3,16 @@ import type * as c from '@mehran/api-contracts';
 import type { Prisma } from '../../../generated/prisma/client.js';
 import type { SharedAuthority } from '../../spaces/public/index.js';
 export abstract class SharedTasks {
+  /** Internal locator hints expose no body and never confer resource authority. */
+  abstract hint(
+    id: string,
+    spaceId: string,
+  ): Promise<{ spaceId: string; scopeId: string }>;
+  abstract location(
+    tx: Prisma.TransactionClient,
+    id: string,
+    spaceId: string,
+  ): Promise<{ spaceId: string; scopeId: string }>;
   abstract schedule(
     tx: Prisma.TransactionClient,
     a: SharedAuthority,
@@ -16,7 +26,7 @@ export abstract class SharedTasks {
   abstract project(
     tx: Prisma.TransactionClient,
     a: SharedAuthority,
-    sources: { spaceId: string; id: string }[],
+    sources: { spaceId: string; scopeId?: string; id: string }[],
     q: {
       after?: string;
       limit: number;

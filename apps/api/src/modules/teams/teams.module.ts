@@ -1,3 +1,5 @@
+import { TeamCustodyGraph } from './application/teams-custody-graph.js';
+import { TeamCompanyAssociations } from './application/team-company-associations.js';
 import { TeamWorkService } from './application/team-work.service.js';
 import { TeamWorkController } from './http/team-work.controller.js';
 import { Module } from '@nestjs/common';
@@ -35,6 +37,8 @@ export class TeamsModule {
         storage,
       ],
       providers: [
+        TeamCustodyGraph,
+        TeamCompanyAssociations,
         TeamsService,
         TeamGuard,
         TeamWorkService,
@@ -55,6 +59,8 @@ export class TeamsModule {
         TeamLifecycleController,
       ],
       exports: [
+        TeamCustodyGraph,
+        TeamCompanyAssociations,
         TeamLifecycleService,
         TeamCleanupService,
         TeamsService,

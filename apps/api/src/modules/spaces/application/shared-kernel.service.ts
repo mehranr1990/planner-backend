@@ -137,9 +137,202 @@ export class SharedKernel {
     spaceId: string,
     projectId: string,
   ) {
-    a.require(tx, spaceId, 'task.read', { kind: 'PROJECT', id: projectId });
-    return (await tx.sharedCustody.findUniqueOrThrow({ where: { spaceId } }))
-      .state;
+    const proof = a.require(
+      tx,
+      spaceId,
+      'task.read',
+      { kind: 'PROJECT', id: projectId },
+      projectId,
+    );
+    const root = await tx.sharedCustody.findUniqueOrThrow({
+      where: { spaceId: proof.spaceId },
+    });
+    const child = await tx.domainScopeCustody.findUnique({
+      where: { scopeId: proof.scopeId },
+    });
+    return root.state !== 'ACTIVE' ? root.state : (child?.state ?? root.state);
+  }
+  async contextAssociation(
+    tx: Prisma.TransactionClient,
+    a: SharedAuthority,
+    spaceId: string,
+    scopeId: string,
+  ) {
+    const proof = a.require(
+      tx,
+      spaceId,
+      'task.read',
+      { kind: 'PROJECT', id: scopeId },
+      scopeId,
+    );
+    const child = await tx.domainScopeCustody.findUnique({
+      where: { scopeId },
+    });
+    if (!child) return { kind: 'INDEPENDENT' as const };
+    if (child.spaceId !== proof.spaceId) throw new NotFoundException();
+    return {
+      kind: 'COMPANY' as const,
+      companyId: child.spaceId,
+      parentScopeId: child.parentScopeId,
+    };
+  }
+  /** Locator hints grant no authority; the transaction rechecks the scope identity. */
+  async custodySpace(selector: string) {
+    const child = await this.db.client.domainScopeCustody.findUnique({
+      where: { scopeId: selector },
+      select: { spaceId: true },
+    });
+    return child?.spaceId ?? selector;
+  }
+  async custodySpaceInTransaction(
+    tx: Prisma.TransactionClient,
+    selector: string,
+  ) {
+    return (
+      (
+        await tx.domainScopeCustody.findUnique({
+          where: { scopeId: selector },
+          select: { spaceId: true },
+        })
+      )?.spaceId ?? selector
+    );
+  }
+  /** Internal lifecycle identity; source scope and physical Company custody stay separate. */
+  async lifecycleCustody(tx: Prisma.TransactionClient, selector: string) {
+    const domain = await tx.domainScopeCustody.findUnique({
+      where: { scopeId: selector },
+    });
+    if (domain)
+      return {
+        ...domain,
+        kind: domain.kind,
+        custodyId: selector,
+      };
+    const root = await tx.sharedCustody.findUniqueOrThrow({
+      where: { spaceId: selector },
+    });
+    return { ...root, scopeId: selector, custodyId: selector };
+  }
+  async updateLifecycleCustody(
+    tx: Prisma.TransactionClient,
+    selector: string,
+    data: {
+      state?: string;
+      primaryOwnerAccessId?: string;
+      closureGeneration?: number;
+    },
+  ) {
+    const current = await this.lifecycleCustody(tx, selector);
+    if (current.scopeId !== current.spaceId) {
+      await tx.domainScopeCustody.update({
+        where: { scopeId: selector },
+        data: { ...data, revision: { increment: 1 } },
+      });
+    } else
+      await tx.sharedCustody.update({
+        where: { spaceId: current.spaceId },
+        data,
+      });
+  }
+  /** Historical audience aliases never issue authority or admit a new participant. */
+  async historicalMember(
+    tx: Prisma.TransactionClient,
+    a: SharedAuthority,
+    scopeId: string,
+    member: { accessId: string; generation: number },
+  ) {
+    const proof = a.require(tx, scopeId, 'task.read');
+    scopeId = proof.scopeId;
+    const alias = await tx.domainScopeAdmissionAlias.findUnique({
+      where: {
+        scopeId_historicalAccessId_historicalGeneration: {
+          scopeId,
+          historicalAccessId: member.accessId,
+          historicalGeneration: member.generation,
+        },
+      },
+    });
+    if (!alias) return member;
+    if (
+      alias.spaceId !== proof.spaceId ||
+      (
+        await tx.companyCustodyTransfer.findUnique({
+          where: { id: alias.transferId },
+          select: { state: true },
+        })
+      )?.state !== 'APPLIED'
+    )
+      throw new NotFoundException();
+    return {
+      accessId: alias.destinationAccessId,
+      generation: alias.destinationGeneration,
+    };
+  }
+  async historicalAudience(
+    tx: Prisma.TransactionClient,
+    a: SharedAuthority,
+    scopeId: string,
+  ) {
+    const proof = a.require(tx, scopeId, 'task.read');
+    scopeId = proof.scopeId;
+    const aliases = await tx.domainScopeAdmissionAlias.findMany({
+      where: {
+        spaceId: proof.spaceId,
+        scopeId,
+        destinationAccessId: proof.accessId,
+        destinationGeneration: proof.generation,
+        transfer: { state: 'APPLIED' },
+      },
+      select: { historicalAccessId: true, historicalGeneration: true },
+    });
+    return [
+      { accessId: proof.accessId, generation: proof.generation },
+      ...aliases.map((r) => ({
+        accessId: r.historicalAccessId,
+        generation: r.historicalGeneration,
+      })),
+    ];
+  }
+  async audienceMatches(
+    tx: Prisma.TransactionClient,
+    a: SharedAuthority,
+    scopeId: string,
+    member: { accessId: string; generation: number },
+  ) {
+    return (await this.historicalAudience(tx, a, scopeId)).some(
+      (m) =>
+        m.accessId === member.accessId && m.generation === member.generation,
+    );
+  }
+  /** Attribution only, after the caller proves current authority in this exact scope. */
+  async historicalActors(
+    tx: Prisma.TransactionClient,
+    a: SharedAuthority,
+    scopeId: string,
+    resource?: SharedRequest['resource'],
+  ) {
+    const proof = a.require(tx, scopeId, 'task.read', resource);
+    const aliases = await tx.domainScopeActorAlias.findMany({
+      where: {
+        spaceId: proof.spaceId,
+        scopeId: proof.scopeId,
+        canonicalActorId: proof.actorId,
+        transfer: { state: 'APPLIED' },
+      },
+      select: { historicalActorId: true },
+    });
+    return [proof.actorId, ...aliases.map((r) => r.historicalActorId)];
+  }
+  private async requestCoordinates(
+    tx: Prisma.TransactionClient,
+    request: SharedRequest,
+  ): Promise<SharedRequest> {
+    if (request.spaceId !== request.scopeId) return request;
+    const child = await tx.domainScopeCustody.findUnique({
+      where: { scopeId: request.scopeId },
+      select: { spaceId: true },
+    });
+    return child ? { ...request, spaceId: child.spaceId } : request;
   }
   async recipientUserHint(userId: string) {
     return (await this.identity.current(this.db.client, userId))?.id ?? null;
@@ -202,13 +395,13 @@ export class SharedKernel {
   ) {
     const access = a.require(tx, spaceId, 'export.visible');
     const scope = await tx.accessScope.findUniqueOrThrow({
-      where: { id: spaceId },
+      where: { id: access.scopeId },
     });
     const policy = await tx.contextCapabilityPolicy.findUniqueOrThrow({
       where: {
         spaceId_scopeId_version: {
-          spaceId,
-          scopeId: spaceId,
+          spaceId: access.spaceId,
+          scopeId: access.scopeId,
           version: scope.currentPolicyVersion,
         },
       },
@@ -225,6 +418,8 @@ export class SharedKernel {
     feature: SharedFeatureKey,
     ownerUserId?: string,
   ) {
+    if (!ownerUserId)
+      spaceId = await this.custodySpaceInTransaction(tx, spaceId);
     const decision = await this.features.decide(
       {
         feature,
@@ -245,6 +440,7 @@ export class SharedKernel {
     feature: SharedFeatureKey,
     count: number,
   ) {
+    spaceId = await this.custodySpaceInTransaction(tx, spaceId);
     if (!Number.isSafeInteger(count) || count < 1 || count > 200)
       throw new BadRequestException();
     const current = await this.usageCount(tx, spaceId, feature);
@@ -359,10 +555,13 @@ export class SharedKernel {
     );
   }
   async offerUserHints(spaceId: string, userId: string) {
+    const scopeId = spaceId;
+    spaceId = await this.custodySpace(scopeId);
     return this.requiredUsers(
       { userId, requestId: randomUUID(), correlationId: randomUUID() },
       [spaceId],
       [],
+      [scopeId],
     );
   }
   async verifiedRecipient(tx: Prisma.TransactionClient, userId: string) {
@@ -370,6 +569,26 @@ export class SharedKernel {
     if (!identity?.emailVerified || !(await this.accountActive(tx, userId)))
       throw new NotFoundException();
     return identity;
+  }
+  /** An existing explicit Company-root admission is required; this never admits. */
+  async companyRootAdmission(
+    tx: Prisma.TransactionClient,
+    spaceId: string,
+    userId: string,
+  ) {
+    await this.verifiedRecipient(tx, userId);
+    const root = await tx.contextAccess.findFirst({
+      where: {
+        spaceId,
+        scopeId: spaceId,
+        state: 'ACTIVE',
+        memberRole: { not: null },
+        SharedActor: { userId, state: 'ACTIVE' },
+      },
+    });
+    if (!root || (await this.endedByClosure(tx, userId, root.joinedAt)))
+      throw new NotFoundException();
+    return root;
   }
   async currentMemberships(
     tx: Prisma.TransactionClient,
@@ -379,8 +598,8 @@ export class SharedKernel {
     authority.require(tx, spaceId, 'task.read');
     const rows = await tx.contextAccess.findMany({
       where: {
-        spaceId,
-        scopeId: spaceId,
+        spaceId: authority.space(tx, spaceId),
+        scopeId: authority.scope(tx, spaceId),
         state: { in: ['ACTIVE', 'SUSPENDED'] },
         memberRole: { not: null },
       },
@@ -415,24 +634,27 @@ export class SharedKernel {
       const rows = await tx.$queryRaw<
         {
           id: string;
+          spaceId: string;
           version: string;
           generation: number;
           actorId: string;
           accessId: string;
           role: string;
         }[]
-      >`SELECT s.id,c."authorizationVersion"::text AS version,a.generation,a."actorId",a.id AS "accessId",CASE WHEN a.id=c."primaryOwnerAccessId" THEN 'OWNER' ELSE a."memberRole" END AS role FROM "AccessScope" s
+      >`SELECT s.id,s."spaceId",c."authorizationVersion"::text AS version,a.generation,a."actorId",a.id AS "accessId",CASE WHEN a.id=COALESCE(d."primaryOwnerAccessId",c."primaryOwnerAccessId") THEN 'OWNER' ELSE a."memberRole" END AS role FROM "AccessScope" s
       JOIN "SharedCustody" c ON c."spaceId"=s."spaceId"
+      LEFT JOIN "DomainScopeCustody" d ON d."spaceId"=s."spaceId" AND d."scopeId"=s.id
       JOIN "ContextAccess" a ON a."spaceId"=s."spaceId" AND a."scopeId"=s.id
       JOIN "SharedActor" u ON u.id=a."actorId"
       JOIN "ContextCapabilityPolicy" p ON p."spaceId"=s."spaceId" AND p."scopeId"=s.id AND p.version=s."currentPolicyVersion"
-      JOIN "ContextAccess" owner ON owner.id=c."primaryOwnerAccessId"
+      JOIN "ContextAccess" owner ON owner.id=COALESCE(d."primaryOwnerAccessId",c."primaryOwnerAccessId")
       JOIN "SharedActor" custodian ON custodian.id=owner."actorId"
       JOIN "Space" account ON account."ownerUserId"=custodian."userId" AND account.kind='PERSONAL'
       JOIN "Space" ownaccount ON ownaccount."ownerUserId"=u."userId" AND ownaccount.kind='PERSONAL'
-      WHERE c.kind=${kind} AND s.kind='ROOT' AND u."userId"=${userId}::uuid AND u.state='ACTIVE' AND a.state='ACTIVE' AND a."memberRole" IS NOT NULL
+      WHERE ((c.kind=${kind} AND s.kind='ROOT') OR (c.kind='COMPANY' AND d.state IN ('ACTIVE','ARCHIVED') AND ((${kind}='PROJECT' AND d."projectId" IS NOT NULL) OR (${kind}='TEAM' AND d."teamId" IS NOT NULL)))) AND u."userId"=${userId}::uuid AND u.state='ACTIVE' AND a.state='ACTIVE' AND a."memberRole" IS NOT NULL
       AND c.state IN ('ACTIVE','ARCHIVED') AND s.state IN ('ACTIVE','ARCHIVED') AND account."accessClosedAt" IS NULL AND ownaccount."accessClosedAt" IS NULL
-      AND (p."roleDefaults" -> (CASE WHEN a.id=c."primaryOwnerAccessId" THEN 'OWNER' ELSE a."memberRole" END)) ? 'task.read' ORDER BY s.id`;
+      AND (c.kind<>'COMPANY' OR s.id=c."spaceId" OR EXISTS(SELECT 1 FROM "CompanyContextAdmission" binding JOIN "ContextAccess" root ON root.id=binding."rootAccessId" AND root.generation=binding."rootGeneration" WHERE binding."accessId"=a.id AND binding.generation=a.generation AND root."spaceId"=c."spaceId" AND root."scopeId"=c."spaceId" AND root."actorId"=a."actorId" AND root.state='ACTIVE' AND root."memberRole" IS NOT NULL))
+      AND (p."roleDefaults" -> (CASE WHEN a.id=COALESCE(d."primaryOwnerAccessId",c."primaryOwnerAccessId") THEN 'OWNER' ELSE a."memberRole" END)) ? 'task.read' ORDER BY s.id`;
       return {
         ids: rows.map((r) => r.id),
         members: rows,
@@ -544,7 +766,13 @@ export class SharedKernel {
     r: SharedRequest,
     kind: string,
   ) {
-    const access = a.require(tx, r.spaceId, r.capability, r.resource);
+    const access = a.require(
+      tx,
+      r.spaceId,
+      r.capability,
+      r.resource,
+      r.scopeId,
+    );
     return {
       context: r.scopeId + ':' + kind,
       stamp: hash(
@@ -569,29 +797,47 @@ export class SharedKernel {
     );
   }
   async memberUserHint(spaceId: string, accessId: string) {
-    const a = await this.db.client.contextAccess.findFirst({
-      where: { id: accessId, spaceId },
-    });
-    return a
-      ? ((
-          await this.db.client.sharedActor.findUnique({
-            where: { id: a.actorId },
-          })
-        )?.userId ?? null)
-      : null;
+    return this.memberUserInTransaction(this.db.client, spaceId, accessId);
   }
   async memberUserInTransaction(
     tx: Prisma.TransactionClient,
     spaceId: string,
     accessId: string,
   ) {
+    const scopeId = spaceId;
+    spaceId = await this.custodySpaceInTransaction(tx, spaceId);
     const access = await tx.contextAccess.findFirst({
-      where: { id: accessId, spaceId, scopeId: spaceId },
+      where: { id: accessId, spaceId, scopeId },
     });
-    return access
-      ? ((await tx.sharedActor.findUnique({ where: { id: access.actorId } }))
-          ?.userId ?? null)
-      : null;
+    if (!access) return null;
+    const user = (
+      await tx.sharedActor.findUnique({ where: { id: access.actorId } })
+    )?.userId;
+    if (user) return user;
+    const alias = await tx.domainScopeAdmissionAlias.findUnique({
+      where: {
+        scopeId_historicalAccessId_historicalGeneration: {
+          scopeId,
+          historicalAccessId: access.id,
+          historicalGeneration: access.generation,
+        },
+      },
+    });
+    if (!alias || alias.spaceId !== spaceId) return null;
+    const destination = await tx.contextAccess.findUnique({
+      where: { id: alias.destinationAccessId },
+    });
+    if (
+      !destination ||
+      destination.generation !== alias.destinationGeneration ||
+      destination.spaceId !== spaceId ||
+      destination.scopeId !== scopeId
+    )
+      return null;
+    return (
+      (await tx.sharedActor.findUnique({ where: { id: destination.actorId } }))
+        ?.userId ?? null
+    );
   }
   /** Read-only current membership visibility; never issues mutation authority. */
   async visibleWorkMember(
@@ -602,6 +848,12 @@ export class SharedKernel {
     generation: number,
   ) {
     a.require(tx, spaceId, 'task.read');
+    const mapped = await this.historicalMember(tx, a, spaceId, {
+      accessId: id,
+      generation,
+    });
+    id = mapped.accessId;
+    generation = mapped.generation;
     const user = await this.memberUserInTransaction(tx, spaceId, id);
     try {
       await this.toolParticipant(tx, spaceId, id, generation, user, [
@@ -629,7 +881,9 @@ export class SharedKernel {
     lockedUser: string | null,
     capabilities: SharedRequest['capability'][],
   ) {
+    const scopeId = spaceId;
     await this.eligibleMember(tx, spaceId, accessId, lockedUser);
+    spaceId = await this.custodySpaceInTransaction(tx, spaceId);
     const access = await tx.contextAccess.findUniqueOrThrow({
       where: { id: accessId },
     });
@@ -638,19 +892,23 @@ export class SharedKernel {
         where: { spaceId },
       }),
       scope = await tx.accessScope.findUniqueOrThrow({
-        where: { id: spaceId },
+        where: { id: scopeId },
       });
     const policy = await tx.contextCapabilityPolicy.findUniqueOrThrow({
       where: {
         spaceId_scopeId_version: {
           spaceId,
-          scopeId: spaceId,
+          scopeId,
           version: scope.currentPolicyVersion,
         },
       },
     });
+    const child = await tx.domainScopeCustody.findUnique({
+      where: { scopeId },
+    });
     const role =
-      access.id === custody.primaryOwnerAccessId
+      access.id ===
+      (child?.primaryOwnerAccessId ?? custody.primaryOwnerAccessId)
         ? 'OWNER'
         : (access.memberRole as MemberRole);
     if (
@@ -671,11 +929,13 @@ export class SharedKernel {
     accessId: string,
     lockedUser: string | null,
   ) {
+    const scopeId = spaceId;
+    spaceId = await this.custodySpaceInTransaction(tx, spaceId);
     const a = await tx.contextAccess.findFirst({
       where: {
         id: accessId,
         spaceId,
-        scopeId: spaceId,
+        scopeId,
         state: 'ACTIVE',
         memberRole: { not: null },
       },
@@ -692,6 +952,32 @@ export class SharedKernel {
       !(await this.identity.current(tx, actor.userId))?.emailVerified
     )
       throw new NotFoundException();
+    if (scopeId !== spaceId) {
+      const root = await tx.contextAccess.findUnique({
+        where: {
+          spaceId_scopeId_actorId: {
+            spaceId,
+            scopeId: spaceId,
+            actorId: a.actorId,
+          },
+        },
+      });
+      const binding = await tx.companyContextAdmission.findUnique({
+        where: {
+          accessId_generation: { accessId: a.id, generation: a.generation },
+        },
+      });
+      if (
+        !root ||
+        root.state !== 'ACTIVE' ||
+        !root.memberRole ||
+        !binding ||
+        binding.rootAccessId !== root.id ||
+        binding.rootGeneration !== root.generation ||
+        (await this.endedByClosure(tx, actor.userId, root.joinedAt))
+      )
+        throw new NotFoundException();
+    }
     return { id: a.id, generation: a.generation };
   }
   async assignmentRecipient(
@@ -702,6 +988,8 @@ export class SharedKernel {
     lockedUser: string | null,
   ) {
     await this.eligibleMember(tx, spaceId, accessId, lockedUser);
+    const scopeId = spaceId;
+    spaceId = await this.custodySpaceInTransaction(tx, spaceId);
     const access = await tx.contextAccess.findUniqueOrThrow({
       where: { id: accessId },
     });
@@ -710,19 +998,23 @@ export class SharedKernel {
       where: { spaceId },
     });
     const scope = await tx.accessScope.findUniqueOrThrow({
-      where: { id: spaceId },
+      where: { id: scopeId },
     });
     const policy = await tx.contextCapabilityPolicy.findUniqueOrThrow({
       where: {
         spaceId_scopeId_version: {
           spaceId,
-          scopeId: spaceId,
+          scopeId,
           version: scope.currentPolicyVersion,
         },
       },
     });
+    const child = await tx.domainScopeCustody.findUnique({
+      where: { scopeId },
+    });
     const role =
-      access.id === custody.primaryOwnerAccessId
+      access.id ===
+      (child?.primaryOwnerAccessId ?? custody.primaryOwnerAccessId)
         ? 'OWNER'
         : (access.memberRole as MemberRole);
     const defaults = policy.roleDefaults as RoleDefaults;
@@ -743,10 +1035,12 @@ export class SharedKernel {
     spaceId: string,
     accessId: string,
   ) {
+    const scopeId = spaceId;
+    spaceId = await this.custodySpaceInTransaction(tx, spaceId);
     return (
       (
         await tx.contextAccess.findFirst({
-          where: { id: accessId, spaceId, scopeId: spaceId },
+          where: { id: accessId, spaceId, scopeId },
         })
       )?.actorId ?? null
     );
@@ -758,13 +1052,13 @@ export class SharedKernel {
   ) {
     const access = a.require(tx, spaceId, 'task.read');
     const scope = await tx.accessScope.findUniqueOrThrow({
-      where: { id: spaceId },
+      where: { id: access.scopeId },
     });
     const policy = await tx.contextCapabilityPolicy.findUniqueOrThrow({
       where: {
         spaceId_scopeId_version: {
-          spaceId,
-          scopeId: spaceId,
+          spaceId: access.spaceId,
+          scopeId: access.scopeId,
           version: scope.currentPolicyVersion,
         },
       },
@@ -825,7 +1119,7 @@ export class SharedKernel {
     const candidates = resources;
     resources = [];
     for (const r of candidates) {
-      if (full.ids.includes(r.spaceId)) continue;
+      if (full.ids.includes(r.scopeId)) continue;
       const request: SharedRequest = {
         spaceId: r.spaceId,
         scopeId: r.scopeId,
@@ -856,7 +1150,7 @@ export class SharedKernel {
       allowArchived: true,
     }));
     for (const r of resources)
-      if (!full.ids.includes(r.spaceId))
+      if (!full.ids.includes(r.scopeId))
         requests.push({
           spaceId: r.spaceId,
           scopeId: r.scopeId,
@@ -937,17 +1231,27 @@ export class SharedKernel {
     actor: RequestActor,
     spaceIds: string[],
     additional: string[],
+    scopeIds: string[] = spaceIds,
   ) {
     const custodians = await this.db.client.sharedCustody.findMany({
       where: { spaceId: { in: spaceIds } },
       select: { primaryOwnerAccessId: true },
     });
+    const children = await this.db.client.domainScopeCustody.findMany({
+      where: { scopeId: { in: scopeIds } },
+      select: { primaryOwnerAccessId: true },
+    });
     const accesses = await this.db.client.contextAccess.findMany({
       where: {
         id: {
-          in: custodians.flatMap((c) =>
-            c.primaryOwnerAccessId ? [c.primaryOwnerAccessId] : [],
-          ),
+          in: [
+            ...children.flatMap((c) =>
+              c.primaryOwnerAccessId ? [c.primaryOwnerAccessId] : [],
+            ),
+            ...custodians.flatMap((c) =>
+              c.primaryOwnerAccessId ? [c.primaryOwnerAccessId] : [],
+            ),
+          ],
         },
       },
       select: { actorId: true },
@@ -1039,6 +1343,9 @@ export class SharedKernel {
     const custody = await tx.sharedCustody.findUniqueOrThrow({
       where: { spaceId: request.spaceId },
     });
+    const child = await tx.domainScopeCustody.findUnique({
+      where: { scopeId: request.scopeId },
+    });
     for (const grant of await this.matchingGrants(tx, userId, request)) {
       if (
         grant.revokedAt ||
@@ -1070,8 +1377,27 @@ export class SharedKernel {
         !(await this.identity.current(tx, local.userId))?.emailVerified
       )
         continue;
+      try {
+        await this.toolParticipant(
+          tx,
+          request.scopeId,
+          issuer.id,
+          issuer.generation,
+          local.userId,
+          [],
+        );
+      } catch (error) {
+        if (
+          error instanceof NotFoundException ||
+          error instanceof ForbiddenException ||
+          error instanceof ConflictException
+        )
+          continue;
+        throw error;
+      }
       const role =
-        issuer.id === custody.primaryOwnerAccessId
+        issuer.id ===
+        (child?.primaryOwnerAccessId ?? custody.primaryOwnerAccessId)
           ? 'OWNER'
           : (issuer.memberRole as MemberRole);
       if (!permits(role, 'membership.member', policy)) continue;
@@ -1122,11 +1448,16 @@ export class SharedKernel {
       lockedUsers: string[],
     ) => Promise<T>,
     onRetry?: () => Promise<void>,
+    allowArchived = false,
   ) {
     this.enabled();
     uuid.parse(spaceId);
+    const selector = spaceId;
+    spaceId = await this.custodySpace(selector);
     if (!actor.sessionId) throw new ForbiddenException();
-    const users = await this.requiredUsers(actor, [spaceId], additionalUsers);
+    const users = await this.requiredUsers(actor, [spaceId], additionalUsers, [
+      selector,
+    ]);
     for (const id of [...users, actor.sessionId]) uuid.parse(id);
     return this.transaction(
       users,
@@ -1141,7 +1472,16 @@ export class SharedKernel {
         const scope = await tx.accessScope.findUnique({
           where: { id: spaceId },
         });
-        if (custody.state !== 'ACTIVE' || scope?.state !== 'ACTIVE')
+        if (
+          !(
+            custody.state === 'ACTIVE' ||
+            (allowArchived && custody.state === 'ARCHIVED')
+          ) ||
+          !(
+            scope?.state === 'ACTIVE' ||
+            (allowArchived && scope?.state === 'ARCHIVED')
+          )
+        )
           throw new NotFoundException();
         const primary =
           custody.primaryOwnerAccessId &&
@@ -1193,6 +1533,33 @@ export class SharedKernel {
       throw new NotFoundException();
     return this.authorize(tx, { ...actor, userId }, request, lockedUsers);
   }
+  async custodian(tx: Prisma.TransactionClient, spaceId: string) {
+    const c = await tx.sharedCustody.findUniqueOrThrow({ where: { spaceId } });
+    const seat = c.primaryOwnerAccessId
+      ? await tx.contextAccess.findUnique({
+          where: { id: c.primaryOwnerAccessId },
+        })
+      : null;
+    const local = seat
+      ? await tx.sharedActor.findUnique({ where: { id: seat.actorId } })
+      : null;
+    if (!seat || !local?.userId) throw new NotFoundException();
+    return {
+      userId: local.userId,
+      accessId: seat.id,
+      generation: seat.generation,
+    };
+  }
+  async relationshipEpoch(
+    tx: Prisma.TransactionClient,
+    a: SharedAuthority,
+    spaceId: string,
+  ) {
+    return (
+      (await this.restoreGeneration(tx, a, spaceId)) +
+      (await tx.ownerHandover.count({ where: { spaceId, state: 'ACCEPTED' } }))
+    );
+  }
   async restoreGeneration(
     tx: Prisma.TransactionClient,
     a: SharedAuthority,
@@ -1215,11 +1582,12 @@ export class SharedKernel {
     await tx.sharedAuditEvent.create({
       data: {
         id: randomUUID(),
-        spaceId,
+        spaceId: access.spaceId,
         actorId: access.actorId,
         resourceId,
         action,
         requestId: actor.requestId,
+        scopeId: access.scopeId,
       },
     });
   }
@@ -1234,6 +1602,8 @@ export class SharedKernel {
     auditId: string,
     usage?: { actorId: string; feature: string; delta: number },
   ) {
+    const scopeId = spaceId;
+    spaceId = await this.custodySpaceInTransaction(tx, spaceId);
     const custody = await tx.sharedCustody.findUniqueOrThrow({
       where: { spaceId },
     });
@@ -1242,7 +1612,7 @@ export class SharedKernel {
       actor,
       {
         spaceId,
-        scopeId: spaceId,
+        scopeId,
         actorId,
         accessId: '',
         generation: 0,
@@ -1264,6 +1634,7 @@ export class SharedKernel {
     onRetry?: () => Promise<void>,
   ) {
     this.enabled();
+    spaceId = await this.custodySpace(spaceId);
     return this.transaction(
       [...new Set(userIds)].sort(),
       [spaceId],
@@ -1291,11 +1662,16 @@ export class SharedKernel {
       locked: string[],
     ) => Promise<T>,
     onRetry?: () => Promise<void>,
-    kind: 'PROJECT' | 'TEAM' = 'PROJECT',
+    kind: 'PROJECT' | 'TEAM' | 'COMPANY' = 'PROJECT',
+    readOnly = false,
   ) {
     this.enabled();
     if (!actor.sessionId) throw new ForbiddenException();
-    const users = await this.requiredUsers(actor, [spaceId], additionalUsers);
+    const selector = spaceId;
+    spaceId = await this.custodySpace(selector);
+    const users = await this.requiredUsers(actor, [spaceId], additionalUsers, [
+      selector,
+    ]);
     return this.transaction(
       users,
       [spaceId],
@@ -1303,9 +1679,7 @@ export class SharedKernel {
       async (tx) => {
         if (!(await this.accountActive(tx, actor.userId)))
           throw new NotFoundException();
-        const custody = await tx.sharedCustody.findUniqueOrThrow({
-            where: { spaceId },
-          }),
+        const custody = await this.lifecycleCustody(tx, selector),
           seat = custody.primaryOwnerAccessId
             ? await tx.contextAccess.findUnique({
                 where: { id: custody.primaryOwnerAccessId },
@@ -1321,7 +1695,20 @@ export class SharedKernel {
           local.userId !== actor.userId
         )
           throw new NotFoundException();
-        await this.offerControl(tx, spaceId, custody.authorizationVersion);
+        const parent = await tx.sharedCustody.findUniqueOrThrow({
+          where: { spaceId },
+        });
+        if (selector !== spaceId) {
+          if (
+            parent.kind !== 'COMPANY' ||
+            !['ACTIVE', ...(readOnly ? ['ARCHIVED'] : [])].includes(
+              parent.state,
+            )
+          )
+            throw new NotFoundException();
+          await this.companyRootAdmission(tx, spaceId, actor.userId);
+        }
+        await this.offerControl(tx, spaceId, parent.authorizationVersion);
         const now = (
           await tx.$queryRaw<{ now: Date }[]>`SELECT clock_timestamp() now`
         )[0]!.now;
@@ -1342,7 +1729,8 @@ export class SharedKernel {
     await tx.sharedAuditEvent.create({
       data: {
         id: randomUUID(),
-        spaceId,
+        spaceId: proof.spaceId,
+        scopeId: proof.scopeId,
         actorId: proof.actorId,
         action: 'file.download',
         resourceId: fileId,
@@ -1351,7 +1739,64 @@ export class SharedKernel {
     });
   }
   async lifecycleMembers(tx: Prisma.TransactionClient, spaceId: string) {
-    return this.usageCount(tx, spaceId, 'shared.membership');
+    return (await this.lifecycleMemberRows(tx, spaceId)).length;
+  }
+  private async lifecycleMemberRows(
+    tx: Prisma.TransactionClient,
+    selector: string,
+  ) {
+    const spaceId = await this.custodySpaceInTransaction(tx, selector);
+    const rows = await tx.contextAccess.findMany({
+      where: {
+        spaceId,
+        scopeId: selector,
+        memberRole: { not: null },
+        state: { in: ['ACTIVE', 'SUSPENDED'] },
+      },
+    });
+    const members = [];
+    for (const row of rows) {
+      const actor = await tx.sharedActor.findUniqueOrThrow({
+        where: { id: row.actorId },
+      });
+      if (
+        !actor.userId ||
+        actor.state !== 'ACTIVE' ||
+        !(await this.accountActive(tx, actor.userId)) ||
+        (await this.endedByClosure(tx, actor.userId, row.joinedAt))
+      )
+        continue;
+      if (selector !== spaceId) {
+        const root = await tx.contextAccess.findUnique({
+          where: {
+            spaceId_scopeId_actorId: {
+              spaceId,
+              scopeId: spaceId,
+              actorId: row.actorId,
+            },
+          },
+        });
+        const binding = await tx.companyContextAdmission.findUnique({
+          where: {
+            accessId_generation: {
+              accessId: row.id,
+              generation: row.generation,
+            },
+          },
+        });
+        if (
+          !root ||
+          root.state !== 'ACTIVE' ||
+          !root.memberRole ||
+          binding?.rootAccessId !== root.id ||
+          binding.rootGeneration !== root.generation ||
+          (await this.endedByClosure(tx, actor.userId, root.joinedAt))
+        )
+          continue;
+      }
+      members.push(row);
+    }
+    return members;
   }
   async lifecycleEffect(
     tx: Prisma.TransactionClient,
@@ -1361,6 +1806,13 @@ export class SharedKernel {
     action: string,
     operatorReference: string,
   ) {
+    const selector = spaceId;
+    spaceId = await this.custodySpaceInTransaction(tx, selector);
+    const job = await tx.sharedLifecycleJob.findUniqueOrThrow({
+      where: { id: jobId },
+    });
+    if (job.custodyId !== selector || job.spaceId !== spaceId)
+      throw new ConflictException();
     const custody = await tx.sharedCustody.update({
       where: { spaceId },
       data: {
@@ -1369,15 +1821,23 @@ export class SharedKernel {
       },
     });
     await tx.accessScope.updateMany({
-      where: { spaceId },
+      where: { spaceId, ...(selector !== spaceId ? { id: selector } : {}) },
       data: { authorizationVersion: { increment: 1 } },
     });
+    if (selector !== spaceId)
+      await tx.domainScopeCustody.update({
+        where: { scopeId: selector },
+        data: {
+          authorizationVersion: { increment: 1 },
+          revision: { increment: 1 },
+        },
+      });
     await tx.sharedLifecycleEffect.create({
       data: {
         id,
         jobId,
-        custodyId: spaceId,
-        generation: custody.closureGeneration,
+        custodyId: selector,
+        generation: job.generation,
         action,
         authorizationVersion: custody.authorizationVersion,
         operatorReference,
@@ -1393,6 +1853,16 @@ export class SharedKernel {
     work: (scope: SharedCleanupScope) => Promise<T>,
   ) {
     await assertSharedCleanupCatalog(tx);
+    // Transfer evidence adds joint dependencies. Until their scoped retention
+    // reconciliation is complete, no root-wide file or row pass may start.
+    if (
+      await tx.companyCustodyTransfer.count({
+        where: { OR: [{ sourceCustodyId: spaceId }, { companyId: spaceId }] },
+      })
+    )
+      throw new ConflictException({
+        code: 'CUSTODY_TRANSFER_DISPOSAL_RECONCILIATION_REQUIRED',
+      });
     const job = await tx.sharedLifecycleJob.findUniqueOrThrow({
         where: { id: jobId },
       }),
@@ -1454,6 +1924,7 @@ export class SharedKernel {
     request: SharedRequest,
     lockedUsers: string[],
   ): Promise<SharedAccess> {
+    request = await this.requestCoordinates(tx, request);
     const custody = await tx.sharedCustody.findUnique({
       where: { spaceId: request.spaceId },
     });
@@ -1482,6 +1953,19 @@ export class SharedKernel {
         !((departure || archived) && scope.state === 'ARCHIVED'))
     )
       throw new NotFoundException();
+    const domain = await tx.domainScopeCustody.findUnique({
+      where: { scopeId: scope.id },
+    });
+    if (['PROJECT', 'TEAM'].includes(scope.kind) && !domain)
+      throw new NotFoundException();
+    if (
+      domain &&
+      (domain.spaceId !== request.spaceId ||
+        (domain.state !== 'ACTIVE' &&
+          !((departure || archived) && domain.state === 'ARCHIVED')))
+    )
+      throw new NotFoundException();
+    const contextKind = domain?.kind ?? custody.kind;
     const sharedActor = await tx.sharedActor.findFirst({
       where: {
         spaceId: request.spaceId,
@@ -1539,7 +2023,10 @@ export class SharedKernel {
         !root ||
         root.state !== 'ACTIVE' ||
         !root.memberRole ||
-        rootScope.state !== 'ACTIVE' ||
+        !(
+          rootScope.state === 'ACTIVE' ||
+          (archived && rootScope.state === 'ARCHIVED')
+        ) ||
         !binding ||
         binding.rootAccessId !== root.id ||
         binding.rootGeneration !== root.generation ||
@@ -1549,12 +2036,72 @@ export class SharedKernel {
     }
     // Only admitted actors may learn why their boundary is frozen.
     const primary = await tx.contextAccess.findUnique({
-      where: { id: custody.primaryOwnerAccessId! },
-      select: { actorId: true, joinedAt: true },
+      where: {
+        id: domain?.primaryOwnerAccessId ?? custody.primaryOwnerAccessId!,
+      },
+      select: {
+        id: true,
+        actorId: true,
+        joinedAt: true,
+        generation: true,
+        state: true,
+      },
     });
     const primaryActor =
       primary &&
       (await tx.sharedActor.findUnique({ where: { id: primary.actorId } }));
+    if (domain && !departure) {
+      const companyPrimary = await tx.contextAccess.findUnique({
+        where: { id: custody.primaryOwnerAccessId! },
+      });
+      const companyActor =
+        companyPrimary &&
+        (await tx.sharedActor.findUnique({
+          where: { id: companyPrimary.actorId },
+        }));
+      const ownerRoot =
+        primaryActor &&
+        (await tx.contextAccess.findUnique({
+          where: {
+            spaceId_scopeId_actorId: {
+              spaceId: request.spaceId,
+              scopeId: request.spaceId,
+              actorId: primaryActor.id,
+            },
+          },
+        }));
+      const ownerBinding =
+        primary &&
+        (await tx.companyContextAdmission.findUnique({
+          where: {
+            accessId_generation: {
+              accessId: primary.id,
+              generation: primary.generation,
+            },
+          },
+        }));
+      if (
+        !companyPrimary ||
+        !companyActor?.userId ||
+        !lockedUsers.includes(companyActor.userId) ||
+        !(await this.accountActive(tx, companyActor.userId)) ||
+        (await this.endedByClosure(
+          tx,
+          companyActor.userId,
+          companyPrimary.joinedAt,
+        )) ||
+        !ownerRoot ||
+        ownerRoot.state !== 'ACTIVE' ||
+        !ownerRoot.memberRole ||
+        primary?.state !== 'ACTIVE' ||
+        !ownerBinding ||
+        ownerBinding.rootAccessId !== ownerRoot.id ||
+        ownerBinding.rootGeneration !== ownerRoot.generation ||
+        !primaryActor?.userId ||
+        (await this.endedByClosure(tx, primaryActor.userId, ownerRoot.joinedAt))
+      )
+        throw new ForbiddenException({ code: 'OWNER_EXIT_FROZEN' });
+    }
     if (
       !departure &&
       (!primary ||
@@ -1587,15 +2134,15 @@ export class SharedKernel {
     });
     if (
       !validateRoleDefaults(policy.roleDefaults) ||
-      !roleInContext(access.memberRole, custody.kind) ||
-      (custody.kind === 'TEAM') !==
-        Object.hasOwn(policy.roleDefaults, 'LEAD') ||
-      (custody.kind === 'COMPANY') !==
+      !roleInContext(access.memberRole, contextKind) ||
+      (contextKind === 'TEAM') !== Object.hasOwn(policy.roleDefaults, 'LEAD') ||
+      (contextKind === 'COMPANY') !==
         Object.hasOwn(policy.roleDefaults, 'ORG_ADMIN')
     )
       throw new ForbiddenException();
     const role =
-      access.id === custody.primaryOwnerAccessId
+      access.id ===
+      (domain?.primaryOwnerAccessId ?? custody.primaryOwnerAccessId)
         ? 'OWNER'
         : (access.memberRole as MemberRole);
     if (
@@ -1664,7 +2211,27 @@ export class SharedKernel {
   ) {
     this.enabled();
     if (!actor.sessionId) throw new ForbiddenException();
-    const spaces = [...new Set(locks.spaceIds)].sort();
+    const children = await this.db.client.domainScopeCustody.findMany({
+      where: {
+        scopeId: {
+          in: [
+            ...locks.spaceIds,
+            ...requests.map((r) => r.scopeId),
+            ...optionalRequests.map((r) => r.scopeId),
+          ],
+        },
+      },
+    });
+    const locations = new Map(children.map((c) => [c.scopeId, c.spaceId]));
+    const normalize = (r: SharedRequest) =>
+      r.spaceId === r.scopeId && locations.has(r.scopeId)
+        ? { ...r, spaceId: locations.get(r.scopeId)! }
+        : r;
+    requests = requests.map(normalize);
+    optionalRequests = optionalRequests.map(normalize);
+    const spaces = [
+      ...new Set(locks.spaceIds.map((id) => locations.get(id) ?? id)),
+    ].sort();
     // Owner IDs here are hints only. Recheck them after custody locking and reject changes.
     // Prelocking the owner account closes the owner-exit read/commit window without late locks.
     const custodians = await this.db.client.sharedCustody.findMany({
@@ -1674,9 +2241,14 @@ export class SharedKernel {
     const seats = await this.db.client.contextAccess.findMany({
       where: {
         id: {
-          in: custodians.flatMap((c) =>
-            c.primaryOwnerAccessId ? [c.primaryOwnerAccessId] : [],
-          ),
+          in: [
+            ...children.flatMap((c) =>
+              c.primaryOwnerAccessId ? [c.primaryOwnerAccessId] : [],
+            ),
+            ...custodians.flatMap((c) =>
+              c.primaryOwnerAccessId ? [c.primaryOwnerAccessId] : [],
+            ),
+          ],
         },
       },
       select: { actorId: true },
@@ -1726,7 +2298,13 @@ export class SharedKernel {
               throw error;
           }
         }
-        const authority = new SharedAuthority(tx, access);
+        const authority = new SharedAuthority(
+          tx,
+          access,
+          new Set(access.map((a) => a.scopeId)).size === 1
+            ? access[0]?.scopeId
+            : undefined,
+        );
         try {
           return await work(tx, authority);
         } finally {
@@ -1766,12 +2344,16 @@ export class SharedKernel {
                 where: {
                   spaceId: b.spaceId,
                   authorizationVersion: { gt: b.authorizationVersion },
+                  originCustodyId: null,
                 },
                 include: { SharedAuditEvent: true },
               });
               const system = await tx.sharedLifecycleEffect.findMany({
                 where: {
-                  custodyId: b.spaceId,
+                  OR: [
+                    { custodyId: b.spaceId },
+                    { SharedLifecycleJob: { spaceId: b.spaceId } },
+                  ],
                   authorizationVersion: { gt: b.authorizationVersion },
                 },
               });
@@ -1818,17 +2400,27 @@ export class SharedKernel {
     spaceId: string,
   ) {
     // Lost delegation is permanent for these grants, even if the issuer is later promoted again.
-    await tx.$executeRaw`UPDATE "ResourceGrant" g SET "revokedAt"=clock_timestamp(),revision=g.revision+1
-      FROM "ContextAccess" a,"SharedActor" actor,"SharedCustody" c,"AccessScope" s,"ContextCapabilityPolicy" p
-      WHERE g."spaceId"=${spaceId}::uuid AND g."revokedAt" IS NULL AND a.id=g."issuerAccessId" AND actor.id=a."actorId" AND c."spaceId"=g."spaceId"
-      AND s."spaceId"=g."spaceId" AND s.id=g."scopeId" AND p."spaceId"=s."spaceId" AND p."scopeId"=s.id AND p.version=s."currentPolicyVersion"
-      AND (a.state<>'ACTIVE' OR actor.state<>'ACTIVE' OR actor."userId" IS NULL OR a.generation<>g."issuerGeneration" OR a."memberRole" IS NULL OR
-        (CASE WHEN a.id=c."primaryOwnerAccessId" THEN 'OWNER' ELSE a."memberRole" END) NOT IN ('OWNER','ADMIN','MANAGER') OR
-        EXISTS(SELECT 1 FROM unnest(g.capabilities) cap WHERE
-          (cap='read' AND NOT ((p."roleDefaults"->(CASE WHEN a.id=c."primaryOwnerAccessId" THEN 'OWNER' ELSE a."memberRole" END)) ? 'task.read')) OR
-          (cap='file.read' AND NOT ((p."roleDefaults"->(CASE WHEN a.id=c."primaryOwnerAccessId" THEN 'OWNER' ELSE a."memberRole" END)) ? 'file.read')) OR
-          (cap='update' AND EXISTS(SELECT 1 FROM "TaskGrant" t WHERE t."grantId"=g.id) AND NOT ((p."roleDefaults"->(CASE WHEN a.id=c."primaryOwnerAccessId" THEN 'OWNER' ELSE a."memberRole" END)) ? 'task.update')) OR
-          (cap='complete' AND NOT ((p."roleDefaults"->(CASE WHEN a.id=c."primaryOwnerAccessId" THEN 'OWNER' ELSE a."memberRole" END)) ? 'task.complete'))))`;
+    await tx.$executeRaw`WITH delegation AS (
+      SELECT g.id,a.state,a.generation,a."memberRole",actor.state AS "actorState",actor."userId",p."roleDefaults",
+        CASE WHEN a.id=COALESCE(d."primaryOwnerAccessId",c."primaryOwnerAccessId") THEN 'OWNER' ELSE a."memberRole" END AS role,
+        (g."scopeId"=g."spaceId" OR EXISTS(
+          SELECT 1 FROM "CompanyContextAdmission" b JOIN "ContextAccess" root ON root.id=b."rootAccessId" AND root.generation=b."rootGeneration"
+          WHERE b."accessId"=a.id AND b.generation=a.generation AND root."spaceId"=g."spaceId" AND root."scopeId"=g."spaceId"
+          AND root."actorId"=a."actorId" AND root.state='ACTIVE' AND root."memberRole" IS NOT NULL
+        )) AS "rootCurrent"
+      FROM "ResourceGrant" g JOIN "ContextAccess" a ON a.id=g."issuerAccessId" JOIN "SharedActor" actor ON actor.id=a."actorId"
+      JOIN "SharedCustody" c ON c."spaceId"=g."spaceId" JOIN "AccessScope" s ON s."spaceId"=g."spaceId" AND s.id=g."scopeId"
+      JOIN "ContextCapabilityPolicy" p ON p."spaceId"=s."spaceId" AND p."scopeId"=s.id AND p.version=s."currentPolicyVersion"
+      LEFT JOIN "DomainScopeCustody" d ON d."spaceId"=s."spaceId" AND d."scopeId"=s.id
+      WHERE g."spaceId"=${spaceId}::uuid AND g."revokedAt" IS NULL
+    )
+    UPDATE "ResourceGrant" g SET "revokedAt"=clock_timestamp(),revision=g.revision+1 FROM delegation x WHERE g.id=x.id AND (
+      x.state<>'ACTIVE' OR x."actorState"<>'ACTIVE' OR x."userId" IS NULL OR x.generation<>g."issuerGeneration" OR x."memberRole" IS NULL
+      OR NOT x."rootCurrent" OR x.role NOT IN ('OWNER','ADMIN','MANAGER','LEAD') OR EXISTS(SELECT 1 FROM unnest(g.capabilities) cap WHERE
+        (cap='read' AND NOT ((x."roleDefaults"->x.role) ? 'task.read')) OR
+        (cap='file.read' AND NOT ((x."roleDefaults"->x.role) ? 'file.read')) OR
+        (cap='update' AND EXISTS(SELECT 1 FROM "TaskGrant" t WHERE t."grantId"=g.id) AND NOT ((x."roleDefaults"->x.role) ? 'task.update')) OR
+        (cap='complete' AND NOT ((x."roleDefaults"->x.role) ? 'task.complete'))))`;
   }
   private async effects(
     tx: Prisma.TransactionClient,
@@ -1843,6 +2435,8 @@ export class SharedKernel {
       [
         'membership.change',
         'membership.leave',
+        'company.membership.change',
+        'company.context.leave',
         'policy.publish',
         'handover.accept',
         'actor.erase',
@@ -1861,10 +2455,19 @@ export class SharedKernel {
       where: { id: access.scopeId },
       data: { authorizationVersion: { increment: 1 } },
     });
+    if (access.scopeId !== access.spaceId)
+      await tx.domainScopeCustody.updateMany({
+        where: { spaceId: access.spaceId, scopeId: access.scopeId },
+        data: {
+          authorizationVersion: { increment: 1 },
+          revision: { increment: 1 },
+        },
+      });
     await tx.sharedAuditEvent.create({
       data: {
         id,
         spaceId: access.spaceId,
+        scopeId: access.scopeId,
         actorId: access.actorId,
         action,
         resourceId,
@@ -1875,6 +2478,7 @@ export class SharedKernel {
       data: {
         id: randomUUID(),
         spaceId: access.spaceId,
+        scopeId: access.scopeId,
         actorId: access.actorId,
         auditId: id,
         action,
@@ -1886,6 +2490,7 @@ export class SharedKernel {
         data: {
           id: randomUUID(),
           spaceId: access.spaceId,
+          scopeId: access.scopeId,
           subjectActorId: usage.actorId,
           auditId: id,
           feature: usage.feature,
@@ -1917,10 +2522,12 @@ export class SharedKernel {
             tx,
             request.spaceId,
             request.capability,
+            request.resource,
+            request.scopeId,
           );
           const record: SharedControlRecord = {
             id: randomUUID(),
-            spaceId: request.spaceId,
+            spaceId: access.spaceId,
             version: String(access.authorizationVersion + 1n),
             action,
             resourceId: target,
@@ -1998,7 +2605,8 @@ export class SharedKernel {
         });
         await tx.resourceGrant.updateMany({
           where: {
-            spaceId,
+            spaceId: a.spaceId,
+            scopeId: a.scopeId,
             granteeAccessId: access.id,
             granteeGeneration: access.generation,
             revokedAt: null,
@@ -2007,7 +2615,8 @@ export class SharedKernel {
         });
         await tx.resourceGrantOffer.updateMany({
           where: {
-            spaceId,
+            spaceId: a.spaceId,
+            scopeId: a.scopeId,
             recipientActorId: access.actorId,
             state: 'PENDING',
           },
@@ -2039,12 +2648,20 @@ export class SharedKernel {
   ) {
     return this.contextLifecycle(actor, spaceId, action, write, 'TEAM');
   }
+  companyLifecycle<T>(
+    actor: RequestActor,
+    spaceId: string,
+    action: 'archive' | 'restore' | 'delete',
+    write: (tx: Prisma.TransactionClient) => Promise<T>,
+  ) {
+    return this.contextLifecycle(actor, spaceId, action, write, 'COMPANY');
+  }
   private async contextLifecycle<T>(
     actor: RequestActor,
     spaceId: string,
     action: 'archive' | 'restore' | 'delete',
     write: (tx: Prisma.TransactionClient) => Promise<T>,
-    kind: 'PROJECT' | 'TEAM',
+    kind: 'PROJECT' | 'TEAM' | 'COMPANY',
   ) {
     return this.restrictive(
       actor,
@@ -2058,9 +2675,7 @@ export class SharedKernel {
       kind.toLowerCase() + '.' + action,
       spaceId,
       async (tx, a, auditId) => {
-        const custody = await tx.sharedCustody.findUniqueOrThrow({
-          where: { spaceId },
-        });
+        const custody = await this.lifecycleCustody(tx, spaceId);
         if (custody.kind !== kind) throw new NotFoundException();
         if (
           (action === 'archive' && custody.state !== 'ACTIVE') ||
@@ -2072,34 +2687,24 @@ export class SharedKernel {
         )[0]!.now;
         if (action === 'delete') {
           // A deletion request is the sole full custodian's explicit last departure.
-          const members = await tx.contextAccess.findMany({
-            where: {
-              spaceId,
-              scopeId: spaceId,
-              memberRole: { not: null },
-              state: { in: ['ACTIVE', 'SUSPENDED'] },
-              id: { not: a.accessId },
-            },
-          });
-          for (const member of members) {
-            const local = await tx.sharedActor.findUniqueOrThrow({
-              where: { id: member.actorId },
-            });
-            if (
-              local.userId &&
-              (await this.accountActive(tx, local.userId)) &&
-              !(await this.endedByClosure(tx, local.userId, member.joinedAt))
+          if (
+            (await this.lifecycleMemberRows(tx, spaceId)).some(
+              (member) => member.id !== a.accessId,
             )
-              throw new ConflictException({
-                code: 'CUSTODIAN_SUCCESSION_REQUIRED',
-              });
-          }
+          )
+            throw new ConflictException({
+              code: 'CUSTODIAN_SUCCESSION_REQUIRED',
+            });
         }
-        if (kind === 'TEAM')
-          await tx.accessScope.update({
-            where: { id: spaceId },
-            data: { restoreGeneration: { increment: 1 } },
-          });
+        await tx.accessScope.updateMany({
+          where: {
+            spaceId: custody.spaceId,
+            ...(custody.spaceId !== custody.scopeId
+              ? { id: custody.scopeId }
+              : {}),
+          },
+          data: { restoreGeneration: { increment: 1 } },
+        });
         const result = await write(tx);
         if (action === 'delete') {
           const generation = custody.closureGeneration + 1,
@@ -2120,7 +2725,9 @@ export class SharedKernel {
           await tx.sharedLifecycleJob.create({
             data: {
               id: randomUUID(),
-              spaceId,
+              spaceId: custody.spaceId,
+              scopeId:
+                custody.spaceId !== custody.scopeId ? custody.scopeId : null,
               custodyId: spaceId,
               generation,
               state: 'CLOSING_GRACE',
@@ -2130,17 +2737,16 @@ export class SharedKernel {
               nextAt: deadline,
             },
           });
-          await tx.sharedCustody.update({
-            where: { spaceId },
-            data: { state: 'CLOSING_GRACE', closureGeneration: generation },
+          await this.updateLifecycleCustody(tx, spaceId, {
+            state: 'CLOSING_GRACE',
+            closureGeneration: generation,
           });
           await this.invalidateOffers(tx, spaceId, now);
         } else {
-          await tx.sharedCustody.update({
-            where: { spaceId },
-            data: { state: action === 'archive' ? 'ARCHIVED' : 'ACTIVE' },
+          await this.updateLifecycleCustody(tx, spaceId, {
+            state: action === 'archive' ? 'ARCHIVED' : 'ACTIVE',
           });
-          await tx.accessScope.update({
+          await tx.accessScope.updateMany({
             where: { id: spaceId },
             data: { state: action === 'archive' ? 'ARCHIVED' : 'ACTIVE' },
           });
@@ -2167,14 +2773,14 @@ export class SharedKernel {
       actor,
       { userIds: [], spaceIds: [spaceId] },
       [{ spaceId, scopeId: spaceId, capability: 'settings.manage' }],
-      async (tx) => {
+      async (tx, a) => {
         const scope = await tx.accessScope.findUniqueOrThrow({
             where: { id: spaceId },
           }),
           policy = await tx.contextCapabilityPolicy.findUniqueOrThrow({
             where: {
               spaceId_scopeId_version: {
-                spaceId,
+                spaceId: a.space(tx, spaceId),
                 scopeId: spaceId,
                 version: scope.currentPolicyVersion,
               },
@@ -2281,7 +2887,7 @@ export class SharedKernel {
         const target = await tx.contextAccess.findFirst({
           where: {
             id: input.accessId,
-            spaceId: input.spaceId,
+            spaceId: a.spaceId,
             scopeId: input.scopeId,
           },
         });
@@ -2303,9 +2909,7 @@ export class SharedKernel {
           target.id === a.accessId
         )
           throw new ForbiddenException();
-        const custody = await tx.sharedCustody.findUniqueOrThrow({
-          where: { spaceId: input.spaceId },
-        });
+        const custody = await this.lifecycleCustody(tx, input.scopeId);
         if (!roleInContext(input.memberRole, custody.kind))
           throw new BadRequestException();
         if (target.id === custody.primaryOwnerAccessId)
@@ -2374,27 +2978,9 @@ export class SharedKernel {
           where: { id: a.accessId },
         });
         if (access.revision !== input.revision) throw new ConflictException();
-        const members = await tx.contextAccess.findMany({
-          where: {
-            spaceId: input.spaceId,
-            scopeId: input.scopeId,
-            id: { not: a.accessId },
-            memberRole: { not: null },
-            state: { in: ['ACTIVE', 'SUSPENDED'] },
-          },
-        });
-        let remaining = 0;
-        for (const member of members) {
-          const sa = await tx.sharedActor.findUniqueOrThrow({
-            where: { id: member.actorId },
-          });
-          if (
-            sa.userId &&
-            (await this.accountActive(tx, sa.userId)) &&
-            !(await this.endedByClosure(tx, sa.userId, member.joinedAt))
-          )
-            remaining++;
-        }
+        const remaining = (
+          await this.lifecycleMemberRows(tx, input.scopeId)
+        ).filter((member) => member.id !== a.accessId).length;
         if (a.role === 'OWNER' && remaining > 0)
           throw new ConflictException({
             code: 'CUSTODIAN_SUCCESSION_REQUIRED',
@@ -2416,16 +3002,15 @@ export class SharedKernel {
           data: { endedAt: now },
         });
         if (remaining === 0) {
-          const custody = await tx.sharedCustody.findUniqueOrThrow({
-              where: { spaceId: input.spaceId },
-            }),
+          const custody = await this.lifecycleCustody(tx, input.scopeId),
             generation = custody.closureGeneration + 1,
             deadline = new Date(now.getTime() + 2592000000);
           await tx.sharedLifecycleJob.create({
             data: {
               id: randomUUID(),
-              custodyId: input.spaceId,
-              spaceId: input.spaceId,
+              custodyId: input.scopeId,
+              spaceId: a.spaceId,
+              scopeId: a.scopeId !== a.spaceId ? a.scopeId : null,
               generation,
               state: 'CLOSING_GRACE',
               effectiveDepartureAt: now,
@@ -2434,14 +3019,14 @@ export class SharedKernel {
               nextAt: deadline,
             },
           });
-          await tx.sharedCustody.update({
-            where: { spaceId: input.spaceId },
-            data: { state: 'CLOSING_GRACE', closureGeneration: generation },
+          await this.updateLifecycleCustody(tx, input.scopeId, {
+            state: 'CLOSING_GRACE',
+            closureGeneration: generation,
           });
           if (custody.state === 'OWNER_EXIT_FROZEN')
             await tx.sharedLifecycleJob.updateMany({
               where: {
-                custodyId: input.spaceId,
+                custodyId: input.scopeId,
                 generation: custody.closureGeneration,
                 state: 'OWNER_EXIT_FROZEN',
               },
@@ -2452,7 +3037,7 @@ export class SharedKernel {
                 revision: { increment: 1 },
               },
             });
-          await this.invalidateOffers(tx, input.spaceId, now);
+          await this.invalidateOffers(tx, input.scopeId, now);
         }
         await this.effects(tx, actor, a, 'membership.leave', access.id, id, {
           actorId: a.actorId,
@@ -2667,8 +3252,14 @@ export class SharedKernel {
     spaceId: string,
     now: Date,
   ) {
+    const selector = spaceId;
+    spaceId = await this.custodySpaceInTransaction(tx, selector);
+    const context = {
+      spaceId,
+      ...(selector !== spaceId ? { scopeId: selector } : {}),
+    };
     await tx.resourceGrantOffer.updateMany({
-      where: { spaceId, state: 'PENDING' },
+      where: { ...context, state: 'PENDING' },
       data: {
         state: 'REVOKED',
         endedAt: now,
@@ -2677,7 +3268,7 @@ export class SharedKernel {
       },
     });
     await tx.contextInvitation.updateMany({
-      where: { spaceId, state: 'PENDING' },
+      where: { ...context, state: 'PENDING' },
       data: {
         state: 'REVOKED',
         endedAt: now,
@@ -2688,7 +3279,7 @@ export class SharedKernel {
       },
     });
     await tx.ownerHandover.updateMany({
-      where: { spaceId, state: 'PENDING' },
+      where: { ...context, state: 'PENDING' },
       data: { state: 'REVOKED', endedAt: now, revision: { increment: 1 } },
     });
   }
@@ -3335,6 +3926,7 @@ export class SharedKernel {
       request.spaceId,
       request.capability,
       request.resource,
+      request.scopeId,
     );
     z.string()
       .regex(/^[a-z][a-z0-9.]{0,79}$/)

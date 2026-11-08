@@ -1,5 +1,6 @@
 import {
   Injectable,
+  Inject,
   NotFoundException,
   ConflictException,
 } from '@nestjs/common';
@@ -9,6 +10,7 @@ import type { Prisma, Task } from '../../../generated/prisma/client.js';
 import { SharedAuthority } from '../../spaces/public/index.js';
 import { SharedTasks } from '../public/shared-tasks.js';
 import { normalizeTitle, transition, history } from '../domain/tasks.js';
+import { DatabaseService } from '../../../platform/database/database.service.js';
 import {
   legacyWorkflowGuard,
   dependencyScheduleGuard,
@@ -30,6 +32,20 @@ const scheduleView = (r: Task) =>
   });
 @Injectable()
 export class SharedTasksRepository extends SharedTasks {
+  constructor(@Inject(DatabaseService) private readonly db: DatabaseService) {
+    super();
+  }
+  hint(id: string, spaceId: string) {
+    return this.location(this.db.client, id, spaceId);
+  }
+  async location(tx: Prisma.TransactionClient, id: string, spaceId: string) {
+    const row = await tx.task.findFirst({
+      where: { id, spaceId, deletedAt: null, scopeId: { not: null } },
+      select: { spaceId: true, scopeId: true },
+    });
+    if (!row?.scopeId) throw new NotFoundException();
+    return { spaceId: row.spaceId, scopeId: row.scopeId };
+  }
   async schedule(
     tx: Prisma.TransactionClient,
     a: SharedAuthority,
@@ -46,7 +62,12 @@ export class SharedTasksRepository extends SharedTasks {
     });
     a.require(tx, space, 'task.read', { kind: 'TASK', id });
     const before = await tx.task.findFirst({
-      where: { id, spaceId: space, scopeId: space, deletedAt: null },
+      where: {
+        id,
+        spaceId: a.space(tx, space),
+        scopeId: a.scope(tx, space),
+        deletedAt: null,
+      },
     });
     if (!before) throw new NotFoundException();
     if (!input) return scheduleView(before);
@@ -73,8 +94,8 @@ export class SharedTasksRepository extends SharedTasks {
     });
     await tx.taskChange.create({
       data: {
-        spaceId: space,
-        scopeId: space,
+        spaceId: a.space(tx, space),
+        scopeId: a.scope(tx, space),
         actorId: access.actorId,
         actorUserId: null,
         ...history(before, row, 'UPDATED', [
@@ -89,7 +110,7 @@ export class SharedTasksRepository extends SharedTasks {
   async project(
     tx: Prisma.TransactionClient,
     a: SharedAuthority,
-    sources: { spaceId: string; id: string }[],
+    sources: { spaceId: string; scopeId?: string; id: string }[],
     q: {
       after?: string;
       limit: number;
@@ -98,7 +119,13 @@ export class SharedTasksRepository extends SharedTasks {
     },
   ) {
     for (const s of sources)
-      a.require(tx, s.spaceId, 'task.read', { kind: 'TASK', id: s.id });
+      a.require(
+        tx,
+        s.spaceId,
+        'task.read',
+        { kind: 'TASK', id: s.id },
+        s.scopeId ?? s.spaceId,
+      );
     if (!sources.length) return [];
     const output: Task[] = [];
     let after = q.after;
@@ -124,7 +151,7 @@ export class SharedTasksRepository extends SharedTasks {
           OR: sources.map((s) => ({
             id: s.id,
             spaceId: s.spaceId,
-            scopeId: s.spaceId,
+            scopeId: s.scopeId ?? s.spaceId,
           })),
           deletedAt: null,
           ...(after ? { id: { gt: after } } : {}),
@@ -182,7 +209,12 @@ export class SharedTasksRepository extends SharedTasks {
   ) {
     a.require(tx, space, 'task.read', { kind: 'TASK', id });
     const row = await tx.task.findFirst({
-      where: { id, spaceId: space, scopeId: space, deletedAt: null },
+      where: {
+        id,
+        spaceId: a.space(tx, space),
+        scopeId: a.scope(tx, space),
+        deletedAt: null,
+      },
     });
     if (!row) throw new NotFoundException();
     return view(row);
@@ -196,8 +228,8 @@ export class SharedTasksRepository extends SharedTasks {
     a.require(tx, space, 'task.read');
     const rows = await tx.task.findMany({
       where: {
-        spaceId: space,
-        scopeId: space,
+        spaceId: a.space(tx, space),
+        scopeId: a.scope(tx, space),
         deletedAt: null,
         ...(q.after ? { id: { gt: q.after } } : {}),
       },
@@ -219,8 +251,8 @@ export class SharedTasksRepository extends SharedTasks {
     const row = await tx.task.create({
       data: {
         id: input.id,
-        spaceId: space,
-        scopeId: space,
+        spaceId: a.space(tx, space),
+        scopeId: a.scope(tx, space),
         createdByUserId: null,
         createdByActorId: access.actorId,
         title: normalizeTitle(input.title),
@@ -230,8 +262,8 @@ export class SharedTasksRepository extends SharedTasks {
     });
     await tx.taskChange.create({
       data: {
-        spaceId: space,
-        scopeId: space,
+        spaceId: a.space(tx, space),
+        scopeId: a.scope(tx, space),
         actorId: access.actorId,
         actorUserId: null,
         ...history(null, row, 'CREATED', ['title']),
@@ -259,7 +291,12 @@ export class SharedTasksRepository extends SharedTasks {
     )
       a.require(tx, space, 'task.update', { kind: 'TASK', id });
     const before = await tx.task.findFirst({
-      where: { id, spaceId: space, scopeId: space, deletedAt: null },
+      where: {
+        id,
+        spaceId: a.space(tx, space),
+        scopeId: a.scope(tx, space),
+        deletedAt: null,
+      },
     });
     if (!before) throw new NotFoundException();
     if (before.revision !== revision) throw new ConflictException();
@@ -291,8 +328,8 @@ export class SharedTasksRepository extends SharedTasks {
     });
     await tx.taskChange.create({
       data: {
-        spaceId: space,
-        scopeId: space,
+        spaceId: a.space(tx, space),
+        scopeId: a.scope(tx, space),
         actorId: access.actorId,
         actorUserId: null,
         ...history(

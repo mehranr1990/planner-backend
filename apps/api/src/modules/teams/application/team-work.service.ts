@@ -500,7 +500,11 @@ export class TeamWorkService {
   }
   private async plan(tx: Tx, id: string, planId: string) {
     const row = await tx.teamPlan.findFirst({
-      where: { id: planId, spaceId: id },
+      where: {
+        id: planId,
+        spaceId: await this.kernel.custodySpaceInTransaction(tx, id),
+        scopeId: id,
+      },
     });
     if (!row) throw new NotFoundException();
     return row;
@@ -520,7 +524,11 @@ export class TeamWorkService {
           q.after,
         ),
         rows = await tx.teamPlan.findMany({
-          where: { spaceId: id, ...(after ? { id: { gt: after } } : {}) },
+          where: {
+            spaceId: a.space(tx, id),
+            scopeId: id,
+            ...(after ? { id: { gt: after } } : {}),
+          },
           orderBy: { id: 'asc' },
           take: q.limit + 1,
         });
@@ -556,7 +564,8 @@ export class TeamWorkService {
           const row = await tx.teamPlan.create({
             data: {
               ...body,
-              spaceId: id,
+              spaceId: a.space(tx, id),
+              scopeId: id,
               startDate: date(body.startDate),
               endDate: date(body.endDate),
               createdByActorId: a.require(tx, id, 'work.manage').actorId,
@@ -660,10 +669,23 @@ export class TeamWorkService {
     });
   }
   private async source(tx: Tx, a: SharedAuthority, id: string, t: Target) {
-    if (t.spaceId !== id) await this.projects.sourceReference(tx, a, id, t);
+    const location =
+      t.kind === 'TASK'
+        ? await this.tasks.location(tx, t.id, t.spaceId)
+        : await this.goals.location(tx, t.id, t.spaceId);
+    if (location.scopeId !== id)
+      await this.projects.sourceReference(tx, a, id, {
+        ...t,
+        scopeId: location.scopeId,
+      });
     return t.kind === 'TASK'
-      ? this.tasks.read(tx, a, t.spaceId, t.id)
-      : this.goals.read(tx, a, t.spaceId, t.id);
+      ? this.tasks.read(tx, a, location.scopeId, t.id)
+      : this.goals.read(tx, a, location.scopeId, t.id);
+  }
+  private sourceHint(t: Target) {
+    return t.kind === 'TASK'
+      ? this.tasks.hint(t.id, t.spaceId)
+      : this.goals.hint(t.id, t.spaceId);
   }
   private async itemView(
     tx: Tx,
@@ -686,7 +708,11 @@ export class TeamWorkService {
   }
   private async item(tx: Tx, id: string, itemId: string) {
     const row = await tx.teamWorkItem.findFirst({
-      where: { id: itemId, spaceId: id },
+      where: {
+        id: itemId,
+        spaceId: await this.kernel.custodySpaceInTransaction(tx, id),
+        scopeId: id,
+      },
     });
     if (!row) throw new NotFoundException();
     return row;
@@ -702,7 +728,8 @@ export class TeamWorkService {
     key: string | undefined,
   ) {
     const body = c.TeamWorkItemCreateSchema.parse(input),
-      t = body.target;
+      t = body.target,
+      location = await this.sourceHint(t);
     return this.run(
       actor,
       id,
@@ -726,9 +753,11 @@ export class TeamWorkService {
             const row = await tx.teamWorkItem.create({
               data: {
                 id: body.id,
-                spaceId: id,
+                spaceId: a.space(tx, id),
+                scopeId: id,
                 planId: body.planId,
                 sourceSpaceId: t.spaceId,
+                sourceScopeId: location.scopeId,
                 taskId: t.kind === 'TASK' ? t.id : null,
                 goalId: t.kind === 'GOAL' ? t.id : null,
                 sourceRevision: body.sourceRevision,
@@ -751,7 +780,7 @@ export class TeamWorkService {
         );
         return this.itemView(tx, a, id, await this.item(tx, id, body.id));
       },
-      t.spaceId === id ? [] : [this.request(t.spaceId)],
+      location.scopeId === id ? [] : [this.request(location.scopeId)],
     );
   }
   async patchItem(
@@ -762,7 +791,8 @@ export class TeamWorkService {
     input: z.infer<typeof c.TeamWorkItemPatchSchema>,
     sourceHint: Target,
   ) {
-    const body = c.TeamWorkItemPatchSchema.parse(input);
+    const body = c.TeamWorkItemPatchSchema.parse(input),
+      location = await this.sourceHint(sourceHint);
     return this.run(
       actor,
       id,
@@ -795,7 +825,7 @@ export class TeamWorkService {
         );
         return this.itemView(tx, a, id, row);
       },
-      sourceHint.spaceId === id ? [] : [this.request(sourceHint.spaceId)],
+      location.scopeId === id ? [] : [this.request(location.scopeId)],
     );
   }
   async itemHint(actor: RequestActor, id: string, itemId: string) {
@@ -833,7 +863,7 @@ export class TeamWorkService {
     await this.teams.hint(id);
     const hints = await this.kernel.readableContextHints(actor),
       refs = await this.projects.candidates(id, hints.ids),
-      spaces = [id, ...refs.map((r) => r.spaceId)];
+      spaces = [id, ...refs.map((r) => r.projectId)];
     return this.run(
       actor,
       id,
@@ -859,8 +889,9 @@ export class TeamWorkService {
           throw new ConflictException();
         const rows = await tx.teamWorkItem.findMany({
           where: {
-            spaceId: id,
-            sourceSpaceId: { in: spaces },
+            spaceId: a.space(tx, id),
+            scopeId: id,
+            sourceScopeId: { in: spaces },
             ...(q.planId
               ? { planId: q.planId === 'BACKLOG' ? null : q.planId }
               : {}),
@@ -881,7 +912,7 @@ export class TeamWorkService {
           nextCursor: rows.length > q.limit ? rows[q.limit - 1]!.id : null,
         });
       },
-      refs.map((r) => ({ ...this.request(r.spaceId), allowArchived: true })),
+      refs.map((r) => ({ ...this.request(r.projectId), allowArchived: true })),
     );
   }
 }

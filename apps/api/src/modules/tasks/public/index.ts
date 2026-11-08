@@ -15,3 +15,5 @@ export { AnalyticsTasks } from './analytics.js';
 export { TasksSync } from './sync-access.js';
 export { TasksData } from './personal-data.js';
 export { SharedTaskWork } from './shared-task-work.js';
+
+export { TaskCustodyGraph } from '../application/tasks-custody-graph.js';

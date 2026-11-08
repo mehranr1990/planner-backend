@@ -1,3 +1,5 @@
+import { ProjectCustodyGraph } from './application/projects-custody-graph.js';
+import { ProjectCompanyAssociations } from './application/project-company-associations.js';
 import { Module } from '@nestjs/common';
 import { ProjectContentService } from './application/project-content.service.js';
 import { ProjectExportService } from './application/project-export.service.js';
@@ -52,6 +54,8 @@ export class ProjectsModule {
         storage,
       ],
       providers: [
+        ProjectCustodyGraph,
+        ProjectCompanyAssociations,
         ProjectFinanceReferences,
         TeamProjects,
         ProjectContentService,
@@ -81,6 +85,8 @@ export class ProjectsModule {
         WorkProjectionController,
       ],
       exports: [
+        ProjectCustodyGraph,
+        ProjectCompanyAssociations,
         ProjectFinanceReferences,
         TeamProjects,
         ProjectsService,

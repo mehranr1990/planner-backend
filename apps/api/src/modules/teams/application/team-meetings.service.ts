@@ -24,7 +24,7 @@ export class TeamMeetingsService {
   ) {}
   private async row(s: Interaction, meetingId: string, active = false) {
     const row = await s.tx.teamMeeting.findFirst({
-      where: { id: meetingId, spaceId: s.id },
+      where: { id: meetingId, ...this.op.scope(s) },
     });
     if (!row) throw new NotFoundException();
     const event = c.TeamCalendarEventSchema.parse(
@@ -61,7 +61,9 @@ export class TeamMeetingsService {
       async (s) => {
         await this.op.once(s, 'team.meeting.create', key, body, async () => {
           if (
-            (await s.tx.teamMeeting.count({ where: { spaceId: id } })) >= 10000
+            (await s.tx.teamMeeting.count({
+              where: { ...this.op.scope(s) },
+            })) >= 10000
           )
             throw new PayloadTooLargeException();
           await this.op.kernel.featureGrowth(s.tx, id, 'team.meeting');
@@ -76,7 +78,7 @@ export class TeamMeetingsService {
           return s.tx.teamMeeting.create({
             data: {
               id: body.id,
-              spaceId: id,
+              ...this.op.scope(s),
               eventId: event.id,
               agenda: body.agenda,
               createdByActorId: this.op.access(s).actorId,
@@ -98,7 +100,7 @@ export class TeamMeetingsService {
           (
             await s.tx.teamMeeting.findMany({
               where: {
-                spaceId: id,
+                ...this.op.scope(s),
                 Event: { deletedAt: null },
                 ...(after ? { id: { gt: after } } : {}),
               },
@@ -201,7 +203,7 @@ export class TeamMeetingsService {
               });
             if (
               (await s.tx.teamMeetingInvitation.count({
-                where: { spaceId: id, meetingId },
+                where: { ...this.op.scope(s), meetingId },
               })) >= 1000
             )
               throw new PayloadTooLargeException();
@@ -216,8 +218,7 @@ export class TeamMeetingsService {
             return s.tx.teamMeetingInvitation.create({
               data: {
                 id: body.id,
-                spaceId: id,
-                scopeId: id,
+                ...this.op.scope(s),
                 meetingId,
                 recipientAccessId: body.member.accessId,
                 recipientGeneration: body.member.generation,
@@ -253,7 +254,7 @@ export class TeamMeetingsService {
             (
               await s.tx.teamMeetingInvitation.findMany({
                 where: {
-                  spaceId: id,
+                  ...this.op.scope(s),
                   meetingId,
                   ...(!manager
                     ? {
@@ -281,7 +282,12 @@ export class TeamMeetingsService {
   ) {
     this.op.kernel.assertEnabled();
     const hint = await this.db.client.teamMeetingInvitation.findFirst({
-      where: { spaceId: id, meetingId, id: invitationId },
+      where: {
+        spaceId: await this.op.kernel.custodySpace(id),
+        scopeId: id,
+        meetingId,
+        id: invitationId,
+      },
     });
     if (!hint) throw new NotFoundException();
     return this.op.write(
@@ -299,7 +305,7 @@ export class TeamMeetingsService {
       invitationId,
       async (s) => {
         const row = await s.tx.teamMeetingInvitation.findFirstOrThrow({
-          where: { spaceId: id, meetingId, id: invitationId },
+          where: { ...this.op.scope(s), meetingId, id: invitationId },
         });
         this.op.match(row.revision, revision);
         if (

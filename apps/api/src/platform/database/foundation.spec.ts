@@ -256,6 +256,12 @@ describe('scoped persistence and API conventions', () => {
       '202611070031_company_finance',
       '202611070032_company_reimbursements_and_approvals',
       '202611070033_company_knowledge_and_reports',
+      '202611070034_company_lifecycle',
+      '202611070035_company_associations',
+      '202611070036_company_scope_custody',
+      '202611080037_domain_scope_keys',
+      '202611080038_scoped_lifecycle_jobs',
+      '202611080039_company_domain_representation',
     ]);
     for (const sql of [
       '',

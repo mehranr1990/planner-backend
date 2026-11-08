@@ -40,7 +40,7 @@ const same = (a: Member, b: Member) =>
 const caseView = (r: TeamCase) =>
   c.TeamCaseSchema.parse({
     id: r.id,
-    teamId: r.spaceId,
+    teamId: r.scopeId,
     kind: r.kind,
     author: ref(r, 'author'),
     subject: ref(r, 'subject'),
@@ -69,7 +69,11 @@ export class TeamCareService {
   private async hint(id: string, caseId: string) {
     this.op.kernel.assertEnabled();
     const row = await this.db.client.teamCase.findFirst({
-      where: { id: caseId, spaceId: id },
+      where: {
+        id: caseId,
+        spaceId: await this.op.kernel.custodySpace(id),
+        scopeId: id,
+      },
       select: { id: true, ...partySelect },
     });
     if (!row) throw new NotFoundException();
@@ -78,40 +82,77 @@ export class TeamCareService {
   private async disclosureHint(id: string, disclosureId: string) {
     this.op.kernel.assertEnabled();
     const row = await this.db.client.teamDisclosure.findFirst({
-      where: { id: disclosureId, spaceId: id },
+      where: {
+        id: disclosureId,
+        spaceId: await this.op.kernel.custodySpace(id),
+        scopeId: id,
+      },
     });
     if (!row) throw new NotFoundException();
     return { row, case: await this.hint(id, row.caseId) };
   }
   private async readable(s: Interaction, row: TeamCase) {
-    const access = this.op.access(s),
-      me = { accessId: access.accessId, generation: access.generation };
+    const access = this.op.access(s);
     return (
-      same(me, ref(row, 'author')) ||
-      same(me, ref(row, 'subject')) ||
-      (same(me, ref(row, 'reviewer')) &&
+      (await this.op.kernel.audienceMatches(
+        s.tx,
+        s.a,
+        s.id,
+        ref(row, 'author'),
+      )) ||
+      (await this.op.kernel.audienceMatches(
+        s.tx,
+        s.a,
+        s.id,
+        ref(row, 'subject'),
+      )) ||
+      ((await this.op.kernel.audienceMatches(
+        s.tx,
+        s.a,
+        s.id,
+        ref(row, 'reviewer'),
+      )) &&
         ['OWNER', 'ADMIN'].includes(access.role ?? ''))
     );
   }
   private async row(s: Interaction, caseId: string) {
     const row = await s.tx.teamCase.findFirst({
-      where: { id: caseId, spaceId: s.id },
+      where: { id: caseId, ...this.op.scope(s) },
     });
     if (!row || !(await this.readable(s, row))) throw new NotFoundException();
     return row;
   }
-  private author(s: Interaction, row: TeamCase) {
-    if (!same(this.op.access(s), ref(row, 'author')))
+  private async author(s: Interaction, row: TeamCase) {
+    if (
+      !(await this.op.kernel.audienceMatches(
+        s.tx,
+        s.a,
+        s.id,
+        ref(row, 'author'),
+      ))
+    )
       throw new ForbiddenException();
   }
-  private subject(s: Interaction, row: TeamCase) {
-    if (!same(this.op.access(s), ref(row, 'subject')))
+  private async subject(s: Interaction, row: TeamCase) {
+    if (
+      !(await this.op.kernel.audienceMatches(
+        s.tx,
+        s.a,
+        s.id,
+        ref(row, 'subject'),
+      ))
+    )
       throw new ForbiddenException();
   }
-  private reviewer(s: Interaction, row: TeamCase) {
+  private async reviewer(s: Interaction, row: TeamCase) {
     const me = this.op.access(s);
     if (
-      !same(me, ref(row, 'reviewer')) ||
+      !(await this.op.kernel.audienceMatches(
+        s.tx,
+        s.a,
+        s.id,
+        ref(row, 'reviewer'),
+      )) ||
       !['OWNER', 'ADMIN'].includes(me.role ?? '')
     )
       throw new ForbiddenException();
@@ -155,15 +196,17 @@ export class TeamCareService {
             code: 'DISTINCT_CASE_PARTICIPANTS_REQUIRED',
           });
         await this.op.once(s, 'team.case.create', key, body, async () => {
-          if ((await s.tx.teamCase.count({ where: { spaceId: id } })) >= 1000)
+          if (
+            (await s.tx.teamCase.count({ where: { ...this.op.scope(s) } })) >=
+            1000
+          )
             throw new PayloadTooLargeException();
           await this.op.kernel.featureGrowth(s.tx, id, 'team.case');
           await s.begin();
           return s.tx.teamCase.create({
             data: {
               id: body.id,
-              spaceId: id,
-              scopeId: id,
+              ...this.op.scope(s),
               kind: body.kind,
               reason: body.reason,
               evidence: body.evidence,
@@ -191,18 +234,23 @@ export class TeamCareService {
   async list(actor: RequestActor, id: string, q: Page) {
     return this.op.read(actor, id, async (s) => {
       const a = this.op.access(s),
+        audience = await this.op.kernel.historicalAudience(s.tx, s.a, s.id),
         where: Prisma.TeamCaseWhereInput = {
-          spaceId: id,
+          ...this.op.scope(s),
           OR: [
-            { authorAccessId: a.accessId, authorGeneration: a.generation },
-            { subjectAccessId: a.accessId, subjectGeneration: a.generation },
+            ...audience.map((m) => ({
+              authorAccessId: m.accessId,
+              authorGeneration: m.generation,
+            })),
+            ...audience.map((m) => ({
+              subjectAccessId: m.accessId,
+              subjectGeneration: m.generation,
+            })),
             ...(['OWNER', 'ADMIN'].includes(a.role ?? '')
-              ? [
-                  {
-                    reviewerAccessId: a.accessId,
-                    reviewerGeneration: a.generation,
-                  },
-                ]
+              ? audience.map((m) => ({
+                  reviewerAccessId: m.accessId,
+                  reviewerGeneration: m.generation,
+                }))
               : []),
           ],
         };
@@ -227,7 +275,7 @@ export class TeamCareService {
         s.tx.teamCaseEntry
           .findMany({
             where: {
-              spaceId: id,
+              ...this.op.scope(s),
               caseId,
               ...(after ? { id: { gt: after } } : {}),
             },
@@ -262,9 +310,9 @@ export class TeamCareService {
       body.id,
       async (s) => {
         const row = await this.row(s, caseId);
-        if (review) this.reviewer(s, row);
+        if (review) await this.reviewer(s, row);
         else {
-          this.subject(s, row);
+          await this.subject(s, row);
           if (
             'kind' in body &&
             body.kind === 'APPEAL' &&
@@ -281,7 +329,7 @@ export class TeamCareService {
             this.op.match(row.revision, revision);
             if (
               (await s.tx.teamCaseEntry.count({
-                where: { spaceId: id, caseId },
+                where: { ...this.op.scope(s), caseId },
               })) >= 1000
             )
               throw new PayloadTooLargeException();
@@ -290,7 +338,7 @@ export class TeamCareService {
             const result = await s.tx.teamCaseEntry.create({
               data: {
                 id: body.id,
-                spaceId: id,
+                ...this.op.scope(s),
                 caseId,
                 kind: 'kind' in body ? body.kind : 'REVIEW',
                 body: body.body,
@@ -314,7 +362,7 @@ export class TeamCareService {
   }
   private async proposal(s: Interaction, row: TeamDisclosure) {
     const recipients = await s.tx.teamDisclosureRecipient.findMany({
-      where: { spaceId: s.id, disclosureId: row.id },
+      where: { ...this.op.scope(s), disclosureId: row.id },
       orderBy: { accessId: 'asc' },
     });
     return c.TeamDisclosureProposalSchema.parse({
@@ -349,7 +397,7 @@ export class TeamCareService {
             (
               await s.tx.teamDisclosure.findMany({
                 where: {
-                  spaceId: id,
+                  ...this.op.scope(s),
                   caseId,
                   ...(after ? { id: { gt: after } } : {}),
                 },
@@ -379,7 +427,7 @@ export class TeamCareService {
       body.id,
       async (s) => {
         const row = await this.row(s, caseId);
-        this.author(s, row);
+        await this.author(s, row);
         for (const m of body.recipients) await this.op.member(s, m);
         if (body.audience === 'TEAM' && row.kind !== 'RECOGNITION')
           throw new ForbiddenException();
@@ -397,7 +445,7 @@ export class TeamCareService {
               });
             if (
               (await s.tx.teamDisclosure.count({
-                where: { spaceId: id, caseId },
+                where: { ...this.op.scope(s), caseId },
               })) >= 100
             )
               throw new PayloadTooLargeException();
@@ -407,7 +455,7 @@ export class TeamCareService {
             const result = await s.tx.teamDisclosure.create({
               data: {
                 id: body.id,
-                spaceId: id,
+                ...this.op.scope(s),
                 caseId,
                 sourceRevision: body.sourceRevision,
                 audience: body.audience,
@@ -419,8 +467,7 @@ export class TeamCareService {
             if (body.recipients.length)
               await s.tx.teamDisclosureRecipient.createMany({
                 data: body.recipients.map((m) => ({
-                  spaceId: id,
-                  scopeId: id,
+                  ...this.op.scope(s),
                   disclosureId: body.id,
                   ...m,
                 })),
@@ -459,12 +506,12 @@ export class TeamCareService {
       async (s) => {
         const row = await this.row(s, hint.row.caseId),
           p = await s.tx.teamDisclosure.findFirstOrThrow({
-            where: { id: disclosureId, spaceId: id, caseId: row.id },
+            where: { id: disclosureId, ...this.op.scope(s), caseId: row.id },
           });
         this.op.match(p.revision, revision);
-        if (command.kind === 'REVIEW') this.reviewer(s, row);
+        if (command.kind === 'REVIEW') await this.reviewer(s, row);
         else if (command.kind === 'CONSENT') {
-          this.subject(s, row);
+          await this.subject(s, row);
           if (row.kind !== 'RECOGNITION') throw new ForbiddenException();
         }
         if (command.kind !== 'REVOKE') {
@@ -485,7 +532,7 @@ export class TeamCareService {
                 code: 'CASE_PARTICIPANT_UNAVAILABLE',
               });
           for (const m of await s.tx.teamDisclosureRecipient.findMany({
-            where: { spaceId: id, disclosureId },
+            where: { ...this.op.scope(s), disclosureId },
           }))
             if (!(await this.op.eligible(s, m))) throw new ConflictException();
         }
@@ -520,7 +567,8 @@ export class TeamCareService {
     // Hints contain opaque membership references only. All required account fences precede custody.
     const hints = await this.db.client.teamCase.findMany({
       where: {
-        spaceId: id,
+        spaceId: await this.op.kernel.custodySpace(id),
+        scopeId: id,
         TeamDisclosure_Case: { some: { state: 'APPROVED' } },
       },
       select: partySelect,
@@ -531,10 +579,14 @@ export class TeamCareService {
       id,
       async (s) => {
         if (hints.length > 1000) throw new PayloadTooLargeException();
-        const me = this.op.access(s),
+        const audience = await this.op.kernel.historicalAudience(
+            s.tx,
+            s.a,
+            s.id,
+          ),
           epoch = await this.op.kernel.restoreGeneration(s.tx, s.a, id);
         const where: Prisma.TeamDisclosureWhereInput = {
-          spaceId: id,
+          ...this.op.scope(s),
           state: 'APPROVED',
           expiresAt: { gt: s.now },
           restoreGeneration: epoch,
@@ -543,7 +595,7 @@ export class TeamCareService {
             {
               audience: 'NAMED',
               TeamDisclosureRecipient_Disclosure: {
-                some: { accessId: me.accessId, generation: me.generation },
+                some: { OR: audience },
               },
             },
             {
@@ -554,7 +606,7 @@ export class TeamCareService {
           ],
         };
         const candidates = await s.tx.teamCase.findMany({
-          where: { spaceId: id, TeamDisclosure_Case: { some: where } },
+          where: { ...this.op.scope(s), TeamDisclosure_Case: { some: where } },
           select: {
             id: true,
             revision: true,

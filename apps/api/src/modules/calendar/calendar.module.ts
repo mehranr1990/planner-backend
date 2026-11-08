@@ -1,3 +1,4 @@
+import { CalendarCustodyGraph } from './application/calendar-custody-graph.js';
 import { CalendarData } from './public/personal-data.js';
 import { SharedScheduling } from './public/shared-scheduling.js';
 import { SharedSchedulingRepository } from './infrastructure/shared-scheduling.repository.js';
@@ -18,6 +19,7 @@ export class CalendarModule {
       module: CalendarModule,
       imports: [DatabaseModule, AuditModule, SpacesModule, tasks],
       providers: [
+        CalendarCustodyGraph,
         { provide: SharedCalendar, useClass: SharedCalendarRepository },
         { provide: SharedScheduling, useClass: SharedSchedulingRepository },
         { provide: CalendarData, useClass: CalendarDataRepository },
@@ -25,7 +27,12 @@ export class CalendarModule {
         { provide: CALENDAR_REPOSITORY, useClass: CalendarRepository },
       ],
       controllers: [CalendarController],
-      exports: [CalendarData, SharedScheduling, SharedCalendar],
+      exports: [
+        CalendarCustodyGraph,
+        CalendarData,
+        SharedScheduling,
+        SharedCalendar,
+      ],
     };
   }
 }

@@ -101,7 +101,7 @@ export class ProjectExecutionContext {
       a,
       actor,
       pid,
-      spaceId: pid,
+      spaceId: a.space(tx, pid),
       scopeId: pid,
       lockedUsers,
       now,
@@ -220,7 +220,7 @@ export class ProjectExecutionContext {
               locked,
             ),
           );
-        const a = new SharedAuthority(tx, entries),
+        const a = new SharedAuthority(tx, entries, pid),
           usage = new Map<SharedFeatureKey, number>();
         let audit: string | undefined;
         const s = this.context(

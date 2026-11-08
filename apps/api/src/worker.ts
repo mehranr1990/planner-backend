@@ -7,6 +7,7 @@ import { RewardsPort } from './modules/rewards/public/index.js';
 import { PersonalLifecycle } from './modules/account/public/index.js';
 import { SyncService } from './modules/sync/public/index.js';
 import { ProjectCleanupService } from './modules/projects/public/index.js';
+import { CompanyCleanupService } from './modules/companies/public/index.js';
 import { TeamCleanupService } from './modules/teams/public/index.js';
 import {
   SharedKernel,
@@ -39,6 +40,7 @@ try {
     const sharedExit = await app.get(SharedKernel).consumeExit();
     const projectCleanup = await app.get(ProjectCleanupService).consume();
     const teamCleanup = await app.get(TeamCleanupService).consume();
+    const companyCleanup = await app.get(CompanyCleanupService).consume();
     const collaboration = await app.get(CollaborationService).maintain();
     const grants = await app.get(ResourceGrants).maintain();
     const sync = await app.get(SyncService).maintain();
@@ -48,6 +50,7 @@ try {
       sharedExit ||
       projectCleanup ||
       teamCleanup ||
+      companyCleanup ||
       collaboration ||
       grants ||
       sync

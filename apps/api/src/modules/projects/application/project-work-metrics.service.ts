@@ -497,8 +497,12 @@ export class ProjectWorkMetricsService {
     now: Date,
   ) {
     a.require(tx, pid, 'task.read');
+    a = a.forScope(tx, a.space(tx, pid), pid);
     return (
-      await this.report({ tx, a, pid, spaceId: pid, scopeId: pid, now }, input)
+      await this.report(
+        { tx, a, pid, spaceId: a.space(tx, pid), scopeId: pid, now },
+        input,
+      )
     ).report;
   }
   currentReport(
