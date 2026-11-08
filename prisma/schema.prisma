@@ -1801,6 +1801,8 @@ model PushSubscription {
 
 // SQL enforces additional branch, lifecycle and immutable-history constraints.
 model AccessScope {
+ Conversations Conversation[]
+
   DomainScopeCustody_parent DomainScopeCustody[] @relation("DomainScopeCustody_parent")
   DomainScopeCustody_scope DomainScopeCustody[] @relation("DomainScopeCustody_scope")
   CompanyCustodyTransfer_context CompanyCustodyTransfer[] @relation("CompanyCustodyTransfer_context")
@@ -1883,6 +1885,8 @@ model AccessScope {
 
 // SQL enforces additional branch, lifecycle and immutable-history constraints.
 model ContextAccess {
+ ConversationMemberships ConversationMember[]
+
   DomainScopeAdmissionAlias_destinationScope DomainScopeAdmissionAlias[] @relation("DomainScopeAdmissionAlias_destinationScope")
   DomainScopeCustody_owner DomainScopeCustody[] @relation("DomainScopeCustody_owner")
  TeamCompanyAssociation_destinationAdmission TeamCompanyAssociation[] @relation("TeamCompanyAssociation_destinationAdmission")
@@ -1984,6 +1988,10 @@ model ContextAccess {
 
 // SQL enforces additional branch, lifecycle and immutable-history constraints.
 model ContextAccessInterval {
+ ConversationMemberships ConversationMember[]
+ ConversationInvitationsSent ConversationInvitation[] @relation("ConversationInvitationIssuerInterval")
+ ConversationInvitationsReceived ConversationInvitation[] @relation("ConversationInvitationRecipientInterval")
+
   DomainScopeAdmissionAlias_destination DomainScopeAdmissionAlias[] @relation("DomainScopeAdmissionAlias_destination")
   DomainScopeAdmissionAlias_historical DomainScopeAdmissionAlias[] @relation("DomainScopeAdmissionAlias_historical")
   CompanyCustodyConsent_destination CompanyCustodyConsent[] @relation("CompanyCustodyConsent_destination")
@@ -2121,6 +2129,11 @@ model ResourceGrant {
 
 // SQL enforces additional branch, lifecycle and immutable-history constraints.
 model SharedActor {
+ ConversationsCreated Conversation[]
+ ConversationMemberships ConversationMember[]
+ ConversationInvitationsSent ConversationInvitation[] @relation("ConversationInvitationInviter")
+ ConversationInvitationsReceived ConversationInvitation[] @relation("ConversationInvitationRecipient")
+
   originCustodyId          String?                   @db.Uuid
   DomainScopeActorAlias_canonical DomainScopeActorAlias[] @relation("DomainScopeActorAlias_canonical")
   DomainScopeActorAlias_historical DomainScopeActorAlias[] @relation("DomainScopeActorAlias_historical")
@@ -2489,6 +2502,8 @@ model GoalGrant {
 }
 
 model Project {
+ Conversations Conversation[]
+
   DomainScopeCustody_project DomainScopeCustody[] @relation("DomainScopeCustody_project")
   CompanyCustodyTransfer_project CompanyCustodyTransfer[] @relation("CompanyCustodyTransfer_project")
  ProjectCompanyAssociation_source ProjectCompanyAssociation[] @relation("ProjectCompanyAssociation_source")
@@ -3544,6 +3559,8 @@ model SharedLifecycleEffect {
 }
 
 model Team {
+ Conversations Conversation[]
+
   DomainScopeCustody_team DomainScopeCustody[] @relation("DomainScopeCustody_team")
   CompanyCustodyTransfer_team CompanyCustodyTransfer[] @relation("CompanyCustodyTransfer_team")
  @@unique([spaceId,id],map:"Team_space_id_pair")
@@ -3767,6 +3784,8 @@ model TeamMeetingInvitation {
 }
 
 model Company {
+ Conversations Conversation[]
+
   DomainScopeCustody_company DomainScopeCustody[] @relation("DomainScopeCustody_company")
   CompanyCustodyTransfer_company CompanyCustodyTransfer[] @relation("CompanyCustodyTransfer_company")
  TeamCompanyAssociation_company TeamCompanyAssociation[] @relation("TeamCompanyAssociation_company")
@@ -4841,4 +4860,116 @@ model DomainScopeAdmissionAlias {
   destination ContextAccessInterval @relation("DomainScopeAdmissionAlias_destination",fields:[destinationAccessId,destinationGeneration],references:[accessId,generation],onDelete:NoAction,onUpdate:NoAction,map:"DomainScopeAdmissionAlias_destination")
   destinationScope ContextAccess @relation("DomainScopeAdmissionAlias_destinationScope",fields:[spaceId,scopeId,destinationAccessId],references:[spaceId,scopeId,id],onDelete:NoAction,onUpdate:NoAction,map:"DomainScopeAdmissionAlias_destinationScope")
   transfer CompanyCustodyTransfer @relation("DomainScopeAdmissionAlias_transfer",fields:[transferId],references:[id],onDelete:NoAction,onUpdate:NoAction,map:"DomainScopeAdmissionAlias_transfer")
+}
+
+// P5-01: SQL supplies source-shape, text, state, interval and safety constraints.
+model Conversation {
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ kind String @db.VarChar(20)
+ projectId String? @db.Uuid
+ teamId String? @db.Uuid
+ companyId String? @db.Uuid
+ createdByActorId String @db.Uuid
+ title String? @db.VarChar(200)
+ creationKeyHash String @db.Char(64)
+ creationFingerprint String @db.Char(64)
+ lastSequence BigInt @default(0)
+ revision Int @default(1)
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ Scope AccessScope @relation(fields:[spaceId,scopeId], references:[spaceId,id], onDelete:NoAction, onUpdate:NoAction, map:"Conversation_scope_fk")
+ Creator SharedActor @relation(fields:[spaceId,createdByActorId], references:[spaceId,id], onDelete:NoAction, onUpdate:NoAction, map:"Conversation_creator_fk")
+ Project Project? @relation(fields:[spaceId,projectId], references:[spaceId,id], onDelete:NoAction, onUpdate:NoAction, map:"Conversation_project_fk")
+ Team Team? @relation(fields:[spaceId,teamId], references:[spaceId,id], onDelete:NoAction, onUpdate:NoAction, map:"Conversation_team_fk")
+ Company Company? @relation(fields:[spaceId,companyId], references:[spaceId,id], onDelete:NoAction, onUpdate:NoAction, map:"Conversation_company_fk")
+ Members ConversationMember[]
+ Invitations ConversationInvitation[]
+ Messages ConversationMessage[]
+ @@unique([spaceId,scopeId,id],map:"Conversation_scope_key")
+ @@unique([spaceId,scopeId,createdByActorId,creationKeyHash],map:"Conversation_creation_key")
+ @@index([spaceId,scopeId,id],map:"Conversation_scope_list")
+}
+model ConversationMember {
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ conversationId String @db.Uuid
+ actorId String @db.Uuid
+ role String @db.VarChar(6)
+ state String @db.VarChar(7)
+ generation Int @default(1)
+ revision Int @default(1)
+ sourceAccessId String @db.Uuid
+ sourceGeneration Int
+ restoreGeneration Int
+ historyAfter BigInt
+ joinedAt DateTime @db.Timestamptz(3)
+ Conversation Conversation @relation(fields:[spaceId,scopeId,conversationId],references:[spaceId,scopeId,id],onDelete:NoAction,onUpdate:NoAction,map:"ConversationMember_conversation_fk")
+ Actor SharedActor @relation(fields:[spaceId,actorId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction,map:"ConversationMember_actor_fk")
+ Source ContextAccess @relation(fields:[spaceId,scopeId,sourceAccessId],references:[spaceId,scopeId,id],onDelete:NoAction,onUpdate:NoAction,map:"ConversationMember_source_fk")
+ Interval ContextAccessInterval @relation(fields:[sourceAccessId,sourceGeneration],references:[accessId,generation],onDelete:NoAction,onUpdate:NoAction,map:"ConversationMember_interval_fk")
+ Admissions ConversationAdmission[]
+ @@unique([conversationId,actorId],map:"ConversationMember_actor_key")
+ @@unique([conversationId,id],map:"ConversationMember_scope_key")
+ @@index([actorId,state,conversationId],map:"ConversationMember_list")
+}
+model ConversationAdmission {
+ conversationId String @db.Uuid
+ memberId String @db.Uuid
+ generation Int
+ historyAfter BigInt
+ joinedAt DateTime @db.Timestamptz(3)
+ endedAt DateTime? @db.Timestamptz(3)
+ Member ConversationMember @relation(fields:[conversationId,memberId],references:[conversationId,id],onDelete:NoAction,onUpdate:NoAction,map:"ConversationAdmission_member_fk")
+ Messages ConversationMessage[]
+ Invitations ConversationInvitation[]
+ @@id([memberId,generation])
+ @@unique([conversationId,memberId,generation],map:"ConversationAdmission_scope_key")
+}
+model ConversationInvitation {
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ conversationId String @db.Uuid
+ recipientActorId String @db.Uuid
+ inviterActorId String @db.Uuid
+ inviterAccessId String @db.Uuid
+ inviterGeneration Int
+ inviterMemberId String? @db.Uuid
+ inviterMemberGeneration Int?
+ recipientAccessId String? @db.Uuid
+ recipientGeneration Int?
+ restoreGeneration Int
+ state String @default("PENDING") @db.VarChar(8)
+ keyHash String @db.Char(64)
+ fingerprint String @db.Char(64)
+ revision Int @default(1)
+ expiresAt DateTime @db.Timestamptz(3)
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ Conversation Conversation @relation(fields:[spaceId,scopeId,conversationId],references:[spaceId,scopeId,id],onDelete:NoAction,onUpdate:NoAction,map:"ConversationInvitation_conversation_fk")
+ Inviter SharedActor @relation("ConversationInvitationInviter",fields:[spaceId,inviterActorId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction,map:"ConversationInvitation_inviter_fk")
+ Recipient SharedActor @relation("ConversationInvitationRecipient",fields:[spaceId,recipientActorId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction,map:"ConversationInvitation_recipient_fk")
+ IssuerInterval ContextAccessInterval @relation("ConversationInvitationIssuerInterval",fields:[inviterAccessId,inviterGeneration],references:[accessId,generation],onDelete:NoAction,onUpdate:NoAction,map:"ConversationInvitation_issuer_interval_fk")
+ RecipientInterval ContextAccessInterval? @relation("ConversationInvitationRecipientInterval",fields:[recipientAccessId,recipientGeneration],references:[accessId,generation],onDelete:NoAction,onUpdate:NoAction,map:"ConversationInvitation_recipient_interval_fk")
+ IssuerAdmission ConversationAdmission? @relation(fields:[conversationId,inviterMemberId,inviterMemberGeneration],references:[conversationId,memberId,generation],onDelete:NoAction,onUpdate:NoAction,map:"ConversationInvitation_issuer_admission_fk")
+ @@unique([conversationId,inviterActorId,keyHash],map:"ConversationInvitation_key")
+ @@index([recipientActorId,state,id],map:"ConversationInvitation_recipient_list")
+}
+model ConversationMessage {
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ conversationId String @db.Uuid
+ sequence BigInt
+ memberId String @db.Uuid
+ memberGeneration Int
+ text String
+ keyHash String @db.Char(64)
+ fingerprint String @db.Char(64)
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ Conversation Conversation @relation(fields:[spaceId,scopeId,conversationId],references:[spaceId,scopeId,id],onDelete:NoAction,onUpdate:NoAction,map:"ConversationMessage_conversation_fk")
+ Author ConversationAdmission @relation(fields:[conversationId,memberId,memberGeneration],references:[conversationId,memberId,generation],onDelete:NoAction,onUpdate:NoAction,map:"ConversationMessage_author_fk")
+ @@unique([conversationId,sequence],map:"ConversationMessage_order_key")
+ @@unique([conversationId,memberId,keyHash],map:"ConversationMessage_send_key")
 }

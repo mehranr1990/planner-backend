@@ -40,13 +40,26 @@ Executable transfer remains unreachable. All mandatory local quality, migration
 preservation, compatibility and compiled API/worker restart gates still apply.
 The original roadmap requirement above is retained as the future design record.
 
-## Phase 5: 6 proposed batches
-P5-01 Conversation/participant authorization, DM/private group/work channels, ordering/receipts and idempotent text messages (REST durable).
+## Phase 5: 5 active batches; P5-04 DEFERRED
+P5-01 Conversation/participant authorization, DM/private group/work channels, durable ordered text messages and idempotent sends/retry receipts; REST creation/membership/list/history and cursor-based incremental polling.
 P5-02 Reply/thread/reactions/edit/delete/forward/pin/mention, safe search and moderation/report, privacy/retention policy.
-P5-03 Authorized attachment/image/voice (2min/10MB) pipeline and lifecycle; read/delivery statuses and safe notification jobs.
-P5-04 WebSocket adapter for live events/presence/typing, membership fence, reconnect/history catch-up/backpressure.
+P5-03 Authorized attachment/image/voice (2min/10MB) pipeline and lifecycle; read/delivery statuses and safe notification jobs, preserving independent Web Push/Service Worker delivery for the PWA through existing backend abstractions.
+P5-04 **DEFERRED**: future WebSocket adapter for live events/presence/typing, membership fence, reconnect/history catch-up/backpressure. No WebSocket, Socket.IO, presence, live typing or real-time connection management in the current Phase 5 scope.
 P5-05 Meetings, RSVP, agenda, minutes/decisions/Task conversion, approvals/announcements.
 P5-06 Leave/erasure/retention replay, DM block vs group interactions, privacy and load tests.
+
+Owner-approved Phase 5 amendment (2026-11-08):
+[ADR 0044](../docs/adr/0044-phase-5-rest-polling-and-realtime-deferral.md)
+requires durable REST with frontend-driven incremental polling, keeps Push
+Notifications independent of sockets, and preserves P5-04 as DEFERRED. Active order:
+P5-01, P5-02, P5-03, P5-05, P5-06. Only P5-01 is authorized for execution. Preserve
+stable conversation/message IDs, monotonic ordering, bounded authorized cursors,
+idempotency and durable events/outbox. No speculative real-time implementation.
+P5-01 acceptance covers initial/incremental history, current source/participant
+authorization and revocation/rejoin fences, additive schema and API compatibility,
+migration rehearsal and compiled smoke. Advanced messaging, media/voice, delivery/read
+states, notification delivery, meetings and final P5-06 acceptance stay in their
+designated batches.
 
 ## Phase 6: 6 proposed batches
 P6-01 Connection requests/email-or-verified-phone lookup, block/privacy, private Circle labels; Social Group roles/discovery/admission.

@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import type { Client } from 'pg';
+import { verifyMessagingUpgrade } from './messaging-upgrade.ts';
 import {
   companyDomainRepresentationMigrationName as name,
   assertReviewedCompanyDomainRepresentationMigration,
@@ -149,4 +150,5 @@ export async function verifyCompanyDomainRepresentationUpgrade(input: {
   process.stdout.write(
     'PASS: M039 preserves 189 predecessor datasets, 62 checksums and all prior FKs; four additive CHECK branches, interrupted rollback restores all functions, repeat deploy and exact 637-FK catalog. No custody transfer executed.\n',
   );
+  await verifyMessagingUpgrade(input);
 }

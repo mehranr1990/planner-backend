@@ -41,9 +41,9 @@ export const SharedRetentionSchema = z
     approvalReference: name,
     accountableOperator: name,
     applicableContexts: z
-      .array(z.enum(['PROJECT', 'TEAM', 'COMPANY']))
+      .array(z.enum(['PROJECT', 'TEAM', 'COMPANY', 'CONVERSATION']))
       .min(1)
-      .max(3)
+      .max(4)
       .refine((v) => new Set(v).size === v.length),
     marketScope: name,
     sharedRecoverySeconds: z.literal(2592000),

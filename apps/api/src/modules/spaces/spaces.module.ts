@@ -1,4 +1,5 @@
 import { CompanyAccess } from './application/company-access.service.js';
+import { MessagingAuthority } from './public/messaging-authority.js';
 import { CompanyErasure } from './public/company-erasure.js';
 import { Module } from '@nestjs/common';
 import { DatabaseModule } from '../../platform/database/database.module.js';
@@ -27,6 +28,7 @@ import {
 @Module({
   imports: [DatabaseModule, AuditModule],
   providers: [
+    MessagingAuthority,
     CompanyErasure,
     CompanyAccess,
     SharedKernel,
@@ -44,6 +46,7 @@ import {
   ],
   controllers: [SpaceCollaborationController, InvitationRecipientController],
   exports: [
+    MessagingAuthority,
     CompanyErasure,
     CompanyAccess,
     SpacesService,

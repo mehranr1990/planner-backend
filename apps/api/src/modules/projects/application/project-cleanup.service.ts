@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import type { Prisma, StoredFile } from '../../../generated/prisma/client.js';
 import type { RequestActor } from '../../../platform/auth/request-actor.js';
+import { MessagingService } from '../../messaging/public/index.js';
 import {
   sharedDeleteBatch,
   sharedVersionedDelete,
@@ -25,6 +26,7 @@ import { SharedWorkNotifications } from '../../notifications/public/index.js';
 @Injectable()
 export class ProjectCleanupService {
   constructor(
+    @Inject(MessagingService) private readonly messaging: MessagingService,
     @Inject(SharedKernel) private readonly kernel: SharedKernel,
     @Inject(SharedLifecycleService) readonly lifecycle: SharedLifecycleService,
     @Inject(SharedFiles) private readonly files: SharedFiles,
@@ -154,6 +156,8 @@ export class ProjectCleanupService {
             return (await this.lifecycle.core(tx, s)) ? { finalize: true } : {};
           throw new ConflictException({ code: 'UNKNOWN_CLEANUP_STAGE' });
         },
+        'PROJECT',
+        (tx, spaceId) => this.messaging.disposalBlocker(tx, spaceId),
       );
       if (result?.transfer) {
         const pass = result.transfer;

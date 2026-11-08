@@ -1,5 +1,8 @@
 import type { Prisma } from '../../../generated/prisma/client.js';
 export const sharedFeatureKeys = [
+  'messaging.conversation',
+  'messaging.participant',
+  'messaging.message',
   'shared.custody',
   'shared.membership',
   'task.shared',

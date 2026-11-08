@@ -87,3 +87,4 @@ export * from './company-knowledge.js';
 export * from './company-lifecycle.js';
 
 export * from './company-associations.js';
+export * from './messaging.js';

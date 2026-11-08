@@ -12,8 +12,8 @@ describe('approved API compatibility', () => {
   it('resolves recursive request/result definitions and rejects dangling refs and duplicate operations', () => {
     const doc = createOpenApiDocument();
     expect(assertOpenApiContract(doc)).toEqual({
-      references: 6096,
-      operations: 686,
+      references: 6236,
+      operations: 700,
     });
     const broken = structuredClone(doc) as { paths: Record<string, unknown> };
     broken.paths['/probe'] = {
@@ -30,6 +30,15 @@ describe('approved API compatibility', () => {
     // Each repeated key must agree across every historical baseline. Compare the
     // complete union once, avoiding eleven regenerations/hashes of the same API.
     const combined: Record<string, string> = {};
+    Object.assign(
+      combined,
+      JSON.parse(
+        fs.readFileSync(
+          'tooling/compatibility/p4-06-api-signatures.json',
+          'utf8',
+        ),
+      ) as Record<string, string>,
+    );
     for (const batch of [
       'p2-04',
       'p2-05',

@@ -3,6 +3,7 @@ import { TeamCompanyAssociations } from './application/team-company-associations
 import { TeamWorkService } from './application/team-work.service.js';
 import { TeamWorkController } from './http/team-work.controller.js';
 import { Module } from '@nestjs/common';
+import { MessagingModule } from '../messaging/public/index.js';
 import type { DynamicModule } from '@nestjs/common';
 import { DatabaseModule } from '../../platform/database/database.module.js';
 import { AuditModule } from '../../platform/audit/audit.service.js';
@@ -26,6 +27,7 @@ export class TeamsModule {
     return {
       module: TeamsModule,
       imports: [
+        MessagingModule,
         DatabaseModule,
         AuditModule,
         SpacesModule,

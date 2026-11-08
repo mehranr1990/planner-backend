@@ -1,6 +1,7 @@
 import { ProjectCustodyGraph } from './application/projects-custody-graph.js';
 import { ProjectCompanyAssociations } from './application/project-company-associations.js';
 import { Module } from '@nestjs/common';
+import { MessagingModule } from '../messaging/public/index.js';
 import { ProjectContentService } from './application/project-content.service.js';
 import { ProjectExportService } from './application/project-export.service.js';
 import { ProjectTransferService } from './application/project-transfer.service.js';
@@ -44,6 +45,7 @@ export class ProjectsModule {
     return {
       module: ProjectsModule,
       imports: [
+        MessagingModule,
         DatabaseModule,
         AuditModule,
         SpacesModule,

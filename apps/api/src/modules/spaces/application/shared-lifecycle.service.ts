@@ -491,6 +491,10 @@ export class SharedLifecycleService {
       stage: string,
     ) => Promise<LifecycleStep>,
     kind: 'PROJECT' | 'TEAM' | 'COMPANY' = 'PROJECT',
+    contentGuard?: (
+      tx: Prisma.TransactionClient,
+      spaceId: string,
+    ) => Promise<string | null>,
   ): Promise<LifecycleAdvance | null> {
     if (!hint.spaceId) return null;
     const spaceId = hint.spaceId;
@@ -572,6 +576,13 @@ export class SharedLifecycleService {
           return wait(
             'BLOCKED_POLICY',
             'RETENTION_POLICY_REQUIRED',
+            new Date(now.getTime() + 3600000),
+          );
+        const blockedContent = await contentGuard?.(tx, spaceId);
+        if (blockedContent)
+          return wait(
+            'BLOCKED_POLICY',
+            blockedContent,
             new Date(now.getTime() + 3600000),
           );
         const configuration = parsed.data;

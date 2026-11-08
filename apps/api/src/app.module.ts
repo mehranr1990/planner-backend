@@ -1,4 +1,5 @@
 import { CompaniesModule } from './modules/companies/public/index.js';
+import { MessagingModule } from './modules/messaging/public/index.js';
 import { SyncModule } from './modules/sync/public/index.js';
 import { ProjectsModule } from './modules/projects/public/index.js';
 import { AccountLifecycleModule } from './modules/account/public/lifecycle-module.js';
@@ -77,6 +78,7 @@ export class AppModule {
     return {
       module: AppModule,
       imports: [
+        MessagingModule,
         ConfigurationModule.register(config),
         DatabaseModule,
         LoggerModule.forRoot(loggingOptions(config)),

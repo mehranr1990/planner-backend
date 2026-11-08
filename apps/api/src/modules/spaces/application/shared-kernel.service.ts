@@ -3062,169 +3062,187 @@ export class SharedKernel {
         accessId: string;
       },
     ) => Promise<void>,
-    kind: 'PROJECT' | 'TEAM' | 'COMPANY' = 'PROJECT',
+    kind: 'PROJECT' | 'TEAM' | 'COMPANY' | 'CONVERSATION' = 'PROJECT',
+    additionalUsers: string[] = [],
   ) {
     this.enabled();
     uuid.parse(spaceId);
     await this.control.records();
-    return this.transaction([actor.userId], [], actor, async (tx) => {
-      if (!(await this.accountActive(tx, actor.userId)))
-        throw new ForbiddenException();
-      const retention = await tx.sharedRetentionPolicy.findUnique({
-        where: { version: retentionVersion },
-      });
-      const parsed =
-        retention && SharedRetentionSchema.safeParse(retention.configuration);
-      if (
-        !retention ||
-        !parsed ||
-        !parsed.success ||
-        parsed.data.policyVersion !== retention.version ||
-        parsed.data.approvalReference !== retention.approvalReference ||
-        !parsed.data.applicableContexts.includes(kind)
-      )
-        throw new ForbiddenException({ code: 'SHARED_RETENTION_UNAVAILABLE' });
-      if (await tx.space.findUnique({ where: { id: spaceId } }))
-        throw new ConflictException();
-      if (
-        await tx.sharedLifecycleJob.findFirst({ where: { custodyId: spaceId } })
-      )
-        throw new ConflictException({ code: 'CUSTODY_ID_RETIRED' });
-      await this.verifyRestoreFloor(tx);
-      await this.control.assertCurrent(
-        spaceId,
-        0n,
-        (await this.controlView(tx)).records,
-      );
-      if (
-        Object.values(parsed.data.classRules).some(
-          (rule) => rule.disposalAction !== 'PURGE',
-        )
-      )
-        throw new ForbiddenException({
-          code: 'SHARED_RETENTION_DISPOSITION_UNAVAILABLE',
+    return this.transaction(
+      [...new Set([actor.userId, ...additionalUsers])].sort(),
+      [],
+      actor,
+      async (tx) => {
+        if (!(await this.accountActive(tx, actor.userId)))
+          throw new ForbiddenException();
+        const retention = await tx.sharedRetentionPolicy.findUnique({
+          where: { version: retentionVersion },
         });
-      await this.featureGrowth(tx, spaceId, 'shared.custody', actor.userId);
-      const actorId = randomUUID(),
-        accessId = randomUUID(),
-        auditId = randomUUID();
-      const now = (
-        await tx.$queryRaw<{ now: Date }[]>`SELECT clock_timestamp() AS now`
-      )[0]!.now;
-      await tx.space.create({
-        data: { id: spaceId, kind: 'SHARED', ownerUserId: null },
-      });
-      await tx.sharedCustody.create({
-        data: {
+        const parsed =
+          retention && SharedRetentionSchema.safeParse(retention.configuration);
+        if (
+          !retention ||
+          !parsed ||
+          !parsed.success ||
+          parsed.data.policyVersion !== retention.version ||
+          parsed.data.approvalReference !== retention.approvalReference ||
+          !parsed.data.applicableContexts.includes(kind)
+        )
+          throw new ForbiddenException({
+            code: 'SHARED_RETENTION_UNAVAILABLE',
+          });
+        if (await tx.space.findUnique({ where: { id: spaceId } }))
+          throw new ConflictException();
+        if (
+          await tx.sharedLifecycleJob.findFirst({
+            where: { custodyId: spaceId },
+          })
+        )
+          throw new ConflictException({ code: 'CUSTODY_ID_RETIRED' });
+        await this.verifyRestoreFloor(tx);
+        await this.control.assertCurrent(
           spaceId,
-          kind,
-          state: 'ACTIVE',
-          primaryOwnerAccessId: accessId,
-          retentionPolicyVersion: retentionVersion,
-        },
-      });
-      await tx.accessScope.create({
-        data: { id: spaceId, spaceId, kind: 'ROOT' },
-      });
-      await tx.sharedActor.create({
-        data: { id: actorId, spaceId, userId: actor.userId, state: 'ACTIVE' },
-      });
-      await tx.contextAccess.create({
-        data: {
-          id: accessId,
-          spaceId,
-          scopeId: spaceId,
-          actorId,
-          state: 'ACTIVE',
-          memberRole: kind === 'COMPANY' ? 'ORG_ADMIN' : 'ADMIN',
-          joinedAt: now,
-        },
-      });
-      await tx.contextAccessInterval.create({
-        data: { accessId, generation: 1, joinedAt: now },
-      });
-      await tx.contextCapabilityPolicy.create({
-        data: {
-          spaceId,
-          scopeId: spaceId,
-          version: 1,
-          roleDefaults:
-            kind === 'COMPANY'
-              ? companyDefaultPolicy
-              : kind === 'TEAM'
-                ? teamDefaultPolicy
-                : defaultPolicy,
-          exportMaxRecords: 10000,
-          exportMaxBytes: 10485760,
-          publishedByActorId: actorId,
-          auditId,
-        },
-      });
-      await tx.sharedAuditEvent.create({
-        data: {
-          id: auditId,
-          spaceId,
-          actorId,
-          action: 'custody.create',
-          resourceId: spaceId,
-          requestId: actor.requestId,
-        },
-      });
-      await tx.sharedOutboxEvent.create({
-        data: {
-          id: randomUUID(),
-          spaceId,
-          actorId,
-          auditId,
-          action: 'custody.create',
-          authorizationVersion: 1n,
-        },
-      });
-      await tx.sharedUsageEntry.create({
-        data: {
-          id: randomUUID(),
-          spaceId,
-          subjectActorId: actorId,
-          auditId,
-          feature: 'shared.custody',
-          delta: 1,
-        },
-      });
-      const admissionAuditId = randomUUID();
-      await tx.sharedAuditEvent.create({
-        data: {
-          id: admissionAuditId,
-          spaceId,
-          actorId,
-          action: 'membership.admit',
-          resourceId: accessId,
-          requestId: actor.requestId,
-        },
-      });
-      await tx.sharedOutboxEvent.create({
-        data: {
-          id: randomUUID(),
-          spaceId,
-          actorId,
-          auditId: admissionAuditId,
-          action: 'membership.admit',
-          authorizationVersion: 1n,
-        },
-      });
-      await tx.sharedUsageEntry.create({
-        data: {
-          id: randomUUID(),
-          spaceId,
-          subjectActorId: actorId,
-          auditId: admissionAuditId,
-          feature: 'shared.membership',
-          delta: 1,
-        },
-      });
-      const boundary = { spaceId, scopeId: spaceId, actorId, accessId };
-      await write?.(tx, boundary);
-      return boundary;
-    });
+          0n,
+          (await this.controlView(tx)).records,
+        );
+        if (
+          Object.values(parsed.data.classRules).some(
+            (rule) => rule.disposalAction !== 'PURGE',
+          )
+        )
+          throw new ForbiddenException({
+            code: 'SHARED_RETENTION_DISPOSITION_UNAVAILABLE',
+          });
+        await this.featureGrowth(tx, spaceId, 'shared.custody', actor.userId);
+        const actorId = randomUUID(),
+          accessId = randomUUID(),
+          auditId = randomUUID();
+        const now = (
+          await tx.$queryRaw<{ now: Date }[]>`SELECT clock_timestamp() AS now`
+        )[0]!.now;
+        await tx.space.create({
+          data: { id: spaceId, kind: 'SHARED', ownerUserId: null },
+        });
+        await tx.sharedCustody.create({
+          data: {
+            spaceId,
+            kind,
+            state: 'ACTIVE',
+            primaryOwnerAccessId: accessId,
+            retentionPolicyVersion: retentionVersion,
+          },
+        });
+        await tx.accessScope.create({
+          data: { id: spaceId, spaceId, kind: 'ROOT' },
+        });
+        await tx.sharedActor.create({
+          data: { id: actorId, spaceId, userId: actor.userId, state: 'ACTIVE' },
+        });
+        await tx.contextAccess.create({
+          data: {
+            id: accessId,
+            spaceId,
+            scopeId: spaceId,
+            actorId,
+            state: 'ACTIVE',
+            memberRole: kind === 'COMPANY' ? 'ORG_ADMIN' : 'ADMIN',
+            joinedAt: now,
+          },
+        });
+        await tx.contextAccessInterval.create({
+          data: { accessId, generation: 1, joinedAt: now },
+        });
+        await tx.contextCapabilityPolicy.create({
+          data: {
+            spaceId,
+            scopeId: spaceId,
+            version: 1,
+            roleDefaults:
+              kind === 'COMPANY'
+                ? companyDefaultPolicy
+                : kind === 'TEAM'
+                  ? teamDefaultPolicy
+                  : kind === 'CONVERSATION'
+                    ? {
+                        OWNER: ['task.read'],
+                        ADMIN: ['task.read'],
+                        MANAGER: ['task.read'],
+                        MEMBER: ['task.read'],
+                        VIEWER: ['task.read'],
+                      }
+                    : defaultPolicy,
+            exportMaxRecords: 10000,
+            exportMaxBytes: 10485760,
+            publishedByActorId: actorId,
+            auditId,
+          },
+        });
+        await tx.sharedAuditEvent.create({
+          data: {
+            id: auditId,
+            spaceId,
+            actorId,
+            action: 'custody.create',
+            resourceId: spaceId,
+            requestId: actor.requestId,
+          },
+        });
+        await tx.sharedOutboxEvent.create({
+          data: {
+            id: randomUUID(),
+            spaceId,
+            actorId,
+            auditId,
+            action: 'custody.create',
+            authorizationVersion: 1n,
+          },
+        });
+        await tx.sharedUsageEntry.create({
+          data: {
+            id: randomUUID(),
+            spaceId,
+            subjectActorId: actorId,
+            auditId,
+            feature: 'shared.custody',
+            delta: 1,
+          },
+        });
+        const admissionAuditId = randomUUID();
+        await tx.sharedAuditEvent.create({
+          data: {
+            id: admissionAuditId,
+            spaceId,
+            actorId,
+            action: 'membership.admit',
+            resourceId: accessId,
+            requestId: actor.requestId,
+          },
+        });
+        await tx.sharedOutboxEvent.create({
+          data: {
+            id: randomUUID(),
+            spaceId,
+            actorId,
+            auditId: admissionAuditId,
+            action: 'membership.admit',
+            authorizationVersion: 1n,
+          },
+        });
+        await tx.sharedUsageEntry.create({
+          data: {
+            id: randomUUID(),
+            spaceId,
+            subjectActorId: actorId,
+            auditId: admissionAuditId,
+            feature: 'shared.membership',
+            delta: 1,
+          },
+        });
+        const boundary = { spaceId, scopeId: spaceId, actorId, accessId };
+        await write?.(tx, boundary);
+        return boundary;
+      },
+    );
   }
   /** Called atomically by Spaces under the existing exclusive Personal closure fence. */
   async enqueueExit(

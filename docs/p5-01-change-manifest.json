@@ -1,0 +1,231 @@
+{
+  "batch": "P5-01",
+  "baselineCommit": "8ab53e6c5d6acb973c64f81ad27ccd4e01e25fe8",
+  "branch": "main",
+  "stagedPaths": 0,
+  "taskPaths": 54,
+  "modifiedTracked": 31,
+  "newUntracked": 23,
+  "preservedUnrelatedDocuments": 12,
+  "paths": [
+    {
+      "status": " M",
+      "path": "apps/api/src/app.module.ts"
+    },
+    {
+      "status": " M",
+      "path": "apps/api/src/modules/companies/application/company-cleanup.service.ts"
+    },
+    {
+      "status": " M",
+      "path": "apps/api/src/modules/companies/companies.module.ts"
+    },
+    {
+      "status": "??",
+      "path": "apps/api/src/modules/messaging/application/messaging.service.ts"
+    },
+    {
+      "status": "??",
+      "path": "apps/api/src/modules/messaging/domain/messaging-policy.spec.ts"
+    },
+    {
+      "status": "??",
+      "path": "apps/api/src/modules/messaging/domain/messaging-policy.ts"
+    },
+    {
+      "status": "??",
+      "path": "apps/api/src/modules/messaging/http/messaging.controller.ts"
+    },
+    {
+      "status": "??",
+      "path": "apps/api/src/modules/messaging/messaging.module.ts"
+    },
+    {
+      "status": "??",
+      "path": "apps/api/src/modules/messaging/public/index.ts"
+    },
+    {
+      "status": " M",
+      "path": "apps/api/src/modules/projects/application/project-cleanup.service.ts"
+    },
+    {
+      "status": " M",
+      "path": "apps/api/src/modules/projects/projects.module.ts"
+    },
+    {
+      "status": " M",
+      "path": "apps/api/src/modules/spaces/application/shared-kernel.service.ts"
+    },
+    {
+      "status": " M",
+      "path": "apps/api/src/modules/spaces/application/shared-lifecycle.service.ts"
+    },
+    {
+      "status": " M",
+      "path": "apps/api/src/modules/spaces/application/shared-retention.ts"
+    },
+    {
+      "status": " M",
+      "path": "apps/api/src/modules/spaces/public/index.ts"
+    },
+    {
+      "status": "??",
+      "path": "apps/api/src/modules/spaces/public/messaging-authority.ts"
+    },
+    {
+      "status": " M",
+      "path": "apps/api/src/modules/spaces/public/shared-features.ts"
+    },
+    {
+      "status": " M",
+      "path": "apps/api/src/modules/spaces/spaces.module.ts"
+    },
+    {
+      "status": " M",
+      "path": "apps/api/src/modules/teams/application/team-cleanup.service.ts"
+    },
+    {
+      "status": " M",
+      "path": "apps/api/src/modules/teams/teams.module.ts"
+    },
+    {
+      "status": " M",
+      "path": "apps/api/src/platform/database/foundation.spec.ts"
+    },
+    {
+      "status": " M",
+      "path": "apps/api/src/platform/lifecycle/shared-cleanup-catalog.ts"
+    },
+    {
+      "status": " M",
+      "path": "apps/api/src/platform/storage/shared-control.spec.ts"
+    },
+    {
+      "status": " M",
+      "path": "apps/api/src/platform/storage/shared-control.ts"
+    },
+    {
+      "status": "??",
+      "path": "apps/api/test/integration/messaging.spec.ts"
+    },
+    {
+      "status": "??",
+      "path": "docs/adr/0044-phase-5-rest-polling-and-realtime-deferral.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/adr/0045-conversation-admission-and-history-policy.md"
+    },
+    {
+      "status": " M",
+      "path": "docs/api/openapi.json"
+    },
+    {
+      "status": "??",
+      "path": "docs/p5-01-change-manifest.json"
+    },
+    {
+      "status": "??",
+      "path": "docs/p5-01-contract.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/p5-01-migration-review.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/p5-01-preflight-report.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/p5-01-report.md"
+    },
+    {
+      "status": " M",
+      "path": "MEHRAN_BACKEND_PRODUCTION_V3_2026-10-30/01_MASTER_FEATURE_REGISTRY.md"
+    },
+    {
+      "status": " M",
+      "path": "MEHRAN_BACKEND_PRODUCTION_V3_2026-10-30/03_PHASE_2_TO_7_BACKEND_SPEC.md"
+    },
+    {
+      "status": " M",
+      "path": "MEHRAN_BACKEND_PRODUCTION_V3_2026-10-30/05_BATCH_ROADMAP_AND_QUALITY.md"
+    },
+    {
+      "status": " M",
+      "path": "MEHRAN_BACKEND_PRODUCTION_V3_2026-10-30/12_COVERAGE_AND_GATES.md"
+    },
+    {
+      "status": " M",
+      "path": "package.json"
+    },
+    {
+      "status": " M",
+      "path": "packages/api-contracts/src/index.ts"
+    },
+    {
+      "status": "??",
+      "path": "packages/api-contracts/src/messaging-openapi.ts"
+    },
+    {
+      "status": "??",
+      "path": "packages/api-contracts/src/messaging.spec.ts"
+    },
+    {
+      "status": "??",
+      "path": "packages/api-contracts/src/messaging.ts"
+    },
+    {
+      "status": " M",
+      "path": "packages/api-contracts/src/openapi.ts"
+    },
+    {
+      "status": "??",
+      "path": "prisma/migrations/202611080040_messaging_foundation/migration.sql"
+    },
+    {
+      "status": " M",
+      "path": "prisma/schema.prisma"
+    },
+    {
+      "status": " M",
+      "path": "tooling/compatibility/openapi.spec.ts"
+    },
+    {
+      "status": "??",
+      "path": "tooling/compatibility/p4-06-api-signatures.json"
+    },
+    {
+      "status": " M",
+      "path": "tooling/scripts/migrations-check.ts"
+    },
+    {
+      "status": " M",
+      "path": "tooling/scripts/openapi.ts"
+    },
+    {
+      "status": "??",
+      "path": "tooling/scripts/p5-01-smoke.ts"
+    },
+    {
+      "status": " M",
+      "path": "tooling/testing/company-domain-representation-upgrade.ts"
+    },
+    {
+      "status": "??",
+      "path": "tooling/testing/messaging-upgrade.ts"
+    },
+    {
+      "status": " M",
+      "path": "tooling/testing/migration-safety.ts"
+    },
+    {
+      "status": "??",
+      "path": "tooling/testing/reviewed-messaging-migration.ts"
+    }
+  ],
+  "trackedDiffStat": " .../01_MASTER_FEATURE_REGISTRY.md                  |    2 +-\n .../03_PHASE_2_TO_7_BACKEND_SPEC.md                |    4 +-\n .../05_BATCH_ROADMAP_AND_QUALITY.md                |   21 +-\n .../12_COVERAGE_AND_GATES.md                       |    2 +-\n apps/api/src/app.module.ts                         |    2 +\n .../application/company-cleanup.service.ts         |    3 +\n apps/api/src/modules/companies/companies.module.ts |    3 +-\n .../application/project-cleanup.service.ts         |    4 +\n apps/api/src/modules/projects/projects.module.ts   |    2 +\n .../spaces/application/shared-kernel.service.ts    |  332 +-\n .../spaces/application/shared-lifecycle.service.ts |   11 +\n .../modules/spaces/application/shared-retention.ts |    4 +-\n apps/api/src/modules/spaces/public/index.ts        |    1 +\n .../src/modules/spaces/public/shared-features.ts   |    3 +\n apps/api/src/modules/spaces/spaces.module.ts       |    3 +\n .../teams/application/team-cleanup.service.ts      |    3 +\n apps/api/src/modules/teams/teams.module.ts         |    2 +\n apps/api/src/platform/database/foundation.spec.ts  |    1 +\n .../platform/lifecycle/shared-cleanup-catalog.ts   |    2 +-\n .../src/platform/storage/shared-control.spec.ts    |   68 +\n apps/api/src/platform/storage/shared-control.ts    |   72 +-\n docs/api/openapi.json                              | 3593 ++++++++++++++++++++\n package.json                                       |    1 +\n packages/api-contracts/src/index.ts                |    1 +\n packages/api-contracts/src/openapi.ts              |    2 +\n prisma/schema.prisma                               |  131 +\n tooling/compatibility/openapi.spec.ts              |   13 +-\n tooling/scripts/migrations-check.ts                |    2 +-\n tooling/scripts/openapi.ts                         |    1 +\n .../company-domain-representation-upgrade.ts       |    2 +\n tooling/testing/migration-safety.ts                |    8 +-\n 31 files changed, 4111 insertions(+), 188 deletions(-)",
+  "trackedNameStatus": "M\tMEHRAN_BACKEND_PRODUCTION_V3_2026-10-30/01_MASTER_FEATURE_REGISTRY.md\nM\tMEHRAN_BACKEND_PRODUCTION_V3_2026-10-30/03_PHASE_2_TO_7_BACKEND_SPEC.md\nM\tMEHRAN_BACKEND_PRODUCTION_V3_2026-10-30/05_BATCH_ROADMAP_AND_QUALITY.md\nM\tMEHRAN_BACKEND_PRODUCTION_V3_2026-10-30/12_COVERAGE_AND_GATES.md\nM\tapps/api/src/app.module.ts\nM\tapps/api/src/modules/companies/application/company-cleanup.service.ts\nM\tapps/api/src/modules/companies/companies.module.ts\nM\tapps/api/src/modules/projects/application/project-cleanup.service.ts\nM\tapps/api/src/modules/projects/projects.module.ts\nM\tapps/api/src/modules/spaces/application/shared-kernel.service.ts\nM\tapps/api/src/modules/spaces/application/shared-lifecycle.service.ts\nM\tapps/api/src/modules/spaces/application/shared-retention.ts\nM\tapps/api/src/modules/spaces/public/index.ts\nM\tapps/api/src/modules/spaces/public/shared-features.ts\nM\tapps/api/src/modules/spaces/spaces.module.ts\nM\tapps/api/src/modules/teams/application/team-cleanup.service.ts\nM\tapps/api/src/modules/teams/teams.module.ts\nM\tapps/api/src/platform/database/foundation.spec.ts\nM\tapps/api/src/platform/lifecycle/shared-cleanup-catalog.ts\nM\tapps/api/src/platform/storage/shared-control.spec.ts\nM\tapps/api/src/platform/storage/shared-control.ts\nM\tdocs/api/openapi.json\nM\tpackage.json\nM\tpackages/api-contracts/src/index.ts\nM\tpackages/api-contracts/src/openapi.ts\nM\tprisma/schema.prisma\nM\ttooling/compatibility/openapi.spec.ts\nM\ttooling/scripts/migrations-check.ts\nM\ttooling/scripts/openapi.ts\nM\ttooling/testing/company-domain-representation-upgrade.ts\nM\ttooling/testing/migration-safety.ts",
+  "note": "Git diff statistics cover tracked modifications; paths also enumerate every new untracked task file. Original unrelated files and ignored local evidence are excluded. No commit, push or deployment."
+}

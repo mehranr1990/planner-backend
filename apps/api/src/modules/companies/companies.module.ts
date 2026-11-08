@@ -4,6 +4,7 @@ import { CompanyEmployeeCasesService } from './application/company-employee-case
 import { CompanyStaffController } from './http/company-staff.controller.js';
 import type { DynamicModule } from '@nestjs/common';
 import { Module } from '@nestjs/common';
+import { MessagingModule } from '../messaging/public/index.js';
 import { DatabaseModule } from '../../platform/database/database.module.js';
 import { AuditModule } from '../../platform/audit/audit.service.js';
 import { SpacesModule } from '../spaces/public/index.js';
@@ -15,7 +16,7 @@ import {
   CompanyGuard,
 } from './http/companies.controller.js';
 @Module({
-  imports: [DatabaseModule, SpacesModule, AuditModule],
+  imports: [DatabaseModule, SpacesModule, AuditModule, MessagingModule],
   providers: [
     CompaniesService,
     CompanyGuard,

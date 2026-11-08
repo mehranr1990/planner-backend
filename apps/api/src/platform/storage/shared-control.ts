@@ -3,6 +3,7 @@ import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import { readdir, readFile, lstat } from 'node:fs/promises';
 import path from 'node:path';
 import { Readable } from 'node:stream';
+import type { Stats } from 'node:fs';
 import { z } from 'zod';
 import { APP_CONFIG } from '../../bootstrap/configuration.module.js';
 import type { AppConfig } from '../../bootstrap/environment.js';
@@ -25,6 +26,8 @@ const controlRecord = z.strictObject({
 });
 export type SharedControlRecord = z.infer<typeof controlRecord>;
 const markerId = '00000000-0000-4000-8000-000000000031';
+const stagingArtifact =
+  /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\.[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\.part$/i;
 const keySchema = z.record(
   z.string().regex(/^[A-Za-z0-9._-]{1,40}$/),
   z.string().min(32),
@@ -45,19 +48,64 @@ export class SharedControl {
     }
   >();
   private verifiedBytes = 0;
+  /** LocalFileStorage publishes with link(part, blob), then unlinks part. A
+   * reader may observe the exact two-name inode during that atomic publication.
+   * No other hard link is valid, including links outside the control root. */
+  private async artifactStat(name: string): Promise<Stats> {
+    const file = path.join(this.root, name);
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const stat = await lstat(file);
+      if (!stat.isFile() || stat.isSymbolicLink())
+        throw new Error('Invalid shared control artifact');
+      if (stat.nlink === 1) return stat;
+      if (stat.nlink !== 2) throw new Error('Invalid shared control artifact');
+      const key = name.split('.')[0]!;
+      let names: string[];
+      if (name.endsWith('.part')) names = [key + '.blob'];
+      else {
+        const directory = await readdir(this.root);
+        if (directory.length > 100000)
+          throw new Error('Shared control bound exceeded');
+        names = directory.filter(
+          (candidate) =>
+            candidate.startsWith(key + '.') && stagingArtifact.test(candidate),
+        );
+      }
+      for (const partner of names) {
+        try {
+          const linked = await lstat(path.join(this.root, partner));
+          if (
+            linked.isFile() &&
+            !linked.isSymbolicLink() &&
+            linked.nlink === 2 &&
+            linked.dev === stat.dev &&
+            linked.ino === stat.ino
+          )
+            return stat;
+        } catch (error) {
+          if (
+            !error ||
+            typeof error !== 'object' ||
+            !('code' in error) ||
+            error.code !== 'ENOENT'
+          )
+            throw error;
+        }
+      }
+      // The writer may already have removed the staging name. Reread final
+      // metadata once; an unpaired two-link artifact still fails closed.
+    }
+    throw new Error('Invalid shared control artifact');
+  }
   private async readEnvelope(name: string) {
     const file = path.join(this.root, name),
-      stat = await lstat(file);
-    if (
-      !stat.isFile() ||
-      stat.isSymbolicLink() ||
-      stat.nlink !== 1 ||
-      stat.size > 65536
-    )
+      stat = await this.artifactStat(name);
+    if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 65536)
       throw new Error('Invalid shared control artifact');
     const stamp = [
       stat.dev,
       stat.ino,
+      stat.nlink,
       stat.size,
       stat.mtimeMs,
       stat.ctimeMs,
@@ -226,11 +274,7 @@ export class SharedControl {
     const files: { key: string; spaceId: string }[] = [];
     const temporary: string[] = [];
     const published = names.filter((name) => {
-      if (
-        /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\.[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\.part$/i.test(
-          name,
-        )
-      ) {
+      if (stagingArtifact.test(name)) {
         temporary.push(name);
         return false;
       }
@@ -244,9 +288,7 @@ export class SharedControl {
     });
     for (const name of temporary) {
       try {
-        const stat = await lstat(path.join(this.root, name));
-        if (!stat.isFile() || stat.isSymbolicLink() || stat.nlink !== 1)
-          throw new Error('Invalid shared staging artifact');
+        await this.artifactStat(name);
       } catch (error) {
         if (
           !error ||
