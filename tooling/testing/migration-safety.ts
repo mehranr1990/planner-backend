@@ -168,7 +168,9 @@ export function reviewMigrations(directory = 'prisma/migrations'): string[] {
       path.join(directory, name, 'migration.sql'),
       'utf8',
     );
-    if (name === messagingMigrationName)
+    if (name === advancedMessagingMigrationName)
+      assertReviewedAdvancedMessagingMigration(name, sql);
+    else if (name === messagingMigrationName)
       assertReviewedMessagingMigration(name, sql);
     else if (name === companyDomainRepresentationMigrationName)
       assertReviewedCompanyDomainRepresentationMigration(name, sql);
@@ -253,3 +255,7 @@ import {
   messagingMigrationName,
   assertReviewedMessagingMigration,
 } from './reviewed-messaging-migration.ts';
+import {
+  advancedMessagingMigrationName,
+  assertReviewedAdvancedMessagingMigration,
+} from './reviewed-advanced-messaging-migration.ts';

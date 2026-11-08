@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import * as c from './messaging.js';
 import { embeddedJsonSchema, pointerSegment } from './embedded-json-schema.js';
+import { advancedMessagingOperations } from './advanced-messaging-openapi.js';
 type Operation = {
   path: string;
   method: 'get' | 'post' | 'patch';
@@ -10,6 +11,7 @@ type Operation = {
   revision?: boolean;
   key?: boolean;
   etag?: boolean;
+  conditionalRevision?: boolean;
 };
 export const messagingOperations: Operation[] = [
   {
@@ -108,8 +110,14 @@ export const messagingOperations: Operation[] = [
   },
 ];
 export function messagingPaths() {
+  return messagingOperationPaths(messagingOperations);
+}
+export function advancedMessagingPaths() {
+  return messagingOperationPaths(advancedMessagingOperations as Operation[]);
+}
+function messagingOperationPaths(operations: Operation[]) {
   const paths: Record<string, Record<string, unknown>> = {};
-  for (const op of messagingOperations) {
+  for (const op of operations) {
     const path = '/api/v1' + op.path,
       pointer = '#/paths/' + pointerSegment(path) + '/' + op.method;
     const schema = (value: z.ZodType, at: string) =>
@@ -150,6 +158,15 @@ export function messagingPaths() {
           maxLength: 128,
           pattern: '^[!-~]+$',
         },
+      });
+    if (op.conditionalRevision)
+      parameters.push({
+        in: 'header',
+        name: 'If-Match',
+        required: false,
+        description:
+          'Required for edit, delete, pin, moderate, resolve-report and policy. Use the current message/report/policy revision.',
+        schema: { type: 'string', pattern: '^"[1-9][0-9]*"$' },
       });
     if (op.query) {
       const query = z.toJSONSchema(op.query, { io: 'input' }) as {

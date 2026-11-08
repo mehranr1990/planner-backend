@@ -1,0 +1,192 @@
+{
+  "batch": "P5-02",
+  "baselineCommit": "dd73a901b1ed55d5a44d5fda225b798143003166",
+  "verifiedPublishedP501": "dd73a901b1ed55d5a44d5fda225b798143003166",
+  "branch": "main",
+  "stagedPaths": 0,
+  "committed": false,
+  "pushed": false,
+  "taskPaths": 35,
+  "modifiedTracked": 19,
+  "newUntracked": 16,
+  "preservedUnrelatedDocuments": 12,
+  "paths": [
+    {
+      "status": "??",
+      "path": "apps/api/src/modules/messaging/application/advanced-messaging.service.ts",
+      "sha256": "f896783cd4f973faf60bdb126fbe68e74f70a9750fb620adb3ba426e214455a4"
+    },
+    {
+      "status": " M",
+      "path": "apps/api/src/modules/messaging/application/messaging.service.ts",
+      "sha256": "8f7c7702f46a151a94eb98ccdb2720c09c0e0f44ea098e8d4b438420895a891c"
+    },
+    {
+      "status": "??",
+      "path": "apps/api/src/modules/messaging/domain/advanced-messaging.spec.ts",
+      "sha256": "c243af95337fc7a45698633ac87f622b852e9d152017dc4e2fb0aff1d2ce69e7"
+    },
+    {
+      "status": " M",
+      "path": "apps/api/src/modules/messaging/domain/messaging-policy.ts",
+      "sha256": "4414b80e03a07cb09505bd1e385d85608559387eb061cf5f91f92aab3ce24d92"
+    },
+    {
+      "status": "??",
+      "path": "apps/api/src/modules/messaging/http/advanced-messaging.controller.ts",
+      "sha256": "22b362185eff19a2539322bcfec210859768c44598384cb4704bc70be1b2b110"
+    },
+    {
+      "status": " M",
+      "path": "apps/api/src/modules/messaging/messaging.module.ts",
+      "sha256": "a3e065dcab7a5924acce9b8aa610fd169241246ef448b7f5ebe974cdf9ef6185"
+    },
+    {
+      "status": " M",
+      "path": "apps/api/src/modules/spaces/public/messaging-authority.ts",
+      "sha256": "5336e8aad9ae59f4defb785d74624f1b0f37402618d0296ae71a26754b614331"
+    },
+    {
+      "status": " M",
+      "path": "apps/api/src/platform/database/foundation.spec.ts",
+      "sha256": "ce3f5ec0204b5264c274dfa2ad5467a194c44a351588d26ba7d4f090f4c4a839"
+    },
+    {
+      "status": " M",
+      "path": "apps/api/src/platform/lifecycle/shared-cleanup-catalog.ts",
+      "sha256": "11a257267977ff4d289a86b2aaa5c0814909a813ad1c622d4d2c9bdf97e16d0d"
+    },
+    {
+      "status": " M",
+      "path": "apps/api/test/integration/messaging.spec.ts",
+      "sha256": "163f53b2ea95ade0e0ee69e309fee7d369ee189e2ba915500cec3d71adc515f6"
+    },
+    {
+      "status": "??",
+      "path": "docs/adr/0046-advanced-messaging-permissions-and-forwarding.md",
+      "sha256": "0204389b93c95d733d4b1dce069b6d5a30af89746278897e0aebe129dda35566"
+    },
+    {
+      "status": " M",
+      "path": "docs/api/openapi.json",
+      "sha256": "4ee304cdbd34429c24aedb04776af37f7af37cdf5263bbbba077aea6c6ab258e"
+    },
+    {
+      "status": "??",
+      "path": "docs/p5-02-change-manifest.json"
+    },
+    {
+      "status": "??",
+      "path": "docs/p5-02-contract.md",
+      "sha256": "a10f3c90c9a6546b66782cfac89e12b5dbc901921da66e8f462df39d28055041"
+    },
+    {
+      "status": "??",
+      "path": "docs/p5-02-migration-review.md",
+      "sha256": "1645c1f7c3c5d9f403eb436478d944bf10cae51b03a7cca2e708fc780570d1ef"
+    },
+    {
+      "status": "??",
+      "path": "docs/p5-02-report.md",
+      "sha256": "987aedf30c3e6fa843dc0dc82f55a7dad59799574f68bd6c2a14e5163b11a049"
+    },
+    {
+      "status": " M",
+      "path": "package.json",
+      "sha256": "4685f157473f6c54cd69624bfecef00149a22f846d01df59bde1815fa2a839a2"
+    },
+    {
+      "status": "??",
+      "path": "packages/api-contracts/src/advanced-messaging-openapi.ts",
+      "sha256": "a3928179dbd88cf1763f0971958fe90b8ac7091b17b60955b6019e8a986108ad"
+    },
+    {
+      "status": "??",
+      "path": "packages/api-contracts/src/advanced-messaging.spec.ts",
+      "sha256": "5424e6bc8e5f39acd413c9c73b1db97226d9c33f1f8cc796e9f680d67482952e"
+    },
+    {
+      "status": "??",
+      "path": "packages/api-contracts/src/advanced-messaging.ts",
+      "sha256": "d88c6c25ccd80ce328c8dafa4a86e2e4d0cb9ad524c8fa91040c310406079d71"
+    },
+    {
+      "status": " M",
+      "path": "packages/api-contracts/src/index.ts",
+      "sha256": "f4903215c956bc73c7a32cd84ae443d4a52fe4732ebbb4e9f2db52c871238413"
+    },
+    {
+      "status": " M",
+      "path": "packages/api-contracts/src/messaging-openapi.ts",
+      "sha256": "7253d45ac49f803bcf67ae26bd2b1462c4b22002fbb1d953bff07e14c23cadc8"
+    },
+    {
+      "status": " M",
+      "path": "packages/api-contracts/src/openapi.ts",
+      "sha256": "f6cf7e1441f84c48ec724e676bf88387cb75c456b70624c81b30e11be6af9fb2"
+    },
+    {
+      "status": "??",
+      "path": "prisma/migrations/202611080041_advanced_messaging/migration.sql",
+      "sha256": "6de4f5c76e4bea7060a94c7d89771dcb167fb46b2ec549d49f30ee077607a3bb"
+    },
+    {
+      "status": " M",
+      "path": "prisma/schema.prisma",
+      "sha256": "d560becd598e7b79745c99ae78cda2a79dd002a37cc58ce1b5c0386183ec9917"
+    },
+    {
+      "status": " M",
+      "path": "tooling/compatibility/openapi.spec.ts",
+      "sha256": "1cc7caadfa61adb7d25cb8083cdd7f87525ee2357700222e769a5ee038c6e745"
+    },
+    {
+      "status": "??",
+      "path": "tooling/compatibility/p5-01-api-signatures.json",
+      "sha256": "d561057a8444acb8e13b52e1210314798ca4424aa87ea253ae3b076960f80285"
+    },
+    {
+      "status": " M",
+      "path": "tooling/scripts/migrations-check.ts",
+      "sha256": "b538626f8e2523c95ba37daf6199bc88a846b8155e2b348795f9f6bb2115f0aa"
+    },
+    {
+      "status": " M",
+      "path": "tooling/scripts/openapi.ts",
+      "sha256": "6c73b2ef08bc5f9c68d443d73ec095c3aae3099919d9311462942fd686afff92"
+    },
+    {
+      "status": " M",
+      "path": "tooling/scripts/p5-01-smoke.ts",
+      "sha256": "68b784c8a1a20d1778d8f64cfcfe3dd5372577a5ad46562a99505988170c548d"
+    },
+    {
+      "status": "??",
+      "path": "tooling/scripts/p5-02-smoke.ts",
+      "sha256": "96529205622485d40bba5438f895ceb8e7ba6e9fcfe637d71230120619f4c854"
+    },
+    {
+      "status": "??",
+      "path": "tooling/testing/advanced-messaging-upgrade.ts",
+      "sha256": "492f09f222477b1cbdbd5dfeb88a73bee7a31f93974eae0b520fd370d5e7b2ba"
+    },
+    {
+      "status": " M",
+      "path": "tooling/testing/messaging-upgrade.ts",
+      "sha256": "0d80a85450d87862624f11ae4b452a5b93101fcead04728020994c713ccf6210"
+    },
+    {
+      "status": " M",
+      "path": "tooling/testing/migration-safety.ts",
+      "sha256": "59b7242dc90c590f16c06dbb784c52e20450d3151e9bb970c8b5f7e0eb94e561"
+    },
+    {
+      "status": "??",
+      "path": "tooling/testing/reviewed-advanced-messaging-migration.ts",
+      "sha256": "89e4ab387b6773f6a39ce0fa215498dcb42b8954250a95434c940ebd61450bd5"
+    }
+  ],
+  "integrity": "SHA256 for every task file except this self-describing manifest; protected artifacts verified separately",
+  "historicalMigrationArtifactsPreserved": 65,
+  "protectedEnvironmentFilesPreserved": 5
+}

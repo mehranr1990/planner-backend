@@ -30,7 +30,7 @@ import { managesChannel, sameAdmission } from '../domain/messaging-policy.js';
 type Tx = Prisma.TransactionClient;
 type Proof = Awaited<ReturnType<MessagingAuthority['proof']>>;
 type Page = z.infer<typeof c.ConversationPageQuerySchema>;
-type Operation = {
+export type MessageOperation = {
   tx: Tx;
   actor: RequestActor;
   conv: Conversation;
@@ -39,6 +39,7 @@ type Operation = {
   begin: () => Promise<string>;
   proof: Proof | null;
 };
+type Operation = MessageOperation;
 const hash = (value: string) =>
   createHash('sha256').update(value).digest('hex');
 const fingerprint = (value: unknown) => hash(JSON.stringify(value));
@@ -99,7 +100,8 @@ export class MessagingService {
       ? 'MESSAGING_RETENTION_PENDING'
       : null;
   }
-  private async proof(s: Operation, userId = s.actor.userId) {
+  /** Internal owner-module transaction contract, reused by advanced messaging. */
+  async proof(s: Operation, userId = s.actor.userId) {
     const proof = await this.authority.proof(
       s.tx,
       s.actor,
@@ -114,7 +116,7 @@ export class MessagingService {
       throw new NotFoundException();
     return proof;
   }
-  private async currentMember(s: Operation, proof = s.proof) {
+  async currentMember(s: Operation, proof = s.proof) {
     if (!proof) throw new NotFoundException();
     const member = await s.tx.conversationMember.findUnique({
       where: {
@@ -128,7 +130,7 @@ export class MessagingService {
       throw new NotFoundException();
     return member;
   }
-  private async administer(s: Operation, proof = s.proof) {
+  async administer(s: Operation, proof = s.proof) {
     if (!proof) throw new NotFoundException();
     if (s.conv.kind === 'PRIVATE_GROUP' || s.conv.kind === 'DM') {
       const member = await this.currentMember(s, proof);
@@ -163,7 +165,7 @@ export class MessagingService {
     }
     return result;
   }
-  private async writable(s: Operation) {
+  async writable(s: Operation) {
     if (s.proof?.role === 'VIEWER') return false;
     if (!independent(s.conv.kind)) return true;
     const members = await this.validMembers(s);
@@ -197,13 +199,14 @@ export class MessagingService {
       expiresAt: row.expiresAt.toISOString(),
     });
   }
-  private async operation<T>(
+  async operation<T>(
     actor: RequestActor,
     id: string,
     action: string,
     work: (s: Operation) => Promise<T>,
     additionalUsers: string[] = [],
     pending = false,
+    relatedIds: string[] = [],
   ) {
     const hint = await this.db.client.conversation.findUnique({
       where: { id },
@@ -212,13 +215,32 @@ export class MessagingService {
       this.kernel.assertEnabled();
       throw new NotFoundException();
     }
-    const members = await this.db.client.conversationMember.findMany({
-      where: { conversationId: id, state: 'ACTIVE' },
-      select: { actorId: true },
-      take: 201,
+    const related = await this.db.client.conversation.findMany({
+      where: { id: { in: [...new Set(relatedIds)].filter((v) => v !== id) } },
     });
-    if (members.length > 200) throw new PayloadTooLargeException();
+    if (related.length > 32) throw new PayloadTooLargeException();
+    const members = await this.db.client.conversationMember.findMany({
+      where: {
+        conversationId: { in: [id, ...related.map((v) => v.id)] },
+        state: 'ACTIVE',
+      },
+      select: { actorId: true },
+      take: 6601,
+    });
+    if (members.length > 6600) throw new PayloadTooLargeException();
     const users = await this.authority.hints(members.map((m) => m.actorId));
+    const ownerHints = related.length
+      ? (
+          await Promise.all(
+            [hint, ...related].map((v) =>
+              this.kernel.offerUserHints(v.scopeId, actor.userId),
+            ),
+          )
+        ).flat()
+      : [];
+    const lockedUsers = [
+      ...new Set([actor.userId, ...users, ...additionalUsers, ...ownerHints]),
+    ].sort();
     return this.collaboration.signed(
       actor,
       hint.scopeId,
@@ -233,6 +255,18 @@ export class MessagingService {
           conv.scopeId !== hint.scopeId
         )
           throw new NotFoundException();
+        for (const location of related) {
+          const current = await tx.conversation.findUnique({
+            where: { id: location.id },
+            select: { spaceId: true, scopeId: true },
+          });
+          if (
+            current &&
+            (current.spaceId !== location.spaceId ||
+              current.scopeId !== location.scopeId)
+          )
+            throw new ConflictException({ code: 'SOURCE_CHANGED_RETRY' });
+        }
         const s: Operation = {
           tx,
           actor,
@@ -245,9 +279,47 @@ export class MessagingService {
         if (!pending || !independent(conv.kind)) s.proof = await this.proof(s);
         return work(s);
       },
+      false,
+      'PROJECT',
+      related.length
+        ? (body, abort) =>
+            this.kernel.run(
+              actor,
+              {
+                userIds: lockedUsers,
+                spaceIds: [
+                  ...new Set([hint.spaceId, ...related.map((v) => v.spaceId)]),
+                ],
+              },
+              [
+                {
+                  spaceId: hint.spaceId,
+                  scopeId: hint.scopeId,
+                  capability: 'task.read',
+                },
+              ],
+              async (tx) =>
+                body(
+                  tx,
+                  (
+                    await tx.$queryRaw<
+                      { now: Date }[]
+                    >`SELECT clock_timestamp() now`
+                  )[0]!.now,
+                  lockedUsers,
+                ),
+              abort,
+              related.map((v) => ({
+                spaceId: v.spaceId,
+                scopeId: v.scopeId,
+                capability: 'task.read' as const,
+              })),
+              true,
+            )
+        : undefined,
     );
   }
-  private async effect(
+  async effect(
     s: Operation,
     action: string,
     resourceId: string,
@@ -982,6 +1054,18 @@ export class MessagingService {
           old.sequence <= member.historyAfter
         )
           throw new ConflictException({ code: 'IDEMPOTENCY_CONFLICT' });
+        const entry = await s.tx.messageEntry.findUnique({
+          where: { id: old.id },
+        });
+        if (
+          entry?.deletedAt ||
+          (await s.tx.messageHidden.findUnique({
+            where: {
+              messageId_memberId: { messageId: old.id, memberId: member.id },
+            },
+          }))
+        )
+          throw new NotFoundException();
         return messageView(old);
       }
       if (await s.tx.conversationMessage.findUnique({ where: { id: body.id } }))
@@ -1040,7 +1124,18 @@ export class MessagingService {
       if (after < member.historyAfter || after > s.conv.lastSequence)
         throw new BadRequestException({ code: 'INVALID_CURSOR' });
       const rows = await s.tx.conversationMessage.findMany({
-        where: { conversationId: id, sequence: { gt: after } },
+        where: {
+          conversationId: id,
+          sequence: { gt: after },
+          MessageEntry_text: {
+            none: {
+              OR: [
+                { deletedAt: { not: null } },
+                { MessageHidden_message: { some: { memberId: member.id } } },
+              ],
+            },
+          },
+        },
         orderBy: { sequence: 'asc' },
         take: q.limit + 1,
       });

@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, createHash } from 'node:crypto';
 import type { Prisma } from '../../../generated/prisma/client.js';
 import type { RequestActor } from '../../../platform/auth/request-actor.js';
 import { DatabaseService } from '../../../platform/database/database.service.js';
@@ -12,6 +12,87 @@ export class MessagingAuthority {
     @Inject(SharedKernel) private readonly kernel: SharedKernel,
     @Inject(DatabaseService) private readonly db: DatabaseService,
   ) {}
+  /** Opaque invalidation hint only; never substitutes for participantAuthority. */
+  async frame(tx: Prisma.TransactionClient, scopeId: string, userId: string) {
+    const scope = await tx.accessScope.findUnique({ where: { id: scopeId } });
+    if (!scope) return 'missing';
+    const custody = await tx.sharedCustody.findUnique({
+      where: { spaceId: scope.spaceId },
+    });
+    const domain = await tx.domainScopeCustody.findUnique({
+      where: { scopeId },
+    });
+    const actors = await tx.sharedActor.findMany({
+      where: { spaceId: scope.spaceId, userId },
+      orderBy: { id: 'asc' },
+    });
+    const access = await tx.contextAccess.findMany({
+      where: { scopeId, actorId: { in: actors.map((v) => v.id) } },
+      orderBy: { id: 'asc' },
+    });
+    const seats = await tx.contextAccess.findMany({
+      where: {
+        id: {
+          in: [
+            custody?.primaryOwnerAccessId,
+            domain?.primaryOwnerAccessId,
+          ].filter((v): v is string => !!v),
+        },
+      },
+      select: { actorId: true },
+    });
+    const custodians = await tx.sharedActor.findMany({
+      where: { id: { in: seats.map((v) => v.actorId) } },
+      select: { userId: true, state: true },
+      orderBy: { id: 'asc' },
+    });
+    const accounts = await tx.space.findMany({
+      where: {
+        kind: 'PERSONAL',
+        ownerUserId: {
+          in: [
+            userId,
+            ...custodians.flatMap((v) => (v.userId ? [v.userId] : [])),
+          ],
+        },
+      },
+      select: { ownerUserId: true, accessClosedAt: true },
+      orderBy: { id: 'asc' },
+    });
+    const exits = await tx.sharedExitWork.findMany({
+      where: {
+        userId: {
+          in: accounts.flatMap((v) => (v.ownerUserId ? [v.ownerUserId] : [])),
+        },
+      },
+      select: { userId: true, closedAt: true },
+      orderBy: { userId: 'asc' },
+    });
+    // Ordinary writes in a sibling channel advance authorizationVersion too.
+    // Invalidate on actual authority/lifecycle epochs, not unrelated content writes.
+    return createHash('sha256')
+      .update(
+        JSON.stringify(
+          {
+            scope,
+            custody,
+            domain,
+            actors,
+            access,
+            custodians,
+            accounts,
+            exits,
+          },
+          (k, v: unknown) =>
+            ['authorizationVersion', 'revision'].includes(k)
+              ? undefined
+              : typeof v === 'bigint'
+                ? String(v)
+                : v,
+        ),
+      )
+      .digest('hex');
+  }
   async hints(ids: string[]) {
     return (
       await this.db.client.sharedActor.findMany({

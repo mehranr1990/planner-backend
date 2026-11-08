@@ -31,6 +31,7 @@ import {
   CompanyAccess,
 } from '../../src/modules/spaces/public/index.js';
 import { MessagingService } from '../../src/modules/messaging/public/index.js';
+import { AdvancedMessagingService } from '../../src/modules/messaging/application/advanced-messaging.service.js';
 import {
   ProjectsService,
   ProjectCleanupService,
@@ -41,6 +42,7 @@ import { testApplication } from '../support/application.js';
 import { migrationSandbox } from '../../../../tooling/testing/migration-sandbox.js';
 import { isolatedTestDatabaseUrl } from '../../../../tooling/testing/test-database.js';
 import * as c from '@mehran/api-contracts';
+import type { z } from 'zod';
 type Person = { actor: RequestActor; email: string };
 const barrier = () => {
   let release!: () => void;
@@ -59,6 +61,7 @@ describe('P5-01 durable messaging, explicit participation and polling', () => {
     app: NestExpressApplication,
     db: PrismaClient,
     messages: MessagingService,
+    advanced: AdvancedMessagingService,
     kernel: SharedKernel,
     collaboration: CollaborationService,
     auth: AuthService,
@@ -164,8 +167,8 @@ describe('P5-01 durable messaging, explicit participation and polling', () => {
     id: string,
     who = owner,
     text = 'Private text',
-    key = randomUUID(),
-    messageId = randomUUID(),
+    key: string = randomUUID(),
+    messageId: string = randomUUID(),
   ) {
     return messages.send(who.actor, id, { id: messageId, text }, key);
   }
@@ -303,6 +306,7 @@ describe('P5-01 durable messaging, explicit participation and polling', () => {
     control = app.get(SharedControl);
     await control.initialize();
     messages = app.get(MessagingService);
+    advanced = app.get(AdvancedMessagingService);
     kernel = app.get(SharedKernel);
     collaboration = app.get(CollaborationService);
     auth = app.get(AuthService);
@@ -1283,5 +1287,1120 @@ describe('P5-01 durable messaging, explicit participation and polling', () => {
         where: { spaceId: input.id, feature: 'messaging.conversation' },
       }),
     ).toBe(1);
+  });
+
+  describe('P5-02 advanced messaging', () => {
+    it('keeps personal safety actions available in a private group after its last admin leaves', async () => {
+      const g = await group(),
+        msg = await send(g.id),
+        om = await member(g.id, owner);
+      await messages.leave(owner.actor, g.id, om.revision);
+      await expect(
+        advanced.act(
+          alice.actor,
+          g.id,
+          { action: 'reaction', messageId: msg.id, emoji: '👍', active: true },
+          randomUUID(),
+        ),
+      ).rejects.toThrow();
+      await advanced.act(
+        alice.actor,
+        g.id,
+        {
+          action: 'report',
+          id: randomUUID(),
+          messageId: msg.id,
+          reason: 'Read-only personal safety',
+        },
+        randomUUID(),
+      );
+      await advanced.act(
+        alice.actor,
+        g.id,
+        { action: 'hide', messageId: msg.id },
+        randomUUID(),
+      );
+      expect((await advanced.detail(alice.actor, g.id, msg.id)).state).toBe(
+        'HIDDEN',
+      );
+    });
+    it.each(['PROJECT', 'TEAM'] as const)(
+      'allows accepted %s source administrators to pin/moderate',
+      async (kind) => {
+        const source = await work(kind);
+        await join(source.id, alice, 'ADMIN', kind);
+        const g = await channel(source.id, kind);
+        await accept(g.id);
+        const msg = await send(g.id);
+        await advanced.act(
+          alice.actor,
+          g.id,
+          { action: 'pin', messageId: msg.id, active: true },
+          randomUUID(),
+          1,
+        );
+        await advanced.act(
+          alice.actor,
+          g.id,
+          {
+            action: 'moderate',
+            messageId: msg.id,
+            reason: 'Current source administrator',
+          },
+          randomUUID(),
+          2,
+        );
+        expect((await advanced.detail(owner.actor, g.id, msg.id)).state).toBe(
+          'DELETED',
+        );
+      },
+    );
+    it('uses Company Org Admin content authority only after explicit conversation acceptance', async () => {
+      const source = await work('COMPANY');
+      const offer = await companies.invite(
+        owner.actor,
+        source.id,
+        source.id,
+        { memberRole: 'ORG_ADMIN', recipient: { userId: alice.actor.userId } },
+        randomUUID(),
+      );
+      await app
+        .get(CompanyAccess)
+        .decide(alice.actor, offer.invitation.id, offer.proof!, 1, true);
+      const g = await channel(source.id, 'COMPANY'),
+        msg = await send(g.id);
+      await expect(
+        advanced.act(
+          alice.actor,
+          g.id,
+          { action: 'pin', messageId: msg.id, active: true },
+          randomUUID(),
+          1,
+        ),
+      ).rejects.toThrow();
+      await accept(g.id);
+      // Acceptance starts after this message: even the Org Admin has no prejoin content.
+      await expect(
+        advanced.act(
+          alice.actor,
+          g.id,
+          {
+            action: 'moderate',
+            messageId: msg.id,
+            reason: 'No prejoin exception',
+          },
+          randomUUID(),
+          1,
+        ),
+      ).rejects.toThrow();
+      const current = await send(g.id);
+      await advanced.act(
+        alice.actor,
+        g.id,
+        { action: 'pin', messageId: current.id, active: true },
+        randomUUID(),
+        1,
+      );
+      await advanced.act(
+        alice.actor,
+        g.id,
+        {
+          action: 'moderate',
+          messageId: current.id,
+          reason: 'Current Org Admin moderation',
+        },
+        randomUUID(),
+        2,
+      );
+    });
+    it('enforces new database source, reply, admission and TEXT-shape constraints', async () => {
+      const g = await group(),
+        foreign = await group(),
+        msg = await send(g.id),
+        other = await send(foreign.id),
+        am = await member(g.id, alice);
+      const header = await db.messageEntry.findUniqueOrThrow({
+        where: { id: msg.id },
+      });
+      const base = {
+        id: randomUUID(),
+        conversationId: g.id,
+        sequence: 999n,
+        memberId: header.memberId,
+        memberGeneration: 1,
+        kind: 'FORWARD',
+        sourceId: other.id,
+        sourceConversationId: g.id,
+      };
+      await expect(db.messageEntry.create({ data: base })).rejects.toThrow();
+      await expect(
+        db.messageEntry.update({
+          where: { id: msg.id },
+          data: { replyToId: other.id, threadId: other.id },
+        }),
+      ).rejects.toThrow();
+      await expect(
+        db.messageEntry.update({
+          where: { id: msg.id },
+          data: { textId: null },
+        }),
+      ).rejects.toThrow();
+      await expect(
+        db.messageMention.create({
+          data: {
+            conversationId: g.id,
+            messageId: msg.id,
+            memberId: am.id,
+            generation: 999,
+          },
+        }),
+      ).rejects.toThrow();
+      await expect(
+        db.messageChange.update({
+          where: {
+            conversationId_sequence: { conversationId: g.id, sequence: 1n },
+          },
+          data: { kind: 'EDIT' },
+        }),
+      ).rejects.toThrow();
+    });
+    const action = (
+      id: string,
+      body: z.infer<typeof c.AdvancedMessageActionSchema>,
+      who = owner,
+      version?: number,
+      key = randomUUID(),
+    ) => advanced.act(who.actor, id, body, key, version);
+    async function group() {
+      const g = await create('PRIVATE_GROUP', [alice, bob]);
+      await accept(g.id, alice);
+      await accept(g.id, bob);
+      return g;
+    }
+    async function age(messageId: string) {
+      await db.messageEntry.update({
+        where: { id: messageId },
+        data: { createdAt: new Date(Date.now() - 49 * 3600000) },
+      });
+    }
+    it('composes typed replies, root threads and explicit accepted mentions', async () => {
+      const g = await group(),
+        root = await send(g.id),
+        am = await member(g.id, alice),
+        child = randomUUID();
+      await action(g.id, {
+        action: 'compose',
+        id: child,
+        text: 'Thread answer',
+        replyToId: root.id,
+        mentions: [am.id],
+      });
+      const detail = await advanced.detail(alice.actor, g.id, child);
+      expect(
+        (
+          await advanced.timeline(alice.actor, g.id, page, { thread: child })
+        ).items.map((v) => v.id),
+      ).toEqual([root.id, child]);
+      expect(detail).toMatchObject({
+        replyToId: root.id,
+        threadId: root.id,
+        mentions: [am.id],
+        content: { text: 'Thread answer' },
+      });
+      expect(
+        (
+          await advanced.timeline(alice.actor, g.id, page, { thread: root.id })
+        ).items.map((v) => v.id),
+      ).toEqual([root.id, child]);
+      expect(
+        (
+          await advanced.timeline(alice.actor, g.id, page, { mentions: true })
+        ).items.map((v) => v.id),
+      ).toEqual([child]);
+    });
+    it('rejects cross-conversation reply/mention references and rolls all effects back', async () => {
+      const a = await group(),
+        b = await group(),
+        foreign = await send(b.id),
+        am = await member(b.id, alice),
+        before = await db.sharedAuditEvent.count();
+      await expect(
+        action(a.id, {
+          action: 'compose',
+          id: randomUUID(),
+          text: 'No',
+          replyToId: foreign.id,
+          mentions: [],
+        }),
+      ).rejects.toThrow();
+      await expect(
+        action(a.id, {
+          action: 'compose',
+          id: randomUUID(),
+          text: 'No',
+          mentions: [am.id],
+        }),
+      ).rejects.toThrow();
+      expect(await db.sharedAuditEvent.count()).toBe(before);
+      expect(
+        await db.messageEntry.count({ where: { conversationId: a.id } }),
+      ).toBe(0);
+    });
+    it('preserves author history, current text and optimistic edit conflicts', async () => {
+      const g = await group(),
+        msg = await send(g.id);
+      await action(
+        g.id,
+        { action: 'edit', messageId: msg.id, text: 'Changed' },
+        owner,
+        1,
+      );
+      expect(
+        (await messages.messages(alice.actor, g.id, page)).items[0]!.text,
+      ).toBe('Changed');
+      expect(
+        (await advanced.revisions(owner.actor, g.id, msg.id, page)).items[0]!
+          .text,
+      ).toBe(msg.text);
+      await expect(
+        advanced.revisions(alice.actor, g.id, msg.id, page),
+      ).rejects.toThrow();
+      await expect(
+        action(
+          g.id,
+          { action: 'edit', messageId: msg.id, text: 'Stale' },
+          owner,
+          1,
+        ),
+      ).rejects.toThrow();
+      expect(
+        await db.messageRevision.count({ where: { messageId: msg.id } }),
+      ).toBe(1);
+    });
+    it('blocks late author edits/deletes and permits personal hide after 48 hours', async () => {
+      const g = await group(),
+        msg = await send(g.id);
+      await age(msg.id);
+      await expect(
+        action(
+          g.id,
+          { action: 'edit', messageId: msg.id, text: 'Late' },
+          owner,
+          1,
+        ),
+      ).rejects.toThrow();
+      await expect(
+        action(g.id, { action: 'delete', messageId: msg.id }, owner, 1),
+      ).rejects.toThrow();
+      await action(g.id, { action: 'hide', messageId: msg.id });
+      expect((await advanced.detail(owner.actor, g.id, msg.id)).state).toBe(
+        'HIDDEN',
+      );
+      expect(
+        (await advanced.detail(alice.actor, g.id, msg.id)).content!.text,
+      ).toBe(msg.text);
+    });
+    it('uses current tombstones for queued CREATE/EDIT events and legacy send retries', async () => {
+      const g = await group(),
+        key = randomUUID(),
+        msg = await send(g.id, owner, 'Never replay deleted body', key);
+      const snapshot = await advanced.timeline(alice.actor, g.id, page);
+      await action(
+        g.id,
+        { action: 'edit', messageId: msg.id, text: 'Edited body' },
+        owner,
+        1,
+      );
+      await action(g.id, { action: 'delete', messageId: msg.id }, owner, 2);
+      const changes = await advanced.changes(alice.actor, g.id, {
+        ...page,
+        cursor: snapshot.changeCursor,
+      });
+      expect(changes.items.map((v) => v.kind)).toEqual(['EDIT', 'DELETE']);
+      expect(
+        changes.items.every(
+          (v) => v.message.state === 'DELETED' && v.message.content === null,
+        ),
+      ).toBe(true);
+      expect(
+        (await advanced.changes(alice.actor, g.id, page)).items[0]!.message
+          .content,
+      ).toBeNull();
+      expect((await messages.messages(alice.actor, g.id, page)).items).toEqual(
+        [],
+      );
+      await expect(send(g.id, owner, msg.text, key, msg.id)).rejects.toThrow();
+      await expect(
+        advanced.revisions(owner.actor, g.id, msg.id, page),
+      ).rejects.toThrow();
+      expect(
+        (
+          await db.conversationMessage.findUniqueOrThrow({
+            where: { id: msg.id },
+          })
+        ).text,
+      ).toBe('Edited body');
+    });
+    it('hides personal events from peers and never returns hidden legacy/search text', async () => {
+      const g = await group(),
+        msg = await send(g.id),
+        snapshot = await advanced.timeline(bob.actor, g.id, page);
+      await action(g.id, { action: 'hide', messageId: msg.id }, alice);
+      expect(
+        (
+          await advanced.changes(bob.actor, g.id, {
+            ...page,
+            cursor: snapshot.changeCursor,
+          })
+        ).items,
+      ).toEqual([]);
+      expect((await messages.messages(alice.actor, g.id, page)).items).toEqual(
+        [],
+      );
+      expect(
+        (await advanced.timeline(alice.actor, g.id, page, { search: msg.text }))
+          .items,
+      ).toEqual([]);
+    });
+    it('makes emoji add/remove idempotent and convergent without toggle retries', async () => {
+      const g = await group(),
+        msg = await send(g.id),
+        key = randomUUID(),
+        body = {
+          action: 'reaction' as const,
+          messageId: msg.id,
+          emoji: '👨‍👩‍👧‍👦',
+          active: true,
+        };
+      const before = await db.sharedAuditEvent.count();
+      await Promise.all([
+        action(g.id, body, alice, undefined, key),
+        action(g.id, body, alice, undefined, key),
+      ]);
+      expect(await db.sharedAuditEvent.count()).toBe(before + 1);
+      expect(
+        (await advanced.detail(alice.actor, g.id, msg.id)).reactions,
+      ).toEqual([{ emoji: body.emoji, count: 1, mine: true }]);
+      await action(g.id, { ...body, active: false }, alice);
+      expect(
+        (await advanced.detail(owner.actor, g.id, msg.id)).reactions,
+      ).toEqual([]);
+      await expect(
+        action(g.id, { ...body, active: false }, alice, undefined, key),
+      ).rejects.toThrow();
+    });
+    it('serializes two writers with the same revision and preserves exactly one edit', async () => {
+      const g = await group(),
+        msg = await send(g.id);
+      const results = await Promise.allSettled([
+        action(
+          g.id,
+          { action: 'edit', messageId: msg.id, text: 'A' },
+          owner,
+          1,
+        ),
+        action(
+          g.id,
+          { action: 'edit', messageId: msg.id, text: 'B' },
+          owner,
+          1,
+        ),
+      ]);
+      expect(results.filter((v) => v.status === 'fulfilled')).toHaveLength(1);
+      expect(
+        await db.messageRevision.count({ where: { messageId: msg.id } }),
+      ).toBe(1);
+    });
+    it('limits private-group pin and moderation to current accepted admins', async () => {
+      const g = await group(),
+        msg = await send(g.id, alice);
+      await expect(
+        action(
+          g.id,
+          { action: 'pin', messageId: msg.id, active: true },
+          alice,
+          1,
+        ),
+      ).rejects.toThrow();
+      await action(
+        g.id,
+        { action: 'pin', messageId: msg.id, active: true },
+        owner,
+        1,
+      );
+      expect(
+        (
+          await advanced.timeline(alice.actor, g.id, page, { pins: true })
+        ).items.map((v) => v.id),
+      ).toEqual([msg.id]);
+      await age(msg.id);
+      await expect(
+        action(
+          g.id,
+          { action: 'moderate', messageId: msg.id, reason: 'No authority' },
+          bob,
+          2,
+        ),
+      ).rejects.toThrow();
+      await action(
+        g.id,
+        {
+          action: 'moderate',
+          messageId: msg.id,
+          reason: 'Approved rule enforcement',
+        },
+        owner,
+        2,
+      );
+      expect((await advanced.detail(alice.actor, g.id, msg.id)).state).toBe(
+        'DELETED',
+      );
+      expect(
+        (
+          await db.messageModeration.findFirstOrThrow({
+            where: { messageId: msg.id },
+          })
+        ).reason,
+      ).toBe('Approved rule enforcement');
+      expect(
+        (await advanced.timeline(alice.actor, g.id, page, { pins: true }))
+          .items[0]!.content,
+      ).toBeNull();
+    });
+    it('allows both DM peers to pin, keeps reports private, and prohibits peer moderation', async () => {
+      const g = await create('DM');
+      await accept(g.id);
+      const msg = await send(g.id);
+      await action(
+        g.id,
+        { action: 'pin', messageId: msg.id, active: true },
+        alice,
+        1,
+      );
+      const reportId = randomUUID();
+      await action(
+        g.id,
+        {
+          action: 'report',
+          id: reportId,
+          messageId: msg.id,
+          reason: 'Private receipt',
+        },
+        alice,
+      );
+      expect((await advanced.reports(owner.actor, g.id, page)).items).toEqual(
+        [],
+      );
+      expect(
+        (await advanced.reports(alice.actor, g.id, page)).items[0]!.id,
+      ).toBe(reportId);
+      await expect(
+        action(
+          g.id,
+          { action: 'resolve-report', reportId, reason: 'Peer cannot review' },
+          owner,
+          1,
+        ),
+      ).rejects.toThrow();
+      await expect(
+        action(
+          g.id,
+          {
+            action: 'moderate',
+            messageId: msg.id,
+            reason: 'Peer cannot moderate',
+          },
+          alice,
+          2,
+        ),
+      ).rejects.toThrow();
+    });
+    it('stores report references without a copied body and restricts resolution by join history', async () => {
+      const g = await group(),
+        msg = await send(g.id, alice),
+        reportId = randomUUID();
+      await action(
+        g.id,
+        {
+          action: 'report',
+          id: reportId,
+          messageId: msg.id,
+          reason: 'Review requested',
+        },
+        bob,
+      );
+      expect(
+        (await advanced.reports(owner.actor, g.id, page)).items[0]!.reason,
+      ).toBe('Review requested');
+      await expect(
+        action(
+          g.id,
+          { action: 'resolve-report', reportId, reason: 'Unauthorized' },
+          alice,
+          1,
+        ),
+      ).rejects.toThrow();
+      await action(
+        g.id,
+        {
+          action: 'resolve-report',
+          reportId,
+          reason: 'Reviewed within authorized history',
+        },
+        owner,
+        1,
+      );
+      expect(
+        (await advanced.reports(bob.actor, g.id, page)).items[0]!.state,
+      ).toBe('RESOLVED');
+      expect(
+        JSON.stringify(
+          await db.messageReport.findUnique({ where: { id: reportId } }),
+        ),
+      ).not.toContain(msg.text);
+    });
+    it('defaults work author-delete to denied and requires an accepted source administrator policy', async () => {
+      const p = await work();
+      await join(p.id);
+      const g = await channel(p.id);
+      await accept(g.id);
+      const msg = await send(g.id, alice);
+      await expect(
+        action(g.id, { action: 'delete', messageId: msg.id }, alice, 1),
+      ).rejects.toThrow();
+      await expect(
+        action(
+          g.id,
+          { action: 'policy', authorDelete: true, reason: 'Not administrator' },
+          alice,
+          1,
+        ),
+      ).rejects.toThrow();
+      await action(
+        g.id,
+        {
+          action: 'policy',
+          authorDelete: true,
+          reason: 'Owner authorizes author deletion',
+        },
+        owner,
+        1,
+      );
+      expect(await advanced.policy(alice.actor, g.id)).toEqual({
+        revision: 2,
+        authorDelete: true,
+      });
+      await action(g.id, { action: 'delete', messageId: msg.id }, alice, 1);
+      expect((await advanced.detail(owner.actor, g.id, msg.id)).state).toBe(
+        'DELETED',
+      );
+      await expect(
+        db.messagePolicy.update({
+          where: {
+            conversationId_revision: { conversationId: g.id, revision: 2 },
+          },
+          data: { authorDelete: false },
+        }),
+      ).rejects.toThrow();
+    });
+    it('never extends the 48-hour author window with a work policy', async () => {
+      const p = await work();
+      await join(p.id);
+      const g = await channel(p.id);
+      await accept(g.id);
+      const msg = await send(g.id, alice);
+      await age(msg.id);
+      await action(
+        g.id,
+        { action: 'policy', authorDelete: true, reason: 'Policy' },
+        owner,
+        1,
+      );
+      await expect(
+        action(g.id, { action: 'delete', messageId: msg.id }, alice, 1),
+      ).rejects.toThrow();
+      await action(
+        g.id,
+        {
+          action: 'moderate',
+          messageId: msg.id,
+          reason: 'Separate administrative rule',
+        },
+        owner,
+        1,
+      );
+    });
+    it('allows Viewer personal hide/report but denies every shared advanced mutation', async () => {
+      const p = await work();
+      await join(p.id, viewer, 'VIEWER');
+      const g = await channel(p.id, 'PROJECT', [viewer]);
+      await accept(g.id, viewer);
+      const msg = await send(g.id);
+      const bodyList: z.infer<typeof c.AdvancedMessageActionSchema>[] = [
+        { action: 'compose', id: randomUUID(), text: 'Denied', mentions: [] },
+        { action: 'reaction', messageId: msg.id, emoji: '👍', active: true },
+        { action: 'pin', messageId: msg.id, active: true },
+        { action: 'edit', messageId: msg.id, text: 'Denied' },
+        { action: 'delete', messageId: msg.id },
+        { action: 'moderate', messageId: msg.id, reason: 'Denied' },
+        { action: 'policy', authorDelete: true, reason: 'Denied' },
+      ];
+      for (const body of bodyList)
+        await expect(action(g.id, body, viewer, 1)).rejects.toThrow();
+      await action(
+        g.id,
+        {
+          action: 'report',
+          id: randomUUID(),
+          messageId: msg.id,
+          reason: 'Viewer safety',
+        },
+        viewer,
+      );
+      await action(g.id, { action: 'hide', messageId: msg.id }, viewer);
+      expect((await advanced.detail(viewer.actor, g.id, msg.id)).state).toBe(
+        'HIDDEN',
+      );
+    });
+    it('requires accepted content membership even for a source owner/admin', async () => {
+      const p = await work();
+      await join(p.id);
+      const g = await channel(p.id);
+      await accept(g.id);
+      const msg = await send(g.id, alice);
+      const om = await member(g.id, owner);
+      await messages.leave(owner.actor, g.id, om.revision);
+      await expect(
+        advanced.detail(owner.actor, g.id, msg.id),
+      ).rejects.toThrow();
+      await expect(
+        action(
+          g.id,
+          {
+            action: 'moderate',
+            messageId: msg.id,
+            reason: 'Source owner alone',
+          },
+          owner,
+          1,
+        ),
+      ).rejects.toThrow();
+    });
+    it('filters all prejoin APIs and invalidates cursors on leave/rejoin', async () => {
+      const g = await create('PRIVATE_GROUP', [alice, bob]);
+      await accept(g.id, alice);
+      const msg = await send(g.id);
+      await accept(g.id, bob);
+      await expect(advanced.detail(bob.actor, g.id, msg.id)).rejects.toThrow();
+      await expect(
+        action(
+          g.id,
+          {
+            action: 'report',
+            id: randomUUID(),
+            messageId: msg.id,
+            reason: 'Prejoin',
+          },
+          bob,
+        ),
+      ).rejects.toThrow();
+      await expect(
+        action(
+          g.id,
+          {
+            action: 'compose',
+            id: randomUUID(),
+            text: 'Reply',
+            replyToId: msg.id,
+            mentions: [],
+          },
+          bob,
+        ),
+      ).rejects.toThrow();
+      const snapshot = await advanced.timeline(alice.actor, g.id, page),
+        am = await member(g.id, alice);
+      await messages.leave(alice.actor, g.id, am.revision);
+      const cv = await messages.get(owner.actor, g.id);
+      await messages.invite(
+        owner.actor,
+        g.id,
+        cv.revision,
+        { id: randomUUID(), userId: alice.actor.userId },
+        randomUUID(),
+      );
+      await accept(g.id, alice);
+      await expect(
+        advanced.changes(alice.actor, g.id, {
+          ...page,
+          cursor: snapshot.changeCursor,
+        }),
+      ).rejects.toThrow();
+      expect((await advanced.timeline(alice.actor, g.id, page)).items).toEqual(
+        [],
+      );
+    });
+    it('keeps forwarding live and denies source body/identity to target-only participants', async () => {
+      const source = await create('PRIVATE_GROUP', [alice]);
+      await accept(source.id, alice);
+      const msg = await send(source.id);
+      const target = await group(),
+        fid = randomUUID();
+      await action(target.id, {
+        action: 'forward',
+        id: fid,
+        sourceConversationId: source.id,
+        sourceId: msg.id,
+      });
+      expect(
+        (await advanced.detail(alice.actor, target.id, fid)).content,
+      ).toMatchObject({ text: msg.text, sourceId: msg.id });
+      const denied = await advanced.detail(bob.actor, target.id, fid);
+      expect(denied.state).toBe('UNAVAILABLE');
+      expect(denied.content).toBeNull();
+      expect(JSON.stringify(denied)).not.toContain(msg.id);
+      expect(
+        (await messages.messages(alice.actor, target.id, page)).items,
+      ).toEqual([]);
+      const cursor = (await advanced.timeline(alice.actor, target.id, page))
+        .changeCursor;
+      await action(
+        source.id,
+        { action: 'edit', messageId: msg.id, text: 'Live edit' },
+        owner,
+        1,
+      );
+      await expect(
+        advanced.changes(alice.actor, target.id, { ...page, cursor }),
+      ).rejects.toThrow();
+      expect(
+        (await advanced.detail(alice.actor, target.id, fid)).content!.text,
+      ).toBe('Live edit');
+      expect(
+        (
+          await advanced.timeline(bob.actor, target.id, page, {
+            search: 'Live edit',
+          })
+        ).items,
+      ).toEqual([]);
+      await action(
+        source.id,
+        { action: 'delete', messageId: msg.id },
+        owner,
+        2,
+      );
+      expect(
+        (await advanced.detail(alice.actor, target.id, fid)).content,
+      ).toBeNull();
+      expect(
+        await db.conversationMessage.count({
+          where: { conversationId: target.id },
+        }),
+      ).toBe(0);
+    });
+    it('rechecks source acceptance and source visibility for forward creation and replay', async () => {
+      const source = await create('PRIVATE_GROUP', [alice]);
+      await accept(source.id, alice);
+      const msg = await send(source.id);
+      const target = await group();
+      await expect(
+        action(
+          target.id,
+          {
+            action: 'forward',
+            id: randomUUID(),
+            sourceConversationId: source.id,
+            sourceId: msg.id,
+          },
+          bob,
+        ),
+      ).rejects.toThrow();
+      const key = randomUUID(),
+        body = {
+          action: 'forward' as const,
+          id: randomUUID(),
+          sourceConversationId: source.id,
+          sourceId: msg.id,
+        };
+      await action(target.id, body, alice, undefined, key);
+      await action(source.id, { action: 'hide', messageId: msg.id }, alice);
+      expect(
+        (await advanced.detail(alice.actor, target.id, body.id)).content,
+      ).toBeNull();
+      await expect(
+        action(target.id, body, alice, undefined, key),
+      ).rejects.toThrow();
+      expect(
+        (await advanced.detail(owner.actor, target.id, body.id)).content!.text,
+      ).toBe(msg.text);
+    });
+    it('invalidates forward caches on source conversation revocation', async () => {
+      const source = await group(),
+        msg = await send(source.id),
+        target = await group(),
+        fid = randomUUID();
+      await action(target.id, {
+        action: 'forward',
+        id: fid,
+        sourceConversationId: source.id,
+        sourceId: msg.id,
+      });
+      const cursor = (await advanced.timeline(alice.actor, target.id, page))
+          .changeCursor,
+        am = await member(source.id, alice);
+      await messages.changeMember(
+        owner.actor,
+        source.id,
+        am.id,
+        am.revision,
+        null,
+      );
+      await expect(
+        advanced.changes(alice.actor, target.id, { ...page, cursor }),
+      ).rejects.toThrow();
+      expect((await advanced.detail(alice.actor, target.id, fid)).state).toBe(
+        'UNAVAILABLE',
+      );
+    });
+    it('supports same-root channel forwards without invalidating on ordinary target writes', async () => {
+      const p = await work();
+      await join(p.id);
+      const source = await channel(p.id),
+        target = await channel(p.id);
+      await accept(source.id);
+      await accept(target.id);
+      const msg = await send(source.id),
+        fid = randomUUID();
+      await action(target.id, {
+        action: 'forward',
+        id: fid,
+        sourceConversationId: source.id,
+        sourceId: msg.id,
+      });
+      const snapshot = await advanced.timeline(alice.actor, target.id, page);
+      await send(target.id, owner, 'Target write');
+      const changes = await advanced.changes(alice.actor, target.id, {
+        ...page,
+        cursor: snapshot.changeCursor,
+      });
+      expect(changes.items).toHaveLength(1);
+      expect(changes.items[0]!.message.content!.text).toBe('Target write');
+    });
+    it('does not let empty/foreign/signed-context cursors cross API or user boundaries', async () => {
+      const g = await group();
+      await send(g.id);
+      const snapshot = await advanced.timeline(owner.actor, g.id, page);
+      await expect(
+        advanced.changes(alice.actor, g.id, {
+          ...page,
+          cursor: snapshot.changeCursor,
+        }),
+      ).rejects.toThrow();
+      await expect(
+        advanced.timeline(owner.actor, g.id, {
+          ...page,
+          cursor: snapshot.changeCursor,
+        }),
+      ).rejects.toThrow();
+      await expect(
+        advanced.changes(owner.actor, g.id, {
+          ...page,
+          cursor: snapshot.changeCursor + 'x',
+        }),
+      ).rejects.toThrow();
+    });
+    it('retains old-shape API compatibility and validates advanced HTTP input/concurrency', async () => {
+      const g = await group(),
+        msg = await send(g.id),
+        session = await cookie(owner);
+      await request(app.getHttpServer())
+        .get('/api/v1/conversations/' + g.id + '/message-details/' + msg.id)
+        .set('Cookie', session)
+        .expect(200)
+        .expect('Cache-Control', 'no-store');
+      await request(app.getHttpServer())
+        .post('/api/v1/conversations/' + g.id + '/advanced-actions')
+        .set('Cookie', session)
+        .set('Origin', origin)
+        .set('Idempotency-Key', randomUUID())
+        .send({ action: 'edit', messageId: msg.id, text: 'Needs version' })
+        .expect(400);
+      await request(app.getHttpServer())
+        .post('/api/v1/conversations/' + g.id + '/advanced-actions')
+        .set('Cookie', session)
+        .set('Origin', origin)
+        .set('Idempotency-Key', randomUUID())
+        .send({
+          action: 'reaction',
+          messageId: msg.id,
+          emoji: 'text',
+          active: true,
+        })
+        .expect(400);
+      const edited = await request(app.getHttpServer())
+        .post('/api/v1/conversations/' + g.id + '/advanced-actions')
+        .set('Cookie', session)
+        .set('Origin', origin)
+        .set('If-Match', '"1"')
+        .set('Idempotency-Key', randomUUID())
+        .send({ action: 'edit', messageId: msg.id, text: 'HTTP edited' })
+        .expect(201);
+      expect(edited.body.revision).toBe(2);
+      expect(
+        c.ConversationMessageSchema.parse(
+          (await messages.messages(alice.actor, g.id, page)).items[0],
+        ).text,
+      ).toBe('HTTP edited');
+    });
+    it('preserves effects and message history on a signed-control publication failure', async () => {
+      const g = await group(),
+        msg = await send(g.id),
+        before = await db.sharedAuditEvent.count();
+      vi.spyOn(control, 'append').mockRejectedValueOnce(
+        new Error('Synthetic control failure'),
+      );
+      await expect(
+        action(
+          g.id,
+          { action: 'edit', messageId: msg.id, text: 'Must roll back' },
+          owner,
+          1,
+        ),
+      ).rejects.toThrow();
+      expect(
+        (
+          await db.conversationMessage.findUniqueOrThrow({
+            where: { id: msg.id },
+          })
+        ).text,
+      ).toBe(msg.text);
+      expect(
+        await db.messageRevision.count({ where: { messageId: msg.id } }),
+      ).toBe(0);
+      expect(await db.sharedAuditEvent.count()).toBe(before);
+    });
+    it('rechecks every hop of a forward chain and invalidates dependent cursors', async () => {
+      const source = await group(),
+        middle = await group(),
+        target = await group(),
+        msg = await send(source.id),
+        first = randomUUID(),
+        second = randomUUID();
+      await action(middle.id, {
+        action: 'forward',
+        id: first,
+        sourceConversationId: source.id,
+        sourceId: msg.id,
+      });
+      await action(target.id, {
+        action: 'forward',
+        id: second,
+        sourceConversationId: middle.id,
+        sourceId: first,
+      });
+      expect(
+        (await advanced.detail(alice.actor, target.id, second)).content!.text,
+      ).toBe(msg.text);
+      const cursor = (await advanced.timeline(alice.actor, target.id, page))
+          .changeCursor,
+        am = await member(middle.id, alice);
+      await messages.changeMember(
+        owner.actor,
+        middle.id,
+        am.id,
+        am.revision,
+        null,
+      );
+      await expect(
+        advanced.changes(alice.actor, target.id, { ...page, cursor }),
+      ).rejects.toThrow();
+      expect(
+        (await advanced.detail(alice.actor, target.id, second)).content,
+      ).toBeNull();
+      expect(
+        (await advanced.detail(owner.actor, target.id, second)).content!.text,
+      ).toBe(msg.text);
+    });
+    it('fences source revocation before a waiting cross-root forward read', async () => {
+      const source = await group(),
+        target = await group(),
+        msg = await send(source.id),
+        fid = randomUUID();
+      await action(target.id, {
+        action: 'forward',
+        id: fid,
+        sourceConversationId: source.id,
+        sourceId: msg.id,
+      });
+      const am = await member(source.id, alice),
+        entered = barrier(),
+        release = barrier(),
+        original = messages.effect.bind(messages);
+      vi.spyOn(messages, 'effect').mockImplementation(async (s, ...rest) => {
+        if (s.conv.id === source.id && rest[0] === 'messaging.member.remove') {
+          entered.release();
+          await release.promise;
+        }
+        return original(s, ...rest);
+      });
+      const removal = outcome(
+        messages.changeMember(owner.actor, source.id, am.id, am.revision, null),
+      );
+      await entered.promise;
+      const read = outcome(advanced.detail(alice.actor, target.id, fid));
+      try {
+        await blocked();
+      } finally {
+        release.release();
+      }
+      expect((await removal).error).toBeUndefined();
+      expect((await read).value).toMatchObject({
+        state: 'UNAVAILABLE',
+        content: null,
+      });
+    });
+    it('fails closed for source account closure and preserves referenced storage', async () => {
+      const source = await group(),
+        msg = await send(source.id),
+        targetId = randomUUID();
+      const target = await messages.create(
+        alice.actor,
+        {
+          id: targetId,
+          kind: 'PRIVATE_GROUP',
+          title: 'Separate custody',
+          participants: [owner.actor.userId],
+          retentionPolicyVersion: version,
+        },
+        randomUUID(),
+      );
+      await accept(target.id, owner);
+      const fid = randomUUID();
+      await action(
+        target.id,
+        {
+          action: 'forward',
+          id: fid,
+          sourceConversationId: source.id,
+          sourceId: msg.id,
+        },
+        alice,
+      );
+      const cursor = (await advanced.timeline(alice.actor, target.id, page))
+        .changeCursor;
+      await db.space.updateMany({
+        where: { kind: 'PERSONAL', ownerUserId: owner.actor.userId },
+        data: { accessClosedAt: new Date() },
+      });
+      await expect(
+        advanced.changes(alice.actor, target.id, { ...page, cursor }),
+      ).rejects.toThrow();
+      expect(
+        (await advanced.detail(alice.actor, target.id, fid)).content,
+      ).toBeNull();
+      expect(await messages.disposalBlocker(db, source.id)).toBe(
+        'MESSAGING_RETENTION_PENDING',
+      );
+      expect(await db.messageEntry.count({ where: { id: msg.id } })).toBe(1);
+    });
   });
 });

@@ -326,6 +326,10 @@ try {
       sourceOwner.cookie,
       { 'Idempotency-Key': randomUUID() },
     );
+    if (process.argv.includes('--advanced'))
+      await (
+        await import('./p5-02-smoke.ts')
+      ).beforeSourceDisposal(http, channelId, sourceOwner.cookie);
     await db.query('BEGIN');
     try {
       await db.query(
@@ -356,6 +360,10 @@ try {
         ])
       ).rows[0].state === 'BLOCKED_POLICY';
     await workerPass(guarded);
+    if (process.argv.includes('--advanced'))
+      await (
+        await import('./p5-02-smoke.ts')
+      ).assertSourceRetained(db, channelId);
     assert.equal(
       (
         await db.query(
@@ -365,8 +373,27 @@ try {
       ).rows[0].n,
       1,
     );
+    const extension = process.argv.includes('--advanced')
+      ? await import('./p5-02-smoke.ts')
+      : null;
+    const advancedState = extension
+      ? await extension.beforeAdvancedRestart(
+          http,
+          id,
+          input.id,
+          owner.cookie,
+          recipient.cookie,
+        )
+      : null;
     await stop(api);
     api = await apiStart();
+    if (extension && advancedState)
+      await extension.afterAdvancedRestart(
+        http,
+        id,
+        recipient.cookie,
+        advancedState,
+      );
     const replay = await http(
       'POST',
       '/api/v1/conversations/' + id + '/messages',
@@ -391,6 +418,7 @@ try {
     assert.deepEqual(caught.items, []);
     assert.equal(caught.nextCursor, history.nextCursor);
     await workerPass(guarded);
+    if (extension) await extension.assertSourceRetained(db, channelId);
     assert.equal(
       (
         await db.query(
@@ -398,7 +426,7 @@ try {
           [id],
         )
       ).rows[0].n,
-      1,
+      extension ? 2 : 1,
     );
     assert.equal(
       (

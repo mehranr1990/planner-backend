@@ -88,3 +88,4 @@ export * from './company-lifecycle.js';
 
 export * from './company-associations.js';
 export * from './messaging.js';
+export * from './advanced-messaging.js';

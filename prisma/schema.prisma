@@ -4864,6 +4864,9 @@ model DomainScopeAdmissionAlias {
 
 // P5-01: SQL supplies source-shape, text, state, interval and safety constraints.
 model Conversation {
+ MessageEntry_conversation MessageEntry[] @relation("MessageEntry_conversation_fk")
+ lastChangeSequence BigInt @default(0)
+ messagePolicyRevision Int @default(1)
  id String @id @db.Uuid
  spaceId String @db.Uuid
  scopeId String @db.Uuid
@@ -4891,6 +4894,15 @@ model Conversation {
  @@index([spaceId,scopeId,id],map:"Conversation_scope_list")
 }
 model ConversationMember {
+ MessageModeration_member MessageModeration[] @relation("MessageModeration_member_fk")
+ MessageChange_audience MessageChange[] @relation("MessageChange_audience_fk")
+ MessagePolicy_member MessagePolicy[] @relation("MessagePolicy_member_fk")
+ MessageReport_reviewer MessageReport[] @relation("MessageReport_reviewer_fk")
+ MessageReport_member MessageReport[] @relation("MessageReport_member_fk")
+ MessagePin_member MessagePin[] @relation("MessagePin_member_fk")
+ MessageMention_member MessageMention[] @relation("MessageMention_member_fk")
+ MessageReaction_member MessageReaction[] @relation("MessageReaction_member_fk")
+ MessageHidden_member MessageHidden[] @relation("MessageHidden_member_fk")
  id String @id @db.Uuid
  spaceId String @db.Uuid
  scopeId String @db.Uuid
@@ -4915,6 +4927,10 @@ model ConversationMember {
  @@index([actorId,state,conversationId],map:"ConversationMember_list")
 }
 model ConversationAdmission {
+ MessageMutation_admission MessageMutation[] @relation("MessageMutation_admission_fk")
+ MessageReport_admission MessageReport[] @relation("MessageReport_admission_fk")
+ MessageMention_admission MessageMention[] @relation("MessageMention_admission_fk")
+ MessageEntry_author MessageEntry[] @relation("MessageEntry_author_fk")
  conversationId String @db.Uuid
  memberId String @db.Uuid
  generation Int
@@ -4957,6 +4973,8 @@ model ConversationInvitation {
  @@index([recipientActorId,state,id],map:"ConversationInvitation_recipient_list")
 }
 model ConversationMessage {
+ MessageEntry_text MessageEntry[] @relation("MessageEntry_text_fk")
+ @@unique([conversationId,id],map:"ConversationMessage_identity_key")
  id String @id @db.Uuid
  spaceId String @db.Uuid
  scopeId String @db.Uuid
@@ -4972,4 +4990,168 @@ model ConversationMessage {
  Author ConversationAdmission @relation(fields:[conversationId,memberId,memberGeneration],references:[conversationId,memberId,generation],onDelete:NoAction,onUpdate:NoAction,map:"ConversationMessage_author_fk")
  @@unique([conversationId,sequence],map:"ConversationMessage_order_key")
  @@unique([conversationId,memberId,keyHash],map:"ConversationMessage_send_key")
+}
+
+// P5-02 / ADR 0046. SQL adds checked states and transactionally maintained TEXT headers.
+model MessageEntry {
+ MessageEntry_source MessageEntry[] @relation("MessageEntry_source_fk")
+ MessageModeration_message MessageModeration[] @relation("MessageModeration_message_fk")
+ MessageChange_message MessageChange[] @relation("MessageChange_message_fk")
+ MessageReport_message MessageReport[] @relation("MessageReport_message_fk")
+ MessagePin_message MessagePin[] @relation("MessagePin_message_fk")
+ MessageMention_message MessageMention[] @relation("MessageMention_message_fk")
+ MessageReaction_message MessageReaction[] @relation("MessageReaction_message_fk")
+ MessageHidden_message MessageHidden[] @relation("MessageHidden_message_fk")
+ MessageRevision_message MessageRevision[] @relation("MessageRevision_message_fk")
+ MessageEntry_thread MessageEntry[] @relation("MessageEntry_thread_fk")
+ thread MessageEntry? @relation("MessageEntry_thread_fk",fields:[conversationId,threadId],references:[conversationId,id],onDelete:NoAction,onUpdate:NoAction,map:"MessageEntry_thread_fk")
+ MessageEntry_reply MessageEntry[] @relation("MessageEntry_reply_fk")
+ reply MessageEntry? @relation("MessageEntry_reply_fk",fields:[conversationId,replyToId],references:[conversationId,id],onDelete:NoAction,onUpdate:NoAction,map:"MessageEntry_reply_fk")
+ source MessageEntry? @relation("MessageEntry_source_fk",fields:[sourceConversationId,sourceId],references:[conversationId,id],onDelete:NoAction,onUpdate:NoAction,map:"MessageEntry_source_fk")
+ text ConversationMessage? @relation("MessageEntry_text_fk",fields:[conversationId,textId],references:[conversationId,id],onDelete:NoAction,onUpdate:NoAction,map:"MessageEntry_text_fk")
+ author ConversationAdmission @relation("MessageEntry_author_fk",fields:[conversationId,memberId,memberGeneration],references:[conversationId,memberId,generation],onDelete:NoAction,onUpdate:NoAction,map:"MessageEntry_author_fk")
+ conversation Conversation @relation("MessageEntry_conversation_fk",fields:[conversationId],references:[id],onDelete:NoAction,onUpdate:NoAction,map:"MessageEntry_conversation_fk")
+ id String @id @db.Uuid
+ conversationId String @db.Uuid
+ sequence BigInt
+ memberId String @db.Uuid
+ memberGeneration Int
+ kind String @db.VarChar(7)
+ textId String? @unique @db.Uuid
+ sourceId String? @db.Uuid
+ sourceConversationId String? @db.Uuid
+ replyToId String? @db.Uuid
+ threadId String? @db.Uuid
+ revision Int @default(1)
+ deletedAt DateTime? @db.Timestamptz(3)
+ removalKind String? @db.VarChar(10)
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ @@unique([conversationId,id])
+ @@unique([conversationId,sequence])
+}
+
+// P5-02 / ADR 0046. SQL adds checked states and transactionally maintained TEXT headers.
+model MessageModeration {
+ id String @id @db.Uuid
+ conversationId String @db.Uuid
+ messageId String @db.Uuid
+ memberId String @db.Uuid
+ reason String @db.VarChar(2000)
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ message MessageEntry @relation("MessageModeration_message_fk",fields:[conversationId,messageId],references:[conversationId,id],onDelete:NoAction,onUpdate:NoAction,map:"MessageModeration_message_fk")
+ member ConversationMember @relation("MessageModeration_member_fk",fields:[conversationId,memberId],references:[conversationId,id],onDelete:NoAction,onUpdate:NoAction,map:"MessageModeration_member_fk")
+}
+model MessageRevision {
+ message MessageEntry @relation("MessageRevision_message_fk",fields:[messageId],references:[id],onDelete:NoAction,onUpdate:NoAction,map:"MessageRevision_message_fk")
+ messageId String @db.Uuid
+ revision Int
+ text String
+ editedAt DateTime @db.Timestamptz(3)
+ @@id([messageId,revision])
+}
+
+// P5-02 / ADR 0046. SQL adds checked states and transactionally maintained TEXT headers.
+model MessageHidden {
+ member ConversationMember @relation("MessageHidden_member_fk",fields:[conversationId,memberId],references:[conversationId,id],onDelete:NoAction,onUpdate:NoAction,map:"MessageHidden_member_fk")
+ message MessageEntry @relation("MessageHidden_message_fk",fields:[conversationId,messageId],references:[conversationId,id],onDelete:NoAction,onUpdate:NoAction,map:"MessageHidden_message_fk")
+ conversationId String @db.Uuid
+ messageId String @db.Uuid
+ memberId String @db.Uuid
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ @@id([messageId,memberId])
+}
+
+// P5-02 / ADR 0046. SQL adds checked states and transactionally maintained TEXT headers.
+model MessageReaction {
+ member ConversationMember @relation("MessageReaction_member_fk",fields:[conversationId,memberId],references:[conversationId,id],onDelete:NoAction,onUpdate:NoAction,map:"MessageReaction_member_fk")
+ message MessageEntry @relation("MessageReaction_message_fk",fields:[conversationId,messageId],references:[conversationId,id],onDelete:NoAction,onUpdate:NoAction,map:"MessageReaction_message_fk")
+ conversationId String @db.Uuid
+ messageId String @db.Uuid
+ memberId String @db.Uuid
+ emoji String @db.VarChar(64)
+ active Boolean
+ updatedAt DateTime @db.Timestamptz(3)
+ @@id([messageId,memberId,emoji])
+}
+
+// P5-02 / ADR 0046. SQL adds checked states and transactionally maintained TEXT headers.
+model MessageMention {
+ admission ConversationAdmission @relation("MessageMention_admission_fk",fields:[conversationId,memberId,generation],references:[conversationId,memberId,generation],onDelete:NoAction,onUpdate:NoAction,map:"MessageMention_admission_fk")
+ member ConversationMember @relation("MessageMention_member_fk",fields:[conversationId,memberId],references:[conversationId,id],onDelete:NoAction,onUpdate:NoAction,map:"MessageMention_member_fk")
+ message MessageEntry @relation("MessageMention_message_fk",fields:[conversationId,messageId],references:[conversationId,id],onDelete:NoAction,onUpdate:NoAction,map:"MessageMention_message_fk")
+ conversationId String @db.Uuid
+ messageId String @db.Uuid
+ memberId String @db.Uuid
+ generation Int
+ @@id([messageId,memberId])
+}
+
+// P5-02 / ADR 0046. SQL adds checked states and transactionally maintained TEXT headers.
+model MessagePin {
+ member ConversationMember @relation("MessagePin_member_fk",fields:[conversationId,memberId],references:[conversationId,id],onDelete:NoAction,onUpdate:NoAction,map:"MessagePin_member_fk")
+ message MessageEntry @relation("MessagePin_message_fk",fields:[conversationId,messageId],references:[conversationId,id],onDelete:NoAction,onUpdate:NoAction,map:"MessagePin_message_fk")
+ conversationId String @db.Uuid
+ messageId String @id @db.Uuid
+ memberId String @db.Uuid
+ active Boolean
+ updatedAt DateTime @db.Timestamptz(3)
+}
+
+// P5-02 / ADR 0046. SQL adds checked states and transactionally maintained TEXT headers.
+model MessageReport {
+ reviewer ConversationMember? @relation("MessageReport_reviewer_fk",fields:[conversationId,reviewerId],references:[conversationId,id],onDelete:NoAction,onUpdate:NoAction,map:"MessageReport_reviewer_fk")
+ admission ConversationAdmission @relation("MessageReport_admission_fk",fields:[conversationId,memberId,generation],references:[conversationId,memberId,generation],onDelete:NoAction,onUpdate:NoAction,map:"MessageReport_admission_fk")
+ member ConversationMember @relation("MessageReport_member_fk",fields:[conversationId,memberId],references:[conversationId,id],onDelete:NoAction,onUpdate:NoAction,map:"MessageReport_member_fk")
+ message MessageEntry @relation("MessageReport_message_fk",fields:[conversationId,messageId],references:[conversationId,id],onDelete:NoAction,onUpdate:NoAction,map:"MessageReport_message_fk")
+ id String @id @db.Uuid
+ conversationId String @db.Uuid
+ messageId String @db.Uuid
+ memberId String @db.Uuid
+ generation Int
+ reason String @db.VarChar(2000)
+ state String @default("OPEN") @db.VarChar(8)
+ resolution String? @db.VarChar(2000)
+ reviewerId String? @db.Uuid
+ revision Int @default(1)
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ resolvedAt DateTime? @db.Timestamptz(3)
+ @@index([conversationId,id])
+}
+
+// P5-02 / ADR 0046. SQL adds checked states and transactionally maintained TEXT headers.
+model MessagePolicy {
+ member ConversationMember @relation("MessagePolicy_member_fk",fields:[conversationId,memberId],references:[conversationId,id],onDelete:NoAction,onUpdate:NoAction,map:"MessagePolicy_member_fk")
+ conversationId String @db.Uuid
+ revision Int
+ memberId String @db.Uuid
+ authorDelete Boolean
+ reason String @db.VarChar(2000)
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ @@id([conversationId,revision])
+}
+
+// P5-02 / ADR 0046. SQL adds checked states and transactionally maintained TEXT headers.
+model MessageMutation {
+ admission ConversationAdmission @relation("MessageMutation_admission_fk",fields:[conversationId,memberId,generation],references:[conversationId,memberId,generation],onDelete:NoAction,onUpdate:NoAction,map:"MessageMutation_admission_fk")
+ conversationId String @db.Uuid
+ memberId String @db.Uuid
+ generation Int
+ keyHash String @db.Char(64)
+ fingerprint String @db.Char(64)
+ resourceId String @db.Uuid
+ action String @db.VarChar(32)
+ @@id([conversationId,memberId,generation,keyHash])
+}
+
+// P5-02 / ADR 0046. SQL adds checked states and transactionally maintained TEXT headers.
+model MessageChange {
+ audience ConversationMember? @relation("MessageChange_audience_fk",fields:[conversationId,audienceId],references:[conversationId,id],onDelete:NoAction,onUpdate:NoAction,map:"MessageChange_audience_fk")
+ message MessageEntry @relation("MessageChange_message_fk",fields:[conversationId,messageId],references:[conversationId,id],onDelete:NoAction,onUpdate:NoAction,map:"MessageChange_message_fk")
+ conversationId String @db.Uuid
+ sequence BigInt
+ messageId String @db.Uuid
+ audienceId String? @db.Uuid
+ kind String @db.VarChar(24)
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ @@id([conversationId,sequence])
 }
