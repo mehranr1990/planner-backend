@@ -309,7 +309,9 @@ export class SharedFiles {
     tx: Prisma.TransactionClient,
     s: SharedFileScope,
     id: string,
-    input: FileUpload,
+    input: Omit<FileUpload, 'mimeType'> & {
+      mimeType: FileUpload['mimeType'] | 'audio/wav';
+    },
     now: Date,
   ) {
     s.verify(tx, true);
@@ -365,6 +367,7 @@ export class SharedFiles {
     source: Readable,
     length: string | undefined,
     signal: AbortSignal,
+    limits: { maxDurationMs?: number; maxBytes?: number } = {},
   ) {
     if (
       length !== undefined &&
@@ -380,6 +383,7 @@ export class SharedFiles {
           size: ticket.file.expectedSize,
           mimeType: ticket.file.mimeType,
           sha256: ticket.file.expectedSha256,
+          ...limits,
         },
         signal,
       );

@@ -89,8 +89,13 @@ export class NotificationsRepository extends NotificationsPort {
     ];
   }
   private preferenceView(row: unknown) {
+    const {
+      messagingWebPush: _messaging,
+      messagingEnabledAt: _enabledAt,
+      ...legacy
+    } = plain(row) as Record<string, unknown>;
     return {
-      ...(plain(row) as object),
+      ...legacy,
       availableChannels: this.available(),
       webPushPublicKey:
         this.config.PUSH_MODE === 'webpush'
@@ -420,6 +425,9 @@ export class NotificationsRepository extends NotificationsPort {
           inApp: v.inApp ?? before.inApp,
           email: v.email ?? before.email,
           webPush: v.webPush ?? before.webPush,
+          ...(v.webPush && !before.webPush && before.messagingWebPush
+            ? { messagingEnabledAt: new Date(now.getTime() + 1) }
+            : {}),
           reactivateOnReopen: v.reactivateOnReopen ?? before.reactivateOnReopen,
           quietStart: v.quietStart ?? null,
           quietEnd: v.quietEnd ?? null,

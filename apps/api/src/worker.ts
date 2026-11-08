@@ -3,6 +3,7 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module.js';
 import { parseEnvironment } from './bootstrap/environment.js';
 import { NotificationWorker } from './modules/notifications/public/index.js';
+import { MessageNoticeWorker } from './modules/messaging/public/index.js';
 import { RewardsPort } from './modules/rewards/public/index.js';
 import { PersonalLifecycle } from './modules/account/public/index.js';
 import { SyncService } from './modules/sync/public/index.js';
@@ -44,6 +45,7 @@ try {
     const collaboration = await app.get(CollaborationService).maintain();
     const grants = await app.get(ResourceGrants).maintain();
     const sync = await app.get(SyncService).maintain();
+    const messaging = await app.get(MessageNoticeWorker).consume();
     return (
       rewards ||
       lifecycle ||
@@ -53,7 +55,8 @@ try {
       companyCleanup ||
       collaboration ||
       grants ||
-      sync
+      sync ||
+      messaging
     );
   });
   process.stdout.write('Planner notification worker ready\n');

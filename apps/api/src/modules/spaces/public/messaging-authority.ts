@@ -2,6 +2,7 @@ import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID, createHash } from 'node:crypto';
 import type { Prisma } from '../../../generated/prisma/client.js';
 import type { RequestActor } from '../../../platform/auth/request-actor.js';
+import type { AuthorizedSpace } from '../../../platform/authorization/authorized-space.js';
 import { DatabaseService } from '../../../platform/database/database.service.js';
 import { SharedKernel } from '../application/shared-kernel.service.js';
 
@@ -12,6 +13,67 @@ export class MessagingAuthority {
     @Inject(SharedKernel) private readonly kernel: SharedKernel,
     @Inject(DatabaseService) private readonly db: DatabaseService,
   ) {}
+  async personal(tx: Prisma.TransactionClient, userId: string) {
+    await this.kernel.verifiedRecipient(tx, userId);
+    const space = await tx.space.findFirst({
+      where: { kind: 'PERSONAL', ownerUserId: userId, accessClosedAt: null },
+    });
+    if (!space) throw new NotFoundException();
+    const settings = await tx.userSettings.findUnique({
+      where: { userId },
+      select: { timezone: true },
+    });
+    return {
+      spaceId: space.id,
+      userId,
+      timezone: settings?.timezone ?? 'UTC',
+      verify: (current: Prisma.TransactionClient) => {
+        if (current !== tx) throw new NotFoundException();
+      },
+    };
+  }
+  async ownedActors(
+    tx: Prisma.TransactionClient,
+    scope: AuthorizedSpace,
+    after?: string,
+  ) {
+    return (
+      await tx.sharedActor.findMany({
+        where: {
+          userId: scope.actor.userId,
+          ...(after ? { id: { gt: after } } : {}),
+        },
+        select: { id: true },
+        orderBy: { id: 'asc' },
+        take: 1000,
+      })
+    ).map((v) => v.id);
+  }
+  async operator(scopeId: string) {
+    const scope = await this.db.client.accessScope.findUnique({
+      where: { id: scopeId },
+    });
+    if (!scope) return null;
+    const root = await this.db.client.sharedCustody.findUnique({
+        where: { spaceId: scope.spaceId },
+      }),
+      domain = await this.db.client.domainScopeCustody.findUnique({
+        where: { scopeId },
+      }),
+      accessId = domain?.primaryOwnerAccessId ?? root?.primaryOwnerAccessId;
+    const seat = accessId
+      ? await this.db.client.contextAccess.findUnique({
+          where: { id: accessId },
+        })
+      : null;
+    return seat
+      ? ((
+          await this.db.client.sharedActor.findUnique({
+            where: { id: seat.actorId },
+          })
+        )?.userId ?? null)
+      : null;
+  }
   /** Opaque invalidation hint only; never substitutes for participantAuthority. */
   async frame(tx: Prisma.TransactionClient, scopeId: string, userId: string) {
     const scope = await tx.accessScope.findUnique({ where: { id: scopeId } });
@@ -153,13 +215,14 @@ export class MessagingAuthority {
     scopeId: string,
     userId: string,
     locked: string[],
+    capability: 'task.read' | 'file.read' = 'task.read',
   ) {
     const current = await this.scope(tx, scopeId);
     const access = await this.kernel.participantAuthority(
       tx,
       actor,
       userId,
-      { spaceId: current.spaceId, scopeId, capability: 'task.read' },
+      { spaceId: current.spaceId, scopeId, capability },
       locked,
     );
     if (!access.role) throw new NotFoundException();

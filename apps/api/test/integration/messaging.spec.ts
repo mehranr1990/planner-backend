@@ -8,7 +8,7 @@ import {
   expect,
   vi,
 } from 'vitest';
-import { randomUUID, randomBytes } from 'node:crypto';
+import { randomUUID, randomBytes, createECDH, createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -16,7 +16,8 @@ import { setImmediate as tick } from 'node:timers/promises';
 import { Client } from 'pg';
 import { PrismaPg } from '@prisma/adapter-pg';
 import request from 'supertest';
-import { ConflictException } from '@nestjs/common';
+import { ConflictException, ForbiddenException } from '@nestjs/common';
+import { PersonalLifecycle } from '../../src/modules/account/public/index.js';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { PrismaClient } from '../../src/generated/prisma/client.js';
 import type { DatabaseService } from '../../src/platform/database/database.service.js';
@@ -43,6 +44,12 @@ import { migrationSandbox } from '../../../../tooling/testing/migration-sandbox.
 import { isolatedTestDatabaseUrl } from '../../../../tooling/testing/test-database.js';
 import * as c from '@mehran/api-contracts';
 import type { z } from 'zod';
+import { Readable } from 'node:stream';
+import { MessageMediaService } from '../../src/modules/messaging/application/message-media.service.js';
+import { MessageProgressService } from '../../src/modules/messaging/application/message-progress.service.js';
+import { MessageNotices } from '../../src/modules/messaging/application/message-notices.service.js';
+import { MessageNoticeWorker } from '../../src/modules/messaging/public/index.js';
+import { MessagingPush } from '../../src/modules/notifications/public/index.js';
 type Person = { actor: RequestActor; email: string };
 const barrier = () => {
   let release!: () => void;
@@ -62,6 +69,11 @@ describe('P5-01 durable messaging, explicit participation and polling', () => {
     db: PrismaClient,
     messages: MessagingService,
     advanced: AdvancedMessagingService,
+    media: MessageMediaService,
+    progress: MessageProgressService,
+    notices: MessageNotices,
+    messagingWorker: MessageNoticeWorker,
+    messagingPush: MessagingPush,
     kernel: SharedKernel,
     collaboration: CollaborationService,
     auth: AuthService,
@@ -275,7 +287,7 @@ describe('P5-01 durable messaging, explicit participation and polling', () => {
       adapter: new PrismaPg(
         {
           connectionString: base,
-          options: '-c search_path=' + schema,
+          options: '-c search_path=' + schema + ' -c timezone=UTC',
           application_name: applicationName,
           max: 8,
         },
@@ -295,6 +307,9 @@ describe('P5-01 durable messaging, explicit participation and polling', () => {
       databaseInstance: database,
       environment: {
         STORAGE_ROOT: path.join(root, 'files'),
+        PUSH_MODE: 'sink',
+        NOTIFICATION_SINK_DIR: path.join(root, 'notifications'),
+        PERSONAL_ERASURE_POLICY_VERSION: 'synthetic-p503-erasure',
         SHARED_CONTROL_ROOT: path.join(root, 'control'),
         SHARED_CONTROL_KEYS: JSON.stringify({
           k1: randomBytes(48).toString('base64url'),
@@ -307,6 +322,11 @@ describe('P5-01 durable messaging, explicit participation and polling', () => {
     await control.initialize();
     messages = app.get(MessagingService);
     advanced = app.get(AdvancedMessagingService);
+    media = app.get(MessageMediaService);
+    progress = app.get(MessageProgressService);
+    notices = app.get(MessageNotices);
+    messagingWorker = app.get(MessageNoticeWorker);
+    messagingPush = app.get(MessagingPush);
     kernel = app.get(SharedKernel);
     collaboration = app.get(CollaborationService);
     auth = app.get(AuthService);
@@ -2401,6 +2421,1452 @@ describe('P5-01 durable messaging, explicit participation and polling', () => {
         'MESSAGING_RETENTION_PENDING',
       );
       expect(await db.messageEntry.count({ where: { id: msg.id } })).toBe(1);
+    });
+  });
+  describe('P5-03 media and private progress', () => {
+    async function conversation() {
+      const g = await create('PRIVATE_GROUP', [alice, bob]);
+      await accept(g.id, alice);
+      await accept(g.id, bob);
+      return g;
+    }
+    function wav(seconds = 1) {
+      const rate = 8000,
+        data = rate * 2 * seconds,
+        b = Buffer.alloc(44 + data);
+      b.write('RIFF');
+      b.writeUInt32LE(b.length - 8, 4);
+      b.write('WAVEfmt ', 8);
+      b.writeUInt32LE(16, 16);
+      b.writeUInt16LE(1, 20);
+      b.writeUInt16LE(1, 22);
+      b.writeUInt32LE(rate, 24);
+      b.writeUInt32LE(rate * 2, 28);
+      b.writeUInt16LE(2, 32);
+      b.writeUInt16LE(16, 34);
+      b.write('data', 36);
+      b.writeUInt32LE(data, 40);
+      return b;
+    }
+    async function upload(
+      id: string,
+      who = owner,
+      data = Buffer.from('Private attachment'),
+      voice = false,
+    ) {
+      const file = await media.initiate(
+        who.actor,
+        id,
+        voice
+          ? {
+              id: randomUUID(),
+              kind: 'VOICE',
+              filename: 'recording.wav',
+              mimeType: 'audio/wav',
+              expectedSize: data.length,
+            }
+          : {
+              id: randomUUID(),
+              kind: 'FILE',
+              filename: 'private.txt',
+              mimeType: 'text/plain',
+              expectedSize: data.length,
+            },
+        randomUUID(),
+      );
+      await media.complete(
+        who.actor,
+        id,
+        file.id,
+        Readable.from([data]),
+        String(data.length),
+      );
+      return file;
+    }
+    async function publish(
+      id: string,
+      attachment: string,
+      who = owner,
+      caption: string | null = null,
+    ) {
+      return media.create(
+        who.actor,
+        id,
+        { id: randomUUID(), caption, attachments: [attachment], mentions: [] },
+        randomUUID(),
+      );
+    }
+    async function bytes(stream: Readable) {
+      const parts = [];
+      for await (const p of stream) parts.push(Buffer.from(p as Uint8Array));
+      return Buffer.concat(parts);
+    }
+    it('publishes attachment-only messages without fake text and preserves prior contracts', async () => {
+      const g = await conversation(),
+        file = await upload(g.id),
+        msg = await publish(g.id, file.id);
+      expect(msg).toMatchObject({
+        kind: 'MEDIA',
+        state: 'VISIBLE',
+        text: null,
+        sequence: '1',
+      });
+      expect(msg.attachments[0]!.id).toBe(file.id);
+      expect((await messages.messages(alice.actor, g.id, page)).items).toEqual(
+        [],
+      );
+      expect((await advanced.timeline(alice.actor, g.id, page)).items).toEqual(
+        [],
+      );
+      expect((await advanced.changes(alice.actor, g.id, page)).items).toEqual(
+        [],
+      );
+      await expect(
+        advanced.detail(alice.actor, g.id, msg.id),
+      ).rejects.toThrow();
+      expect(
+        (
+          await bytes(
+            (await media.download(alice.actor, g.id, msg.id, file.id)).stream,
+          )
+        ).toString(),
+      ).toBe('Private attachment');
+      expect((await media.timeline(alice.actor, g.id, page)).items[0]!.id).toBe(
+        msg.id,
+      );
+      expect(
+        await db.conversationMessage.count({ where: { id: msg.id } }),
+      ).toBe(0);
+    });
+    it('derives voice duration from actual PCM bytes and enforces both limits', async () => {
+      const g = await conversation(),
+        file = await upload(g.id, owner, wav(120), true),
+        msg = await publish(g.id, file.id);
+      expect(msg.attachments[0]!.durationMs).toBe(120000);
+      const data = wav(121),
+        bad = await media.initiate(
+          owner.actor,
+          g.id,
+          {
+            id: randomUUID(),
+            kind: 'VOICE',
+            filename: 'long.wav',
+            mimeType: 'audio/wav',
+            expectedSize: data.length,
+          },
+          randomUUID(),
+        );
+      await expect(
+        media.complete(
+          owner.actor,
+          g.id,
+          bad.id,
+          Readable.from([data]),
+          String(data.length),
+        ),
+      ).rejects.toThrow();
+      expect((await media.status(owner.actor, g.id, bad.id)).status).toBe(
+        'REJECTED',
+      );
+      await expect(
+        media.initiate(
+          owner.actor,
+          g.id,
+          {
+            id: randomUUID(),
+            kind: 'VOICE',
+            filename: 'big.wav',
+            mimeType: 'audio/wav',
+            expectedSize: 10000001,
+          },
+          randomUUID(),
+        ),
+      ).rejects.toThrow();
+    });
+    it('rejects MIME mismatch, unsafe names and unsupported audio', async () => {
+      const g = await conversation(),
+        file = await media.initiate(
+          owner.actor,
+          g.id,
+          {
+            id: randomUUID(),
+            kind: 'IMAGE',
+            filename: 'fake.png',
+            mimeType: 'image/png',
+            expectedSize: 4,
+          },
+          randomUUID(),
+        );
+      await expect(
+        media.complete(
+          owner.actor,
+          g.id,
+          file.id,
+          Readable.from([Buffer.from('fake')]),
+          '4',
+        ),
+      ).rejects.toThrow();
+      expect((await media.status(owner.actor, g.id, file.id)).status).toBe(
+        'REJECTED',
+      );
+      await expect(
+        media.initiate(
+          owner.actor,
+          g.id,
+          {
+            id: randomUUID(),
+            kind: 'FILE',
+            filename: '../secret.txt',
+            mimeType: 'text/plain',
+            expectedSize: 4,
+          },
+          randomUUID(),
+        ),
+      ).rejects.toThrow();
+      expect(
+        c.MessageAttachmentUploadSchema.safeParse({
+          id: randomUUID(),
+          kind: 'VOICE',
+          filename: 'voice.webm',
+          mimeType: 'audio/webm',
+          expectedSize: 50,
+        }).success,
+      ).toBe(false);
+    });
+    it('requires current uploader/admission and rejects foreign-conversation linking', async () => {
+      const g = await conversation(),
+        other = await conversation(),
+        pending = await media.initiate(
+          owner.actor,
+          g.id,
+          {
+            id: randomUUID(),
+            kind: 'FILE',
+            filename: 'private.txt',
+            mimeType: 'text/plain',
+            expectedSize: 4,
+          },
+          randomUUID(),
+        );
+      await expect(
+        media.status(alice.actor, g.id, pending.id),
+      ).rejects.toThrow();
+      await expect(
+        media.complete(
+          alice.actor,
+          g.id,
+          pending.id,
+          Readable.from([Buffer.from('test')]),
+          '4',
+        ),
+      ).rejects.toThrow();
+      await media.complete(
+        owner.actor,
+        g.id,
+        pending.id,
+        Readable.from([Buffer.from('test')]),
+        '4',
+      );
+      await expect(publish(other.id, pending.id)).rejects.toThrow();
+      const msg = await publish(g.id, pending.id);
+      await expect(publish(g.id, pending.id)).rejects.toThrow();
+      await expect(
+        media.download(owner.actor, other.id, msg.id, pending.id),
+      ).rejects.toThrow();
+      await expect(
+        media.download(outsider.actor, g.id, msg.id, pending.id),
+      ).rejects.toThrow();
+      await expect(
+        media.cancel(owner.actor, g.id, pending.id, 3),
+      ).rejects.toThrow();
+    });
+    it('denies finalization when membership is revoked during upload', async () => {
+      const g = await conversation(),
+        file = await media.initiate(
+          alice.actor,
+          g.id,
+          {
+            id: randomUUID(),
+            kind: 'FILE',
+            filename: 'race.txt',
+            mimeType: 'text/plain',
+            expectedSize: 4,
+          },
+          randomUUID(),
+        ),
+        entered = barrier(),
+        release = barrier();
+      const stream = Readable.from(
+        (async function* () {
+          yield Buffer.from('te');
+          entered.release();
+          await release.promise;
+          yield Buffer.from('st');
+        })(),
+      );
+      const completion = outcome(
+        media.complete(alice.actor, g.id, file.id, stream, '4'),
+      );
+      await entered.promise;
+      const am = await member(g.id, alice);
+      await messages.changeMember(owner.actor, g.id, am.id, am.revision, null);
+      release.release();
+      expect((await completion).error).toBeDefined();
+      expect(
+        (await db.storedFile.findUniqueOrThrow({ where: { id: file.id } }))
+          .status,
+      ).not.toBe('READY');
+      expect((await media.timeline(owner.actor, g.id, page)).items).toEqual([]);
+    });
+    it('rechecks download authority after opening bytes before publishing the stream', async () => {
+      const g = await conversation(),
+        file = await upload(g.id),
+        msg = await publish(g.id, file.id),
+        entered = barrier(),
+        release = barrier(),
+        original = media.files.open.bind(media.files);
+      let opened: Readable | undefined;
+      vi.spyOn(media.files, 'open').mockImplementation(async (f) => {
+        const stream = await original(f);
+        if (f.id === file.id) {
+          opened = stream;
+          entered.release();
+          await release.promise;
+        }
+        return stream;
+      });
+      const downloading = outcome(
+        media.download(alice.actor, g.id, msg.id, file.id),
+      );
+      await entered.promise;
+      const am = await member(g.id, alice);
+      await messages.changeMember(owner.actor, g.id, am.id, am.revision, null);
+      release.release();
+      expect((await downloading).error).toBeDefined();
+      expect(opened!.destroyed).toBe(true);
+    });
+    it('keeps forwarded attachment bodies private and live under source deletion', async () => {
+      const source = await create('PRIVATE_GROUP', [alice]);
+      await accept(source.id, alice);
+      const file = await upload(source.id),
+        msg = await publish(source.id, file.id),
+        target = await conversation(),
+        forward = await media.forward(
+          owner.actor,
+          target.id,
+          {
+            id: randomUUID(),
+            sourceConversationId: source.id,
+            sourceId: msg.id,
+          },
+          randomUUID(),
+        );
+      expect(
+        (await media.detail(alice.actor, target.id, forward.id)).attachments,
+      ).toHaveLength(1);
+      const hidden = await media.detail(bob.actor, target.id, forward.id);
+      expect(hidden).toMatchObject({
+        state: 'UNAVAILABLE',
+        attachments: [],
+        sourceId: null,
+        sourceConversationId: null,
+      });
+      expect(JSON.stringify(hidden)).not.toContain('private.txt');
+      await expect(
+        media.download(bob.actor, target.id, forward.id, file.id),
+      ).rejects.toThrow();
+      expect(
+        (
+          await bytes(
+            (await media.download(alice.actor, target.id, forward.id, file.id))
+              .stream,
+          )
+        ).toString(),
+      ).toBe('Private attachment');
+      await advanced.act(
+        owner.actor,
+        source.id,
+        { action: 'delete', messageId: msg.id },
+        randomUUID(),
+        1,
+      );
+      expect(
+        (await media.detail(alice.actor, target.id, forward.id)).attachments,
+      ).toEqual([]);
+      await expect(
+        media.download(alice.actor, target.id, forward.id, file.id),
+      ).rejects.toThrow();
+      expect(
+        (await db.storedFile.findUniqueOrThrow({ where: { id: file.id } }))
+          .status,
+      ).toBe('READY');
+    });
+    it('preserves caption history and returns only current media tombstones', async () => {
+      const g = await conversation(),
+        file = await upload(g.id),
+        msg = await publish(g.id, file.id, owner, 'Old caption'),
+        snapshot = await media.timeline(alice.actor, g.id, page);
+      expect(
+        (
+          await media.edit(
+            owner.actor,
+            g.id,
+            msg.id,
+            'Current caption',
+            randomUUID(),
+            1,
+          )
+        ).text,
+      ).toBe('Current caption');
+      expect(
+        (await media.revisions(owner.actor, g.id, msg.id, page)).items[0]!
+          .caption,
+      ).toBe('Old caption');
+      await expect(
+        media.revisions(alice.actor, g.id, msg.id, page),
+      ).rejects.toThrow();
+      await advanced.act(
+        owner.actor,
+        g.id,
+        { action: 'delete', messageId: msg.id },
+        randomUUID(),
+        2,
+      );
+      expect(
+        (
+          await media.changes(alice.actor, g.id, {
+            ...page,
+            cursor: snapshot.changeCursor,
+          })
+        ).items.every(
+          (v) => v.message.attachments.length === 0 && v.message.text === null,
+        ),
+      ).toBe(true);
+      expect(
+        (await media.timeline(alice.actor, g.id, page, { search: 'caption' }))
+          .items,
+      ).toEqual([]);
+      await expect(
+        media.revisions(owner.actor, g.id, msg.id, page),
+      ).rejects.toThrow();
+    });
+    it('never infers read from polling and requires mutual author/recipient receipt opt-in', async () => {
+      const g = await conversation(),
+        msg = await send(g.id);
+      await media.timeline(alice.actor, g.id, page);
+      expect(await progress.get(alice.actor, g.id)).toMatchObject({
+        deliveredThrough: '0',
+        readThrough: '0',
+        shareReceipts: false,
+      });
+      const before = await db.sharedAuditEvent.count();
+      await progress.acknowledge(
+        alice.actor,
+        g.id,
+        { messageId: msg.id, state: 'READ' },
+        randomUUID(),
+      );
+      expect(await db.sharedAuditEvent.count()).toBe(before);
+      expect(await progress.summary(owner.actor, g.id, msg.id)).toMatchObject({
+        sharing: false,
+        deliveredCount: null,
+        readCount: null,
+      });
+      await progress.sharing(owner.actor, g.id, true, randomUUID(), 1);
+      expect(await progress.summary(owner.actor, g.id, msg.id)).toMatchObject({
+        deliveredCount: 0,
+        readCount: 0,
+      });
+      await progress.sharing(alice.actor, g.id, true, randomUUID(), 2);
+      expect(await progress.summary(owner.actor, g.id, msg.id)).toMatchObject({
+        deliveredCount: 1,
+        readCount: 1,
+      });
+      await expect(progress.summary(bob.actor, g.id, msg.id)).rejects.toThrow();
+      await progress.sharing(alice.actor, g.id, false, randomUUID(), 3);
+      expect(await progress.summary(owner.actor, g.id, msg.id)).toMatchObject({
+        deliveredCount: 0,
+        readCount: 0,
+      });
+    });
+    it('keeps concurrent acknowledgement retries monotonic and idempotent', async () => {
+      const g = await conversation(),
+        first = await send(g.id),
+        last = await send(g.id),
+        key = randomUUID(),
+        body = { messageId: last.id, state: 'READ' as const };
+      await Promise.all([
+        progress.acknowledge(alice.actor, g.id, body, key),
+        progress.acknowledge(alice.actor, g.id, body, key),
+      ]);
+      await progress.acknowledge(
+        alice.actor,
+        g.id,
+        { messageId: first.id, state: 'DELIVERED' },
+        randomUUID(),
+      );
+      expect(await progress.get(alice.actor, g.id)).toMatchObject({
+        readThrough: '2',
+        deliveredThrough: '2',
+      });
+      expect(
+        await db.messagePersonalMutation.count({
+          where: { memberId: (await member(g.id, alice)).id },
+        }),
+      ).toBe(2);
+      await expect(
+        progress.acknowledge(
+          alice.actor,
+          g.id,
+          { messageId: first.id, state: 'READ' },
+          key,
+        ),
+      ).rejects.toThrow();
+    });
+    it('starts new receipt progress/consent after rejoin and hides revoked contributions', async () => {
+      const g = await conversation(),
+        msg = await send(g.id);
+      await progress.sharing(owner.actor, g.id, true, randomUUID(), 1);
+      await progress.sharing(alice.actor, g.id, true, randomUUID(), 1);
+      await progress.acknowledge(
+        alice.actor,
+        g.id,
+        { messageId: msg.id, state: 'READ' },
+        randomUUID(),
+      );
+      const am = await member(g.id, alice);
+      await messages.leave(alice.actor, g.id, am.revision);
+      expect(
+        (await progress.summary(owner.actor, g.id, msg.id)).readCount,
+      ).toBe(0);
+      await messages.invite(
+        owner.actor,
+        g.id,
+        (await messages.get(owner.actor, g.id)).revision,
+        { id: randomUUID(), userId: alice.actor.userId },
+        randomUUID(),
+      );
+      await accept(g.id, alice);
+      expect((await progress.get(alice.actor, g.id)).shareReceipts).toBe(false);
+      await expect(
+        progress.acknowledge(
+          alice.actor,
+          g.id,
+          { messageId: msg.id, state: 'READ' },
+          randomUUID(),
+        ),
+      ).rejects.toThrow();
+      await expect(media.detail(alice.actor, g.id, msg.id)).rejects.toThrow();
+    });
+    it('preserves reactions, pins, mentions and replies on real media messages', async () => {
+      const g = await conversation(),
+        file = await upload(g.id),
+        am = await member(g.id),
+        msg = await media.create(
+          owner.actor,
+          g.id,
+          {
+            id: randomUUID(),
+            caption: null,
+            attachments: [file.id],
+            mentions: [am.id],
+          },
+          randomUUID(),
+        );
+      await advanced.act(
+        alice.actor,
+        g.id,
+        { action: 'reaction', messageId: msg.id, emoji: '👍', active: true },
+        randomUUID(),
+      );
+      await advanced.act(
+        owner.actor,
+        g.id,
+        { action: 'pin', messageId: msg.id, active: true },
+        randomUUID(),
+        2,
+      );
+      const projected = await media.detail(alice.actor, g.id, msg.id);
+      expect(projected).toMatchObject({
+        pinned: true,
+        mentions: [am.id],
+        reactions: [{ emoji: '👍', count: 1, mine: true }],
+      });
+      const replyFile = await upload(g.id, alice),
+        reply = await media.create(
+          alice.actor,
+          g.id,
+          {
+            id: randomUUID(),
+            caption: 'Reply',
+            attachments: [replyFile.id],
+            mentions: [],
+            replyToId: msg.id,
+          },
+          randomUUID(),
+        );
+      expect(reply).toMatchObject({ replyToId: msg.id, threadId: msg.id });
+      expect(
+        (await media.timeline(alice.actor, g.id, page, { thread: msg.id }))
+          .items,
+      ).toHaveLength(2);
+      await advanced.act(
+        alice.actor,
+        g.id,
+        { action: 'hide', messageId: msg.id },
+        randomUUID(),
+      );
+      expect(await media.detail(alice.actor, g.id, msg.id)).toMatchObject({
+        state: 'HIDDEN',
+        attachments: [],
+        mentions: [],
+        reactions: [],
+        pinned: false,
+      });
+    });
+    it('rejects multiple recordings in a single voice message', async () => {
+      const g = await conversation(),
+        a = await upload(g.id, owner, wav(), true),
+        b = await upload(g.id, owner, wav(), true);
+      await expect(
+        media.create(
+          owner.actor,
+          g.id,
+          {
+            id: randomUUID(),
+            caption: null,
+            attachments: [a.id, b.id],
+            mentions: [],
+          },
+          randomUUID(),
+        ),
+      ).rejects.toThrow();
+      expect(
+        await db.messageEntry.count({ where: { conversationId: g.id } }),
+      ).toBe(0);
+    });
+    it('allows Viewer personal acknowledgements while rejecting shared media writes', async () => {
+      const p = await work();
+      await join(p.id, viewer, 'VIEWER');
+      const g = await channel(p.id, 'PROJECT', [viewer]);
+      await accept(g.id, viewer);
+      const msg = await send(g.id);
+      await progress.acknowledge(
+        viewer.actor,
+        g.id,
+        { messageId: msg.id, state: 'READ' },
+        randomUUID(),
+      );
+      expect((await progress.get(viewer.actor, g.id)).readThrough).toBe(
+        msg.sequence,
+      );
+      await expect(
+        media.initiate(
+          viewer.actor,
+          g.id,
+          {
+            id: randomUUID(),
+            kind: 'FILE',
+            filename: 'denied.txt',
+            mimeType: 'text/plain',
+            expectedSize: 1,
+          },
+          randomUUID(),
+        ),
+      ).rejects.toThrow();
+      await expect(
+        media.create(
+          viewer.actor,
+          g.id,
+          {
+            id: randomUUID(),
+            caption: null,
+            attachments: [randomUUID()],
+            mentions: [],
+          },
+          randomUUID(),
+        ),
+      ).rejects.toThrow();
+    });
+  });
+  describe('P5-03 private notices and durable push', () => {
+    beforeEach(async () => {
+      // Dispatcher isolation: earlier cases keep their rows but contribute no work.
+      await db.messageActivity.updateMany({ data: { processed: true } });
+      await db.messageNotice.updateMany({
+        where: { state: 'PENDING' },
+        data: { state: 'CANCELED' },
+      });
+      await db.messageNoticeAttempt.updateMany({
+        where: { state: { in: ['PENDING', 'RETRY', 'PROCESSING', 'NETWORK'] } },
+        data: { state: 'CANCELED' },
+      });
+    });
+    async function ready() {
+      const g = await create();
+      await accept(g.id);
+      return g;
+    }
+    async function enable(chat = true) {
+      const space = await db.space.findFirstOrThrow({
+        where: { ownerUserId: alice.actor.userId, kind: 'PERSONAL' },
+      });
+      await db.notificationPreference.upsert({
+        where: { spaceId: space.id },
+        create: {
+          spaceId: space.id,
+          ownerUserId: alice.actor.userId,
+          createdByUserId: alice.actor.userId,
+          webPush: true,
+        },
+        update: { webPush: true },
+      });
+      const key = createECDH('prime256v1');
+      key.generateKeys();
+      const endpoint = 'https://fcm.googleapis.com/fcm/send/' + randomUUID();
+      const sub = await db.pushSubscription.create({
+        data: {
+          spaceId: space.id,
+          ownerUserId: alice.actor.userId,
+          createdByUserId: alice.actor.userId,
+          endpoint,
+          endpointHost: 'fcm.googleapis.com',
+          endpointHash: createHash('sha256').update(endpoint).digest('hex'),
+          p256dh: key.getPublicKey().toString('base64url'),
+          auth: randomBytes(16).toString('base64url'),
+        },
+      });
+      if (chat) {
+        const old = await messagingPush.settings(alice.actor);
+        await messagingPush.setConsent(
+          alice.actor,
+          true,
+          old.revision,
+          randomUUID(),
+        );
+      }
+      return sub;
+    }
+    async function prepare() {
+      for (let i = 0; i < 60; i++) {
+        if (!(await notices.fanout())) break;
+        if (i === 59) throw Error('Fanout did not settle');
+      }
+      for (let i = 0; i < 60; i++) {
+        if (!(await notices.prepare())) break;
+        if (i === 59) throw Error('Preparation did not settle');
+      }
+    }
+    async function notice(messageId: string) {
+      return db.messageNotice.findFirstOrThrow({
+        where: {
+          actorId: (
+            await member(
+              (
+                await db.messageEntry.findUniqueOrThrow({
+                  where: { id: messageId },
+                })
+              ).conversationId,
+            )
+          ).actorId,
+          activity: { messageId },
+        },
+      });
+    }
+    async function attempt(messageId: string) {
+      return db.messageNoticeAttempt.findFirstOrThrow({
+        where: { noticeId: (await notice(messageId)).id },
+      });
+    }
+    async function settings(
+      id: string,
+      mode: 'ALL' | 'MUTED' | 'MENTIONS_ONLY',
+      quietStart: string | null = null,
+      quietEnd: string | null = null,
+      mentionQuiet = false,
+    ) {
+      const old = await progress.noticeSettings(alice.actor, id);
+      return progress.setNoticeSettings(
+        alice.actor,
+        id,
+        { mode, quietStart, quietEnd, mentionQuiet },
+        randomUUID(),
+        old.revision,
+      );
+    }
+    async function mention(id: string) {
+      const result = await advanced.act(
+        owner.actor,
+        id,
+        {
+          action: 'compose',
+          id: randomUUID(),
+          text: 'Private mention',
+          mentions: [(await member(id)).id],
+        },
+        randomUUID(),
+      );
+      return { id: result.resourceId };
+    }
+    it('requires separate chat consent without replaying old events', async () => {
+      const g = await ready();
+      await enable(false);
+      const old = await send(g.id);
+      await prepare();
+      expect(
+        await db.messageNoticeAttempt.count({
+          where: { noticeId: (await notice(old.id)).id },
+        }),
+      ).toBe(0);
+      expect(
+        (await notices.list(alice.actor, page)).items.some(
+          (v) => v.messageId === old.id,
+        ),
+      ).toBe(true);
+      const opt = await messagingPush.settings(alice.actor);
+      expect(opt.enabled).toBe(false);
+      await messagingPush.setConsent(
+        alice.actor,
+        true,
+        opt.revision,
+        randomUUID(),
+      );
+      const current = await send(g.id);
+      await prepare();
+      expect((await attempt(current.id)).attempts).toBe(0);
+      expect(
+        await db.messageNoticeAttempt.count({
+          where: { noticeId: (await notice(old.id)).id },
+        }),
+      ).toBe(0);
+    });
+    it('fails closed at equal timestamp boundaries for consent, unmute and renewed subscriptions', async () => {
+      const g = await ready(),
+        sub = await enable(false),
+        old = await send(g.id),
+        opt = await messagingPush.settings(alice.actor);
+      await messagingPush.setConsent(
+        alice.actor,
+        true,
+        opt.revision,
+        randomUUID(),
+      );
+      const consent = await db.notificationPreference.findFirstOrThrow({
+        where: { ownerUserId: alice.actor.userId },
+      });
+      // Establish exact database equality without a host-timezone Date round trip.
+      await db.$executeRaw`UPDATE "MessageActivity" SET "createdAt"=(SELECT "messagingEnabledAt" FROM "NotificationPreference" WHERE id=${consent.id}::uuid) WHERE "messageId"=${old.id}::uuid`;
+      await prepare();
+      expect(
+        await db.messageNoticeAttempt.count({
+          where: { noticeId: (await notice(old.id)).id },
+        }),
+      ).toBe(0);
+      await settings(g.id, 'MUTED');
+      const muted = await send(g.id);
+      await settings(g.id, 'ALL');
+      const p = await db.messageNoticePreference.findUniqueOrThrow({
+        where: {
+          memberId_generation: {
+            memberId: (await member(g.id)).id,
+            generation: 1,
+          },
+        },
+      });
+      await db.$executeRaw`UPDATE "MessageActivity" SET "createdAt"=(SELECT "effectiveAt" FROM "MessageNoticePreference" WHERE "memberId"=${p.memberId}::uuid AND generation=${p.generation}) WHERE "messageId"=${muted.id}::uuid`;
+      await prepare();
+      expect(
+        await db.messageNoticeAttempt.count({
+          where: { noticeId: (await notice(muted.id)).id },
+        }),
+      ).toBe(0);
+      const renewed = await send(g.id),
+        event = await db.messageActivity.findFirstOrThrow({
+          where: { messageId: renewed.id },
+        });
+      await db.$executeRaw`UPDATE "PushSubscription" SET "updatedAt"=(SELECT "createdAt" FROM "MessageActivity" WHERE id=${event.id}::uuid) WHERE id=${sub.id}::uuid`;
+      await prepare();
+      expect(
+        await db.messageNoticeAttempt.count({
+          where: { noticeId: (await notice(renewed.id)).id },
+        }),
+      ).toBe(0);
+      const future = await send(g.id);
+      await prepare();
+      expect(await attempt(future.id)).toBeDefined();
+    });
+    it('deduplicates concurrent fanout/dispatch and exposes only safe owner metadata', async () => {
+      const g = await ready();
+      await enable();
+      const msg = await send(g.id, owner, 'Never push this confidential body');
+      await Promise.all([notices.fanout(), notices.fanout()]);
+      await prepare();
+      const n = await notice(msg.id),
+        spy = vi
+          .spyOn(messagingPush, 'send')
+          .mockResolvedValue({ outcome: 'ACCEPTED', code: 'ACCEPTED' });
+      await Promise.all([
+        messagingWorker.delivery(),
+        messagingWorker.delivery(),
+      ]);
+      expect(spy).toHaveBeenCalledTimes(1);
+      expect((await attempt(msg.id)).state).toBe('DELIVERED');
+      expect(
+        JSON.stringify(await notices.attempts(alice.actor, n.id)),
+      ).not.toMatch(/endpoint|p256dh|auth|confidential|subscriptionId/);
+      await expect(notices.attempts(owner.actor, n.id)).rejects.toThrow();
+      expect((await progress.get(alice.actor, g.id)).readThrough).toBe('0');
+    });
+    it('shows pending invitees only their valid invitation', async () => {
+      await enable();
+      const g = await create(),
+        msg = await send(g.id);
+      await prepare();
+      expect(
+        (await notices.list(alice.actor, page)).items
+          .filter((v) => v.conversationId === g.id)
+          .map((v) => v.kind),
+      ).toEqual(['INVITATION']);
+      expect(
+        await db.messageNotice.count({
+          where: { activity: { messageId: msg.id } },
+        }),
+      ).toBe(0);
+      await expect(media.detail(alice.actor, g.id, msg.id)).rejects.toThrow();
+      await accept(g.id);
+      expect(
+        (await notices.list(alice.actor, page)).items.filter(
+          (v) => v.conversationId === g.id,
+        ),
+      ).toEqual([]);
+    });
+    it('applies mute/mention-only and retains authorized in-app history', async () => {
+      const g = await ready();
+      await enable();
+      await settings(g.id, 'MENTIONS_ONLY');
+      const plain = await send(g.id),
+        direct = await mention(g.id);
+      await prepare();
+      expect(
+        await db.messageNoticeAttempt.count({
+          where: { noticeId: (await notice(plain.id)).id },
+        }),
+      ).toBe(0);
+      expect(await attempt(direct.id)).toBeDefined();
+      await settings(g.id, 'MUTED');
+      const spy = vi.spyOn(messagingPush, 'send');
+      await messagingWorker.delivery();
+      expect(spy).not.toHaveBeenCalled();
+      expect((await attempt(direct.id)).state).toBe('CANCELED');
+      expect(
+        (await notices.list(alice.actor, page)).items.some(
+          (v) => v.messageId === direct.id,
+        ),
+      ).toBe(true);
+      await settings(g.id, 'ALL');
+      await prepare();
+      expect((await attempt(direct.id)).state).toBe('CANCELED');
+    });
+    it('defers quiet work and permits only opted-in direct mentions through quiet', async () => {
+      const g = await ready();
+      await enable();
+      const now = new Date(),
+        minute = now.getUTCHours() * 60 + now.getUTCMinutes(),
+        clock = (n: number) =>
+          String(Math.floor(((n + 1440) % 1440) / 60)).padStart(2, '0') +
+          ':' +
+          String((n + 1440) % 60).padStart(2, '0');
+      await db.userSettings.update({
+        where: { userId: alice.actor.userId },
+        data: { timezone: 'UTC' },
+      });
+      await settings(g.id, 'ALL', clock(minute - 10), clock(minute + 10), true);
+      const plain = await send(g.id),
+        direct = await mention(g.id);
+      await prepare();
+      expect((await attempt(plain.id)).notBefore.getTime()).toBeGreaterThan(
+        Date.now(),
+      );
+      const spy = vi
+        .spyOn(messagingPush, 'send')
+        .mockResolvedValue({ outcome: 'ACCEPTED', code: 'ACCEPTED' });
+      await messagingWorker.delivery();
+      expect(spy).toHaveBeenCalledTimes(1);
+      expect((await attempt(direct.id)).state).toBe('DELIVERED');
+      expect((await attempt(plain.id)).attempts).toBe(0);
+    });
+    it('bounds transient retries to five actual sends and approved backoff', async () => {
+      const g = await ready();
+      await enable();
+      const msg = await send(g.id);
+      await prepare();
+      const spy = vi
+          .spyOn(messagingPush, 'send')
+          .mockResolvedValue({ outcome: 'RETRY', code: 'PUSH_TRANSIENT' }),
+        delays = [60, 300, 900, 3600];
+      for (let i = 0; i < 5; i++) {
+        const before = Date.now();
+        await messagingWorker.delivery();
+        const a = await attempt(msg.id);
+        expect(a.attempts).toBe(i + 1);
+        expect(a.state).toBe(i === 4 ? 'FAILED' : 'RETRY');
+        if (i < 4) {
+          expect(a.notBefore.getTime() - before).toBeGreaterThanOrEqual(
+            delays[i]! * 1000 - 100,
+          );
+          await db.messageNoticeAttempt.update({
+            where: { id: a.id },
+            data: { notBefore: new Date(0) },
+          });
+        }
+      }
+      expect(spy).toHaveBeenCalledTimes(5);
+      expect(await messagingWorker.delivery()).toBe(false);
+    });
+    it('revokes gone subscriptions and clears secrets', async () => {
+      const g = await ready(),
+        sub = await enable();
+      const msg = await send(g.id);
+      await prepare();
+      vi.spyOn(messagingPush, 'send').mockResolvedValue({
+        outcome: 'GONE',
+        code: 'PUSH_GONE',
+      });
+      await messagingWorker.delivery();
+      expect(
+        await db.pushSubscription.findUniqueOrThrow({ where: { id: sub.id } }),
+      ).toMatchObject({
+        state: 'REVOKED',
+        endpoint: null,
+        p256dh: null,
+        auth: null,
+        revision: 2,
+      });
+      expect((await attempt(msg.id)).state).toBe('FAILED');
+    });
+    it('never resends an ambiguous outcome, including a network-marker crash', async () => {
+      const g = await ready();
+      await enable();
+      const msg = await send(g.id);
+      await prepare();
+      const spy = vi
+        .spyOn(messagingPush, 'send')
+        .mockRejectedValue(new Error('secret provider response'));
+      await messagingWorker.delivery();
+      expect((await attempt(msg.id)).state).toBe('AMBIGUOUS');
+      expect(await messagingWorker.delivery()).toBe(false);
+      expect(spy).toHaveBeenCalledTimes(1);
+      const second = await send(g.id);
+      await prepare();
+      const a = await attempt(second.id);
+      await db.messageNoticeAttempt.update({
+        where: { id: a.id },
+        data: {
+          state: 'NETWORK',
+          token: randomUUID(),
+          attempts: 1,
+          leaseUntil: new Date(0),
+        },
+      });
+      await messagingWorker.delivery();
+      expect((await attempt(second.id)).state).toBe('AMBIGUOUS');
+      expect(spy).toHaveBeenCalledTimes(1);
+    });
+    it('recovers an expired pre-network claim after restart', async () => {
+      const g = await ready();
+      await enable();
+      const msg = await send(g.id);
+      await prepare();
+      const a = await attempt(msg.id);
+      await db.messageNoticeAttempt.update({
+        where: { id: a.id },
+        data: {
+          state: 'PROCESSING',
+          token: randomUUID(),
+          leaseUntil: new Date(0),
+        },
+      });
+      const spy = vi
+        .spyOn(messagingPush, 'send')
+        .mockResolvedValue({ outcome: 'ACCEPTED', code: 'ACCEPTED' });
+      await messagingWorker.delivery();
+      expect(spy).toHaveBeenCalledTimes(1);
+      expect((await attempt(msg.id)).state).toBe('DELIVERED');
+    });
+    it('reads a notice without acknowledging its message', async () => {
+      const g = await ready();
+      await enable();
+      const msg = await send(g.id);
+      await prepare();
+      const n = await notice(msg.id);
+      await notices.read(alice.actor, n.id, 1);
+      expect((await attempt(msg.id)).state).toBe('CANCELED');
+      expect((await progress.get(alice.actor, g.id)).readThrough).toBe('0');
+      expect((await notices.read(alice.actor, n.id, 1)).read).toBe(true);
+    });
+    it('rechecks revocation between claim and final network gate', async () => {
+      const g = await ready();
+      await enable();
+      const msg = await send(g.id);
+      await prepare();
+      const entered = barrier(),
+        release = barrier(),
+        original = notices.operation.bind(notices);
+      let calls = 0;
+      vi.spyOn(notices, 'operation').mockImplementation(async (...args) => {
+        const result = await original(...args);
+        if (++calls === 1) {
+          entered.release();
+          await release.promise;
+        }
+        return result;
+      });
+      const spy = vi.spyOn(messagingPush, 'send'),
+        delivery = outcome(messagingWorker.delivery());
+      await entered.promise;
+      const am = await member(g.id);
+      await messages.changeMember(owner.actor, g.id, am.id, am.revision, null);
+      release.release();
+      expect((await delivery).error).toBeUndefined();
+      expect(spy).not.toHaveBeenCalled();
+      expect((await attempt(msg.id)).state).toBe('CANCELED');
+      expect((await notices.list(alice.actor, page)).items).toEqual([]);
+    });
+    it('prevents retries when notice cancellation wins during network activity', async () => {
+      const g = await ready();
+      await enable();
+      const msg = await send(g.id);
+      await prepare();
+      const entered = barrier(),
+        release = barrier(),
+        spy = vi.spyOn(messagingPush, 'send').mockImplementation(async () => {
+          entered.release();
+          await release.promise;
+          return { outcome: 'RETRY', code: 'PUSH_TRANSIENT' };
+        });
+      const delivery = outcome(messagingWorker.delivery());
+      await entered.promise;
+      await notices.read(alice.actor, (await notice(msg.id)).id, 1);
+      release.release();
+      expect((await delivery).error).toBeUndefined();
+      expect((await attempt(msg.id)).state).toBe('CANCELED');
+      expect(spy).toHaveBeenCalledTimes(1);
+      expect(await messagingWorker.delivery()).toBe(false);
+    });
+    it('rejects subscription revision changes before dispatch', async () => {
+      const g = await ready(),
+        sub = await enable();
+      const msg = await send(g.id);
+      await prepare();
+      await db.pushSubscription.update({
+        where: { id: sub.id },
+        data: { revision: { increment: 1 } },
+      });
+      const spy = vi.spyOn(messagingPush, 'send');
+      await messagingWorker.delivery();
+      expect(spy).not.toHaveBeenCalled();
+      expect((await attempt(msg.id)).state).toBe('CANCELED');
+    });
+    it('clears private receipt/settings data on actual account closure and purges stale subscriptions', async () => {
+      const g = await ready(),
+        sub = await enable(),
+        msg = await send(g.id);
+      await prepare();
+      await progress.acknowledge(
+        alice.actor,
+        g.id,
+        { messageId: msg.id, state: 'READ' },
+        randomUUID(),
+      );
+      await settings(g.id, 'ALL');
+      const am = await member(g.id),
+        session = await cookie(alice);
+      const challenge = c.DeletionChallengeSchema.parse(
+        (
+          await request(app.getHttpServer())
+            .post('/api/v1/me/deletion-request')
+            .set('Cookie', session)
+            .set('Origin', origin)
+            .set('Idempotency-Key', randomUUID())
+            .send({
+              password,
+              accountRevision: 1,
+              retentionAcknowledged: true,
+              policyVersion: 'synthetic-p503-erasure',
+            })
+            .expect(201)
+        ).body,
+      );
+      await request(app.getHttpServer())
+        .post('/api/v1/me/deletion-request/confirm')
+        .set('Cookie', session)
+        .set('Origin', origin)
+        .set('X-Deletion-Proof', challenge.confirmationProof)
+        .send({ jobId: challenge.job.id, revision: 1 })
+        .expect(201);
+      expect(
+        await db.messageProgress.count({ where: { memberId: am.id } }),
+      ).toBe(0);
+      expect(
+        await db.messageNoticePreference.count({ where: { memberId: am.id } }),
+      ).toBe(0);
+      expect(
+        await db.messagePersonalMutation.count({ where: { memberId: am.id } }),
+      ).toBe(0);
+      const canceledAttempt = await attempt(msg.id);
+      expect(canceledAttempt.state).toBe('CANCELED');
+      const spy = vi.spyOn(messagingPush, 'send');
+      expect(await messagingWorker.delivery()).toBe(false);
+      expect(spy).not.toHaveBeenCalled();
+      await db.accountDeletionJob.update({
+        where: { id: challenge.job.id },
+        data: { eraseAfter: new Date(0), nextAt: new Date(0) },
+      });
+      const lifecycle = app.get(PersonalLifecycle);
+      for (
+        let i = 0;
+        i < 8 && (await db.user.count({ where: { id: alice.actor.userId } }));
+        i++
+      )
+        await lifecycle.consume();
+      expect(await db.user.count({ where: { id: alice.actor.userId } })).toBe(
+        0,
+      );
+      expect(await db.pushSubscription.count({ where: { id: sub.id } })).toBe(
+        0,
+      );
+      expect(
+        (
+          await db.messageNoticeAttempt.findUniqueOrThrow({
+            where: { id: canceledAttempt.id },
+          })
+        ).subscriptionId,
+      ).toBeNull();
+      expect(await db.messageEntry.count({ where: { id: msg.id } })).toBe(1);
+    });
+    it('requires file authority on every forwarded work-channel source', async () => {
+      const p = await work();
+      await join(p.id);
+      const source = await channel(p.id);
+      await accept(source.id);
+      const file = await media.initiate(
+        owner.actor,
+        source.id,
+        {
+          id: randomUUID(),
+          kind: 'FILE',
+          filename: 'work.txt',
+          mimeType: 'text/plain',
+          expectedSize: 4,
+        },
+        randomUUID(),
+      );
+      await media.complete(
+        owner.actor,
+        source.id,
+        file.id,
+        Readable.from([Buffer.from('test')]),
+        '4',
+      );
+      const msg = await media.create(
+          owner.actor,
+          source.id,
+          {
+            id: randomUUID(),
+            caption: null,
+            attachments: [file.id],
+            mentions: [],
+          },
+          randomUUID(),
+        ),
+        target = await ready(),
+        forward = await media.forward(
+          owner.actor,
+          target.id,
+          {
+            id: randomUUID(),
+            sourceConversationId: source.id,
+            sourceId: msg.id,
+          },
+          randomUUID(),
+        );
+      const authority = app.get(MessagingAuthority),
+        original = authority.proof.bind(authority);
+      vi.spyOn(authority, 'proof').mockImplementation(async (...args) => {
+        if (args[3] === alice.actor.userId && args[5] === 'file.read')
+          throw new ForbiddenException();
+        return original(...args);
+      });
+      expect(
+        (await media.detail(alice.actor, target.id, forward.id)).attachments,
+      ).toEqual([]);
+      await expect(
+        media.download(alice.actor, target.id, forward.id, file.id),
+      ).rejects.toThrow();
+      await expect(
+        progress.acknowledge(
+          alice.actor,
+          target.id,
+          { messageId: forward.id, state: 'READ' },
+          randomUUID(),
+        ),
+      ).rejects.toThrow();
+    });
+    it('cleans expired unlinked uploads while retaining linked message bytes', async () => {
+      const g = await ready(),
+        body = {
+          kind: 'FILE' as const,
+          filename: 'retained.txt',
+          mimeType: 'text/plain' as const,
+          expectedSize: 4,
+        },
+        linked = await media.initiate(
+          owner.actor,
+          g.id,
+          { ...body, id: randomUUID() },
+          randomUUID(),
+        ),
+        orphan = await media.initiate(
+          owner.actor,
+          g.id,
+          { ...body, id: randomUUID() },
+          randomUUID(),
+        );
+      for (const file of [linked, orphan])
+        await media.complete(
+          owner.actor,
+          g.id,
+          file.id,
+          Readable.from([Buffer.from('test')]),
+          '4',
+        );
+      const msg = await media.create(
+        owner.actor,
+        g.id,
+        {
+          id: randomUUID(),
+          caption: null,
+          attachments: [linked.id],
+          mentions: [],
+        },
+        randomUUID(),
+      );
+      await db.messageAttachment.updateMany({
+        where: { id: { in: [linked.id, orphan.id] } },
+        data: { createdAt: new Date(0) },
+      });
+      await db.storedFile.updateMany({
+        where: { id: { in: [linked.id, orphan.id] } },
+        data: { createdAt: new Date(0), uploadExpiresAt: new Date(1000000) },
+      });
+      await messagingWorker.cleanup();
+      expect(
+        (
+          await db.messageAttachment.findUniqueOrThrow({
+            where: { id: orphan.id },
+          })
+        ).retiredAt,
+      ).not.toBeNull();
+      expect(
+        (await db.storedFile.findUniqueOrThrow({ where: { id: orphan.id } }))
+          .status,
+      ).toBe('DELETED');
+      expect(
+        (await media.detail(alice.actor, g.id, msg.id)).attachments,
+      ).toHaveLength(1);
+    });
+    it('rejects actual size and hash mismatch', async () => {
+      const g = await ready();
+      for (const body of [
+        { expectedSize: 3 },
+        { expectedSize: 4, sha256: '0'.repeat(64) },
+      ]) {
+        const f = await media.initiate(
+          owner.actor,
+          g.id,
+          {
+            id: randomUUID(),
+            kind: 'FILE',
+            filename: 'invalid.txt',
+            mimeType: 'text/plain',
+            ...body,
+          },
+          randomUUID(),
+        );
+        await expect(
+          media.complete(
+            owner.actor,
+            g.id,
+            f.id,
+            Readable.from([Buffer.from('test')]),
+            '4',
+          ),
+        ).rejects.toThrow();
+        expect((await media.status(owner.actor, g.id, f.id)).status).toBe(
+          'REJECTED',
+        );
+      }
+    });
+    it('enforces binary uploads, safe download headers and strict HTTP acknowledgements', async () => {
+      const g = await ready(),
+        session = await cookie(owner),
+        base = '/api/v1/conversations/' + g.id,
+        fileId = randomUUID();
+      await request(app.getHttpServer())
+        .post(base + '/attachments')
+        .set('Cookie', session)
+        .set('Origin', origin)
+        .set('Idempotency-Key', randomUUID())
+        .send({
+          id: fileId,
+          kind: 'FILE',
+          filename: 'safe.txt',
+          mimeType: 'text/plain',
+          expectedSize: 4,
+        })
+        .expect(201);
+      await request(app.getHttpServer())
+        .post(base + '/attachments/' + fileId + '/complete')
+        .set('Cookie', session)
+        .set('Origin', origin)
+        .set('Content-Type', 'application/octet-stream')
+        .send(Buffer.from('test'))
+        .expect(201);
+      const msg = await media.create(
+        owner.actor,
+        g.id,
+        {
+          id: randomUUID(),
+          caption: null,
+          attachments: [fileId],
+          mentions: [],
+        },
+        randomUUID(),
+      );
+      const response = await request(app.getHttpServer())
+        .get(
+          base +
+            '/media-messages/' +
+            msg.id +
+            '/attachments/' +
+            fileId +
+            '/download',
+        )
+        .set('Cookie', session)
+        .expect(200);
+      expect(response.headers['content-type']).toBe('application/octet-stream');
+      expect(response.headers['content-disposition']).toContain(
+        "filename*=UTF-8''safe.txt",
+      );
+      expect(response.headers['cache-control']).toBe('no-store');
+      expect(response.headers['x-content-type-options']).toBe('nosniff');
+      await request(app.getHttpServer())
+        .post(base + '/acknowledgements')
+        .set('Cookie', session)
+        .set('Origin', origin)
+        .set('Idempotency-Key', randomUUID())
+        .send({ messageId: msg.id, state: 'READ', userId: alice.actor.userId })
+        .expect(400);
     });
   });
 });

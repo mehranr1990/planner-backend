@@ -58,6 +58,9 @@ const env: NodeJS.ProcessEnv = {
   CORS_ORIGINS: origin,
   MAIL_MODE: 'sink',
   MAIL_SINK_DIR: path.join(root, 'mail'),
+  ...(process.argv.includes('--media')
+    ? { PUSH_MODE: 'sink', NOTIFICATION_SINK_DIR: path.join(root, 'push') }
+    : {}),
   STORAGE_ROOT: path.join(root, 'files'),
   ERASURE_CONTROL_ROOT: path.join(root, 'erasure'),
   SHARED_CONTROL_ROOT: path.join(root, 'shared'),
@@ -123,6 +126,17 @@ async function apiStart() {
   }
   throw Error('Compiled API readiness failed; credentials withheld');
 }
+let requestWindow = 0,
+  ipRequests = 0;
+const actorRequests = new Map<string, number>();
+async function pace() {
+  const window = Math.floor(Date.now() / 60000);
+  if (window !== requestWindow) {
+    requestWindow = window;
+    ipRequests = 0;
+    actorRequests.clear();
+  }
+}
 async function http(
   method: string,
   route: string,
@@ -130,6 +144,21 @@ async function http(
   cookie?: string,
   headers: Record<string, string> = {},
 ) {
+  // The longer media smoke respects the unchanged shared IP/actor minute budgets.
+  if (process.argv.includes('--media') && !route.startsWith('/api/v1/auth/')) {
+    await pace();
+    if (
+      ipRequests >= 25 ||
+      (cookie && (actorRequests.get(cookie) ?? 0) >= 18)
+    ) {
+      await new Promise((resolve) =>
+        setTimeout(resolve, (requestWindow + 1) * 60000 - Date.now() + 50),
+      );
+      await pace();
+    }
+    ipRequests++;
+    if (cookie) actorRequests.set(cookie, (actorRequests.get(cookie) ?? 0) + 1);
+  }
   const response = await fetch('http://127.0.0.1:' + apiPort + route, {
     method,
     headers: {
@@ -139,10 +168,23 @@ async function http(
       ...(cookie ? { Cookie: cookie } : {}),
       ...headers,
     },
-    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+    ...(body !== undefined
+      ? {
+          body: Buffer.isBuffer(body)
+            ? Uint8Array.from(body).buffer
+            : JSON.stringify(body),
+        }
+      : {}),
   });
   assert.ok(response.ok, method + ' ' + route + ' returned ' + response.status);
-  return { response, body: (await response.json()) as Record<string, unknown> };
+  return {
+    response,
+    body: response.headers
+      .get('content-type')
+      ?.includes('application/octet-stream')
+      ? { binary: Buffer.from(await response.arrayBuffer()).toString('base64') }
+      : ((await response.json()) as Record<string, unknown>),
+  };
 }
 await control.connect();
 try {
@@ -385,8 +427,26 @@ try {
           recipient.cookie,
         )
       : null;
+    const mediaExtension = process.argv.includes('--media')
+      ? await import('./p5-03-smoke.ts')
+      : null;
+    const mediaState = mediaExtension
+      ? await mediaExtension.beforeMediaRestart(
+          http,
+          db,
+          id,
+          owner.cookie,
+          recipient,
+        )
+      : null;
     await stop(api);
     api = await apiStart();
+    if (mediaExtension && mediaState)
+      await mediaExtension.afterMediaRestart(
+        http,
+        recipient.cookie,
+        mediaState,
+      );
     if (extension && advancedState)
       await extension.afterAdvancedRestart(
         http,
@@ -419,6 +479,14 @@ try {
     assert.equal(caught.nextCursor, history.nextCursor);
     await workerPass(guarded);
     if (extension) await extension.assertSourceRetained(db, channelId);
+    if (mediaExtension && mediaState) {
+      await workerPass(() => mediaExtension.pushDelivered(db, mediaState));
+      mediaExtension.assertGenericSink(path.join(root, 'push'));
+      assert.ok(await mediaExtension.pushDelivered(db, mediaState));
+      process.stdout.write(
+        'PASS: P5-03 compiled API preserves actual voice bytes/duration, private read progress and media cursors over restart; actual worker delivers the durable generic push across restart.\n',
+      );
+    }
     assert.equal(
       (
         await db.query(

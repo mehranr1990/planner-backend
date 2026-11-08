@@ -2,7 +2,7 @@ import { z } from 'zod';
 import * as c from './messaging.js';
 import { embeddedJsonSchema, pointerSegment } from './embedded-json-schema.js';
 import { advancedMessagingOperations } from './advanced-messaging-openapi.js';
-type Operation = {
+export type Operation = {
   path: string;
   method: 'get' | 'post' | 'patch';
   output: z.ZodType;
@@ -12,6 +12,8 @@ type Operation = {
   key?: boolean;
   etag?: boolean;
   conditionalRevision?: boolean;
+  binary?: boolean;
+  download?: boolean;
 };
 export const messagingOperations: Operation[] = [
   {
@@ -115,7 +117,7 @@ export function messagingPaths() {
 export function advancedMessagingPaths() {
   return messagingOperationPaths(advancedMessagingOperations as Operation[]);
 }
-function messagingOperationPaths(operations: Operation[]) {
+export function messagingOperationPaths(operations: Operation[]) {
   const paths: Record<string, Record<string, unknown>> = {};
   for (const op of operations) {
     const path = '/api/v1' + op.path,
@@ -211,6 +213,31 @@ function messagingOperationPaths(operations: Operation[]) {
           },
         },
       };
+    if (op.download) {
+      const success = responses[status] as {
+        content: Record<string, unknown>;
+        headers: Record<string, unknown>;
+      };
+      success.content = {
+        'application/octet-stream': {
+          schema: { type: 'string', format: 'binary' },
+        },
+      };
+      success.headers['Content-Disposition'] = { schema: { type: 'string' } };
+      success.headers['X-Content-Type-Options'] = {
+        schema: { type: 'string', const: 'nosniff' },
+      };
+    }
+    if (op.binary)
+      responses['415'] = {
+        description:
+          'Use application/octet-stream for bytes, or an empty application/json object for a READY metadata retry',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/ApiError' },
+          },
+        },
+      };
     paths[path] ??= {};
     paths[path]![op.method] = {
       operationId: 'messaging' + op.method + op.path.replace(/[^a-zA-Z]/g, ''),
@@ -234,6 +261,21 @@ function messagingOperationPaths(operations: Operation[]) {
           }
         : {}),
     };
+    if (op.binary)
+      (paths[path]![op.method] as Record<string, unknown>).requestBody = {
+        required: true,
+        content: {
+          'application/octet-stream': {
+            schema: { type: 'string', format: 'binary' },
+          },
+          'application/json': {
+            schema: schema(
+              c.ConversationEmptySchema,
+              pointer + '/requestBody/content/application~1json/schema',
+            ),
+          },
+        },
+      };
   }
   return paths;
 }

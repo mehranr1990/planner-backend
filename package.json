@@ -10,6 +10,7 @@
     "pnpm": "10.20.0"
   },
   "scripts": {
+    "smoke:p5-03": "node --env-file-if-exists=.env.test.local tooling/scripts/p5-01-smoke.ts --advanced --media",
     "smoke:p5-02": "node --env-file-if-exists=.env.test.local tooling/scripts/p5-01-smoke.ts --advanced",
     "smoke:p5-01": "node --env-file-if-exists=.env.test.local tooling/scripts/p5-01-smoke.ts",
     "build": "pnpm -r --sort build",

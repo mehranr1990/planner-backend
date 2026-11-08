@@ -1,4 +1,8 @@
 import {
+  messagingMediaMigrationName,
+  assertReviewedMessagingMediaMigration,
+} from './reviewed-messaging-media-migration.ts';
+import {
   companyScopeCustodyMigrationName,
   assertReviewedCompanyScopeCustodyMigration,
 } from './reviewed-company-scope-custody-migration.ts';
@@ -168,7 +172,9 @@ export function reviewMigrations(directory = 'prisma/migrations'): string[] {
       path.join(directory, name, 'migration.sql'),
       'utf8',
     );
-    if (name === advancedMessagingMigrationName)
+    if (name === messagingMediaMigrationName)
+      assertReviewedMessagingMediaMigration(name, sql);
+    else if (name === advancedMessagingMigrationName)
       assertReviewedAdvancedMessagingMigration(name, sql);
     else if (name === messagingMigrationName)
       assertReviewedMessagingMigration(name, sql);

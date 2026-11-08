@@ -5,8 +5,10 @@ import {
   NotFoundException,
   ConflictException,
   BadRequestException,
+  Optional,
 } from '@nestjs/common';
 import type { OnApplicationBootstrap } from '@nestjs/common';
+import { MessagingData } from '../../messaging/public/index.js';
 import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 import { Readable } from 'node:stream';
 import type { IncomingHttpHeaders } from 'node:http';
@@ -99,6 +101,7 @@ export class LifecycleRepository
     @Inject(FinanceData) finance: FinanceData,
     @Inject(NotificationsData) notifications: NotificationsData,
     @Inject(RewardsData) rewards: RewardsData,
+    @Optional() @Inject(MessagingData) messaging?: MessagingData,
   ) {
     super();
     this.owners = [
@@ -114,6 +117,7 @@ export class LifecycleRepository
       habits,
       rewards,
       tasks,
+      ...(messaging ? [messaging] : []),
     ];
   }
   async onApplicationBootstrap() {

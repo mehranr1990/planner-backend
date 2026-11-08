@@ -1,5 +1,8 @@
 import { CompaniesModule } from './modules/companies/public/index.js';
-import { MessagingModule } from './modules/messaging/public/index.js';
+import {
+  MessagingModule,
+  MessagingMediaModule,
+} from './modules/messaging/public/index.js';
 import { SyncModule } from './modules/sync/public/index.js';
 import { ProjectsModule } from './modules/projects/public/index.js';
 import { AccountLifecycleModule } from './modules/account/public/lifecycle-module.js';
@@ -51,6 +54,7 @@ export class AppModule {
           spaces.authorizePersonal(actor),
     });
     const tasks = TasksModule.register(storage);
+    const messagingMedia = MessagingMediaModule.register(storage);
     const goals = GoalsModule.register(tasks);
     const notes = NotesModule.register(tasks, goals);
     const capture = CaptureModule.register(tasks, goals, notes, storage);
@@ -79,6 +83,7 @@ export class AppModule {
       module: AppModule,
       imports: [
         MessagingModule,
+        messagingMedia,
         ConfigurationModule.register(config),
         DatabaseModule,
         LoggerModule.forRoot(loggingOptions(config)),
@@ -112,6 +117,7 @@ export class AppModule {
           finance,
           notifications,
           rewards,
+          messagingMedia,
         ]),
         storage,
         tasks,

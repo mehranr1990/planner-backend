@@ -1,0 +1,313 @@
+{
+  "batch": "P5-03",
+  "status": "COMPLETE_LOCAL_PENDING_OWNER_ACCEPTANCE",
+  "baselineCommit": "5a074703bc402b706916fb44d6360373768033cf",
+  "verifiedPublishedP502": "5a074703bc402b706916fb44d6360373768033cf",
+  "branch": "main",
+  "stagedPaths": 0,
+  "committed": false,
+  "pushed": false,
+  "taskPaths": 59,
+  "modifiedTracked": 36,
+  "newUntracked": 23,
+  "preservedUnrelatedDocuments": 12,
+  "paths": [
+    {
+      "status": " M",
+      "path": "apps/api/src/app.module.ts",
+      "sha256": "e429bbecc5a412ef1288027f8a7eedc437b8ef6d1dca8cdca4705343297ca7fa"
+    },
+    {
+      "status": " M",
+      "path": "apps/api/src/modules/account/infrastructure/lifecycle.repository.ts",
+      "sha256": "594e2ea7ac68eeafb27de7e68cf5f1dd8ac4e4f3665d422506a6a83b75a43789"
+    },
+    {
+      "status": " M",
+      "path": "apps/api/src/modules/messaging/application/advanced-messaging.service.ts",
+      "sha256": "60d94b15d8d09f0b61da1758237934c6d2ffa68918e2bdccc2354b3f63221866"
+    },
+    {
+      "status": "??",
+      "path": "apps/api/src/modules/messaging/application/message-media.service.ts",
+      "sha256": "72c2a84dfaf7de23a14d8b988351afcd16317d9ca27fe7f5331681e9c9480e7e"
+    },
+    {
+      "status": "??",
+      "path": "apps/api/src/modules/messaging/application/message-notice-worker.ts",
+      "sha256": "a6238b706178c009966ad42336c3887364618a720ac6b656e8b124b78398413a"
+    },
+    {
+      "status": "??",
+      "path": "apps/api/src/modules/messaging/application/message-notices.service.ts",
+      "sha256": "a05dcb46e822b4b6ab747dad6930198f31ab5c1f1e07b1a6d409dd85dbe2058f"
+    },
+    {
+      "status": "??",
+      "path": "apps/api/src/modules/messaging/application/message-progress.service.ts",
+      "sha256": "5bc1ba6c33936b45eb14ec2406018d40f99d522fc225a6f63cff089b2f48fa0a"
+    },
+    {
+      "status": "??",
+      "path": "apps/api/src/modules/messaging/application/messaging-data.ts",
+      "sha256": "64e3befe44dbfd13414a87411787f5760aec3902fef7a53f9e8e1e4d661e8bc2"
+    },
+    {
+      "status": " M",
+      "path": "apps/api/src/modules/messaging/application/messaging.service.ts",
+      "sha256": "c27fee237271b1fab4c431b398f08792d37bd65e21445bda6bc6ff1d3d71c92b"
+    },
+    {
+      "status": "??",
+      "path": "apps/api/src/modules/messaging/http/message-media.controller.ts",
+      "sha256": "9eb5b22299bdfe96a6a608e4c3bc7b17454406924bd29bd867b2439820c6827f"
+    },
+    {
+      "status": "??",
+      "path": "apps/api/src/modules/messaging/http/message-notices.controller.ts",
+      "sha256": "97919ef305f718c1e89e2e1780d4ca64f4676961790b980b43cd5dd0a6d30b98"
+    },
+    {
+      "status": "??",
+      "path": "apps/api/src/modules/messaging/messaging-media.module.ts",
+      "sha256": "0325d8db8e5a8d808463ff3e66c0f13c9b7ebb37a1b2daa430c43000960269af"
+    },
+    {
+      "status": " M",
+      "path": "apps/api/src/modules/messaging/messaging.module.ts",
+      "sha256": "1dcaa424a91b7369038176fa97a45df535af21622bdd5a122d284f8437b9362f"
+    },
+    {
+      "status": " M",
+      "path": "apps/api/src/modules/messaging/public/index.ts",
+      "sha256": "357f0935ac5b66fbbc84d95a5abe04f383c6df6dc8e2db583be47bc090463d0f"
+    },
+    {
+      "status": "??",
+      "path": "apps/api/src/modules/messaging/public/personal-data.ts",
+      "sha256": "cf2c0f61c228de89a655c8c4aa747e1c1ac57803da89c563b46b839c217edad3"
+    },
+    {
+      "status": " M",
+      "path": "apps/api/src/modules/notifications/application/transport.port.ts",
+      "sha256": "eb409c517d2a0ec0b6cdc4cfcf0869113bbdf0ba015d2dca0e8e17ce33d0600f"
+    },
+    {
+      "status": " M",
+      "path": "apps/api/src/modules/notifications/infrastructure/notifications.repository.ts",
+      "sha256": "b4b362516fc4c4c5d3ff7c8be7a8f671831c32ebcae5646a4725da12c0d01b1a"
+    },
+    {
+      "status": " M",
+      "path": "apps/api/src/modules/notifications/infrastructure/transport.spec.ts",
+      "sha256": "3f71a65a3a0be6a5f5017508f4348be916f1989ba34822756892e0345f3807a5"
+    },
+    {
+      "status": " M",
+      "path": "apps/api/src/modules/notifications/infrastructure/transport.ts",
+      "sha256": "226b0bb51cfce577064aa279289fddcaf5df80ae998eb796ea01113453491158"
+    },
+    {
+      "status": " M",
+      "path": "apps/api/src/modules/notifications/notifications.module.ts",
+      "sha256": "2f2a1fa84f275700eb618e9222710cc53628d82a593219ae4ee46d69c56f1b08"
+    },
+    {
+      "status": " M",
+      "path": "apps/api/src/modules/notifications/public/index.ts",
+      "sha256": "fdcaea7f87e6199cc9560a45dbe2443fea166eaef6b5f02c2a1496a33d4817ee"
+    },
+    {
+      "status": "??",
+      "path": "apps/api/src/modules/notifications/public/messaging-push.ts",
+      "sha256": "6f3bbb4fd3271b58c954ab61702421b4206fec50cabea44bd6949751459b90ef"
+    },
+    {
+      "status": " M",
+      "path": "apps/api/src/modules/spaces/application/shared-kernel.service.ts",
+      "sha256": "e497eaeee943ed64307b7e812ba8b88ed6af6ac332aa4abb1b8ca688771fac18"
+    },
+    {
+      "status": " M",
+      "path": "apps/api/src/modules/spaces/public/messaging-authority.ts",
+      "sha256": "7fb5959875351a69c8d4fb1d3decd39b52ffe509e146337c4ae1ebb542903c84"
+    },
+    {
+      "status": " M",
+      "path": "apps/api/src/platform/database/foundation.spec.ts",
+      "sha256": "e32f0abe80189a697cf0d7582a231f21455b58caa69c16d57564fa5ba0dc1389"
+    },
+    {
+      "status": " M",
+      "path": "apps/api/src/platform/database/idempotency.ts",
+      "sha256": "dbb40dc3f409249fc91a17a4f06a65a6cede0f64920c3fd1ce0586009a64bc58"
+    },
+    {
+      "status": " M",
+      "path": "apps/api/src/platform/lifecycle/shared-cleanup-catalog.ts",
+      "sha256": "0868245e02c45e17a09296193823ea986222ba374f07bf5a8450d940922841f4"
+    },
+    {
+      "status": " M",
+      "path": "apps/api/src/platform/storage/local-storage.ts",
+      "sha256": "5aed6a0ef5a25174e318ae618bef8809e210d47d499bf8e55d661b0c189ea7e6"
+    },
+    {
+      "status": " M",
+      "path": "apps/api/src/platform/storage/public/shared-files.ts",
+      "sha256": "99920828dfa6207bd35fe4ce899d0b5cc223b57c70250ad353594225286c06fc"
+    },
+    {
+      "status": " M",
+      "path": "apps/api/src/platform/storage/storage.port.ts",
+      "sha256": "61c1d88c3db9f8e8008b1dbbf4fa94faa0950ea2b6a184615e6be7b80d14ad00"
+    },
+    {
+      "status": " M",
+      "path": "apps/api/src/platform/storage/wav-policy.ts",
+      "sha256": "bbe2e9bf9528f338431bfa9ce98c671ee4906641dac1441a8cf16a66c069a997"
+    },
+    {
+      "status": " M",
+      "path": "apps/api/src/worker.ts",
+      "sha256": "60e1f970957d08a7d2ae7ad63048bfacdb9c8692d72f6b9968a0c69d29a4695d"
+    },
+    {
+      "status": "??",
+      "path": "apps/api/test/contract/messaging-media.spec.ts",
+      "sha256": "b26d683137b70b503194eafb45ae8cc86aa37cf9408ce39db4365495c7f35a7c"
+    },
+    {
+      "status": " M",
+      "path": "apps/api/test/integration/messaging.spec.ts",
+      "sha256": "919efe0ea381ea85edbd047e38ecfd040b0b0190ff62f5d472754f8f25a276b0"
+    },
+    {
+      "status": " M",
+      "path": "apps/api/test/integration/team-lifecycle.spec.ts",
+      "sha256": "07a5f3cdf81126e5e73f893c453f97eccddd7d997000d006881acdc14311aae8"
+    },
+    {
+      "status": "??",
+      "path": "docs/adr/0047-messaging-receipts-and-notification-privacy.md",
+      "sha256": "df0860d26c9d97528363126d45f30f87c78d5323e6e4201280d2512a546efdd1"
+    },
+    {
+      "status": " M",
+      "path": "docs/api/openapi.json",
+      "sha256": "ac6307a933a1b274994728f1fc470e152a99e879962ea7f6991b54d06c6ede30"
+    },
+    {
+      "status": "??",
+      "path": "docs/p5-03-change-manifest.json"
+    },
+    {
+      "status": "??",
+      "path": "docs/p5-03-contract.md",
+      "sha256": "f8ebc944096b6de7936b4995e3ca3cae019f582ac3bcf8a619756524b58505cb"
+    },
+    {
+      "status": "??",
+      "path": "docs/p5-03-migration-review.md",
+      "sha256": "27e970f80270825eea6466abd5fc609dc4446fa8b640a27edf5b0592c1cf1a81"
+    },
+    {
+      "status": "??",
+      "path": "docs/p5-03-report.md",
+      "sha256": "7e567536ad6e636c325c414a483333c574b1649bec48c7f593da2173606228e2"
+    },
+    {
+      "status": " M",
+      "path": "package.json",
+      "sha256": "b1671e00c4f555f510a3d4faa33c713ccb92abbabd64fcef880bf41bc3a64597"
+    },
+    {
+      "status": " M",
+      "path": "packages/api-contracts/src/index.ts",
+      "sha256": "6c899259fa9a74dfa06a8ea1ad5bbca600221e14e5dd2cafca4dacc0aaee7db8"
+    },
+    {
+      "status": "??",
+      "path": "packages/api-contracts/src/messaging-media-openapi.ts",
+      "sha256": "f42777f8fb144a4606a544b83f738e2e4ebc8fe93e89fd0963d8c67570372c6b"
+    },
+    {
+      "status": "??",
+      "path": "packages/api-contracts/src/messaging-media.ts",
+      "sha256": "b3d8113e2c2ea9ab732083cfdc29b15deefd90951ddbf276c689f24c1ac08ab9"
+    },
+    {
+      "status": " M",
+      "path": "packages/api-contracts/src/messaging-openapi.ts",
+      "sha256": "3f3ff6a5fa0ae914195f6e6770630e12f0ad26e3fe3cd1d3c4e407a72c9bb9b6"
+    },
+    {
+      "status": " M",
+      "path": "packages/api-contracts/src/openapi.ts",
+      "sha256": "f19815f11a22cb7ee3e4aff525bfbb580bf666b178312a0255d744332162315c"
+    },
+    {
+      "status": "??",
+      "path": "prisma/migrations/202611080042_messaging_media_receipts_notifications/migration.sql",
+      "sha256": "66210c92ed0e06fb7e60afb5041952b868d88553f52c24c647533e16b8f729d9"
+    },
+    {
+      "status": " M",
+      "path": "prisma/schema.prisma",
+      "sha256": "42715b00a9d706b1d257efb7df76bda23cd6fa42136a69d3f4a6ca3b6d9094ca"
+    },
+    {
+      "status": " M",
+      "path": "tooling/compatibility/openapi.spec.ts",
+      "sha256": "7bea200801da487cf59dff5dca4b6b92cbe3b5ca6dfbabd5c83cb53a8e543759"
+    },
+    {
+      "status": "??",
+      "path": "tooling/compatibility/p5-02-api-signatures.json",
+      "sha256": "dc9180f971ab5155f21e521b6d65d2b5d0fa8cf4b9b7ef00187225e0a206381f"
+    },
+    {
+      "status": " M",
+      "path": "tooling/scripts/migrations-check.ts",
+      "sha256": "87d64a0398aeff50b7fc068eea206458689a95c04970cee51b35eb17b9c7f43b"
+    },
+    {
+      "status": " M",
+      "path": "tooling/scripts/openapi.ts",
+      "sha256": "55b9586429201ad094d4d43cea2247e9b5823525d3c4903c125083e7302883f0"
+    },
+    {
+      "status": " M",
+      "path": "tooling/scripts/p5-01-smoke.ts",
+      "sha256": "38a5033e8bfed5afa485dca8cce2669a7cfd3e00a4eae25d09aca9e440fb3d93"
+    },
+    {
+      "status": "??",
+      "path": "tooling/scripts/p5-03-smoke.ts",
+      "sha256": "d4996463726b0c89fb8d238068599209f775e1503281bc4fddf65bbed8b26858"
+    },
+    {
+      "status": "??",
+      "path": "tooling/testing/messaging-media-upgrade.ts",
+      "sha256": "863119ec2e4b3e780c1249e732f5655ef79f919e63631497ae31cd9ac17ad004"
+    },
+    {
+      "status": " M",
+      "path": "tooling/testing/messaging-upgrade.ts",
+      "sha256": "41d59a5a2b944f22459e197496cff3116e25515a78516a765ce286577aa19006"
+    },
+    {
+      "status": " M",
+      "path": "tooling/testing/migration-safety.ts",
+      "sha256": "9c4464bd93c3a554897a7ea96b447e148939271dbedcad6637c7333096d1de1e"
+    },
+    {
+      "status": "??",
+      "path": "tooling/testing/reviewed-messaging-media-migration.ts",
+      "sha256": "e8cab819ed12cb543aa4735fe9f842f1b979ce9205a3e42b3f13ff200d8b57f8"
+    }
+  ],
+  "protectedEnvironmentFilesPreserved": 5,
+  "historicalMigrationArtifactsPreserved": 66,
+  "integrity": "SHA256 of every task path except this self-describing manifest; original unrelated documents excluded; local implementation and final verification documented in p5-03-report.md"
+}

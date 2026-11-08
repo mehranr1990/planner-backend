@@ -114,7 +114,10 @@ export class ChannelTransport extends NotificationTransport {
             deliveryId: m.deliveryId,
             notificationId: m.notificationId,
             channel: m.channel,
-            text: 'Mehran Planner has a reminder for you.',
+            text:
+              m.purpose === 'MESSAGING'
+                ? 'Mehran Planner has new activity for you.'
+                : 'Mehran Planner has a reminder for you.',
           }),
           { flag: 'wx', mode: 0o600 },
         );
@@ -195,7 +198,13 @@ export class ChannelTransport extends NotificationTransport {
         m.subscription,
         JSON.stringify({
           title: 'Mehran Planner',
-          body: 'You have a reminder.',
+          body:
+            m.purpose === 'MESSAGING'
+              ? 'You have new activity.'
+              : 'You have a reminder.',
+          ...(m.purpose === 'MESSAGING'
+            ? { type: 'MESSAGING', version: 1 }
+            : {}),
           notificationId: m.notificationId,
           tag: m.notificationId,
         }),

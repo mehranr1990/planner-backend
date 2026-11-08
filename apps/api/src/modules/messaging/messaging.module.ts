@@ -18,6 +18,6 @@ import {
     ConversationInvitationsController,
     AdvancedMessagingController,
   ],
-  exports: [MessagingService],
+  exports: [MessagingService, AdvancedMessagingService, MessagingGuard],
 })
 export class MessagingModule {}

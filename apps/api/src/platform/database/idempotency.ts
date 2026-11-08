@@ -48,6 +48,7 @@ export async function idempotent(
   key: string,
   validatedRequest: unknown,
   work: (tx: Prisma.TransactionClient) => Promise<MutationReceipt>,
+  revalidate?: (tx: Prisma.TransactionClient) => Promise<void>,
 ): Promise<MutationReceipt & { replayed: boolean }> {
   if (
     !/^[a-z][a-z0-9._-]{0,79}$/.test(operation) ||
@@ -66,6 +67,7 @@ export async function idempotent(
   return client.$transaction(
     async (tx) => {
       await scope.fence(tx);
+      await revalidate?.(tx);
       // Transaction-scoped lock serializes this scoped operation across API processes.
       // Hash collisions only serialize unrelated work; they do not grant replay access.
       const lock = hash(canonical(identity)).slice(0, 16);

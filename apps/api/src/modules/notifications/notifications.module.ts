@@ -13,8 +13,7 @@ import { NotificationsPort } from './application/notifications.port.js';
 import { NotificationsService } from './application/notifications.service.js';
 import { NotificationWorker } from './application/notification-worker.js';
 import { NotificationsRepository } from './infrastructure/notifications.repository.js';
-import { NotificationTransport } from './application/transport.port.js';
-import { ChannelTransport } from './infrastructure/transport.js';
+import { NotificationChannelModule } from './public/messaging-push.js';
 import { NotificationOutbox } from '../../platform/outbox/notification-consumer.js';
 import { JobsService } from '../../platform/jobs/jobs.service.js';
 import { NotificationsController } from './http/notifications.controller.js';
@@ -28,6 +27,7 @@ export class NotificationsModule {
         AuditModule,
         AccountModule,
         SpacesModule,
+        NotificationChannelModule,
         tasks,
       ],
       providers: [
@@ -42,7 +42,6 @@ export class NotificationsModule {
         JobsService,
         NotificationOutbox,
         { provide: NotificationsPort, useClass: NotificationsRepository },
-        { provide: NotificationTransport, useClass: ChannelTransport },
       ],
       controllers: [NotificationsController],
       exports: [

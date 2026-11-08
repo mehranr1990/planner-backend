@@ -22,6 +22,7 @@ import type {
   FileEvidence,
 } from './storage.port.js';
 import { validContent } from './content-policy.js';
+import { wavDurationMs } from './wav-policy.js';
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const unavailable = (error: unknown): StorageFailure =>
@@ -145,6 +146,7 @@ export class LocalFileStorage implements StoragePort, OnModuleInit {
         size += chunk.length;
         if (
           size > expected.size ||
+          (expected.maxBytes !== undefined && size > expected.maxBytes) ||
           size >
             (expected.mimeType === 'application/json'
               ? 50 * 1024 * 1024
@@ -182,8 +184,16 @@ export class LocalFileStorage implements StoragePort, OnModuleInit {
         }
       }
       const sha256 = hash.digest('hex');
+      const durationMs =
+        expected.maxDurationMs === undefined
+          ? undefined
+          : wavDurationMs(head, size);
       if (
         size !== expected.size ||
+        (expected.maxDurationMs !== undefined &&
+          (durationMs === null ||
+            durationMs === undefined ||
+            durationMs > expected.maxDurationMs)) ||
         !validContent(expected.mimeType, head, tail, size) ||
         (expected.sha256 && expected.sha256 !== sha256)
       )
@@ -197,7 +207,13 @@ export class LocalFileStorage implements StoragePort, OnModuleInit {
       published = true;
       await unlink(temporary);
       await this.syncDirectory();
-      return { size, sha256 };
+      return {
+        size,
+        sha256,
+        ...(durationMs === undefined || durationMs === null
+          ? {}
+          : { durationMs }),
+      };
     } catch (error) {
       if (published) await this.remove(key, attempt).catch(() => undefined);
       throw signal.aborted ? new StorageFailure('INVALID') : unavailable(error);

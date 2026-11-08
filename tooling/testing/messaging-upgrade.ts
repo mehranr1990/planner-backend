@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import type { Client } from 'pg';
 import { verifyAdvancedMessagingUpgrade } from './advanced-messaging-upgrade.ts';
+import { verifyMessagingMediaUpgrade } from './messaging-media-upgrade.ts';
 import {
   messagingMigrationName as name,
   assertReviewedMessagingMigration,
@@ -119,4 +120,5 @@ export async function verifyMessagingUpgrade(input: {
     'PASS: M040 preserves 189 predecessor datasets, 63 checksums and all prior FKs; two additive CHECK expansions, 18 new FKs, interrupted rollback and repeat deploy, exact 655-FK catalog.\n',
   );
   await verifyAdvancedMessagingUpgrade(input);
+  await verifyMessagingMediaUpgrade(input);
 }

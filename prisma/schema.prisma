@@ -381,6 +381,7 @@ enum StoredFileStatus {
 }
 
 model StoredFile {
+ MessageAttachment_file MessageAttachment[] @relation("MessageAttachment_file_fk")
  CompanyKnowledgeVersion_file CompanyKnowledgeVersion[] @relation("CompanyKnowledgeVersion_file")
  CompanyExpenseReceipt_file CompanyExpenseReceipt[] @relation("CompanyExpenseReceipt_file")
   id                              String           @id @default(uuid()) @db.Uuid
@@ -1754,6 +1755,8 @@ model NotificationDelivery {
 }
 
 model NotificationPreference {
+ messagingWebPush Boolean @default(false)
+ messagingEnabledAt DateTime? @db.Timestamptz(3)
   id              String   @id @default(uuid()) @db.Uuid
   spaceId         String   @db.Uuid
   ownerUserId     String   @db.Uuid
@@ -1775,6 +1778,7 @@ model NotificationPreference {
 }
 
 model PushSubscription {
+ MessageNoticeAttempt_subscription MessageNoticeAttempt[] @relation("MessageNoticeAttempt_subscription_fk")
   id              String   @id @default(uuid()) @db.Uuid
   spaceId         String   @db.Uuid
   ownerUserId     String   @db.Uuid
@@ -2129,6 +2133,7 @@ model ResourceGrant {
 
 // SQL enforces additional branch, lifecycle and immutable-history constraints.
 model SharedActor {
+ MessageNotice_actor MessageNotice[] @relation("MessageNotice_actor_fk")
  ConversationsCreated Conversation[]
  ConversationMemberships ConversationMember[]
  ConversationInvitationsSent ConversationInvitation[] @relation("ConversationInvitationInviter")
@@ -4864,6 +4869,8 @@ model DomainScopeAdmissionAlias {
 
 // P5-01: SQL supplies source-shape, text, state, interval and safety constraints.
 model Conversation {
+ MessageActivity_conversation MessageActivity[] @relation("MessageActivity_conversation_fk")
+ MessageAttachment_conversation MessageAttachment[] @relation("MessageAttachment_conversation_fk")
  MessageEntry_conversation MessageEntry[] @relation("MessageEntry_conversation_fk")
  lastChangeSequence BigInt @default(0)
  messagePolicyRevision Int @default(1)
@@ -4927,6 +4934,11 @@ model ConversationMember {
  @@index([actorId,state,conversationId],map:"ConversationMember_list")
 }
 model ConversationAdmission {
+ MessageNotice_admission MessageNotice[] @relation("MessageNotice_admission_fk")
+ MessagePersonalMutation_admission MessagePersonalMutation[] @relation("MessagePersonalMutation_admission_fk")
+ MessageNoticePreference_admission MessageNoticePreference[] @relation("MessageNoticePreference_admission_fk")
+ MessageProgress_admission MessageProgress[] @relation("MessageProgress_admission_fk")
+ MessageAttachment_uploader MessageAttachment[] @relation("MessageAttachment_uploader_fk")
  MessageMutation_admission MessageMutation[] @relation("MessageMutation_admission_fk")
  MessageReport_admission MessageReport[] @relation("MessageReport_admission_fk")
  MessageMention_admission MessageMention[] @relation("MessageMention_admission_fk")
@@ -4944,6 +4956,8 @@ model ConversationAdmission {
  @@unique([conversationId,memberId,generation],map:"ConversationAdmission_scope_key")
 }
 model ConversationInvitation {
+ MessageActivity_invitation MessageActivity[] @relation("MessageActivity_invitation_fk")
+ @@unique([conversationId,id],map:"ConversationInvitation_identity_key")
  id String @id @db.Uuid
  spaceId String @db.Uuid
  scopeId String @db.Uuid
@@ -4994,6 +5008,9 @@ model ConversationMessage {
 
 // P5-02 / ADR 0046. SQL adds checked states and transactionally maintained TEXT headers.
 model MessageEntry {
+ MessageActivity_message MessageActivity[] @relation("MessageActivity_message_fk")
+ MessageMedia_message MessageMedia[] @relation("MessageMedia_message_fk")
+ MessageAttachment_message MessageAttachment[] @relation("MessageAttachment_message_fk")
  MessageEntry_source MessageEntry[] @relation("MessageEntry_source_fk")
  MessageModeration_message MessageModeration[] @relation("MessageModeration_message_fk")
  MessageChange_message MessageChange[] @relation("MessageChange_message_fk")
@@ -5154,4 +5171,147 @@ model MessageChange {
  kind String @db.VarChar(24)
  createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
  @@id([conversationId,sequence])
+}
+
+// P5-03 / ADR 0047: SQL supplies typed state/privacy and content constraints.
+model MessageAttachment {
+ retiredAt DateTime? @db.Timestamptz(3)
+ message MessageEntry? @relation("MessageAttachment_message_fk",fields:[conversationId,messageId],references:[conversationId,id],onDelete:NoAction,onUpdate:NoAction,map:"MessageAttachment_message_fk")
+ uploader ConversationAdmission @relation("MessageAttachment_uploader_fk",fields:[conversationId,memberId,generation],references:[conversationId,memberId,generation],onDelete:NoAction,onUpdate:NoAction,map:"MessageAttachment_uploader_fk")
+ file StoredFile @relation("MessageAttachment_file_fk",fields:[spaceId,scopeId,fileId],references:[spaceId,scopeId,id],onDelete:NoAction,onUpdate:NoAction,map:"MessageAttachment_file_fk")
+ conversation Conversation @relation("MessageAttachment_conversation_fk",fields:[spaceId,scopeId,conversationId],references:[spaceId,scopeId,id],onDelete:NoAction,onUpdate:NoAction,map:"MessageAttachment_conversation_fk")
+ id String @id @db.Uuid
+ fileId String @unique @db.Uuid
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ conversationId String @db.Uuid
+ memberId String @db.Uuid
+ generation Int
+ messageId String? @db.Uuid
+ kind String @db.VarChar(5)
+ durationMs Int?
+ keyHash String @db.Char(64)
+ fingerprint String @db.Char(64)
+ revision Int @default(1)
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ @@unique([conversationId,memberId,generation,keyHash])
+ @@unique([conversationId,id])
+}
+
+// P5-03 / ADR 0047: SQL supplies typed state/privacy and content constraints.
+model MessageMedia {
+ MessageMediaRevision_message MessageMediaRevision[] @relation("MessageMediaRevision_message_fk")
+ message MessageEntry @relation("MessageMedia_message_fk",fields:[messageId],references:[id],onDelete:NoAction,onUpdate:NoAction,map:"MessageMedia_message_fk")
+ messageId String @id @db.Uuid
+ caption String?
+}
+
+// P5-03 / ADR 0047: SQL supplies typed state/privacy and content constraints.
+model MessageMediaRevision {
+ message MessageMedia @relation("MessageMediaRevision_message_fk",fields:[messageId],references:[messageId],onDelete:NoAction,onUpdate:NoAction,map:"MessageMediaRevision_message_fk")
+ messageId String @db.Uuid
+ revision Int
+ caption String?
+ editedAt DateTime @db.Timestamptz(3)
+ @@id([messageId,revision])
+}
+
+// P5-03 / ADR 0047: SQL supplies typed state/privacy and content constraints.
+model MessageProgress {
+ admission ConversationAdmission @relation("MessageProgress_admission_fk",fields:[conversationId,memberId,generation],references:[conversationId,memberId,generation],onDelete:NoAction,onUpdate:NoAction,map:"MessageProgress_admission_fk")
+ conversationId String @db.Uuid
+ memberId String @db.Uuid
+ generation Int
+ deliveredThrough BigInt
+ readThrough BigInt
+ shareReceipts Boolean @default(false)
+ revision Int @default(1)
+ @@id([memberId,generation])
+}
+
+// P5-03 / ADR 0047: SQL supplies typed state/privacy and content constraints.
+model MessageNoticePreference {
+ admission ConversationAdmission @relation("MessageNoticePreference_admission_fk",fields:[conversationId,memberId,generation],references:[conversationId,memberId,generation],onDelete:NoAction,onUpdate:NoAction,map:"MessageNoticePreference_admission_fk")
+ conversationId String @db.Uuid
+ memberId String @db.Uuid
+ generation Int
+ mode String @default("ALL") @db.VarChar(13)
+ quietStart String? @db.VarChar(5)
+ quietEnd String? @db.VarChar(5)
+ mentionQuiet Boolean @default(false)
+ effectiveAt DateTime @db.Timestamptz(3)
+ revision Int @default(1)
+ @@id([memberId,generation])
+}
+
+// P5-03 / ADR 0047: SQL supplies typed state/privacy and content constraints.
+model MessagePersonalMutation {
+ admission ConversationAdmission @relation("MessagePersonalMutation_admission_fk",fields:[conversationId,memberId,generation],references:[conversationId,memberId,generation],onDelete:NoAction,onUpdate:NoAction,map:"MessagePersonalMutation_admission_fk")
+ conversationId String @db.Uuid
+ memberId String @db.Uuid
+ generation Int
+ keyHash String @db.Char(64)
+ fingerprint String @db.Char(64)
+ @@id([memberId,generation,keyHash])
+}
+
+// P5-03 / ADR 0047: SQL supplies typed state/privacy and content constraints.
+model MessageActivity {
+ MessageNotice_activity MessageNotice[] @relation("MessageNotice_activity_fk")
+ invitation ConversationInvitation? @relation("MessageActivity_invitation_fk",fields:[conversationId,invitationId],references:[conversationId,id],onDelete:NoAction,onUpdate:NoAction,map:"MessageActivity_invitation_fk")
+ message MessageEntry? @relation("MessageActivity_message_fk",fields:[conversationId,messageId],references:[conversationId,id],onDelete:NoAction,onUpdate:NoAction,map:"MessageActivity_message_fk")
+ conversation Conversation @relation("MessageActivity_conversation_fk",fields:[conversationId],references:[id],onDelete:NoAction,onUpdate:NoAction,map:"MessageActivity_conversation_fk")
+ id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+ conversationId String @db.Uuid
+ messageId String? @db.Uuid
+ invitationId String? @db.Uuid
+ kind String @db.VarChar(10)
+ afterMemberId String? @db.Uuid
+ processed Boolean @default(false)
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ @@unique([conversationId,id])
+ @@index([processed,createdAt,id])
+}
+
+// P5-03 / ADR 0047: SQL supplies typed state/privacy and content constraints.
+model MessageNotice {
+ MessageNoticeAttempt_notice MessageNoticeAttempt[] @relation("MessageNoticeAttempt_notice_fk")
+ admission ConversationAdmission? @relation("MessageNotice_admission_fk",fields:[conversationId,memberId,generation],references:[conversationId,memberId,generation],onDelete:NoAction,onUpdate:NoAction,map:"MessageNotice_admission_fk")
+ actor SharedActor @relation("MessageNotice_actor_fk",fields:[spaceId,actorId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction,map:"MessageNotice_actor_fk")
+ activity MessageActivity @relation("MessageNotice_activity_fk",fields:[conversationId,activityId],references:[conversationId,id],onDelete:NoAction,onUpdate:NoAction,map:"MessageNotice_activity_fk")
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ conversationId String @db.Uuid
+ activityId String @db.Uuid
+ actorId String @db.Uuid
+ memberId String? @db.Uuid
+ generation Int?
+ inApp Boolean @default(false)
+ read Boolean @default(false)
+ state String @default("PENDING") @db.VarChar(10)
+ revision Int @default(1)
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ @@unique([activityId,actorId])
+ @@index([actorId,id])
+}
+
+// P5-03 / ADR 0047: SQL supplies typed state/privacy and content constraints.
+model MessageNoticeAttempt {
+ subscription PushSubscription? @relation("MessageNoticeAttempt_subscription_fk",fields:[subscriptionId],references:[id],onDelete:SetNull,onUpdate:NoAction,map:"MessageNoticeAttempt_subscription_fk")
+ notice MessageNotice @relation("MessageNoticeAttempt_notice_fk",fields:[noticeId],references:[id],onDelete:NoAction,onUpdate:NoAction,map:"MessageNoticeAttempt_notice_fk")
+ id String @id @db.Uuid
+ noticeId String @db.Uuid
+ subscriptionId String? @db.Uuid
+ subscriptionRevision Int
+ state String @default("PENDING") @db.VarChar(10)
+ attempts Int @default(0)
+ token String? @db.Uuid
+ leaseUntil DateTime? @db.Timestamptz(3)
+ notBefore DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ networkAt DateTime? @db.Timestamptz(3)
+ canceledAt DateTime? @db.Timestamptz(3)
+ code String? @db.VarChar(80)
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ @@unique([noticeId,subscriptionId])
+ @@index([state,notBefore,id])
 }

@@ -258,6 +258,7 @@ export function createOpenApiDocument() {
       ...teamInteractionsPaths(),
       ...messagingPaths(),
       ...advancedMessagingPaths(),
+      ...messagingMediaPaths(),
       ...teamLifecyclePaths(),
       ...companyPaths(),
       ...companyStaffPaths(),
@@ -302,3 +303,4 @@ import { companyFinancePaths } from './company-finance-openapi.js';
 
 import { companySettlementPaths } from './company-settlements-openapi.js';
 import { messagingPaths, advancedMessagingPaths } from './messaging-openapi.js';
+import { messagingMediaPaths } from './messaging-media-openapi.js';

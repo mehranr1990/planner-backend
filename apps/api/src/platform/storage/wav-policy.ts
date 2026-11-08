@@ -1,4 +1,11 @@
 /** Strict canonical PCM WAV policy, not a decoder or antivirus. */
+export function wavDurationMs(head: Uint8Array, size: number): number | null {
+  if (!validWav(head, size)) return null;
+  const view = new DataView(head.buffer, head.byteOffset, head.byteLength);
+  return Math.ceil(
+    (view.getUint32(40, true) * 1000) / view.getUint32(28, true),
+  );
+}
 export function validWav(head: Uint8Array, size: number | undefined): boolean {
   if (size === undefined || size < 46 || size > 10485760 || head.length < 44)
     return false;

@@ -47,6 +47,24 @@ const message = () => {
 };
 describe('P1-10 configured external adapters without live provider calls', () => {
   afterEach(() => vi.restoreAllMocks());
+  it('emits only generic versioned messaging payloads with opaque IDs', async () => {
+    const send = vi
+      .spyOn(webpush, 'sendNotification')
+      .mockResolvedValue({ statusCode: 201, headers: {}, body: '' });
+    const m = { ...message(), purpose: 'MESSAGING' as const };
+    expect((await new ChannelTransport(config()).send(m)).outcome).toBe(
+      'ACCEPTED',
+    );
+    const payload = String(send.mock.calls[0]![1]);
+    expect(JSON.parse(payload)).toMatchObject({
+      type: 'MESSAGING',
+      version: 1,
+      notificationId: m.notificationId,
+    });
+    expect(payload).not.toMatch(
+      /private-marker|endpoint|p256dh|auth|filename|caption/,
+    );
+  });
   it.each([
     '127.0.0.1',
     '10.20.30.40',

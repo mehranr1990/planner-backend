@@ -387,11 +387,12 @@ describe('P3-05 independent Team lifecycle, preservation and local performance',
       where: { spaceId: id },
       orderBy: { generation: 'desc' },
     });
+    const now = Date.now();
     return client.sharedLifecycleJob.update({
       where: { id: job.id },
       data: {
-        effectiveDepartureAt: new Date(Date.now() - 31 * 86400000),
-        recoveryDeadline: new Date(Date.now() - 86400000),
+        effectiveDepartureAt: new Date(now - 31 * 86400000),
+        recoveryDeadline: new Date(now - 86400000),
         nextAt: new Date(0),
       },
     });

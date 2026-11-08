@@ -31,6 +31,7 @@ type Tx = Prisma.TransactionClient;
 type Proof = Awaited<ReturnType<MessagingAuthority['proof']>>;
 type Page = z.infer<typeof c.ConversationPageQuerySchema>;
 export type MessageOperation = {
+  open?: boolean;
   tx: Tx;
   actor: RequestActor;
   conv: Conversation;
@@ -207,6 +208,7 @@ export class MessagingService {
     additionalUsers: string[] = [],
     pending = false,
     relatedIds: string[] = [],
+    background = false,
   ) {
     const hint = await this.db.client.conversation.findUnique({
       where: { id },
@@ -229,20 +231,21 @@ export class MessagingService {
     });
     if (members.length > 6600) throw new PayloadTooLargeException();
     const users = await this.authority.hints(members.map((m) => m.actorId));
-    const ownerHints = related.length
-      ? (
-          await Promise.all(
-            [hint, ...related].map((v) =>
-              this.kernel.offerUserHints(v.scopeId, actor.userId),
-            ),
-          )
-        ).flat()
-      : [];
+    const ownerHints =
+      related.length || background
+        ? (
+            await Promise.all(
+              [hint, ...related].map((v) =>
+                this.kernel.offerUserHints(v.scopeId, actor.userId),
+              ),
+            )
+          ).flat()
+        : [];
     const lockedUsers = [
       ...new Set([actor.userId, ...users, ...additionalUsers, ...ownerHints]),
     ].sort();
     return this.collaboration.signed(
-      actor,
+      background ? null : actor,
       hint.scopeId,
       [...users, ...additionalUsers],
       action,
@@ -268,6 +271,7 @@ export class MessagingService {
             throw new ConflictException({ code: 'SOURCE_CHANGED_RETRY' });
         }
         const s: Operation = {
+          open: true,
           tx,
           actor,
           conv,
@@ -276,47 +280,62 @@ export class MessagingService {
           begin,
           proof: null,
         };
-        if (!pending || !independent(conv.kind)) s.proof = await this.proof(s);
-        return work(s);
+        if (!(background && pending) && (!pending || !independent(conv.kind)))
+          s.proof = await this.proof(s);
+        try {
+          return await work(s);
+        } finally {
+          s.open = false;
+        }
       },
       false,
       'PROJECT',
-      related.length
-        ? (body, abort) =>
-            this.kernel.run(
-              actor,
-              {
-                userIds: lockedUsers,
-                spaceIds: [
-                  ...new Set([hint.spaceId, ...related.map((v) => v.spaceId)]),
-                ],
-              },
-              [
-                {
-                  spaceId: hint.spaceId,
-                  scopeId: hint.scopeId,
-                  capability: 'task.read',
-                },
-              ],
-              async (tx) =>
-                body(
-                  tx,
-                  (
-                    await tx.$queryRaw<
-                      { now: Date }[]
-                    >`SELECT clock_timestamp() now`
-                  )[0]!.now,
-                  lockedUsers,
-                ),
-              abort,
-              related.map((v) => ({
-                spaceId: v.spaceId,
-                scopeId: v.scopeId,
-                capability: 'task.read' as const,
-              })),
-              true,
+      background
+        ? (body) =>
+            this.kernel.messagingMaintenance(
+              lockedUsers,
+              [hint.scopeId, ...related.map((v) => v.scopeId)],
+              (tx, now, locked) => body(tx, now, locked),
             )
-        : undefined,
+        : related.length
+          ? (body, abort) =>
+              this.kernel.run(
+                actor,
+                {
+                  userIds: lockedUsers,
+                  spaceIds: [
+                    ...new Set([
+                      hint.spaceId,
+                      ...related.map((v) => v.spaceId),
+                    ]),
+                  ],
+                },
+                [
+                  {
+                    spaceId: hint.spaceId,
+                    scopeId: hint.scopeId,
+                    capability: 'task.read',
+                  },
+                ],
+                async (tx) =>
+                  body(
+                    tx,
+                    (
+                      await tx.$queryRaw<
+                        { now: Date }[]
+                      >`SELECT clock_timestamp() now`
+                    )[0]!.now,
+                    lockedUsers,
+                  ),
+                abort,
+                related.map((v) => ({
+                  spaceId: v.spaceId,
+                  scopeId: v.scopeId,
+                  capability: 'task.read' as const,
+                })),
+                true,
+              )
+          : undefined,
     );
   }
   async effect(
@@ -324,7 +343,10 @@ export class MessagingService {
     action: string,
     resourceId: string,
     feature?:
-      'messaging.conversation' | 'messaging.participant' | 'messaging.message',
+      | 'messaging.conversation'
+      | 'messaging.participant'
+      | 'messaging.message'
+      | 'file.shared',
     actorId = s.proof?.actorId,
   ) {
     if (!actorId) throw new NotFoundException();

@@ -53,12 +53,52 @@ export class AdvancedMessagingService {
   ) {}
 
   /** Predeclare every source root before entering any account/custody fence. */
-  private async run<T>(
+  /** Internal Messaging owner contract; background callers never supply a session. */
+  async dependencies(id: string, extra: string[] = []) {
+    const graph = new Set([id, ...extra]),
+      visited = new Set<string>();
+    while ([...graph].some((v) => !visited.has(v))) {
+      const batch = [...graph].filter((v) => !visited.has(v));
+      batch.forEach((v) => visited.add(v));
+      const rows = await this.db.client.messageEntry.findMany({
+        where: { conversationId: { in: batch }, kind: 'FORWARD' },
+        distinct: ['sourceConversationId'],
+        select: { sourceConversationId: true },
+        take: 34,
+      });
+      for (const row of rows)
+        if (row.sourceConversationId) graph.add(row.sourceConversationId);
+      if (graph.size > 33)
+        throw new PayloadTooLargeException({ code: 'FORWARD_SOURCE_LIMIT' });
+    }
+    return [...graph].filter((v) => v !== id).sort();
+  }
+  async validateSources(s: Op, sources: string[]) {
+    const actual = await s.tx.messageEntry.findMany({
+      where: {
+        conversationId: { in: [s.conv.id, ...sources] },
+        kind: 'FORWARD',
+      },
+      distinct: ['sourceConversationId'],
+      select: { sourceConversationId: true },
+      take: 34,
+    });
+    if (
+      actual.some(
+        (v) =>
+          v.sourceConversationId !== s.conv.id &&
+          !sources.includes(v.sourceConversationId!),
+      )
+    )
+      throw new ConflictException({ code: 'SOURCE_SET_CHANGED_RETRY' });
+  }
+  async run<T>(
     actor: RequestActor,
     id: string,
     action: string,
     work: (s: Op, m: ConversationMember, stamp: string) => Promise<T>,
     extra: string[] = [],
+    background = false,
   ) {
     // Locator bounds must not disclose an unauthorized conversation's existence.
     // This preliminary check grants nothing to the later transaction; it rechecks
@@ -71,46 +111,19 @@ export class AdvancedMessagingService {
         async (s) => {
           await this.base.currentMember(s);
         },
+        [actor.userId],
+        false,
+        [],
+        background,
       );
-    const graph = new Set([id, ...extra]);
-    const visited = new Set<string>();
-    while ([...graph].some((v) => !visited.has(v))) {
-      const batch = [...graph].filter((v) => !visited.has(v));
-      batch.forEach((v) => visited.add(v));
-      const dependencies = await this.db.client.messageEntry.findMany({
-        where: { conversationId: { in: batch }, kind: 'FORWARD' },
-        distinct: ['sourceConversationId'],
-        select: { sourceConversationId: true },
-        take: 34,
-      });
-      for (const row of dependencies)
-        if (row.sourceConversationId) graph.add(row.sourceConversationId);
-      if (graph.size > 33)
-        throw new PayloadTooLargeException({ code: 'FORWARD_SOURCE_LIMIT' });
-    }
-    const sources = [...graph].filter((v) => v !== id).sort();
-    if (sources.length > 32)
-      throw new PayloadTooLargeException({ code: 'FORWARD_SOURCE_LIMIT' });
+    const sources = await this.dependencies(id, extra);
     return this.base.operation(
       actor,
       id,
       action,
       async (s) => {
         const m = await this.base.currentMember(s);
-        const actual = await s.tx.messageEntry.findMany({
-          where: { conversationId: { in: [id, ...sources] }, kind: 'FORWARD' },
-          distinct: ['sourceConversationId'],
-          select: { sourceConversationId: true },
-          take: 34,
-        });
-        if (
-          actual.some(
-            (v) =>
-              v.sourceConversationId !== id &&
-              !sources.includes(v.sourceConversationId!),
-          )
-        )
-          throw new ConflictException({ code: 'SOURCE_SET_CHANGED_RETRY' });
+        await this.validateSources(s, sources);
         const frames = [];
         for (const source of sources) {
           const conv = await s.tx.conversation.findUnique({
@@ -159,9 +172,10 @@ export class AdvancedMessagingService {
       [],
       false,
       sources,
+      background,
     );
   }
-  private async entry(s: Op, m: ConversationMember, id: string) {
+  async entry(s: Op, m: ConversationMember, id: string) {
     const e = await s.tx.messageEntry.findFirst({
       where: {
         id,
@@ -172,7 +186,7 @@ export class AdvancedMessagingService {
     if (!e) throw new NotFoundException();
     return e;
   }
-  private async safety(s: Op, m: ConversationMember, e: MessageEntry) {
+  async safety(s: Op, m: ConversationMember, e: MessageEntry) {
     if (e.deletedAt) return 'DELETED' as const;
     if (
       await s.tx.messageHidden.findUnique({
@@ -206,6 +220,7 @@ export class AdvancedMessagingService {
         sourceMemberId: null,
       };
     }
+    if (e.kind !== 'FORWARD') return null;
     try {
       const conv = await s.tx.conversation.findUnique({
         where: { id: e.sourceConversationId! },
@@ -229,11 +244,44 @@ export class AdvancedMessagingService {
       throw error;
     }
   }
-  private async projection(s: Op, m: ConversationMember, e: MessageEntry) {
-    const safety = await this.safety(s, m, e),
-      content = await this.content(s, m, e);
-    const state = safety === 'VISIBLE' && !content ? 'UNAVAILABLE' : safety;
-    const reactions = content
+  async leaf(
+    s: Op,
+    m: ConversationMember,
+    e: MessageEntry,
+    depth = 0,
+    authorize?: (s: Op) => Promise<void>,
+  ): Promise<{ s: Op; m: ConversationMember; e: MessageEntry } | null> {
+    if (depth > 8 || (await this.safety(s, m, e)) !== 'VISIBLE') return null;
+    try {
+      await authorize?.(s);
+    } catch (error) {
+      if (hidden(error)) return null;
+      throw error;
+    }
+    if (e.kind === 'TEXT' || e.kind === 'MEDIA') return { s, m, e };
+    if (e.kind !== 'FORWARD') return null;
+    try {
+      const conv = await s.tx.conversation.findUnique({
+        where: { id: e.sourceConversationId! },
+      });
+      if (!conv) return null;
+      const source: Op = { ...s, conv, proof: null };
+      source.proof = await this.base.proof(source);
+      const member = await this.base.currentMember(source),
+        original = await this.entry(source, member, e.sourceId!);
+      return this.leaf(source, member, original, depth + 1, authorize);
+    } catch (error) {
+      if (hidden(error)) return null;
+      throw error;
+    }
+  }
+  async decorations(
+    s: Op,
+    m: ConversationMember,
+    e: MessageEntry,
+    visible: boolean,
+  ) {
+    const reactions = visible
       ? await s.tx.messageReaction.findMany({
           where: { messageId: e.id, active: true },
           orderBy: [{ emoji: 'asc' }, { memberId: 'asc' }],
@@ -255,13 +303,28 @@ export class AdvancedMessagingService {
       value.mine ||= row.memberId === m.id;
       grouped.set(row.emoji, value);
     }
-    const mentions = content
+    const mentions = visible
       ? await s.tx.messageMention.findMany({
           where: { messageId: e.id },
           orderBy: { memberId: 'asc' },
           take: 50,
         })
       : [];
+    return {
+      reactions: [...grouped.values()],
+      mentions: mentions.map((v) => v.memberId),
+      pinned:
+        visible &&
+        !!(await s.tx.messagePin.findFirst({
+          where: { messageId: e.id, active: true },
+        })),
+    };
+  }
+  async projection(s: Op, m: ConversationMember, e: MessageEntry) {
+    if (e.kind === 'MEDIA') throw new NotFoundException();
+    const safety = await this.safety(s, m, e),
+      content = await this.content(s, m, e);
+    const state = safety === 'VISIBLE' && !content ? 'UNAVAILABLE' : safety;
     const parent =
       content && e.replyToId
         ? await s.tx.messageEntry.findFirst({
@@ -294,19 +357,29 @@ export class AdvancedMessagingService {
       replyToId: parent?.id ?? null,
       threadId: root?.id ?? null,
       content,
-      reactions: [...grouped.values()],
-      mentions: mentions.map((v) => v.memberId),
-      pinned:
-        !!content &&
-        !!(await s.tx.messagePin.findFirst({
-          where: { messageId: e.id, active: true },
-        })),
+      ...(await this.decorations(s, m, e, !!content)),
     });
   }
   private async requireVisible(s: Op, m: ConversationMember, e: MessageEntry) {
-    if (!(await this.content(s, m, e))) throw new NotFoundException();
+    const leaf = await this.leaf(s, m, e);
+    if (!leaf) throw new NotFoundException();
+    if (
+      leaf.e.kind === 'MEDIA' &&
+      !(await this.leaf(s, m, e, 0, async (source) => {
+        if (!['DM', 'PRIVATE_GROUP'].includes(source.conv.kind))
+          await this.authority.proof(
+            source.tx,
+            source.actor,
+            source.conv.scopeId,
+            source.actor.userId,
+            source.locked,
+            'file.read',
+          );
+      }))
+    )
+      throw new NotFoundException();
   }
-  private async writer(s: Op) {
+  async writer(s: Op) {
     if (!(await this.base.writable(s)))
       throw new ForbiddenException({ code: 'CONVERSATION_READ_ONLY' });
   }
@@ -324,7 +397,7 @@ export class AdvancedMessagingService {
     )
       throw new ForbiddenException();
   }
-  private async change(
+  async change(
     s: Op,
     e: MessageEntry,
     kind:
@@ -345,7 +418,7 @@ export class AdvancedMessagingService {
       },
     });
   }
-  private async bump(s: Op, e: MessageEntry) {
+  async bump(s: Op, e: MessageEntry) {
     return s.tx.messageEntry.update({
       where: { id: e.id },
       data: { revision: { increment: 1 } },
@@ -398,6 +471,10 @@ export class AdvancedMessagingService {
           const sm = await this.base.currentMember(op);
           source = await this.entry(op, sm, a.sourceId);
           await this.requireVisible(op, sm, source);
+          if ((await this.leaf(op, sm, source))?.e.kind === 'MEDIA')
+            throw new BadRequestException({
+              code: 'MEDIA_FORWARD_REQUIRES_MEDIA_API',
+            });
           let tail = source,
             depth = 1;
           while (tail.kind === 'FORWARD') {
@@ -765,6 +842,7 @@ export class AdvancedMessagingService {
         const rows = await s.tx.messageEntry.findMany({
           where: {
             conversationId: id,
+            kind: { in: ['TEXT', 'FORWARD'] },
             sequence: { gt: after },
             ...(threadRoot
               ? { OR: [{ id: threadRoot }, { threadId: threadRoot }] }
@@ -835,7 +913,10 @@ export class AdvancedMessagingService {
             conversationId: id,
             sequence: { gt: after },
             OR: [{ audienceId: null }, { audienceId: m.id }],
-            message: { sequence: { gt: m.historyAfter } },
+            message: {
+              sequence: { gt: m.historyAfter },
+              kind: { in: ['TEXT', 'FORWARD'] },
+            },
           },
           include: { message: true },
           orderBy: { sequence: 'asc' },

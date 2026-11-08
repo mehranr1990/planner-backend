@@ -1178,6 +1178,15 @@ export class SharedKernel {
       return work(tx);
     });
   }
+  /** Current identity check for an already scoped personal transaction, including replay. */
+  async personalIdentity(tx: Prisma.TransactionClient, actor: RequestActor) {
+    if (!actor.sessionId) throw new ForbiddenException();
+    await this.accounts(tx, [actor.userId]);
+    await this.identity.lock(tx, [actor.userId]);
+    await this.identity.require(tx, actor);
+    if (!(await this.accountActive(tx, actor.userId)))
+      throw new NotFoundException();
+  }
   private async offerControl(
     tx: Prisma.TransactionClient,
     spaceId: string,
@@ -2313,6 +2322,48 @@ export class SharedKernel {
       },
       onRetry,
     );
+  }
+  /** Trusted Messaging maintenance: same account/identity/custody lock order as
+   * requests, without inventing a provider session for a background recipient.
+   * The owner must recheck each subject/source through participantAuthority. */
+  async messagingMaintenance<T>(
+    users: string[],
+    scopes: string[],
+    work: (
+      tx: Prisma.TransactionClient,
+      now: Date,
+      locked: string[],
+    ) => Promise<T>,
+  ) {
+    this.enabled();
+    if (!users.length || !scopes.length) throw new BadRequestException();
+    const selectors = [...new Set(scopes)].sort();
+    const spaces = [
+      ...new Set(
+        await Promise.all(selectors.map((id) => this.custodySpace(id))),
+      ),
+    ].sort();
+    const hints = (
+      await Promise.all(
+        selectors.map((id) => this.offerUserHints(id, users[0]!)),
+      )
+    ).flat();
+    const locked = [...new Set([...users, ...hints])].sort();
+    for (const id of [...locked, ...selectors]) uuid.parse(id);
+    return this.transaction(locked, spaces, null, async (tx) => {
+      for (const spaceId of spaces) {
+        const c = await tx.sharedCustody.findUniqueOrThrow({
+          where: { spaceId },
+        });
+        await this.offerControl(tx, spaceId, c.authorizationVersion);
+      }
+      return work(
+        tx,
+        (await tx.$queryRaw<{ now: Date }[]>`SELECT clock_timestamp() now`)[0]!
+          .now,
+        locked,
+      );
+    });
   }
   private async transaction<T>(
     users: string[],

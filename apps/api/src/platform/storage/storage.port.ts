@@ -5,8 +5,14 @@ export type FileExpectation = {
   size: number;
   mimeType: string;
   sha256?: string | null;
+  maxDurationMs?: number;
+  maxBytes?: number;
 };
-export type FileEvidence = { size: number; sha256: string };
+export type FileEvidence = {
+  size: number;
+  sha256: string;
+  durationMs?: number;
+};
 export class StorageFailure extends Error {
   constructor(readonly code: 'INVALID' | 'LIMIT' | 'UNAVAILABLE') {
     super('Private storage operation failed');
