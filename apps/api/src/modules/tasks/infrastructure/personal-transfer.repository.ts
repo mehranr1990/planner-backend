@@ -1,4 +1,5 @@
 import {
+  Inject,
   Injectable,
   NotFoundException,
   ConflictException,
@@ -13,7 +14,9 @@ import { appendSyncChanges } from '../../../platform/sync/change-feed.js';
 import { appendOutbox } from '../../../platform/outbox/outbox.js';
 import { transferCatalog } from '../../../platform/database/transfer-catalog.js';
 import { PersonalTaskTransfer } from '../public/personal-transfer.js';
+import { MeetingKernel } from '../../meetings/public/kernel.js';
 const known = [
+  'MeetingTaskLink_task_fk',
   'TeamWorkItem_sourceSpaceId_taskId_fkey',
   'CaptureItem_spaceId_targetTaskId_fkey',
   'DailyPlanItem_spaceId_taskId_fkey',
@@ -47,6 +50,9 @@ const known = [
 ];
 @Injectable()
 export class PersonalTaskTransferRepository extends PersonalTaskTransfer {
+  constructor(@Inject(MeetingKernel) private readonly meetings: MeetingKernel) {
+    super();
+  }
   async preview(
     tx: Prisma.TransactionClient,
     source: AuthorizedSpace,
@@ -93,6 +99,12 @@ export class PersonalTaskTransferRepository extends PersonalTaskTransfer {
       if (row.revision !== item.revision)
         throw new ConflictException({ code: 'TRANSFER_SOURCE_CHANGED' });
       const blockers: string[] = [];
+      const meetingReferences = await this.meetings.personalTaskReferences(
+        tx,
+        source,
+        row.id,
+      );
+      if (meetingReferences) blockers.push('REFERENCE:meetingAction');
       if (!catalog.known) blockers.push('UNKNOWN_INCOMING_FK');
       if (row.parentTaskId || row.masterRecurrence || row.occurrence)
         blockers.push('HIERARCHY_OR_RECURRENCE');
@@ -125,6 +137,12 @@ export class PersonalTaskTransferRepository extends PersonalTaskTransfer {
           count,
           disposition: 'REJECT' as const,
         }));
+      if (meetingReferences)
+        privateReferences.push({
+          relation: 'meetingAction',
+          count: meetingReferences,
+          disposition: 'REJECT',
+        });
       if (row.parentTaskId)
         privateReferences.push({
           relation: 'parentTaskId',
@@ -153,7 +171,9 @@ export class PersonalTaskTransferRepository extends PersonalTaskTransfer {
         id: row.id,
         revision: row.revision,
         sourceHash: createHash('sha256')
-          .update(JSON.stringify({ row, catalog: catalog.rows }))
+          .update(
+            JSON.stringify({ row, catalog: catalog.rows, meetingReferences }),
+          )
           .digest('hex'),
         children: row._count.checklistItems,
         history: row._count.changes,

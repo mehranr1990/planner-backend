@@ -262,7 +262,11 @@ try {
           policyVersion: version,
           approvalReference: 'SYNTHETIC-P501-SMOKE-ONLY',
           accountableOperator: 'synthetic operator',
-          applicableContexts: ['CONVERSATION', 'PROJECT'],
+          applicableContexts: [
+            'CONVERSATION',
+            'PROJECT',
+            ...(process.argv.includes('--meetings') ? ['MEETING'] : []),
+          ],
           marketScope: 'isolated local smoke',
           sharedRecoverySeconds: 2592000,
           classRules: {
@@ -439,8 +443,27 @@ try {
           recipient,
         )
       : null;
+    const meetingExtension = process.argv.includes('--meetings')
+      ? await import('./p5-05-smoke.ts')
+      : null;
+    const meetingState = meetingExtension
+      ? await meetingExtension.beforeMeetingsRestart(
+          http,
+          db,
+          owner.cookie,
+          recipient,
+          version,
+        )
+      : null;
     await stop(api);
     api = await apiStart();
+    if (meetingExtension && meetingState)
+      await meetingExtension.afterMeetingsRestart(
+        http,
+        owner.cookie,
+        recipient.cookie,
+        meetingState,
+      );
     if (mediaExtension && mediaState)
       await mediaExtension.afterMediaRestart(
         http,
@@ -505,6 +528,17 @@ try {
       ).rows[0].n,
       1,
     );
+    if (meetingExtension && meetingState) {
+      await workerPass(() =>
+        meetingExtension.meetingsGarbageCollected(db, meetingState),
+      );
+      assert.ok(
+        await meetingExtension.meetingsGarbageCollected(db, meetingState),
+      );
+      process.stdout.write(
+        'PASS: P5-05 compiled API restart preserves accepted meetings, approved minutes, private idempotent Task links, exact attachment bytes and aggregate announcement acknowledgement; actual worker collects expired unlinked bytes and preserves linked content.\n',
+      );
+    }
     await stop(api);
     process.stdout.write(
       'PASS: fresh compiled API restart preserves accepted DM, ordered history, reusable polling cursor, send idempotency and one audit/outbox effect; actual worker advances source disposal to BLOCKED_POLICY before destructive work and preserves that state across worker restart.\n',

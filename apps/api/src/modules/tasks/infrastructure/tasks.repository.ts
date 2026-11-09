@@ -798,6 +798,15 @@ export class TasksRepository implements TasksPort {
 
 @Injectable()
 export class CaptureTasksRepository extends CaptureTasks {
+  async read(tx: Prisma.TransactionClient, scope: AuthorizedSpace, id: string) {
+    await scope.fence(tx);
+    const row = await tx.task.findFirst({
+      where: { id, spaceId: scope.spaceId, deletedAt: null, scopeId: null },
+      select: { id: true, revision: true, title: true },
+    });
+    if (!row) throw new NotFoundException();
+    return row;
+  }
   constructor(
     @Inject(TasksService) private readonly service: TasksService,
     @Inject(FileCatalog) private readonly files: FileCatalog,

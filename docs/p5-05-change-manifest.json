@@ -1,0 +1,373 @@
+{
+  "batch": "P5-05",
+  "status": "COMPLETE_LOCAL_PENDING_OWNER_ACCEPTANCE",
+  "baselineCommit": "4515f1516f9dcdb4274c4a20b5981f444d7b019d",
+  "verifiedPublishedP503": "4515f1516f9dcdb4274c4a20b5981f444d7b019d",
+  "branch": "main",
+  "stagedPaths": 0,
+  "committed": false,
+  "pushed": false,
+  "taskPaths": 71,
+  "modifiedTracked": 39,
+  "newUntracked": 32,
+  "preservedUnrelatedDocuments": 12,
+  "paths": [
+    {
+      "status": " M",
+      "path": "apps/api/src/app.module.ts",
+      "sha256": "1c4f0e02112b79b560a63a9012988b8098c710e95f4400b69115720553d8b0ef"
+    },
+    {
+      "status": " M",
+      "path": "apps/api/src/modules/account/infrastructure/lifecycle.repository.ts",
+      "sha256": "78dd21b4241a566927bd916e3c81b479acbabad9884c92709e290a201a040148"
+    },
+    {
+      "status": " M",
+      "path": "apps/api/src/modules/calendar/application/calendar.port.ts",
+      "sha256": "f825a3618286584b141cdec898754035166d79a8727527747b94fec26ed2c042"
+    },
+    {
+      "status": " M",
+      "path": "apps/api/src/modules/calendar/infrastructure/calendar.repository.ts",
+      "sha256": "6e79dac46616f396ec0ab76ae910923eac6d6275414a7ec4826bb126137fd096"
+    },
+    {
+      "status": " M",
+      "path": "apps/api/src/modules/calendar/infrastructure/shared-calendar.repository.ts",
+      "sha256": "6e6113f5cc10956bada4519dd538e49da8e4188e1fcfcb3666091f60ad4353f6"
+    },
+    {
+      "status": " M",
+      "path": "apps/api/src/modules/calendar/public/shared-calendar.ts",
+      "sha256": "08f423c36f2946222bf010c58b8c7e57ce4d2e207e85599b11d6c390b6f69a42"
+    },
+    {
+      "status": " M",
+      "path": "apps/api/src/modules/companies/application/company-cleanup.service.ts",
+      "sha256": "de693a1fa8ef27231c71d6da782811762f297f5fb7dcbe00ad222a5d5eaa3bb5"
+    },
+    {
+      "status": " M",
+      "path": "apps/api/src/modules/companies/companies.module.ts",
+      "sha256": "a72a276bbe2bc94f89be92433b62c4fd6e255ca09e2c96ab605d1fdae12938e4"
+    },
+    {
+      "status": "??",
+      "path": "apps/api/src/modules/meetings/application/announcements.service.ts",
+      "sha256": "0a7964179eb2ddf2037c83dc933d2fbc61806d890987a64e66b64b2507cfa99b"
+    },
+    {
+      "status": "??",
+      "path": "apps/api/src/modules/meetings/application/meeting-data.ts",
+      "sha256": "babf764be96d6d060d82ae10a43fcc584132c9c8919f2ef53fb1aa1dfe280022"
+    },
+    {
+      "status": "??",
+      "path": "apps/api/src/modules/meetings/application/meeting-documents.ts",
+      "sha256": "1ed0273ad448f2cd163934794dcfa751ee1fffbbc1762344a92828748361757a"
+    },
+    {
+      "status": "??",
+      "path": "apps/api/src/modules/meetings/application/meeting-files.ts",
+      "sha256": "cc551abe0b9d49b8a4e2b2400ca0469875fc85531c37627278e32c29313dde97"
+    },
+    {
+      "status": "??",
+      "path": "apps/api/src/modules/meetings/application/meeting-kernel.ts",
+      "sha256": "218bd92418c0c31b83f9df3e245c3c4480768f86c2eed5f640ec17e0f96f559f"
+    },
+    {
+      "status": "??",
+      "path": "apps/api/src/modules/meetings/application/meetings.service.ts",
+      "sha256": "0dcab953dcc8be76437163969ac0a9899b11b69dd3fb6f5e5d16740ba61ae2ee"
+    },
+    {
+      "status": "??",
+      "path": "apps/api/src/modules/meetings/domain/meeting-policy.spec.ts",
+      "sha256": "f9f7fd845806ebbe706701d7b0450b6c6cdb35d1416688102be3794600be3bf8"
+    },
+    {
+      "status": "??",
+      "path": "apps/api/src/modules/meetings/domain/meeting-policy.ts",
+      "sha256": "43fc565d9023d4d0633f2f9be5a7429125706a550a09f3ce645bd60afedf934b"
+    },
+    {
+      "status": "??",
+      "path": "apps/api/src/modules/meetings/http/announcement-attachments.controller.ts",
+      "sha256": "828f0bbd956af8832ef781f08b090f12fa9009dd1eac19a01cf0271f17e99eee"
+    },
+    {
+      "status": "??",
+      "path": "apps/api/src/modules/meetings/http/announcements.controller.ts",
+      "sha256": "f57874d0eab0e46f99700ff727b846099c8c48af1688c32a264d013437fd2436"
+    },
+    {
+      "status": "??",
+      "path": "apps/api/src/modules/meetings/http/meeting-attachments.controller.ts",
+      "sha256": "39103d554809859795710be16a53e2f5510b446ae266ad532768d50b0cd7b2a2"
+    },
+    {
+      "status": "??",
+      "path": "apps/api/src/modules/meetings/http/meeting-documents.controller.ts",
+      "sha256": "19975749c14ac14a8394edab83174364520d74efedd1fdf01491ddfcf3a4bdae"
+    },
+    {
+      "status": "??",
+      "path": "apps/api/src/modules/meetings/http/meetings.controller.ts",
+      "sha256": "ba35d8ed93357fa0d2c7f95818fa728536060da2fda1c3118400e368e6ba9189"
+    },
+    {
+      "status": "??",
+      "path": "apps/api/src/modules/meetings/http/meetings.guard.ts",
+      "sha256": "762e4504b1ae66acea579f5165b2604fb6322cfa78eea4ae8455464e3785ba9e"
+    },
+    {
+      "status": "??",
+      "path": "apps/api/src/modules/meetings/meeting-workflows.module.ts",
+      "sha256": "a9661be5af9e278c09ddc3492f9e1904eb4eef5c17512e65abda034496f78b16"
+    },
+    {
+      "status": "??",
+      "path": "apps/api/src/modules/meetings/meetings.module.ts",
+      "sha256": "577e554ac188039203a41f521e329e8ae4f906ae2e0c0c66b999f6ac960b9d5b"
+    },
+    {
+      "status": "??",
+      "path": "apps/api/src/modules/meetings/public/index.ts",
+      "sha256": "e0e2bddfa3ca7a2d850442a7d4168dca835ad38a2894fffea19ea5de4ab83f94"
+    },
+    {
+      "status": "??",
+      "path": "apps/api/src/modules/meetings/public/kernel.ts",
+      "sha256": "ce1ddb8a4e91fd38cf773184493931d01dfee9dd4de704819702f66e50017c74"
+    },
+    {
+      "status": " M",
+      "path": "apps/api/src/modules/projects/application/project-cleanup.service.ts",
+      "sha256": "a88458c26f6e2a3fcc4700aa2726630f8638429562cd53f94ed5a99128a40cf2"
+    },
+    {
+      "status": " M",
+      "path": "apps/api/src/modules/projects/projects.module.ts",
+      "sha256": "30f9dd05693255f63d4dc1f4d5dc36dd23ed3a7117313b0066d2c1d46c209cd7"
+    },
+    {
+      "status": " M",
+      "path": "apps/api/src/modules/spaces/application/shared-kernel.service.ts",
+      "sha256": "f23a4a6b5629b977ed7f2a99668a9ead79b0aa00b0bd5bc01d35d09b75e47ab3"
+    },
+    {
+      "status": " M",
+      "path": "apps/api/src/modules/spaces/application/shared-retention.ts",
+      "sha256": "4677f3735275d20363770d9b7c08909153e1ca2d36dbee4659b2e109968f4ba5"
+    },
+    {
+      "status": " M",
+      "path": "apps/api/src/modules/spaces/public/messaging-authority.ts",
+      "sha256": "7c4c3f065528bbdc934b82400598d33a6b8f801ed7494f321551bccacb9dd076"
+    },
+    {
+      "status": " M",
+      "path": "apps/api/src/modules/spaces/public/shared-features.ts",
+      "sha256": "7cfb1815cee1dad4e73db796f5290622b9cf25af02ecdb76f08698c3e86304de"
+    },
+    {
+      "status": " M",
+      "path": "apps/api/src/modules/tasks/infrastructure/personal-transfer.repository.ts",
+      "sha256": "4dcd7825313af78f296da95bf5f39dfd6d594d7a52a4251bc7d17a45d897c869"
+    },
+    {
+      "status": " M",
+      "path": "apps/api/src/modules/tasks/infrastructure/tasks.repository.ts",
+      "sha256": "00d1eca5abb7d829c4a0ec8e008d5251727a7a73a9f423ec06dd3bcf12e4c564"
+    },
+    {
+      "status": " M",
+      "path": "apps/api/src/modules/tasks/public/capture-tasks.ts",
+      "sha256": "5c5696a8e173625dfeae73d05975b69b65b26a4bd16605df6e5b5cefe30298fd"
+    },
+    {
+      "status": " M",
+      "path": "apps/api/src/modules/tasks/tasks.module.ts",
+      "sha256": "5485d2e49353dcbafe0b6772f40eb096294f9a98513ece8af2b354ca9c07921c"
+    },
+    {
+      "status": " M",
+      "path": "apps/api/src/modules/teams/application/team-cleanup.service.ts",
+      "sha256": "40e79e68508ed167040388095b3c64f9eacb1e2b0adb0b6825981f7da943ae91"
+    },
+    {
+      "status": " M",
+      "path": "apps/api/src/modules/teams/application/team-meetings.service.ts",
+      "sha256": "27b2a17164eee6362534b19d59db390590896dcb1eb26614220ef6f2338d6e7f"
+    },
+    {
+      "status": " M",
+      "path": "apps/api/src/modules/teams/application/team-work.service.ts",
+      "sha256": "fcf0194d31078e24ae79d9c31333d477351da1a82aa1a7d5114d1dc52c692fb5"
+    },
+    {
+      "status": " M",
+      "path": "apps/api/src/modules/teams/http/team-meetings.controller.ts",
+      "sha256": "a032bbcfc801cda42c4bf74f13da30b6ff0912f1d8ac42b03dd2dee9f07fdd56"
+    },
+    {
+      "status": " M",
+      "path": "apps/api/src/modules/teams/teams.module.ts",
+      "sha256": "c75ddba24167443f4fb7db6b739143726f5bb351ff2855206211f9dba21b4d1c"
+    },
+    {
+      "status": " M",
+      "path": "apps/api/src/platform/database/foundation.spec.ts",
+      "sha256": "61400b90402d3f251ff3090b1da0a70857199b829543b2e57103a5cb7b379bc2"
+    },
+    {
+      "status": " M",
+      "path": "apps/api/src/platform/lifecycle/shared-cleanup-catalog.ts",
+      "sha256": "646187519d30a82947247c8767221349b279a517ecf8f79ea1c991bfe190edec"
+    },
+    {
+      "status": " M",
+      "path": "apps/api/src/worker.ts",
+      "sha256": "cec57b740057df33335e0d131bc903030ff6c8c3ba47311dd3ee71bc56c3d66d"
+    },
+    {
+      "status": "??",
+      "path": "apps/api/test/contract/meetings.spec.ts",
+      "sha256": "19f6cc57197144d538f1c671e71fc3a229e7f8fcc68d8602255673080a7d6e76"
+    },
+    {
+      "status": " M",
+      "path": "apps/api/test/contract/team-interactions-routes.spec.ts",
+      "sha256": "ee371d52b1782cd96b2827638c61ee0f83e75bba14b685a44eee926fe131465b"
+    },
+    {
+      "status": "??",
+      "path": "apps/api/test/integration/meetings.spec.ts",
+      "sha256": "9077169bcf9fb8ffd15a09f9e4b4bc39650f554153e4204aae68448326c745da"
+    },
+    {
+      "status": "??",
+      "path": "docs/adr/0048-meeting-approval-and-announcement-policy.md",
+      "sha256": "4d4237f531a46acc3fe3c9a86a763bdf1fbb996f7cc797caa5f8ac545cf8eb75"
+    },
+    {
+      "status": " M",
+      "path": "docs/api/openapi.json",
+      "sha256": "328179ebc916d2d2e5ffcd85550d45a138ec25d2c9350cf3f44deb2ac0a75576"
+    },
+    {
+      "status": "??",
+      "path": "docs/p5-05-change-manifest.json"
+    },
+    {
+      "status": "??",
+      "path": "docs/p5-05-contract.md",
+      "sha256": "16bfc9b037f8c384460005397a19939e1090d0e891797fd3c7566aeaa6fadb67"
+    },
+    {
+      "status": "??",
+      "path": "docs/p5-05-migration-review.md",
+      "sha256": "9671abdf601314fc5a34347a3c677435d07e294c7ef26a34db59beef3c46eb49"
+    },
+    {
+      "status": "??",
+      "path": "docs/p5-05-report.md",
+      "sha256": "e113c01f5afb856017c32e8869e4b8223d3e6f47c9c854d08529c8991f18d661"
+    },
+    {
+      "status": " M",
+      "path": "package.json",
+      "sha256": "bed028b75572354c965df0bf491797244d8ab7c44af24f00589599f903630807"
+    },
+    {
+      "status": " M",
+      "path": "packages/api-contracts/src/index.ts",
+      "sha256": "ff14ee29e08177b3bc41a18157ef9b2525fa1bf5374cb0f3cf3309e8e6b1cf7d"
+    },
+    {
+      "status": "??",
+      "path": "packages/api-contracts/src/meetings-openapi.ts",
+      "sha256": "2a2eca042066ba680832cc5e8b9c9b8c8bca2a0b9770c3d3ed3b3156c23083b3"
+    },
+    {
+      "status": "??",
+      "path": "packages/api-contracts/src/meetings.ts",
+      "sha256": "65bea79959ed089b1cf9681c18c2c49b4e6dff15d7bb826e266a17f0f56d90a0"
+    },
+    {
+      "status": " M",
+      "path": "packages/api-contracts/src/openapi.ts",
+      "sha256": "43ebc584de9b09f4612722e6dba77b269d1519b6217170b8b2d3d6fe545dddb3"
+    },
+    {
+      "status": "??",
+      "path": "prisma/migrations/202611090043_meetings_decisions_announcements/migration.sql",
+      "sha256": "91372e3e8a2db9b3fde0afbff55c89565505fd42260c6b7c1dacac29a5fe5806"
+    },
+    {
+      "status": " M",
+      "path": "prisma/schema.prisma",
+      "sha256": "532c652f5a6b6b526cda8ce1b18dbaa5d8a74fb894a62a408734dc61f1203806"
+    },
+    {
+      "status": " M",
+      "path": "tooling/compatibility/company-custody-responses.spec.ts",
+      "sha256": "0a0d49b22e776a0811a82cd589598b722fb747b11e70f2c1a09188b8bf4c19cb"
+    },
+    {
+      "status": " M",
+      "path": "tooling/compatibility/openapi.spec.ts",
+      "sha256": "2960cb5ff30ef4215c445edb0bc25d110ffb315a806cde40d81ff77e4d935454"
+    },
+    {
+      "status": "??",
+      "path": "tooling/compatibility/p5-03-api-signatures.json",
+      "sha256": "628102093895a9e53bd437a4d7bd491f0beb9adedc2eb8f0ae4b7332cf075085"
+    },
+    {
+      "status": " M",
+      "path": "tooling/scripts/migrations-check.ts",
+      "sha256": "06ed3066a4acda1ecf50212c08ea0ce390bfff451ea67d7bd76953bf742b1b35"
+    },
+    {
+      "status": " M",
+      "path": "tooling/scripts/openapi.ts",
+      "sha256": "6ecb201c5dcddfadb431804f1a22a82890d6efd4f4026ce1303bbe9cd97e531e"
+    },
+    {
+      "status": " M",
+      "path": "tooling/scripts/p5-01-smoke.ts",
+      "sha256": "852c983e7a8c72acd19573908cbc2626c30750284af756fb43606ed003715100"
+    },
+    {
+      "status": "??",
+      "path": "tooling/scripts/p5-05-smoke.ts",
+      "sha256": "8e24c0ce694b67462caad385868ac0797dfe08d6cd7fc17282b53c20cb0ff471"
+    },
+    {
+      "status": "??",
+      "path": "tooling/testing/meetings-upgrade.ts",
+      "sha256": "87d79d5485ef6175d78ec9b222b915430353d1b167cd1c578d44e9f3072da27d"
+    },
+    {
+      "status": " M",
+      "path": "tooling/testing/messaging-upgrade.ts",
+      "sha256": "fc098dce0096cd136ff209149d81ef89007d4e7338bfefe91e85cab68b0d4245"
+    },
+    {
+      "status": " M",
+      "path": "tooling/testing/migration-safety.ts",
+      "sha256": "1cda84dc94745acb81ea7765ce56fe8f1fe8b5355676ea247d70a56efd5cd676"
+    },
+    {
+      "status": "??",
+      "path": "tooling/testing/reviewed-meetings-migration.ts",
+      "sha256": "6a3d9a1986aaa6f5e05e28d579ae6d75f2f04d7a9836b210fa2fda4dd631c798"
+    }
+  ],
+  "protectedEnvironmentFilesPreserved": 5,
+  "historicalMigrationArtifactsPreserved": 67,
+  "integrity": "SHA256 of every task path except this self-describing manifest; original unrelated documents excluded; local implementation and final verification documented in p5-05-report.md"
+}

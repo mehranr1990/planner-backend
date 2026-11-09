@@ -8,6 +8,7 @@ import {
 import type { Prisma, StoredFile } from '../../../generated/prisma/client.js';
 import type { RequestActor } from '../../../platform/auth/request-actor.js';
 import { MessagingService } from '../../messaging/public/index.js';
+import { MeetingKernel } from '../../meetings/public/index.js';
 import {
   sharedDeleteBatch,
   sharedVersionedDelete,
@@ -27,6 +28,7 @@ import { SharedWorkNotifications } from '../../notifications/public/index.js';
 export class ProjectCleanupService {
   constructor(
     @Inject(MessagingService) private readonly messaging: MessagingService,
+    @Inject(MeetingKernel) private readonly meetings: MeetingKernel,
     @Inject(SharedKernel) private readonly kernel: SharedKernel,
     @Inject(SharedLifecycleService) readonly lifecycle: SharedLifecycleService,
     @Inject(SharedFiles) private readonly files: SharedFiles,
@@ -157,7 +159,9 @@ export class ProjectCleanupService {
           throw new ConflictException({ code: 'UNKNOWN_CLEANUP_STAGE' });
         },
         'PROJECT',
-        (tx, spaceId) => this.messaging.disposalBlocker(tx, spaceId),
+        async (tx, spaceId) =>
+          (await this.meetings.disposalBlocker(tx, spaceId)) ??
+          this.messaging.disposalBlocker(tx, spaceId),
       );
       if (result?.transfer) {
         const pass = result.transfer;

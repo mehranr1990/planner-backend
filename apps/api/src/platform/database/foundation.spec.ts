@@ -265,6 +265,7 @@ describe('scoped persistence and API conventions', () => {
       '202611080040_messaging_foundation',
       '202611080041_advanced_messaging',
       '202611080042_messaging_media_receipts_notifications',
+      '202611090043_meetings_decisions_announcements',
     ]);
     for (const sql of [
       '',

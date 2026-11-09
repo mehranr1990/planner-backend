@@ -12,6 +12,7 @@ import type { TeamMeetingInvitation } from '../../../generated/prisma/client.js'
 import { DatabaseService } from '../../../platform/database/database.service.js';
 import type { RequestActor } from '../../../platform/auth/request-actor.js';
 import { SharedCalendar } from '../../calendar/public/index.js';
+import { MeetingsService } from '../../meetings/public/index.js';
 import { TeamInteractionContext } from './team-interaction.context.js';
 import type { Interaction } from './team-interaction.context.js';
 type Page = z.infer<typeof c.ProjectPageQuerySchema>;
@@ -21,7 +22,31 @@ export class TeamMeetingsService {
     @Inject(TeamInteractionContext) private readonly op: TeamInteractionContext,
     @Inject(DatabaseService) private readonly db: DatabaseService,
     @Inject(SharedCalendar) private readonly calendar: SharedCalendar,
+    @Inject(MeetingsService) private readonly meetings: MeetingsService,
   ) {}
+  extend(
+    actor: RequestActor,
+    id: string,
+    meetingId: string,
+    revision: number,
+    key: string | undefined,
+  ) {
+    return this.meetings.extendTeam(
+      actor,
+      id,
+      meetingId,
+      key,
+      revision,
+      async (tx) => {
+        const row = await tx.teamMeeting.findFirst({
+          where: { id: meetingId, scopeId: id },
+        });
+        if (!row) throw new NotFoundException();
+        this.op.match(row.revision, revision);
+        return { eventId: row.eventId, agenda: row.agenda };
+      },
+    );
+  }
   private async row(s: Interaction, meetingId: string, active = false) {
     const row = await s.tx.teamMeeting.findFirst({
       where: { id: meetingId, ...this.op.scope(s) },

@@ -25,6 +25,7 @@ import { SharedCalendar } from '../../calendar/public/index.js';
 import type { SharedCalendarCommand } from '../../calendar/public/index.js';
 import { TeamProjects } from '../../projects/public/index.js';
 import { TeamsService } from './teams.service.js';
+import { MeetingKernel } from '../../meetings/public/index.js';
 const hash = (v: unknown) =>
   createHash('sha256').update(JSON.stringify(v)).digest('hex');
 const date = (v: string) => new Date(v + 'T00:00:00Z');
@@ -52,6 +53,7 @@ export class TeamWorkService {
     @Inject(SharedGoals) private readonly goals: SharedGoals,
     @Inject(SharedCalendar) private readonly calendar: SharedCalendar,
     @Inject(TeamProjects) private readonly projects: TeamProjects,
+    @Inject(MeetingKernel) private readonly meetings: MeetingKernel,
   ) {}
   private request(
     id: string,
@@ -427,6 +429,7 @@ export class TeamWorkService {
       const context = 'team-calendar:' + id + ':' + command.kind,
         access = a.require(tx, id, cap);
       if (command.kind === 'LIST' || command.kind === 'VIEW') {
+        const excludeEventIds = await this.meetings.calendarPrivacy(tx, a, id);
         const q = command.query,
           stamp = hash([
             String(access.authorizationVersion),
@@ -441,6 +444,7 @@ export class TeamWorkService {
         );
         const raw = await this.calendar.run(tx, a, actor, id, {
           ...command,
+          excludeEventIds,
           query: { ...q, cursor: position },
         } as SharedCalendarCommand);
         const result =
@@ -457,6 +461,14 @@ export class TeamWorkService {
           ),
         };
       }
+      if ('id' in command)
+        await this.meetings.calendarPrivacy(
+          tx,
+          a,
+          id,
+          command.id,
+          cap === 'work.manage',
+        );
       if (command.kind === 'CREATE') {
         const receipt = await this.once(
           tx,

@@ -5,6 +5,7 @@ import type { RequestActor } from '../../../platform/auth/request-actor.js';
 import type { AuthorizedSpace } from '../../../platform/authorization/authorized-space.js';
 import { DatabaseService } from '../../../platform/database/database.service.js';
 import { SharedKernel } from '../application/shared-kernel.service.js';
+import type { SharedRequest } from '../application/shared-kernel.service.js';
 
 /** Spaces owns all identity/admission reads and writes used by Messaging. */
 @Injectable()
@@ -215,7 +216,7 @@ export class MessagingAuthority {
     scopeId: string,
     userId: string,
     locked: string[],
-    capability: 'task.read' | 'file.read' = 'task.read',
+    capability: SharedRequest['capability'] = 'task.read',
   ) {
     const current = await this.scope(tx, scopeId);
     const access = await this.kernel.participantAuthority(
@@ -235,9 +236,10 @@ export class MessagingAuthority {
     spaceId: string,
     userId: string,
     now: Date,
+    kind: 'CONVERSATION' | 'MEETING' = 'CONVERSATION',
   ) {
     const current = await this.scope(tx, spaceId);
-    if (current.kind !== 'CONVERSATION') throw new NotFoundException();
+    if (current.kind !== kind) throw new NotFoundException();
     const local = await this.actor(tx, spaceId, userId);
     let access = await tx.contextAccess.findUnique({
       where: {
@@ -287,5 +289,51 @@ export class MessagingAuthority {
       });
     }
     return access;
+  }
+  /** Meeting's owner invokes this only after its current organizer/delegation check.
+   * This changes no work-source membership or custody. */
+  async meetingOrganizerSeat(
+    tx: Prisma.TransactionClient,
+    scopeId: string,
+    actorId: string,
+    organizer: boolean,
+  ) {
+    if ((await this.scope(tx, scopeId)).kind !== 'MEETING')
+      throw new NotFoundException();
+    const seat = await tx.contextAccess.findFirst({
+      where: { spaceId: scopeId, scopeId, actorId, state: 'ACTIVE' },
+    });
+    if (!seat) throw new NotFoundException();
+    const memberRole = organizer ? 'ADMIN' : 'MEMBER';
+    if (seat.memberRole !== memberRole)
+      await tx.contextAccess.update({
+        where: { id: seat.id },
+        data: { memberRole, revision: { increment: 1 } },
+      });
+  }
+  /** Location/lock hints only. Domain readers must still obtain current proof. */
+  sourceMembers(
+    scopeId: string,
+    tx: Prisma.TransactionClient = this.db.client,
+  ) {
+    return tx.contextAccess.findMany({
+      where: { scopeId, state: 'ACTIVE', memberRole: { not: null } },
+      select: {
+        id: true,
+        actorId: true,
+        generation: true,
+        spaceId: true,
+        scopeId: true,
+      },
+      orderBy: { id: 'asc' },
+      take: 1001,
+    });
+  }
+  sourceMemberUser(
+    tx: Prisma.TransactionClient,
+    scopeId: string,
+    accessId: string,
+  ) {
+    return this.kernel.memberUserInTransaction(tx, scopeId, accessId);
   }
 }

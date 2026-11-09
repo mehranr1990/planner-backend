@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 import type { Prisma, StoredFile } from '../../../generated/prisma/client.js';
 import { MessagingService } from '../../messaging/public/index.js';
+import { MeetingKernel } from '../../meetings/public/index.js';
 import { sharedDeleteBatch } from '../../../platform/lifecycle/shared-cleanup.js';
 import type { SharedCleanupScope } from '../../../platform/lifecycle/shared-cleanup.js';
 import { SharedFiles } from '../../../platform/storage/public/index.js';
@@ -22,6 +23,7 @@ import { ProjectFinanceReferences } from '../../projects/public/index.js';
 export class CompanyCleanupService {
   constructor(
     @Inject(MessagingService) private readonly messaging: MessagingService,
+    @Inject(MeetingKernel) private readonly meetings: MeetingKernel,
     @Inject(ProjectCompanyAssociations)
     private readonly projectAssociations: ProjectCompanyAssociations,
     @Inject(TeamCompanyAssociations)
@@ -153,7 +155,9 @@ export class CompanyCleanupService {
           throw new ConflictException({ code: 'UNKNOWN_CLEANUP_STAGE' });
         },
         'COMPANY',
-        (tx, spaceId) => this.messaging.disposalBlocker(tx, spaceId),
+        async (tx, spaceId) =>
+          (await this.meetings.disposalBlocker(tx, spaceId)) ??
+          this.messaging.disposalBlocker(tx, spaceId),
       );
       if (result?.transfer) {
         const pass = result.transfer;

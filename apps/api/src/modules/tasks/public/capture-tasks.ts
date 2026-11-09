@@ -6,6 +6,12 @@ import type {
   PersonalSearchHit,
 } from '@mehran/api-contracts';
 export abstract class CaptureTasks {
+  /** Exact owner-scoped Task reference for explicit meeting action-item linking. */
+  abstract read(
+    tx: Prisma.TransactionClient,
+    scope: AuthorizedSpace,
+    id: string,
+  ): Promise<{ id: string; revision: number; title: string }>;
   abstract create(
     tx: Prisma.TransactionClient,
     scope: AuthorizedSpace,

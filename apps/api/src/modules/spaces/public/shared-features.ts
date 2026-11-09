@@ -1,5 +1,12 @@
 import type { Prisma } from '../../../generated/prisma/client.js';
 export const sharedFeatureKeys = [
+  'meeting.resource',
+  'meeting.participant',
+  'meeting.invitation',
+  'meeting.agenda-entry',
+  'meeting.version',
+  'announcement.resource',
+  'announcement.version',
   'messaging.conversation',
   'messaging.participant',
   'messaging.message',

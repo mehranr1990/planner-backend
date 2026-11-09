@@ -48,6 +48,18 @@ export class TeamMeetingsController {
   constructor(
     @Inject(TeamMeetingsService) private readonly service: TeamMeetingsService,
   ) {}
+  @Post('meetings/:meetingId/extend')
+  extend(
+    @CurrentActor() actor: RequestActor,
+    @Param('id', uuid) id: string,
+    @Param('meetingId', uuid) meetingId: string,
+    @Body(empty) _body: unknown,
+    @Query(empty) _q: unknown,
+    @Headers('idempotency-key') key: string | undefined,
+    @Headers('if-match') match: string | undefined,
+  ) {
+    return this.service.extend(actor, id, meetingId, rev(match), key);
+  }
   @Get('meetings') async operation0(
     @CurrentActor() actor: RequestActor,
     @Param('id', uuid) id: string,

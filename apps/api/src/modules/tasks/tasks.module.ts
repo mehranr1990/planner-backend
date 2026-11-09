@@ -28,6 +28,7 @@ import { TASK_PRODUCTIVITY } from './application/productivity.port.js';
 import { TaskProductivityRepository } from './infrastructure/productivity.repository.js';
 import { ProductivityTasks } from './public/productivity-tasks.js';
 import { Module } from '@nestjs/common';
+import { MeetingsModule } from '../meetings/public/kernel.js';
 import type { DynamicModule } from '@nestjs/common';
 import { DatabaseModule } from '../../platform/database/database.module.js';
 import { AuditModule } from '../../platform/audit/audit.service.js';
@@ -50,7 +51,13 @@ export class TasksModule {
   static register(storage: DynamicModule): DynamicModule {
     return {
       module: TasksModule,
-      imports: [DatabaseModule, AuditModule, SpacesModule, storage],
+      imports: [
+        DatabaseModule,
+        AuditModule,
+        SpacesModule,
+        MeetingsModule,
+        storage,
+      ],
       providers: [
         TaskCustodyGraph,
         { provide: SharedTasksCleanup, useClass: SharedTasksCleanupRepository },

@@ -39,6 +39,7 @@ import {
 } from './modules/spaces/public/index.js';
 import { AuthModule } from './platform/auth/auth.module.js';
 import { StorageModule } from './platform/storage/public/index.js';
+import { MeetingWorkflowsModule } from './modules/meetings/public/index.js';
 import { FILE_SCOPE_RESOLVER } from './platform/storage/files.controller.js';
 import type { FileScopeResolver } from './platform/storage/files.controller.js';
 
@@ -64,6 +65,11 @@ export class AppModule {
     const calendar = CalendarModule.register(tasks),
       notifications = NotificationsModule.register(tasks),
       rewards = RewardsModule.register(tasks);
+    const meetingWorkflows = MeetingWorkflowsModule.register(
+      tasks,
+      calendar,
+      storage,
+    );
     const projects = ProjectsModule.register(
       tasks,
       goals,
@@ -78,12 +84,14 @@ export class AppModule {
       calendar,
       notifications,
       storage,
+      meetingWorkflows,
     );
     return {
       module: AppModule,
       imports: [
         MessagingModule,
         messagingMedia,
+        meetingWorkflows,
         ConfigurationModule.register(config),
         DatabaseModule,
         LoggerModule.forRoot(loggingOptions(config)),
@@ -118,6 +126,7 @@ export class AppModule {
           notifications,
           rewards,
           messagingMedia,
+          meetingWorkflows,
         ]),
         storage,
         tasks,

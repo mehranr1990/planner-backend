@@ -4,6 +4,7 @@ import { AppModule } from './app.module.js';
 import { parseEnvironment } from './bootstrap/environment.js';
 import { NotificationWorker } from './modules/notifications/public/index.js';
 import { MessageNoticeWorker } from './modules/messaging/public/index.js';
+import { MeetingFiles } from './modules/meetings/public/index.js';
 import { RewardsPort } from './modules/rewards/public/index.js';
 import { PersonalLifecycle } from './modules/account/public/index.js';
 import { SyncService } from './modules/sync/public/index.js';
@@ -46,6 +47,7 @@ try {
     const grants = await app.get(ResourceGrants).maintain();
     const sync = await app.get(SyncService).maintain();
     const messaging = await app.get(MessageNoticeWorker).consume();
+    const meetings = await app.get(MeetingFiles).consume();
     return (
       rewards ||
       lifecycle ||
@@ -56,7 +58,8 @@ try {
       collaboration ||
       grants ||
       sync ||
-      messaging
+      messaging ||
+      meetings
     );
   });
   process.stdout.write('Planner notification worker ready\n');

@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 import type { OnApplicationBootstrap } from '@nestjs/common';
 import { MessagingData } from '../../messaging/public/index.js';
+import { MeetingData } from '../../meetings/public/index.js';
 import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 import { Readable } from 'node:stream';
 import type { IncomingHttpHeaders } from 'node:http';
@@ -102,6 +103,7 @@ export class LifecycleRepository
     @Inject(NotificationsData) notifications: NotificationsData,
     @Inject(RewardsData) rewards: RewardsData,
     @Optional() @Inject(MessagingData) messaging?: MessagingData,
+    @Optional() @Inject(MeetingData) meetings?: MeetingData,
   ) {
     super();
     this.owners = [
@@ -118,6 +120,7 @@ export class LifecycleRepository
       rewards,
       tasks,
       ...(messaging ? [messaging] : []),
+      ...(meetings ? [meetings] : []),
     ];
   }
   async onApplicationBootstrap() {

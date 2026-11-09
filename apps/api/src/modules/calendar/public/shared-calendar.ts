@@ -21,8 +21,12 @@ export type SharedCalendarCommand =
       key: string;
       input: c.CalendarSeriesEdit;
     }
-  | { kind: 'LIST'; query: { limit?: string; cursor?: string } }
-  | { kind: 'VIEW'; query: c.CalendarRangeQuery };
+  | {
+      kind: 'LIST';
+      query: { limit?: string; cursor?: string };
+      excludeEventIds?: string[];
+    }
+  | { kind: 'VIEW'; query: c.CalendarRangeQuery; excludeEventIds?: string[] };
 export abstract class SharedCalendar {
   abstract cleanup(
     tx: Prisma.TransactionClient,

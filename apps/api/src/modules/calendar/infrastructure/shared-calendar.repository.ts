@@ -75,6 +75,9 @@ export class SharedCalendarRepository extends SharedCalendar {
       scopeId,
       actor,
       actorId: access.actorId,
+      ...('excludeEventIds' in command
+        ? { excludeEventIds: command.excludeEventIds }
+        : {}),
       changed: async (id) => {
         await effect(id);
       },

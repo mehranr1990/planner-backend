@@ -143,6 +143,9 @@ export class Store implements CalendarTransaction {
         seriesId: null,
         deletedAt: null,
         ...after(position),
+        ...('shared' in this.scope && this.scope.excludeEventIds?.length
+          ? { NOT: { id: { in: this.scope.excludeEventIds } } }
+          : {}),
       }),
       orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
       take: limit,

@@ -3113,7 +3113,8 @@ export class SharedKernel {
         accessId: string;
       },
     ) => Promise<void>,
-    kind: 'PROJECT' | 'TEAM' | 'COMPANY' | 'CONVERSATION' = 'PROJECT',
+    kind:
+      'PROJECT' | 'TEAM' | 'COMPANY' | 'CONVERSATION' | 'MEETING' = 'PROJECT',
     additionalUsers: string[] = [],
   ) {
     this.enabled();

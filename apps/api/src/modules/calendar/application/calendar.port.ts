@@ -10,6 +10,7 @@ export type SharedCalendarContext = {
   scopeId: string;
   actor: RequestActor;
   actorId: string;
+  excludeEventIds?: string[];
   changed: (id: string) => Promise<void>;
   creating: () => Promise<void>;
   created: (id: string) => Promise<void>;

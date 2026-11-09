@@ -381,6 +381,7 @@ enum StoredFileStatus {
 }
 
 model StoredFile {
+ MeetingAttachment_file MeetingAttachment[] @relation("MeetingAttachment_file_fk")
  MessageAttachment_file MessageAttachment[] @relation("MessageAttachment_file_fk")
  CompanyKnowledgeVersion_file CompanyKnowledgeVersion[] @relation("CompanyKnowledgeVersion_file")
  CompanyExpenseReceipt_file CompanyExpenseReceipt[] @relation("CompanyExpenseReceipt_file")
@@ -435,6 +436,7 @@ enum TaskPriority {
 }
 
 model Task {
+ MeetingTaskLink_task MeetingTaskLink[] @relation("MeetingTaskLink_task_fk")
  TeamWorkItem TeamWorkItem[]
   reminders          Reminder[]
   noteReferences     Note[]
@@ -745,6 +747,7 @@ model PlanningReview {
 }
 
 model CalendarEvent {
+ Meeting_event Meeting[] @relation("Meeting_event_fk")
  TeamMeeting_Event TeamMeeting[] @relation("TeamMeeting_Event")
  scopedVersions EventRecurrence[] @relation("EventScope")
  @@unique([spaceId,scopeId,id],map:"CalendarEvent_scope_key")
@@ -1805,6 +1808,8 @@ model PushSubscription {
 
 // SQL enforces additional branch, lifecycle and immutable-history constraints.
 model AccessScope {
+ Announcement_scope Announcement[] @relation("Announcement_scope_fk")
+ Meeting_scope Meeting[] @relation("Meeting_scope_fk")
  Conversations Conversation[]
 
   DomainScopeCustody_parent DomainScopeCustody[] @relation("DomainScopeCustody_parent")
@@ -1889,6 +1894,8 @@ model AccessScope {
 
 // SQL enforces additional branch, lifecycle and immutable-history constraints.
 model ContextAccess {
+ AnnouncementTarget_source AnnouncementTarget[] @relation("AnnouncementTarget_source_fk")
+ MeetingMember_source MeetingMember[] @relation("MeetingMember_source_fk")
  ConversationMemberships ConversationMember[]
 
   DomainScopeAdmissionAlias_destinationScope DomainScopeAdmissionAlias[] @relation("DomainScopeAdmissionAlias_destinationScope")
@@ -1992,6 +1999,12 @@ model ContextAccess {
 
 // SQL enforces additional branch, lifecycle and immutable-history constraints.
 model ContextAccessInterval {
+ AnnouncementMutation_interval AnnouncementMutation[] @relation("AnnouncementMutation_interval_fk")
+ AnnouncementTarget_interval AnnouncementTarget[] @relation("AnnouncementTarget_interval_fk")
+ MeetingAttachment_interval MeetingAttachment[] @relation("MeetingAttachment_interval_fk")
+ MeetingInvitation_recipientInterval MeetingInvitation[] @relation("MeetingInvitation_recipientInterval_fk")
+ MeetingInvitation_issuerInterval MeetingInvitation[] @relation("MeetingInvitation_issuerInterval_fk")
+ MeetingMember_interval MeetingMember[] @relation("MeetingMember_interval_fk")
  ConversationMemberships ConversationMember[]
  ConversationInvitationsSent ConversationInvitation[] @relation("ConversationInvitationIssuerInterval")
  ConversationInvitationsReceived ConversationInvitation[] @relation("ConversationInvitationRecipientInterval")
@@ -2133,6 +2146,15 @@ model ResourceGrant {
 
 // SQL enforces additional branch, lifecycle and immutable-history constraints.
 model SharedActor {
+ AnnouncementMutation_actor AnnouncementMutation[] @relation("AnnouncementMutation_actor_fk")
+ AnnouncementAcknowledgement_actor AnnouncementAcknowledgement[] @relation("AnnouncementAcknowledgement_actor_fk")
+ AnnouncementVersion_publisher AnnouncementVersion[] @relation("AnnouncementVersion_publisher_fk")
+ MeetingAttachment_uploader MeetingAttachment[] @relation("MeetingAttachment_uploader_fk")
+ MeetingMutation_actor MeetingMutation[] @relation("MeetingMutation_actor_fk")
+ MeetingInvitation_recipient MeetingInvitation[] @relation("MeetingInvitation_recipient_fk")
+ MeetingMember_actor MeetingMember[] @relation("MeetingMember_actor_fk")
+ Announcement_creator Announcement[] @relation("Announcement_creator_fk")
+ Meeting_creator Meeting[] @relation("Meeting_creator_fk")
  MessageNotice_actor MessageNotice[] @relation("MessageNotice_actor_fk")
  ConversationsCreated Conversation[]
  ConversationMemberships ConversationMember[]
@@ -2507,6 +2529,8 @@ model GoalGrant {
 }
 
 model Project {
+ Announcement_projectId Announcement[] @relation("Announcement_projectId_fk")
+ Meeting_projectId Meeting[] @relation("Meeting_projectId_fk")
  Conversations Conversation[]
 
   DomainScopeCustody_project DomainScopeCustody[] @relation("DomainScopeCustody_project")
@@ -3564,6 +3588,8 @@ model SharedLifecycleEffect {
 }
 
 model Team {
+ Announcement_teamId Announcement[] @relation("Announcement_teamId_fk")
+ Meeting_teamId Meeting[] @relation("Meeting_teamId_fk")
  Conversations Conversation[]
 
   DomainScopeCustody_team DomainScopeCustody[] @relation("DomainScopeCustody_team")
@@ -3749,6 +3775,7 @@ model TeamDisclosureRecipient {
 }
 
 model TeamMeeting {
+ Meeting_legacy Meeting[] @relation("Meeting_legacy_fk")
  scopeId String @db.Uuid @default(dbgenerated("NULL::uuid"))
  id String @db.Uuid @id
  spaceId String @db.Uuid
@@ -3789,6 +3816,8 @@ model TeamMeetingInvitation {
 }
 
 model Company {
+ Announcement_companyId Announcement[] @relation("Announcement_companyId_fk")
+ Meeting_companyId Meeting[] @relation("Meeting_companyId_fk")
  Conversations Conversation[]
 
   DomainScopeCustody_company DomainScopeCustody[] @relation("DomainScopeCustody_company")
@@ -5314,4 +5343,415 @@ model MessageNoticeAttempt {
  createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
  @@unique([noticeId,subscriptionId])
  @@index([state,notBefore,id])
+}
+
+// P5-05 / ADR 0048: typed meeting and publication owner data.
+model Meeting {
+ MeetingAttachment_meeting MeetingAttachment[] @relation("MeetingAttachment_meeting_fk")
+ MeetingMutation_meeting MeetingMutation[] @relation("MeetingMutation_meeting_fk")
+ MeetingVersion_meeting MeetingVersion[] @relation("MeetingVersion_meeting_fk")
+ MeetingInvitation_meeting MeetingInvitation[] @relation("MeetingInvitation_meeting_fk")
+ MeetingMember_meeting MeetingMember[] @relation("MeetingMember_meeting_fk")
+ legacy TeamMeeting? @relation("Meeting_legacy_fk",fields:[legacyTeamMeetingId],references:[id],onDelete:NoAction,onUpdate:NoAction,map:"Meeting_legacy_fk")
+ event CalendarEvent @relation("Meeting_event_fk",fields:[spaceId,scopeId,eventId],references:[spaceId,scopeId,id],onDelete:NoAction,onUpdate:NoAction,map:"Meeting_event_fk")
+ companyRelation Company? @relation("Meeting_companyId_fk",fields:[spaceId,companyId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction,map:"Meeting_companyId_fk")
+ teamRelation Team? @relation("Meeting_teamId_fk",fields:[spaceId,teamId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction,map:"Meeting_teamId_fk")
+ projectRelation Project? @relation("Meeting_projectId_fk",fields:[spaceId,projectId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction,map:"Meeting_projectId_fk")
+ creator SharedActor @relation("Meeting_creator_fk",fields:[spaceId,createdByActorId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction,map:"Meeting_creator_fk")
+ scope AccessScope @relation("Meeting_scope_fk",fields:[spaceId,scopeId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction,map:"Meeting_scope_fk")
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ kind String @db.VarChar(12)
+ projectId String? @db.Uuid
+ teamId String? @db.Uuid
+ companyId String? @db.Uuid
+ legacyTeamMeetingId String? @unique @db.Uuid
+ eventId String @unique @db.Uuid
+ createdByActorId String @db.Uuid
+ externalUrl String? @db.VarChar(2048)
+ state String @default("ACTIVE") @db.VarChar(10)
+ revision Int @default(1)
+ creationKeyHash String @db.Char(64)
+ creationFingerprint String @db.Char(64)
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ @@unique([spaceId,scopeId,id])
+ @@unique([id,eventId])
+ @@unique([spaceId,scopeId,createdByActorId,creationKeyHash])
+}
+
+// P5-05 / ADR 0048: typed meeting and publication owner data.
+model MeetingMember {
+ MeetingAdmission_member MeetingAdmission[] @relation("MeetingAdmission_member_fk")
+ interval ContextAccessInterval @relation("MeetingMember_interval_fk",fields:[sourceAccessId,sourceGeneration],references:[accessId,generation],onDelete:NoAction,onUpdate:NoAction,map:"MeetingMember_interval_fk")
+ source ContextAccess @relation("MeetingMember_source_fk",fields:[spaceId,scopeId,sourceAccessId],references:[spaceId,scopeId,id],onDelete:NoAction,onUpdate:NoAction,map:"MeetingMember_source_fk")
+ actor SharedActor @relation("MeetingMember_actor_fk",fields:[spaceId,actorId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction,map:"MeetingMember_actor_fk")
+ meeting Meeting @relation("MeetingMember_meeting_fk",fields:[spaceId,scopeId,meetingId],references:[spaceId,scopeId,id],onDelete:NoAction,onUpdate:NoAction,map:"MeetingMember_meeting_fk")
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ meetingId String @db.Uuid
+ actorId String @db.Uuid
+ role String @db.VarChar(12)
+ state String @db.VarChar(10)
+ rsvp String @db.VarChar(10)
+ generation Int @default(1)
+ revision Int @default(1)
+ sourceAccessId String @db.Uuid
+ sourceGeneration Int
+ restoreGeneration Int
+ joinedAt DateTime @db.Timestamptz(3)
+ @@unique([meetingId,actorId])
+ @@unique([meetingId,id])
+}
+
+// P5-05 / ADR 0048: typed meeting and publication owner data.
+model MeetingAdmission {
+ MeetingAttachment_memberId MeetingAttachment[] @relation("MeetingAttachment_memberId_fk")
+ MeetingTaskLink_memberId MeetingTaskLink[] @relation("MeetingTaskLink_memberId_fk")
+ MeetingActionRelease_memberId MeetingActionRelease[] @relation("MeetingActionRelease_memberId_fk")
+ MeetingReview_memberId MeetingReview[] @relation("MeetingReview_memberId_fk")
+ MeetingDraftContributor_memberId MeetingDraftContributor[] @relation("MeetingDraftContributor_memberId_fk")
+ MeetingVersion_reviewerMemberId MeetingVersion[] @relation("MeetingVersion_reviewerMemberId_fk")
+ MeetingVersion_authorMemberId MeetingVersion[] @relation("MeetingVersion_authorMemberId_fk")
+ MeetingAgendaEntry_memberId MeetingAgendaEntry[] @relation("MeetingAgendaEntry_memberId_fk")
+ MeetingInvitation_accepted MeetingInvitation[] @relation("MeetingInvitation_accepted_fk")
+ MeetingInvitation_issuer MeetingInvitation[] @relation("MeetingInvitation_issuer_fk")
+ member MeetingMember @relation("MeetingAdmission_member_fk",fields:[meetingId,memberId],references:[meetingId,id],onDelete:NoAction,onUpdate:NoAction,map:"MeetingAdmission_member_fk")
+ meetingId String @db.Uuid
+ memberId String @db.Uuid
+ generation Int
+ joinedAt DateTime @db.Timestamptz(3)
+ endedAt DateTime? @db.Timestamptz(3)
+ @@id([memberId,generation])
+ @@unique([meetingId,memberId,generation])
+}
+
+// P5-05 / ADR 0048: typed meeting and publication owner data.
+model MeetingInvitation {
+ accepted MeetingAdmission? @relation("MeetingInvitation_accepted_fk",fields:[meetingId,acceptedMemberId,acceptedMemberGeneration],references:[meetingId,memberId,generation],onDelete:NoAction,onUpdate:NoAction,map:"MeetingInvitation_accepted_fk")
+ recipientInterval ContextAccessInterval? @relation("MeetingInvitation_recipientInterval_fk",fields:[recipientAccessId,recipientGeneration],references:[accessId,generation],onDelete:NoAction,onUpdate:NoAction,map:"MeetingInvitation_recipientInterval_fk")
+ issuerInterval ContextAccessInterval @relation("MeetingInvitation_issuerInterval_fk",fields:[inviterAccessId,inviterGeneration],references:[accessId,generation],onDelete:NoAction,onUpdate:NoAction,map:"MeetingInvitation_issuerInterval_fk")
+ issuer MeetingAdmission @relation("MeetingInvitation_issuer_fk",fields:[meetingId,inviterMemberId,inviterMemberGeneration],references:[meetingId,memberId,generation],onDelete:NoAction,onUpdate:NoAction,map:"MeetingInvitation_issuer_fk")
+ recipient SharedActor @relation("MeetingInvitation_recipient_fk",fields:[spaceId,recipientActorId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction,map:"MeetingInvitation_recipient_fk")
+ meeting Meeting @relation("MeetingInvitation_meeting_fk",fields:[spaceId,scopeId,meetingId],references:[spaceId,scopeId,id],onDelete:NoAction,onUpdate:NoAction,map:"MeetingInvitation_meeting_fk")
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ meetingId String @db.Uuid
+ recipientActorId String @db.Uuid
+ inviterMemberId String @db.Uuid
+ inviterMemberGeneration Int
+ inviterAccessId String @db.Uuid
+ inviterGeneration Int
+ recipientAccessId String? @db.Uuid
+ recipientGeneration Int?
+ restoreGeneration Int
+ acceptedMemberId String? @db.Uuid
+ acceptedMemberGeneration Int?
+ state String @default("PENDING") @db.VarChar(10)
+ keyHash String @db.Char(64)
+ fingerprint String @db.Char(64)
+ decisionKeyHash String? @db.Char(64)
+ decisionFingerprint String? @db.Char(64)
+ revision Int @default(1)
+ expiresAt DateTime @db.Timestamptz(3)
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ @@unique([meetingId,inviterMemberId,keyHash])
+ @@unique([meetingId,id])
+}
+
+// P5-05 / ADR 0048: typed meeting and publication owner data.
+model MeetingAgendaEntry {
+ memberRelation MeetingAdmission @relation("MeetingAgendaEntry_memberId_fk",fields:[meetingId,memberId,generation],references:[meetingId,memberId,generation],onDelete:NoAction,onUpdate:NoAction,map:"MeetingAgendaEntry_memberId_fk")
+ id String @id @db.Uuid
+ meetingId String @db.Uuid
+ memberId String @db.Uuid
+ generation Int
+ text String
+ state String @default("PROPOSED") @db.VarChar(10)
+ revision Int @default(1)
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ @@unique([meetingId,id])
+}
+
+// P5-05 / ADR 0048: typed meeting and publication owner data.
+model MeetingVersion {
+ MeetingVersionAttachment_version MeetingVersionAttachment[] @relation("MeetingVersionAttachment_version_fk")
+ MeetingReview_version MeetingReview[] @relation("MeetingReview_version_fk")
+ MeetingAction_version MeetingAction[] @relation("MeetingAction_version_fk")
+ MeetingDecision_version MeetingDecision[] @relation("MeetingDecision_version_fk")
+ MeetingDraftContributor_version MeetingDraftContributor[] @relation("MeetingDraftContributor_version_fk")
+ approval MeetingReview? @relation("MeetingVersion_approval_fk",fields:[id,approvedReviewId],references:[versionId,id],onDelete:NoAction,onUpdate:NoAction,map:"MeetingVersion_approval_fk")
+ MeetingVersion_parent MeetingVersion[] @relation("MeetingVersion_parent_fk")
+ parent MeetingVersion? @relation("MeetingVersion_parent_fk",fields:[meetingId,parentId],references:[meetingId,id],onDelete:NoAction,onUpdate:NoAction,map:"MeetingVersion_parent_fk")
+ meeting Meeting @relation("MeetingVersion_meeting_fk",fields:[meetingId],references:[id],onDelete:NoAction,onUpdate:NoAction,map:"MeetingVersion_meeting_fk")
+ reviewerMemberRelation MeetingAdmission? @relation("MeetingVersion_reviewerMemberId_fk",fields:[meetingId,reviewerMemberId,reviewerGeneration],references:[meetingId,memberId,generation],onDelete:NoAction,onUpdate:NoAction,map:"MeetingVersion_reviewerMemberId_fk")
+ authorMemberRelation MeetingAdmission @relation("MeetingVersion_authorMemberId_fk",fields:[meetingId,authorMemberId,authorGeneration],references:[meetingId,memberId,generation],onDelete:NoAction,onUpdate:NoAction,map:"MeetingVersion_authorMemberId_fk")
+ id String @id @db.Uuid
+ meetingId String @db.Uuid
+ number Int
+ parentId String? @db.Uuid
+ authorMemberId String @db.Uuid
+ authorGeneration Int
+ reviewerMemberId String? @db.Uuid
+ reviewerGeneration Int?
+ minutes String
+ agenda Json @db.JsonB
+ state String @default("DRAFT") @db.VarChar(10)
+ revision Int @default(1)
+ approvedReviewId String? @db.Uuid
+ selfFinalized Boolean @default(false)
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ finalizedAt DateTime? @db.Timestamptz(3)
+ @@unique([meetingId,id])
+ @@unique([meetingId,number])
+}
+
+// P5-05 / ADR 0048: typed meeting and publication owner data.
+model MeetingDraftContributor {
+ version MeetingVersion @relation("MeetingDraftContributor_version_fk",fields:[meetingId,versionId],references:[meetingId,id],onDelete:NoAction,onUpdate:NoAction,map:"MeetingDraftContributor_version_fk")
+ memberRelation MeetingAdmission @relation("MeetingDraftContributor_memberId_fk",fields:[meetingId,memberId,generation],references:[meetingId,memberId,generation],onDelete:NoAction,onUpdate:NoAction,map:"MeetingDraftContributor_memberId_fk")
+ meetingId String @db.Uuid
+ versionId String @db.Uuid
+ memberId String @db.Uuid
+ generation Int
+ @@id([versionId,memberId])
+}
+
+// P5-05 / ADR 0048: typed meeting and publication owner data.
+model MeetingDecision {
+ version MeetingVersion @relation("MeetingDecision_version_fk",fields:[meetingId,versionId],references:[meetingId,id],onDelete:NoAction,onUpdate:NoAction,map:"MeetingDecision_version_fk")
+ id String @id @db.Uuid
+ meetingId String @db.Uuid
+ versionId String @db.Uuid
+ position Int
+ text String
+ @@unique([versionId,id])
+ @@unique([versionId,position])
+}
+
+// P5-05 / ADR 0048: typed meeting and publication owner data.
+model MeetingAction {
+ MeetingTaskLink_action MeetingTaskLink[] @relation("MeetingTaskLink_action_fk")
+ MeetingActionRelease_action MeetingActionRelease[] @relation("MeetingActionRelease_action_fk")
+ version MeetingVersion @relation("MeetingAction_version_fk",fields:[meetingId,versionId],references:[meetingId,id],onDelete:NoAction,onUpdate:NoAction,map:"MeetingAction_version_fk")
+ id String @id @db.Uuid
+ meetingId String @db.Uuid
+ versionId String @db.Uuid
+ position Int
+ title String @db.VarChar(300)
+ description String?
+ @@unique([meetingId,id])
+ @@unique([versionId,id])
+ @@unique([versionId,position])
+}
+
+// P5-05 / ADR 0048: typed meeting and publication owner data.
+model MeetingReview {
+ version MeetingVersion @relation("MeetingReview_version_fk",fields:[meetingId,versionId],references:[meetingId,id],onDelete:NoAction,onUpdate:NoAction,map:"MeetingReview_version_fk")
+ MeetingVersion_approval MeetingVersion[] @relation("MeetingVersion_approval_fk")
+ memberRelation MeetingAdmission @relation("MeetingReview_memberId_fk",fields:[meetingId,memberId,generation],references:[meetingId,memberId,generation],onDelete:NoAction,onUpdate:NoAction,map:"MeetingReview_memberId_fk")
+ id String @id @db.Uuid
+ meetingId String @db.Uuid
+ versionId String @db.Uuid
+ memberId String @db.Uuid
+ generation Int
+ decision String @db.VarChar(8)
+ reason String @db.VarChar(2000)
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ @@unique([versionId,id])
+}
+
+// P5-05 / ADR 0048: typed meeting and publication owner data.
+model MeetingActionRelease {
+ action MeetingAction @relation("MeetingActionRelease_action_fk",fields:[meetingId,actionId],references:[meetingId,id],onDelete:NoAction,onUpdate:NoAction,map:"MeetingActionRelease_action_fk")
+ memberRelation MeetingAdmission @relation("MeetingActionRelease_memberId_fk",fields:[meetingId,memberId,generation],references:[meetingId,memberId,generation],onDelete:NoAction,onUpdate:NoAction,map:"MeetingActionRelease_memberId_fk")
+ id String @id @db.Uuid
+ meetingId String @db.Uuid
+ actionId String @unique @db.Uuid
+ memberId String @db.Uuid
+ generation Int
+ revision Int @default(1)
+ active Boolean @default(true)
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+}
+
+// P5-05 / ADR 0048: typed meeting and publication owner data.
+model MeetingTaskLink {
+ task Task? @relation("MeetingTaskLink_task_fk",fields:[taskSpaceId,taskId],references:[spaceId,id],onDelete:SetNull,onUpdate:NoAction,map:"MeetingTaskLink_task_fk")
+ action MeetingAction @relation("MeetingTaskLink_action_fk",fields:[meetingId,actionId],references:[meetingId,id],onDelete:NoAction,onUpdate:NoAction,map:"MeetingTaskLink_action_fk")
+ memberRelation MeetingAdmission @relation("MeetingTaskLink_memberId_fk",fields:[meetingId,memberId,generation],references:[meetingId,memberId,generation],onDelete:NoAction,onUpdate:NoAction,map:"MeetingTaskLink_memberId_fk")
+ id String @id @db.Uuid
+ meetingId String @db.Uuid
+ actionId String @db.Uuid
+ memberId String @db.Uuid
+ generation Int
+ personal Boolean
+ taskId String? @db.Uuid
+ taskSpaceId String? @db.Uuid
+ taskScopeId String? @db.Uuid
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ @@unique([actionId,memberId,personal])
+}
+
+// P5-05 / ADR 0048: typed meeting and publication owner data.
+model MeetingMutation {
+ actor SharedActor @relation("MeetingMutation_actor_fk",fields:[spaceId,actorId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction,map:"MeetingMutation_actor_fk")
+ meeting Meeting @relation("MeetingMutation_meeting_fk",fields:[meetingId],references:[id],onDelete:NoAction,onUpdate:NoAction,map:"MeetingMutation_meeting_fk")
+ meetingId String @db.Uuid
+ actorId String @db.Uuid
+ spaceId String @db.Uuid
+ generation Int
+ keyHash String @db.Char(64)
+ fingerprint String @db.Char(64)
+ resourceId String @db.Uuid
+ action String @db.VarChar(40)
+ @@id([meetingId,actorId,generation,keyHash])
+}
+
+// P5-05 / ADR 0048: typed meeting and publication owner data.
+model MeetingAttachment {
+ AnnouncementVersionAttachment_attachment AnnouncementVersionAttachment[] @relation("AnnouncementVersionAttachment_attachment_fk")
+ MeetingVersionAttachment_attachment MeetingVersionAttachment[] @relation("MeetingVersionAttachment_attachment_fk")
+ interval ContextAccessInterval @relation("MeetingAttachment_interval_fk",fields:[sourceAccessId,sourceGeneration],references:[accessId,generation],onDelete:NoAction,onUpdate:NoAction,map:"MeetingAttachment_interval_fk")
+ uploader SharedActor @relation("MeetingAttachment_uploader_fk",fields:[spaceId,uploaderActorId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction,map:"MeetingAttachment_uploader_fk")
+ file StoredFile @relation("MeetingAttachment_file_fk",fields:[spaceId,scopeId,id],references:[spaceId,scopeId,id],onDelete:NoAction,onUpdate:NoAction,map:"MeetingAttachment_file_fk")
+ announcement Announcement? @relation("MeetingAttachment_announcement_fk",fields:[spaceId,scopeId,announcementId],references:[spaceId,scopeId,id],onDelete:NoAction,onUpdate:NoAction,map:"MeetingAttachment_announcement_fk")
+ meeting Meeting? @relation("MeetingAttachment_meeting_fk",fields:[spaceId,scopeId,meetingId],references:[spaceId,scopeId,id],onDelete:NoAction,onUpdate:NoAction,map:"MeetingAttachment_meeting_fk")
+ memberRelation MeetingAdmission? @relation("MeetingAttachment_memberId_fk",fields:[meetingId,memberId,memberGeneration],references:[meetingId,memberId,generation],onDelete:NoAction,onUpdate:NoAction,map:"MeetingAttachment_memberId_fk")
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ meetingId String? @db.Uuid
+ announcementId String? @db.Uuid
+ uploaderActorId String @db.Uuid
+ sourceAccessId String @db.Uuid
+ sourceGeneration Int
+ restoreGeneration Int
+ memberId String? @db.Uuid
+ memberGeneration Int?
+ sharedAt DateTime? @db.Timestamptz(3)
+ retiredAt DateTime? @db.Timestamptz(3)
+ revision Int @default(1)
+ keyHash String @db.Char(64)
+ fingerprint String @db.Char(64)
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ @@unique([meetingId,id])
+ @@unique([announcementId,id])
+}
+
+// P5-05 / ADR 0048: typed meeting and publication owner data.
+model MeetingVersionAttachment {
+ attachment MeetingAttachment @relation("MeetingVersionAttachment_attachment_fk",fields:[meetingId,attachmentId],references:[meetingId,id],onDelete:NoAction,onUpdate:NoAction,map:"MeetingVersionAttachment_attachment_fk")
+ version MeetingVersion @relation("MeetingVersionAttachment_version_fk",fields:[meetingId,versionId],references:[meetingId,id],onDelete:NoAction,onUpdate:NoAction,map:"MeetingVersionAttachment_version_fk")
+ meetingId String @db.Uuid
+ versionId String @db.Uuid
+ attachmentId String @db.Uuid
+ @@id([versionId,attachmentId])
+}
+
+// P5-05 / ADR 0048: typed meeting and publication owner data.
+model Announcement {
+ AnnouncementMutation_announcement AnnouncementMutation[] @relation("AnnouncementMutation_announcement_fk")
+ AnnouncementVersion_announcement AnnouncementVersion[] @relation("AnnouncementVersion_announcement_fk")
+ MeetingAttachment_announcement MeetingAttachment[] @relation("MeetingAttachment_announcement_fk")
+ companyRelation Company? @relation("Announcement_companyId_fk",fields:[spaceId,companyId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction,map:"Announcement_companyId_fk")
+ teamRelation Team? @relation("Announcement_teamId_fk",fields:[spaceId,teamId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction,map:"Announcement_teamId_fk")
+ projectRelation Project? @relation("Announcement_projectId_fk",fields:[spaceId,projectId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction,map:"Announcement_projectId_fk")
+ creator SharedActor @relation("Announcement_creator_fk",fields:[spaceId,createdByActorId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction,map:"Announcement_creator_fk")
+ scope AccessScope @relation("Announcement_scope_fk",fields:[spaceId,scopeId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction,map:"Announcement_scope_fk")
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ kind String @db.VarChar(7)
+ projectId String? @db.Uuid
+ teamId String? @db.Uuid
+ companyId String? @db.Uuid
+ createdByActorId String @db.Uuid
+ revision Int @default(1)
+ creationKeyHash String @db.Char(64)
+ creationFingerprint String @db.Char(64)
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ @@unique([spaceId,scopeId,id])
+ @@unique([spaceId,scopeId,createdByActorId,creationKeyHash])
+}
+
+// P5-05 / ADR 0048: typed meeting and publication owner data.
+model AnnouncementVersion {
+ AnnouncementVersionAttachment_version AnnouncementVersionAttachment[] @relation("AnnouncementVersionAttachment_version_fk")
+ AnnouncementTarget_version AnnouncementTarget[] @relation("AnnouncementTarget_version_fk")
+ publisher SharedActor @relation("AnnouncementVersion_publisher_fk",fields:[publisherSpaceId,publisherActorId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction,map:"AnnouncementVersion_publisher_fk")
+ announcement Announcement @relation("AnnouncementVersion_announcement_fk",fields:[announcementId],references:[id],onDelete:NoAction,onUpdate:NoAction,map:"AnnouncementVersion_announcement_fk")
+ id String @id @db.Uuid
+ announcementId String @db.Uuid
+ number Int
+ title String @db.VarChar(300)
+ text String
+ acknowledgement Boolean @default(false)
+ state String @default("DRAFT") @db.VarChar(10)
+ pinned Boolean @default(false)
+ revision Int @default(1)
+ publisherActorId String @db.Uuid
+ publisherSpaceId String @db.Uuid
+ publishedAt DateTime? @db.Timestamptz(3)
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ @@unique([announcementId,id])
+ @@unique([announcementId,number])
+}
+
+// P5-05 / ADR 0048: typed meeting and publication owner data.
+model AnnouncementTarget {
+ AnnouncementAcknowledgement_target AnnouncementAcknowledgement[] @relation("AnnouncementAcknowledgement_target_fk")
+ interval ContextAccessInterval @relation("AnnouncementTarget_interval_fk",fields:[accessId,generation],references:[accessId,generation],onDelete:NoAction,onUpdate:NoAction,map:"AnnouncementTarget_interval_fk")
+ source ContextAccess @relation("AnnouncementTarget_source_fk",fields:[spaceId,scopeId,accessId],references:[spaceId,scopeId,id],onDelete:NoAction,onUpdate:NoAction,map:"AnnouncementTarget_source_fk")
+ version AnnouncementVersion @relation("AnnouncementTarget_version_fk",fields:[versionId],references:[id],onDelete:NoAction,onUpdate:NoAction,map:"AnnouncementTarget_version_fk")
+ versionId String @db.Uuid
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ accessId String @db.Uuid
+ generation Int
+ restoreGeneration Int
+ @@id([versionId,accessId])
+ @@unique([versionId,accessId,generation])
+}
+
+// P5-05 / ADR 0048: typed meeting and publication owner data.
+model AnnouncementVersionAttachment {
+ attachment MeetingAttachment @relation("AnnouncementVersionAttachment_attachment_fk",fields:[announcementId,attachmentId],references:[announcementId,id],onDelete:NoAction,onUpdate:NoAction,map:"AnnouncementVersionAttachment_attachment_fk")
+ version AnnouncementVersion @relation("AnnouncementVersionAttachment_version_fk",fields:[announcementId,versionId],references:[announcementId,id],onDelete:NoAction,onUpdate:NoAction,map:"AnnouncementVersionAttachment_version_fk")
+ announcementId String @db.Uuid
+ versionId String @db.Uuid
+ attachmentId String @db.Uuid
+ @@id([versionId,attachmentId])
+}
+
+// P5-05 / ADR 0048: typed meeting and publication owner data.
+model AnnouncementAcknowledgement {
+ actor SharedActor @relation("AnnouncementAcknowledgement_actor_fk",fields:[spaceId,actorId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction,map:"AnnouncementAcknowledgement_actor_fk")
+ target AnnouncementTarget @relation("AnnouncementAcknowledgement_target_fk",fields:[versionId,accessId,generation],references:[versionId,accessId,generation],onDelete:NoAction,onUpdate:NoAction,map:"AnnouncementAcknowledgement_target_fk")
+ versionId String @db.Uuid
+ accessId String @db.Uuid
+ generation Int
+ actorId String @db.Uuid
+ spaceId String @db.Uuid
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ @@id([versionId,accessId])
+}
+
+// P5-05 / ADR 0048: typed meeting and publication owner data.
+model AnnouncementMutation {
+ interval ContextAccessInterval @relation("AnnouncementMutation_interval_fk",fields:[accessId,generation],references:[accessId,generation],onDelete:NoAction,onUpdate:NoAction,map:"AnnouncementMutation_interval_fk")
+ actor SharedActor @relation("AnnouncementMutation_actor_fk",fields:[spaceId,actorId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction,map:"AnnouncementMutation_actor_fk")
+ announcement Announcement @relation("AnnouncementMutation_announcement_fk",fields:[announcementId],references:[id],onDelete:NoAction,onUpdate:NoAction,map:"AnnouncementMutation_announcement_fk")
+ announcementId String @db.Uuid
+ actorId String @db.Uuid
+ spaceId String @db.Uuid
+ accessId String @db.Uuid
+ generation Int
+ keyHash String @db.Char(64)
+ fingerprint String @db.Char(64)
+ resourceId String @db.Uuid
+ action String @db.VarChar(40)
+ @@id([announcementId,actorId,generation,keyHash])
 }

@@ -74,56 +74,57 @@ it('rejects unrelated security changes despite approved custody response expansi
   expect(() => assertApiCompatible(changed, baseline)).toThrow();
 });
 
-it('normalizes only the exact two approved portfolio expansions and rejects neighboring or branch mutations', () => {
+it('normalizes only the exact two approved portfolio expansions', () => {
   const doc = createOpenApiDocument();
   expect(() => assertApiCompatible(doc, baseline)).not.toThrow();
   for (const entry of portfolioCustodyResponses) {
     expect(
       (properties(doc, entry).items as { anyOf: unknown[] }).anyOf,
     ).toHaveLength(2);
-    for (const mutation of [
-      'old',
-      'new',
-      'old-summary',
-      'new-summary',
-      'scope',
-      'kind',
-      'array',
-    ] as const) {
-      const copy = structuredClone(doc),
-        sources = properties(copy, entry);
-      const branches = (sources.items as { anyOf: Node[] }).anyOf;
-      if (mutation === 'old') branches[0]!.additionalProperties = true;
-      if (mutation === 'new') branches[1]!.additionalProperties = true;
-      if (mutation === 'old-summary' || mutation === 'new-summary') {
-        const branch = branches[mutation === 'old-summary' ? 0 : 1]!;
-        const fields = (branch.properties as Node).summary as {
-          properties: Node;
-        };
-        (fields.properties.taskCount as Node).maximum = 10;
-      }
-      if (mutation === 'scope')
-        ((branches[1]!.properties as Node).scopeId as Node).pattern = '.*';
-      if (mutation === 'kind')
-        ((branches[1]!.properties as Node).kind as Node).enum = ['PROJECT'];
-      if (mutation === 'array') sources.maxItems = 102;
-      expect(() => assertApiCompatible(copy, baseline)).toThrow(
-        'compatibility',
-      );
-    }
-    for (const mutation of ['security', 'request', 'status'] as const) {
-      const copy = structuredClone(doc) as unknown as {
-        paths: Record<string, Record<string, Node>>;
-      };
-      const operation = copy.paths[entry[1]]![entry[0]]!;
-      if (mutation === 'security') operation.security = [];
-      if (mutation === 'request') operation.requestBody = { required: true };
-      if (mutation === 'status') delete (operation.responses as Node)['200'];
-      expect(() => assertApiCompatible(copy, baseline)).toThrow(
-        'compatibility',
-      );
-    }
   }
+});
+const portfolioMutations = [
+  'old',
+  'new',
+  'old-summary',
+  'new-summary',
+  'scope',
+  'kind',
+  'array',
+  'security',
+  'request',
+  'status',
+] as const;
+it.each(
+  portfolioCustodyResponses.flatMap((entry) =>
+    portfolioMutations.map((mutation) => ({ entry, mutation })),
+  ),
+)('rejects portfolio mutation $mutation in $entry', ({ entry, mutation }) => {
+  const doc = createOpenApiDocument(),
+    copy = structuredClone(doc),
+    sources = properties(copy, entry);
+  const branches = (sources.items as { anyOf: Node[] }).anyOf;
+  if (mutation === 'old') branches[0]!.additionalProperties = true;
+  if (mutation === 'new') branches[1]!.additionalProperties = true;
+  if (mutation === 'old-summary' || mutation === 'new-summary') {
+    const branch = branches[mutation === 'old-summary' ? 0 : 1]!;
+    const fields = (branch.properties as Node).summary as {
+      properties: Node;
+    };
+    (fields.properties.taskCount as Node).maximum = 10;
+  }
+  if (mutation === 'scope')
+    ((branches[1]!.properties as Node).scopeId as Node).pattern = '.*';
+  if (mutation === 'kind')
+    ((branches[1]!.properties as Node).kind as Node).enum = ['PROJECT'];
+  if (mutation === 'array') sources.maxItems = 102;
+  const operation = (copy.paths as Record<string, Record<string, Node>>)[
+    entry[1]
+  ]![entry[0]]!;
+  if (mutation === 'security') operation.security = [];
+  if (mutation === 'request') operation.requestBody = { required: true };
+  if (mutation === 'status') delete (operation.responses as Node)['200'];
+  expect(() => assertApiCompatible(copy, baseline)).toThrow('compatibility');
 });
 
 it('preserves independent portfolio shapes and distinct source IDs under one Company custody', () => {

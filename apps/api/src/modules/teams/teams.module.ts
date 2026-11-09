@@ -4,6 +4,10 @@ import { TeamWorkService } from './application/team-work.service.js';
 import { TeamWorkController } from './http/team-work.controller.js';
 import { Module } from '@nestjs/common';
 import { MessagingModule } from '../messaging/public/index.js';
+import {
+  MeetingsModule,
+  MeetingWorkflowsModule,
+} from '../meetings/public/index.js';
 import type { DynamicModule } from '@nestjs/common';
 import { DatabaseModule } from '../../platform/database/database.module.js';
 import { AuditModule } from '../../platform/audit/audit.service.js';
@@ -23,11 +27,14 @@ export class TeamsModule {
     calendar: DynamicModule,
     notifications: DynamicModule,
     storage: DynamicModule,
+    meetings?: DynamicModule,
   ): DynamicModule {
     return {
       module: TeamsModule,
       imports: [
         MessagingModule,
+        MeetingsModule,
+        meetings ?? MeetingWorkflowsModule.register(tasks, calendar, storage),
         DatabaseModule,
         AuditModule,
         SpacesModule,

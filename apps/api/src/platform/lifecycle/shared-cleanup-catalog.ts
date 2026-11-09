@@ -3,7 +3,7 @@ import { ConflictException } from '@nestjs/common';
 import type { Prisma } from '../../generated/prisma/client.js';
 // Filled only after the final P2-07 catalog review; future FK changes must extend owner cleanup first.
 export const SHARED_CLEANUP_FK_SHA256 =
-  'd436234ba7935d306ccbb32ee1d78eeb7a980d52b21e1ed332cb3e8ab73014e7';
+  'b7a5fdbbc7844bf3f4559191da855ed0a41a31441197af26ba22a5ca3df7f26f';
 export async function assertSharedCleanupCatalog(tx: Prisma.TransactionClient) {
   const rows = await tx.$queryRaw<
     { table: string; name: string; target: string; definition: string }[]

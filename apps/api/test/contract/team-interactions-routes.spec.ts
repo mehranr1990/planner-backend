@@ -5,6 +5,7 @@ import { METHOD_METADATA, PATH_METADATA } from '@nestjs/common/constants.js';
 import { RequestMethod } from '@nestjs/common';
 import { TeamCareController } from '../../src/modules/teams/http/team-care.controller.js';
 import { teamInteractionsPaths } from '../../../../packages/api-contracts/src/team-interactions-openapi.js';
+import { meetingPaths } from '../../../../packages/api-contracts/src/meetings-openapi.js';
 it('matches every exported Team operation to an actual compiled controller handler', () => {
   const actual: string[] = [];
   for (const controller of [TeamCareController, TeamMeetingsController])
@@ -28,9 +29,16 @@ it('matches every exported Team operation to an actual compiled controller handl
           path.replace(/\/+$/, '').replace(/:([A-Za-z]+)/g, '{$1}'),
       );
     }
-  const expected = Object.entries(teamInteractionsPaths()).flatMap(
-    ([path, ops]) => Object.keys(ops).map((method) => method + ' ' + path),
+  const expected = Object.entries({
+    ...teamInteractionsPaths(),
+    ...Object.fromEntries(
+      Object.entries(meetingPaths()).filter(([path]) =>
+        path.startsWith('/api/v1/teams/'),
+      ),
+    ),
+  }).flatMap(([path, ops]) =>
+    Object.keys(ops).map((method) => method + ' ' + path),
   );
   expect(actual.sort()).toEqual(expected.sort());
-  expect(actual).toHaveLength(21);
+  expect(actual).toHaveLength(22);
 });
