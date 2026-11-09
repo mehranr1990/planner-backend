@@ -3,8 +3,14 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module.js';
 import { parseEnvironment } from './bootstrap/environment.js';
 import { NotificationWorker } from './modules/notifications/public/index.js';
-import { MessageNoticeWorker } from './modules/messaging/public/index.js';
-import { MeetingFiles } from './modules/meetings/public/index.js';
+import {
+  MessageNoticeWorker,
+  ConversationLifecycle,
+} from './modules/messaging/public/index.js';
+import {
+  MeetingFiles,
+  MeetingLifecycle,
+} from './modules/meetings/public/index.js';
 import { RewardsPort } from './modules/rewards/public/index.js';
 import { PersonalLifecycle } from './modules/account/public/index.js';
 import { SyncService } from './modules/sync/public/index.js';
@@ -43,6 +49,8 @@ try {
     const projectCleanup = await app.get(ProjectCleanupService).consume();
     const teamCleanup = await app.get(TeamCleanupService).consume();
     const companyCleanup = await app.get(CompanyCleanupService).consume();
+    const conversationCleanup = await app.get(ConversationLifecycle).consume();
+    const meetingCleanup = await app.get(MeetingLifecycle).consume();
     const collaboration = await app.get(CollaborationService).maintain();
     const grants = await app.get(ResourceGrants).maintain();
     const sync = await app.get(SyncService).maintain();
@@ -55,6 +63,8 @@ try {
       projectCleanup ||
       teamCleanup ||
       companyCleanup ||
+      conversationCleanup ||
+      meetingCleanup ||
       collaboration ||
       grants ||
       sync ||

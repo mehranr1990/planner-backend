@@ -14,6 +14,8 @@ export type Operation = {
   conditionalRevision?: boolean;
   binary?: boolean;
   download?: boolean;
+  recovery?: boolean;
+  status200?: boolean;
 };
 export const messagingOperations: Operation[] = [
   {
@@ -170,6 +172,13 @@ export function messagingOperationPaths(operations: Operation[]) {
           'Required for edit, delete, pin, moderate, resolve-report and policy. Use the current message/report/policy revision.',
         schema: { type: 'string', pattern: '^"[1-9][0-9]*"$' },
       });
+    if (op.recovery)
+      parameters.push({
+        in: 'header',
+        name: 'X-Deletion-Recovery',
+        required: true,
+        schema: { type: 'string', minLength: 43, maxLength: 43 },
+      });
     if (op.query) {
       const query = z.toJSONSchema(op.query, { io: 'input' }) as {
         properties: Record<string, unknown>;
@@ -183,7 +192,7 @@ export function messagingOperationPaths(operations: Operation[]) {
           schema: value,
         });
     }
-    const status = op.method === 'post' ? 201 : 200;
+    const status = op.method === 'post' && !op.status200 ? 201 : 200;
     const responses: Record<string, unknown> = {
       [status]: {
         description: 'Current authorized messaging result',

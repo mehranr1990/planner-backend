@@ -337,6 +337,25 @@ try {
     assert.equal(history.items[0]!.id, input.id);
     // Seed an expired source closure only in this newly owned smoke database.
     // The actual registered worker must stop before deleting its channel history.
+    const heldVersion = version + '-held';
+    await db.query(
+      `INSERT INTO "SharedRetentionPolicy"(version,"approvalReference",configuration) SELECT $2::varchar,"approvalReference",jsonb_set(jsonb_set(configuration,'{policyVersion}',to_jsonb($2::text)),'{holds}',$3::jsonb) FROM "SharedRetentionPolicy" WHERE version=$1`,
+      [
+        version,
+        heldVersion,
+        JSON.stringify([
+          {
+            id: randomUUID(),
+            basis: 'Synthetic worker hold',
+            authority: 'Synthetic operator',
+            scope: 'Owned guarded source',
+            state: 'ACTIVE',
+            releaseEvidence: null,
+            nextReviewAt: new Date(Date.now() + 86400000).toISOString(),
+          },
+        ]),
+      ],
+    );
     const sourceOwner = await person(),
       sourceId = randomUUID(),
       channelId = randomUUID(),
@@ -347,7 +366,7 @@ try {
       {
         id: sourceId,
         title: 'Synthetic guarded source',
-        retentionPolicyVersion: version,
+        retentionPolicyVersion: heldVersion,
       },
       sourceOwner.cookie,
       { 'Idempotency-Key': randomUUID() },
@@ -387,8 +406,8 @@ try {
         [sourceId],
       );
       await db.query(
-        `INSERT INTO "SharedLifecycleJob"(id,"custodyId","spaceId",generation,state,"effectiveDepartureAt","recoveryDeadline","retentionPolicyVersion","nextAt") VALUES($1,$2,$2,1,'CLEANUP_PENDING',clock_timestamp()-interval '40 days',clock_timestamp()-interval '10 days',$3,clock_timestamp())`,
-        [jobId, sourceId, version],
+        `INSERT INTO "SharedLifecycleJob"(id,"custodyId","spaceId",generation,state,"effectiveDepartureAt","recoveryDeadline","retentionPolicyVersion","nextAt") VALUES($1,$2,$2,1,'CLEANUP_PENDING',statement_timestamp()-interval '40 days',statement_timestamp()-interval '10 days',$3,statement_timestamp())`,
+        [jobId, sourceId, heldVersion],
       );
       await db.query(
         `UPDATE "SharedCustody" SET state='CLEANUP_PENDING',"closureGeneration"=1 WHERE "spaceId"=$1`,
@@ -404,7 +423,7 @@ try {
         await db.query('SELECT state FROM "SharedLifecycleJob" WHERE id=$1', [
           jobId,
         ])
-      ).rows[0].state === 'BLOCKED_POLICY';
+      ).rows[0].state === 'WAITING_OBLIGATIONS';
     await workerPass(guarded);
     if (process.argv.includes('--advanced'))
       await (
@@ -539,9 +558,27 @@ try {
         'PASS: P5-05 compiled API restart preserves accepted meetings, approved minutes, private idempotent Task links, exact attachment bytes and aggregate announcement acknowledgement; actual worker collects expired unlinked bytes and preserves linked content.\n',
       );
     }
+    if (process.argv.includes('--privacy')) {
+      const privacy = await import('./p5-06-smoke.ts');
+      const state = await privacy.beforePrivacyRestart(
+        http,
+        id,
+        owner.cookie,
+        recipient.cookie,
+      );
+      await stop(api);
+      api = await apiStart();
+      await privacy.afterPrivacyRestart(
+        http,
+        id,
+        owner.cookie,
+        recipient.cookie,
+        state,
+      );
+    }
     await stop(api);
     process.stdout.write(
-      'PASS: fresh compiled API restart preserves accepted DM, ordered history, reusable polling cursor, send idempotency and one audit/outbox effect; actual worker advances source disposal to BLOCKED_POLICY before destructive work and preserves that state across worker restart.\n',
+      'PASS: fresh compiled API restart preserves accepted DM, ordered history, reusable polling cursor, send idempotency and one audit/outbox effect; actual worker honors a captured active retention hold before destructive work and preserves that state across worker restart.\n',
     );
   } finally {
     await db.end();

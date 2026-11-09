@@ -44,6 +44,7 @@ export class MessageProgressService {
         deliveredThrough: m.historyAfter,
         readThrough: m.historyAfter,
         shareReceipts: false,
+        receiptConsentAt: null,
         revision: 1,
       }
     );
@@ -163,6 +164,8 @@ export class MessageProgressService {
           { action: 'sharing', shareReceipts },
           async () => {
             const p = await this.current(s, m);
+            if (shareReceipts && !(await this.base.dmContact(s)))
+              throw new ForbiddenException({ code: 'CONTACT_UNAVAILABLE' });
             messageVersion(expected, p.revision);
             await s.tx.messageProgress.upsert({
               where: {
@@ -171,8 +174,17 @@ export class MessageProgressService {
                   generation: m.generation,
                 },
               },
-              create: { ...p, shareReceipts, revision: p.revision + 1 },
-              update: { shareReceipts, revision: { increment: 1 } },
+              create: {
+                ...p,
+                shareReceipts,
+                receiptConsentAt: shareReceipts ? s.now : null,
+                revision: p.revision + 1,
+              },
+              update: {
+                shareReceipts,
+                receiptConsentAt: shareReceipts ? s.now : null,
+                revision: { increment: 1 },
+              },
             });
           },
         );
@@ -222,6 +234,21 @@ export class MessageProgressService {
               recipient = await this.base.currentMember(s, proof),
               p = await this.current(s, recipient);
             if (!p.shareReceipts) continue;
+            const pair = await this.base.contacts.pair(
+              s.tx,
+              s.actor.userId,
+              userId,
+              s.locked,
+            );
+            if (
+              pair.blocked ||
+              (pair.cutoff &&
+                (!mine.receiptConsentAt ||
+                  mine.receiptConsentAt <= pair.cutoff ||
+                  !p.receiptConsentAt ||
+                  p.receiptConsentAt <= pair.cutoff))
+            )
+              continue;
             const recipientOp: Op = {
               ...s,
               actor: { ...s.actor, userId },

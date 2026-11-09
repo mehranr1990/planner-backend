@@ -251,7 +251,9 @@ export class MessageMediaService {
         source,
         length,
         abort.signal,
-        claim.voice ? { maxDurationMs: 120000, maxBytes: 10000000 } : {},
+        claim.voice
+          ? { maxDurationMs: 120000, maxBytes: 10000000, communication: true }
+          : { communication: true },
       );
       return await this.base.operation(
         actor,
@@ -418,6 +420,16 @@ export class MessageMediaService {
           await this.base.proof(s, user),
         );
       if (sequence <= member.historyAfter) throw new NotFoundException();
+      if (
+        user !== s.actor.userId &&
+        !(await this.base.contacts.allowed(
+          s.tx,
+          s.actor.userId,
+          user,
+          s.locked,
+        ))
+      )
+        continue;
       await s.tx.messageMention.create({
         data: {
           conversationId: s.conv.id,
@@ -863,6 +875,81 @@ export class MessageMediaService {
       },
     );
   }
+  /** Finite current-authority bootstrap. Preserve the first mutation position
+   * across every snapshot page so concurrent edits cannot fall between feeds. */
+  recovery(actor: RequestActor, id: string, q: Page) {
+    return this.advanced.run(
+      actor,
+      id,
+      'messaging.recovery',
+      async (s, m, stamp) => {
+        const context = 'rich-recovery:' + id,
+          p = this.kernel.opaquePosition(
+            context,
+            stamp,
+            actor.userId,
+            q.cursor,
+          );
+        let after = m.historyAfter,
+          through = s.conv.lastSequence,
+          change = s.conv.lastChangeSequence;
+        if (p !== undefined) {
+          if (
+            !/^(0|[1-9][0-9]{0,18}):(0|[1-9][0-9]{0,18}):(0|[1-9][0-9]{0,18})$/.test(
+              p,
+            )
+          )
+            throw new BadRequestException();
+          [after, through, change] = p.split(':').map(BigInt) as [
+            bigint,
+            bigint,
+            bigint,
+          ];
+        }
+        if (
+          after < m.historyAfter ||
+          after > through ||
+          through > s.conv.lastSequence ||
+          change > s.conv.lastChangeSequence
+        )
+          throw new BadRequestException();
+        const rows = await s.tx.messageEntry.findMany({
+            where: {
+              conversationId: id,
+              sequence: { gt: after, lte: through },
+            },
+            orderBy: { sequence: 'asc' },
+            take: q.limit + 1,
+          }),
+          selected = rows.slice(0, q.limit),
+          items = [];
+        for (const row of selected) {
+          const message = await this.view(s, m, row);
+          if (message.state !== 'HIDDEN') items.push(message);
+        }
+        const hasMore = rows.length > q.limit;
+        return c.MessageRecoveryPageSchema.parse({
+          items,
+          hasMore,
+          throughSequence: String(through),
+          nextCursor: hasMore
+            ? this.kernel.opaqueCursor(
+                context,
+                stamp,
+                actor.userId,
+                [selected.at(-1)!.sequence, through, change].join(':'),
+              )
+            : null,
+          changeCursor: this.kernel.opaqueCursor(
+            'rich-changes:' + id,
+            stamp,
+            actor.userId,
+            String(change),
+          ),
+        });
+      },
+    );
+  }
   changes(actor: RequestActor, id: string, q: Page) {
     return this.advanced.run(
       actor,
@@ -944,7 +1031,7 @@ export class MessageMediaService {
         },
       );
     const before = await locate(),
-      stream = await this.files.open(before.file);
+      stream = await this.files.open(before.file, true);
     try {
       const after = await locate();
       if (

@@ -434,6 +434,7 @@ export class MeetingFiles {
         source,
         length,
         abort.signal,
+        { communication: true },
       );
       return await this.operation(
         actor,
@@ -653,7 +654,7 @@ export class MeetingFiles {
         ),
       before = await locate();
     if (before.file.status !== 'READY') throw new NotFoundException();
-    const stream = await this.files.open(before.file);
+    const stream = await this.files.open(before.file, true);
     try {
       const after = await locate();
       if (

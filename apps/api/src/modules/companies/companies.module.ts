@@ -44,10 +44,11 @@ export class CompaniesModule {
     projects: DynamicModule,
     storage: DynamicModule,
     teams: DynamicModule,
+    calendar: DynamicModule,
   ): DynamicModule {
     return {
       module: CompaniesModule,
-      imports: [projects, storage, teams],
+      imports: [projects, storage, teams, calendar],
       providers: [
         CompanyAssociationsService,
         CompanyCleanupService,

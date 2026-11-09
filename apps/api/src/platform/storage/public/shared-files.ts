@@ -21,6 +21,7 @@ import { APP_CONFIG } from '../../../bootstrap/configuration.module.js';
 import type { AppConfig } from '../../../bootstrap/environment.js';
 import { STORAGE_PORT, StorageFailure } from '../storage.port.js';
 import type { StoragePort, FileEvidence } from '../storage.port.js';
+import { safeCommunicationContent } from '../communication-content.js';
 import { sharedDeleteBatch } from '../../lifecycle/shared-cleanup.js';
 import type { SharedRestoreScope } from '../../lifecycle/shared-replay.js';
 import type {
@@ -367,7 +368,11 @@ export class SharedFiles {
     source: Readable,
     length: string | undefined,
     signal: AbortSignal,
-    limits: { maxDurationMs?: number; maxBytes?: number } = {},
+    limits: {
+      maxDurationMs?: number;
+      maxBytes?: number;
+      communication?: boolean;
+    } = {},
   ) {
     if (
       length !== undefined &&
@@ -375,7 +380,7 @@ export class SharedFiles {
     )
       throw new BadRequestException();
     try {
-      return await this.storage.write(
+      const evidence = await this.storage.write(
         ticket.file.objectKey,
         ticket.attempt,
         source,
@@ -387,6 +392,9 @@ export class SharedFiles {
         },
         signal,
       );
+      if (limits.communication)
+        await this.inspect(ticket.file, evidence, signal);
+      return evidence;
     } catch (error) {
       if (error instanceof StorageFailure) {
         if (error.code === 'LIMIT') throw new PayloadTooLargeException();
@@ -459,10 +467,39 @@ export class SharedFiles {
       data: { status: 'DELETED', deletedAt: now, revision: { increment: 1 } },
     });
   }
-  async open(file: StoredFile) {
+  private async inspect(
+    file: StoredFile,
+    evidence: FileEvidence,
+    signal?: AbortSignal,
+  ) {
+    if (evidence.size > 20 * 1024 * 1024) throw new PayloadTooLargeException();
+    const input = await this.storage.open(file.objectKey, evidence);
+    const parts: Buffer[] = [];
+    let size = 0;
+    try {
+      for await (const part of input) {
+        if (signal?.aborted) throw new StorageFailure('INVALID');
+        const bytes = Buffer.from(part as Uint8Array);
+        size += bytes.length;
+        if (size > 20 * 1024 * 1024) throw new PayloadTooLargeException();
+        parts.push(bytes);
+      }
+    } finally {
+      input.destroy();
+    }
+    if (signal?.aborted) throw new StorageFailure('INVALID');
+    if (!safeCommunicationContent(file.mimeType, Buffer.concat(parts)))
+      throw new BadRequestException({ code: 'UNSAFE_COMMUNICATION_FILE' });
+  }
+  async open(file: StoredFile, communication = false) {
     if (file.status !== 'READY' || file.actualSize === null || !file.sha256)
       throw new NotFoundException();
     try {
+      if (communication)
+        await this.inspect(file, {
+          size: file.actualSize,
+          sha256: file.sha256,
+        });
       return await this.storage.open(file.objectKey, {
         size: file.actualSize,
         sha256: file.sha256,

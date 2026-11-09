@@ -13,6 +13,7 @@ import {
   meetingOperations,
   meetingPaths,
 } from '../../../../packages/api-contracts/src/meetings-openapi.js';
+import { communicationLifecycleOperations } from '../../../../packages/api-contracts/src/communication-lifecycle-openapi.js';
 describe('P5-05 strict additive REST contracts', () => {
   it('documents all 52 protected operations, binary transfers and explicit concurrency controls', () => {
     expect(meetingOperations).toHaveLength(52);
@@ -48,8 +49,12 @@ describe('P5-05 strict additive REST contracts', () => {
         );
       }
     expect(actual.sort()).toEqual(
-      meetingOperations
-        .filter((op) => !op.path.startsWith('/teams/'))
+      [
+        ...meetingOperations.filter((op) => !op.path.startsWith('/teams/')),
+        ...communicationLifecycleOperations.filter(
+          (op) => op.path === '/meetings/{id}/restore-admission',
+        ),
+      ]
         .map((op) => op.method + ' /api/v1' + op.path)
         .sort(),
     );

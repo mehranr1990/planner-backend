@@ -13,6 +13,7 @@ import { MeetingKernel } from '../../meetings/public/index.js';
 import { sharedDeleteBatch } from '../../../platform/lifecycle/shared-cleanup.js';
 import type { SharedCleanupScope } from '../../../platform/lifecycle/shared-cleanup.js';
 import { SharedFiles } from '../../../platform/storage/public/index.js';
+import { SharedCalendar } from '../../calendar/public/index.js';
 import {
   SharedLifecycleService,
   SharedKernel,
@@ -33,6 +34,7 @@ export class CompanyCleanupService {
     @Inject(SharedKernel) private readonly kernel: SharedKernel,
     @Inject(SharedLifecycleService) readonly lifecycle: SharedLifecycleService,
     @Inject(SharedFiles) private readonly files: SharedFiles,
+    @Inject(SharedCalendar) private readonly events: SharedCalendar,
   ) {}
   async restoreRestrictions(spaceId: string) {
     let rows: StoredFile[] = [];
@@ -134,12 +136,21 @@ export class CompanyCleanupService {
             const files = await this.files.purgePlan(tx, s, true);
             return files.length ? { files } : { nextStage: 'ADMISSIONS' };
           }
+          if (
+            stage === 'ADMISSIONS' &&
+            (!(await this.meetings.cleanup(tx, s)) ||
+              !(await this.messaging.cleanup(tx, s)))
+          )
+            return {};
           if (stage === 'ADMISSIONS')
             return (await this.lifecycle.admissions(tx, s))
               ? { nextStage: 'NOTIFICATIONS' }
               : {};
-          if (stage === 'NOTIFICATIONS')
-            return { nextStage: 'COMPANY_CONTENT' };
+          if (stage === 'NOTIFICATIONS') return { nextStage: 'CALENDAR' };
+          if (stage === 'CALENDAR')
+            return (await this.events.cleanup(tx, s))
+              ? { nextStage: 'COMPANY_CONTENT' }
+              : {};
           if (stage === 'COMPANY_CONTENT')
             return (await this.content(tx, s)) ? { nextStage: 'STORAGE' } : {};
           if (stage === 'STORAGE')

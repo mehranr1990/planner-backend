@@ -12,6 +12,9 @@ import { MeetingDocumentsController } from './http/meeting-documents.controller.
 import { AnnouncementsController } from './http/announcements.controller.js';
 import { MeetingAttachmentsController } from './http/meeting-attachments.controller.js';
 import { AnnouncementAttachmentsController } from './http/announcement-attachments.controller.js';
+import { MeetingLifecycle } from './application/meetings-lifecycle.service.js';
+import { MeetingLifecycleController } from './http/meetings-lifecycle.controller.js';
+import { SpacesModule } from '../spaces/public/index.js';
 @Module({})
 export class MeetingWorkflowsModule {
   static register(
@@ -21,8 +24,16 @@ export class MeetingWorkflowsModule {
   ): DynamicModule {
     return {
       module: MeetingWorkflowsModule,
-      imports: [MeetingsModule, AuditModule, tasks, calendar, storage],
+      imports: [
+        MeetingsModule,
+        SpacesModule,
+        AuditModule,
+        tasks,
+        calendar,
+        storage,
+      ],
       providers: [
+        MeetingLifecycle,
         MeetingsService,
         MeetingDocuments,
         MeetingFiles,
@@ -31,6 +42,7 @@ export class MeetingWorkflowsModule {
         MeetingsGuard,
       ],
       controllers: [
+        MeetingLifecycleController,
         MeetingsController,
         MeetingDocumentsController,
         AnnouncementsController,
@@ -38,6 +50,7 @@ export class MeetingWorkflowsModule {
         AnnouncementAttachmentsController,
       ],
       exports: [
+        MeetingLifecycle,
         MeetingsService,
         MeetingDocuments,
         MeetingFiles,

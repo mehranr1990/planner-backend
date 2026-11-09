@@ -80,6 +80,22 @@ export class MeetingsController {
   ) {
     return this.meetings.get(a, id);
   }
+  @Post(':id/restore-admission')
+  restoreAdmission(
+    @CurrentActor() a: RequestActor,
+    @Param('id', uuid) id: string,
+    @Body(new ZodValidationPipe(c.MeetingEmptySchema.optional())) _b: unknown,
+    @Query(empty) _q: unknown,
+    @Headers('if-match') version: string | undefined,
+    @Headers('idempotency-key') key: string | undefined,
+  ) {
+    return this.meetings.restoreAdmission(
+      a,
+      id,
+      expectedRevision(version),
+      key,
+    );
+  }
   @Patch(':id')
   patch(
     @CurrentActor() a: RequestActor,

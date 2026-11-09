@@ -101,6 +101,26 @@ export class MessagingController {
   ) {
     return this.service.members(actor, conversationId, q);
   }
+  @Post(':id/restore-admission')
+  async restoreAdmission(
+    @CurrentActor() actor: RequestActor,
+    @Param('id', id) conversationId: string,
+    @Body(empty) _b: unknown,
+    @Query(query) _q: unknown,
+    @Headers('if-match') version: string | undefined,
+    @Headers('idempotency-key') key: string | undefined,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    return result(
+      res,
+      await this.service.restoreAdmission(
+        actor,
+        conversationId,
+        revision(version),
+        key,
+      ),
+    );
+  }
   @Post(':id/invitations')
   async invite(
     @CurrentActor() actor: RequestActor,

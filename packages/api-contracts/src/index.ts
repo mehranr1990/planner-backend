@@ -91,3 +91,4 @@ export * from './messaging.js';
 export * from './advanced-messaging.js';
 export * from './messaging-media.js';
 export * from './meetings.js';
+export * from './communication-lifecycle.js';

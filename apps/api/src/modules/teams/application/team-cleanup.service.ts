@@ -93,6 +93,12 @@ export class TeamCleanupService {
             const files = await this.files.purgePlan(tx, s);
             return files.length ? { files } : { nextStage: 'ADMISSIONS' };
           }
+          if (
+            stage === 'ADMISSIONS' &&
+            (!(await this.meetings.cleanup(tx, s)) ||
+              !(await this.messaging.cleanup(tx, s)))
+          )
+            return {};
           if (stage === 'ADMISSIONS')
             return (await this.lifecycle.admissions(tx, s))
               ? { nextStage: 'NOTIFICATIONS' }

@@ -48,6 +48,16 @@ P5-04 **DEFERRED**: future WebSocket adapter for live events/presence/typing, me
 P5-05 Meetings, RSVP, agenda, minutes/decisions/Task conversion, approvals/announcements.
 P5-06 Leave/erasure/retention replay, DM block vs group interactions, privacy and load tests.
 
+Owner-approved P5-06 clarification (2026-11-09), [ADR 0049](../docs/adr/0049-phase-5-communication-lifecycle-blocking-and-local-security.md):
+the P5-04 deferral covers realtime transport, Presence, Typing and socket-specific
+connection/subscription behavior. REST reconnect/recovery, missed message/change
+synchronization, device consistency, ordering, idempotency, revocation, signed
+cursor recovery and HTTP polling load/backpressure are required P5-06 work.
+[The original-requirements audit](../docs/p5-06-p5-04-requirements-audit.md) records
+each classification. P5-01/02/03/05 publication and P5-06 local implementation were
+subsequently authorized explicitly; the historical P5-01-only authorization below
+records the earlier decision. No Phase 6 or operational activation is authorized.
+
 Owner-approved Phase 5 amendment (2026-11-08):
 [ADR 0044](../docs/adr/0044-phase-5-rest-polling-and-realtime-deferral.md)
 requires durable REST with frontend-driven incremental polling, keeps Push

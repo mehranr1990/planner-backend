@@ -1186,7 +1186,7 @@ describe('P5-01 durable messaging, explicit participation and polling', () => {
       await db.conversationMessage.count({ where: { conversationId: b.id } }),
     ).toBe(0);
   });
-  it('blocks source disposal before any destructive pass until messaging retention is implemented', async () => {
+  it('disposes expired source messaging only through the policy-claimed bounded owner cleanup', async () => {
     const source = await work(),
       conv = await channel(source.id, 'PROJECT', []);
     await send(conv.id);
@@ -1236,10 +1236,7 @@ describe('P5-01 durable messaging, explicit participation and polling', () => {
     const job = await db.sharedLifecycleJob.findUniqueOrThrow({
       where: { id: jobId },
     });
-    expect(job.state).toBe('BLOCKED_POLICY');
-    expect(job.progress).toMatchObject({
-      failureCode: 'MESSAGING_RETENTION_PENDING',
-    });
+    expect(job.state).toBe('PURGING');
     expect(
       await db.conversationMessage.count({
         where: { conversationId: conv.id },
@@ -1248,6 +1245,20 @@ describe('P5-01 durable messaging, explicit participation and polling', () => {
     expect(
       await db.project.findUnique({ where: { id: source.id } }),
     ).not.toBeNull();
+    for (
+      let n = 0;
+      n < 120 && (await db.project.findUnique({ where: { id: source.id } }));
+      n++
+    )
+      await cleanup.consume();
+    expect(
+      await db.project.findUnique({ where: { id: source.id } }),
+    ).toBeNull();
+    expect(
+      await db.conversationMessage.count({
+        where: { conversationId: conv.id },
+      }),
+    ).toBe(0);
   });
   it('rejects HTTP outsiders, malformed requests and untrusted origins while returning OpenAPI-shaped responses', async () => {
     const conv = await create(),
@@ -2378,7 +2389,7 @@ describe('P5-01 durable messaging, explicit participation and polling', () => {
         content: null,
       });
     });
-    it('fails closed for source account closure and preserves referenced storage', async () => {
+    it('preserves authorized source history after owner exit, then denies forwarding on the reader departure', async () => {
       const source = await group(),
         msg = await send(source.id),
         targetId = randomUUID();
@@ -2415,10 +2426,18 @@ describe('P5-01 durable messaging, explicit participation and polling', () => {
         advanced.changes(alice.actor, target.id, { ...page, cursor }),
       ).rejects.toThrow();
       expect(
+        (await advanced.detail(alice.actor, target.id, fid)).content?.text,
+      ).toBe('Private text');
+      await messages.leave(
+        alice.actor,
+        source.id,
+        (await member(source.id, alice)).revision,
+      );
+      expect(
         (await advanced.detail(alice.actor, target.id, fid)).content,
       ).toBeNull();
       expect(await messages.disposalBlocker(db, source.id)).toBe(
-        'MESSAGING_RETENTION_PENDING',
+        'OUTSIDE_MESSAGE_REFERENCE',
       );
       expect(await db.messageEntry.count({ where: { id: msg.id } })).toBe(1);
     });

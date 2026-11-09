@@ -13,6 +13,8 @@ import { MessageNoticeWorker } from './application/message-notice-worker.js';
 import { MessageNoticesController } from './http/message-notices.controller.js';
 import { MessagingData } from './public/personal-data.js';
 import { MessagingDataRepository } from './application/messaging-data.js';
+import { ConversationLifecycle } from './application/messaging-lifecycle.service.js';
+import { ConversationLifecycleController } from './http/messaging-lifecycle.controller.js';
 @Module({})
 export class MessagingMediaModule {
   static register(storage: DynamicModule): DynamicModule {
@@ -27,14 +29,20 @@ export class MessagingMediaModule {
         NotificationChannelModule,
       ],
       providers: [
+        ConversationLifecycle,
         MessageMediaService,
         MessageProgressService,
         MessageNotices,
         MessageNoticeWorker,
         { provide: MessagingData, useClass: MessagingDataRepository },
       ],
-      controllers: [MessageMediaController, MessageNoticesController],
+      controllers: [
+        MessageMediaController,
+        MessageNoticesController,
+        ConversationLifecycleController,
+      ],
       exports: [
+        ConversationLifecycle,
         MessageMediaService,
         MessageProgressService,
         MessageNoticeWorker,

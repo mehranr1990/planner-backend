@@ -6,11 +6,21 @@ import type { AuthorizedSpace } from '../../../platform/authorization/authorized
 import { DatabaseService } from '../../../platform/database/database.service.js';
 import { SharedKernel } from '../application/shared-kernel.service.js';
 import type { SharedRequest } from '../application/shared-kernel.service.js';
+import { CollaborationService } from '../application/collaboration.service.js';
+export type IndependentSeatHint = {
+  id: string;
+  spaceId: string;
+  actorId: string;
+  generation: number;
+  userId: string;
+};
 
 /** Spaces owns all identity/admission reads and writes used by Messaging. */
 @Injectable()
 export class MessagingAuthority {
   constructor(
+    @Inject(CollaborationService)
+    private readonly collaboration: CollaborationService,
     @Inject(SharedKernel) private readonly kernel: SharedKernel,
     @Inject(DatabaseService) private readonly db: DatabaseService,
   ) {}
@@ -32,6 +42,9 @@ export class MessagingAuthority {
         if (current !== tx) throw new NotFoundException();
       },
     };
+  }
+  identityPresent(tx: Prisma.TransactionClient, userId: string) {
+    return this.kernel.identityPresent(tx, userId);
   }
   async ownedActors(
     tx: Prisma.TransactionClient,
@@ -289,6 +302,64 @@ export class MessagingAuthority {
       });
     }
     return access;
+  }
+  endIndependentSeat(
+    tx: Prisma.TransactionClient,
+    spaceId: string,
+    actorId: string,
+    now: Date,
+  ) {
+    return this.kernel.endCommunicationSeat(tx, spaceId, actorId, now);
+  }
+  independentSeatHints(kind: 'CONVERSATION' | 'MEETING', after?: string) {
+    return this.db.client.$queryRaw<
+      IndependentSeatHint[]
+    >`SELECT a.id,a."spaceId",a."actorId",a.generation,u."userId" FROM "ContextAccess" a JOIN "SharedCustody" c ON c."spaceId"=a."spaceId" JOIN "SharedActor" u ON u.id=a."actorId" WHERE a."scopeId"=a."spaceId" AND c.kind=${kind} AND c.state IN ('ACTIVE','OWNER_EXIT_FROZEN') AND a.state='ACTIVE' AND u.state='ACTIVE' AND u."userId" IS NOT NULL AND (${after ?? null}::uuid IS NULL OR a.id>${after ?? null}::uuid) ORDER BY a.id LIMIT 25`;
+  }
+  async reconcileIndependentSeat(
+    kind: 'CONVERSATION' | 'MEETING',
+    hint: IndependentSeatHint,
+    validate: (tx: Prisma.TransactionClient) => Promise<Date | null>,
+  ) {
+    const action = 'lifecycle.communication.reconcile';
+    return this.collaboration.signed(
+      null,
+      hint.spaceId,
+      await this.kernel.offerUserHints(hint.spaceId, hint.userId),
+      action,
+      hint.id,
+      async (tx, _now, _locked, begin) => {
+        const current = await this.scope(tx, hint.spaceId),
+          seat = await tx.contextAccess.findUnique({ where: { id: hint.id } });
+        if (
+          current.kind !== kind ||
+          !seat ||
+          seat.state !== 'ACTIVE' ||
+          seat.generation !== hint.generation ||
+          seat.actorId !== hint.actorId
+        )
+          return false;
+        const endedAt = await validate(tx);
+        if (!endedAt || endedAt < seat.joinedAt) return false;
+        await this.kernel.endCommunicationSeat(
+          tx,
+          hint.spaceId,
+          hint.actorId,
+          endedAt,
+        );
+        const audit = await begin();
+        await this.kernel.offerEffect(
+          tx,
+          { userId: hint.userId, requestId: audit, correlationId: audit },
+          hint.spaceId,
+          hint.actorId,
+          action,
+          hint.id,
+          audit,
+        );
+        return true;
+      },
+    );
   }
   /** Meeting's owner invokes this only after its current organizer/delegation check.
    * This changes no work-source membership or custody. */

@@ -53,6 +53,7 @@ export class ApiExceptionFilter implements ExceptionFilter {
       'INTERNAL_ERROR',
       'An unexpected error occurred',
     ];
+    if (status === 429) response.setHeader('Retry-After', '60');
     const body: ApiError = { error: { code, message, requestId: request.id } };
     if (exception instanceof HttpException && status === 400) {
       const detail = exception.getResponse();

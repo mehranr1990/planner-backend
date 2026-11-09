@@ -1179,6 +1179,9 @@ export class SharedKernel {
     });
   }
   /** Current identity check for an already scoped personal transaction, including replay. */
+  async identityPresent(tx: Prisma.TransactionClient, userId: string) {
+    return !!(await this.identity.current(tx, userId));
+  }
   async personalIdentity(tx: Prisma.TransactionClient, actor: RequestActor) {
     if (!actor.sessionId) throw new ForbiddenException();
     await this.accounts(tx, [actor.userId]);
@@ -1481,10 +1484,14 @@ export class SharedKernel {
         const scope = await tx.accessScope.findUnique({
           where: { id: spaceId },
         });
+        const communication = ['CONVERSATION', 'MEETING'].includes(
+          custody.kind,
+        );
         if (
           !(
             custody.state === 'ACTIVE' ||
-            (allowArchived && custody.state === 'ARCHIVED')
+            (allowArchived && custody.state === 'ARCHIVED') ||
+            (communication && custody.state === 'OWNER_EXIT_FROZEN')
           ) ||
           !(
             scope?.state === 'ACTIVE' ||
@@ -1501,13 +1508,14 @@ export class SharedKernel {
           ? await tx.sharedActor.findUnique({ where: { id: primary.actorId } })
           : null;
         if (
-          !owner?.userId ||
-          !primary ||
-          !(await this.accountActive(tx, owner.userId)) ||
-          (await this.endedByClosure(tx, owner.userId, primary.joinedAt))
+          !communication &&
+          (!owner?.userId ||
+            !primary ||
+            !(await this.accountActive(tx, owner.userId)) ||
+            (await this.endedByClosure(tx, owner.userId, primary.joinedAt)))
         )
           throw new NotFoundException();
-        if (!users.includes(owner.userId))
+        if (owner?.userId && !users.includes(owner.userId))
           throw new ConflictException({ code: 'CUSTODIAN_CHANGED_RESTART' });
         const retention = await tx.sharedRetentionPolicy.findUnique({
           where: { version: custody.retentionPolicyVersion },
@@ -1671,7 +1679,8 @@ export class SharedKernel {
       locked: string[],
     ) => Promise<T>,
     onRetry?: () => Promise<void>,
-    kind: 'PROJECT' | 'TEAM' | 'COMPANY' = 'PROJECT',
+    kind:
+      'PROJECT' | 'TEAM' | 'COMPANY' | 'CONVERSATION' | 'MEETING' = 'PROJECT',
     readOnly = false,
   ) {
     this.enabled();
@@ -1749,6 +1758,91 @@ export class SharedKernel {
   }
   async lifecycleMembers(tx: Prisma.TransactionClient, spaceId: string) {
     return (await this.lifecycleMemberRows(tx, spaceId)).length;
+  }
+  /** Invoked by the independent domain owner after ending its effective member.
+   * Technical custody seats cannot outlive that domain admission. */
+  async endCommunicationSeat(
+    tx: Prisma.TransactionClient,
+    spaceId: string,
+    actorId: string,
+    now: Date,
+  ) {
+    const c = await tx.sharedCustody.findUniqueOrThrow({ where: { spaceId } });
+    if (!['CONVERSATION', 'MEETING'].includes(c.kind))
+      throw new NotFoundException();
+    const seat = await tx.contextAccess.findUnique({
+      where: {
+        spaceId_scopeId_actorId: { spaceId, scopeId: spaceId, actorId },
+      },
+    });
+    if (seat && ['ACTIVE', 'SUSPENDED'].includes(seat.state)) {
+      await tx.contextAccess.update({
+        where: { id: seat.id },
+        data: { state: 'LEFT', endedAt: now, revision: { increment: 1 } },
+      });
+      await tx.contextAccessInterval.updateMany({
+        where: {
+          accessId: seat.id,
+          generation: seat.generation,
+          endedAt: null,
+        },
+        data: { endedAt: now },
+      });
+    }
+    const remaining = await this.lifecycleMembers(tx, spaceId);
+    const frozen =
+      remaining > 0 &&
+      seat?.id === c.primaryOwnerAccessId &&
+      c.state === 'ACTIVE';
+    if (
+      (remaining !== 0 && !frozen) ||
+      !['ACTIVE', 'ARCHIVED', 'OWNER_EXIT_FROZEN'].includes(c.state)
+    )
+      return;
+    if (!frozen) {
+      const effective = (
+        await tx.$queryRaw<
+          { at: Date | null }[]
+        >`SELECT max(greatest(coalesce(a."endedAt",a."joinedAt"),CASE WHEN e."closedAt">=a."joinedAt" THEN e."closedAt" ELSE a."joinedAt" END)) at FROM "ContextAccess" a JOIN "SharedActor" u ON u.id=a."actorId" LEFT JOIN "SharedExitWork" e ON e."userId"=u."userId" WHERE a."spaceId"=${spaceId}::uuid AND a."scopeId"=${spaceId}::uuid AND a."memberRole" IS NOT NULL`
+      )[0]?.at;
+      if (effective && effective > now) now = effective;
+    }
+    const generation = c.closureGeneration + 1,
+      deadline = new Date(now.getTime() + 2592000000);
+    await tx.sharedLifecycleJob.updateMany({
+      where: { custodyId: spaceId, state: 'OWNER_EXIT_FROZEN' },
+      data: {
+        state: 'CANCELED',
+        recoveryHash: null,
+        leaseUntil: null,
+        revision: { increment: 1 },
+        progress: { stage: 'SUPERSEDED_BY_LAST_DEPARTURE' },
+      },
+    });
+    const state = frozen ? 'OWNER_EXIT_FROZEN' : 'CLOSING_GRACE';
+    await tx.sharedLifecycleJob.create({
+      data: {
+        id: randomUUID(),
+        custodyId: spaceId,
+        spaceId,
+        generation,
+        state,
+        effectiveDepartureAt: now,
+        recoveryDeadline: deadline,
+        retentionPolicyVersion: c.retentionPolicyVersion,
+        nextAt: frozen ? now : deadline,
+      },
+    });
+    await tx.sharedCustody.update({
+      where: { spaceId },
+      data: { state, closureGeneration: generation },
+    });
+    if (!frozen)
+      await tx.accessScope.updateMany({
+        where: { spaceId },
+        data: { restoreGeneration: { increment: 1 } },
+      });
+    await this.invalidateOffers(tx, spaceId, now);
   }
   private async lifecycleMemberRows(
     tx: Prisma.TransactionClient,
@@ -1938,6 +2032,12 @@ export class SharedKernel {
       where: { spaceId: request.spaceId },
     });
     const departure = request.capability === 'membership.leave';
+    // Independent domain roles remain authoritative after the technical primary
+    // custodian leaves. No role/ownership promotion occurs: current seat policy
+    // and the Messaging/Meeting owner still check each capability and action.
+    const communicationRead = ['CONVERSATION', 'MEETING'].includes(
+      custody?.kind ?? '',
+    );
     const archived =
       request.allowArchived === true &&
       ['task.read', 'custody.archive', 'custody.dissolve'].includes(
@@ -1949,7 +2049,8 @@ export class SharedKernel {
         !(
           (departure &&
             ['ARCHIVED', 'OWNER_EXIT_FROZEN'].includes(custody.state)) ||
-          (archived && custody.state === 'ARCHIVED')
+          (archived && custody.state === 'ARCHIVED') ||
+          (communicationRead && custody.state === 'OWNER_EXIT_FROZEN')
         ))
     )
       throw new NotFoundException();
@@ -2113,6 +2214,7 @@ export class SharedKernel {
     }
     if (
       !departure &&
+      !communicationRead &&
       (!primary ||
         !primaryActor?.userId ||
         !(await this.accountActive(tx, primaryActor.userId)) ||
@@ -2364,6 +2466,39 @@ export class SharedKernel {
         locked,
       );
     });
+  }
+  /** Private contact commands use the same account/session lock order, without
+   * requiring conversation admission or granting any conversation authority. */
+  async contactOperation<T>(
+    actor: RequestActor,
+    users: string[],
+    work: (
+      tx: Prisma.TransactionClient,
+      now: Date,
+      locked: string[],
+    ) => Promise<T>,
+    onRetry?: () => Promise<void>,
+  ) {
+    this.enabled();
+    const locked = [...new Set([actor.userId, ...users])].sort();
+    for (const id of locked) uuid.parse(id);
+    return this.transaction(
+      locked,
+      [],
+      actor,
+      async (tx) => {
+        await this.verifyRestoreFloor(tx);
+        await this.verifiedRecipient(tx, actor.userId);
+        return work(
+          tx,
+          (
+            await tx.$queryRaw<{ now: Date }[]>`SELECT clock_timestamp() now`
+          )[0]!.now,
+          locked,
+        );
+      },
+      onRetry,
+    );
   }
   private async transaction<T>(
     users: string[],
@@ -3158,6 +3293,7 @@ export class SharedKernel {
           (await this.controlView(tx)).records,
         );
         if (
+          !['CONVERSATION', 'MEETING'].includes(kind) &&
           Object.values(parsed.data.classRules).some(
             (rule) => rule.disposalAction !== 'PURGE',
           )
@@ -3497,6 +3633,17 @@ export class SharedKernel {
             state !== custody.state &&
             ['CLOSING_GRACE', 'OWNER_EXIT_FROZEN'].includes(state)
           ) {
+            if (['CONVERSATION', 'MEETING'].includes(custody.kind))
+              await tx.sharedLifecycleJob.updateMany({
+                where: { custodyId: spaceId, state: 'OWNER_EXIT_FROZEN' },
+                data: {
+                  state: 'CANCELED',
+                  recoveryHash: null,
+                  leaseUntil: null,
+                  revision: { increment: 1 },
+                  progress: { stage: 'SUPERSEDED_BY_LAST_DEPARTURE' },
+                },
+              });
             const all = await tx.contextAccess.findMany({
               where: { spaceId, scopeId: spaceId, memberRole: { not: null } },
             });

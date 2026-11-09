@@ -21,6 +21,16 @@
 - Shared author identity on retained conversation/history may be pseudonymized on account deletion; other participants' meaningful conversation context remains subject to retention, law and abuse policies. No backup data should become newly accessible without erasure replay/fencing.
 
 ## Messaging and storage
+
+P5-06/approved ADR 0049: transport deferral does not defer durable REST recovery,
+missed-message synchronization, device consistency or polling backpressure.
+Private account-pair blocking prevents new DM contact and suppresses pair mentions
+and Push, while preserving authorized history, personal safety actions and common
+group content. Conversation/meeting lifecycle uses effective domain admissions,
+the existing 30-day shared recovery contract and captured retention classes/holds;
+Personal erasure remains independent. Structural media inspection is local evidence;
+real malware scanning remains NOT RUN and a mandatory operational release blocker.
+
 - Chat messages committed to PostgreSQL; REST readable history authoritative. WebSocket delivery is an optional, authorized post-commit projection; reconnect through bounded sequence/cursor. Revocation evicts subscriptions and prevents replay.
 - Block is scoped mainly to direct contact/DM, availability/mentions; group common-membership history not automatically revoked, but content collapse/filter available to blocker and moderator policy independent.
 - Ordinary edit <=48h from committed timestamp; beyond 48h delete for self only; within 48h author delete-for-everyone is allowed in DM/private groups; work channels require authorized organization/channel policy; after 48h ordinary author deletion is self-only. Retained edit revisions are separately policy-controlled. Report/moderation/takedown separate from user deletion.

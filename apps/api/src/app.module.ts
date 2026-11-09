@@ -135,7 +135,7 @@ export class AppModule {
         HabitsModule,
         goals,
         projects,
-        CompaniesModule.register(projects, storage, teams),
+        CompaniesModule.register(projects, storage, teams, calendar),
         teams,
         notes,
         JournalModule,

@@ -117,10 +117,11 @@ export class CollaborationService {
       tx: Prisma.TransactionClient,
       now: Date,
       locked: string[],
-      begin: () => Promise<string>,
+      begin: (resourceId?: string) => Promise<string>,
     ) => Promise<T>,
     lifecycle = false,
-    lifecycleKind: 'PROJECT' | 'TEAM' | 'COMPANY' = 'PROJECT',
+    lifecycleKind:
+      'PROJECT' | 'TEAM' | 'COMPANY' | 'CONVERSATION' | 'MEETING' = 'PROJECT',
     fence?: (
       body: (
         tx: Prisma.TransactionClient,
@@ -149,7 +150,7 @@ export class CollaborationService {
       now: Date,
       locked: string[],
     ) =>
-      work(tx, now, locked, async () => {
+      work(tx, now, locked, async (resourceId = target) => {
         if (intents[0]) return intents[0].id;
         const custody = await tx.sharedCustody.findUniqueOrThrow({
           where: { spaceId: physicalSpaceId },
@@ -159,7 +160,7 @@ export class CollaborationService {
           spaceId: physicalSpaceId,
           version: String(custody.authorizationVersion + 1n),
           action,
-          resourceId: target,
+          resourceId,
           outcome: 'INTENT',
           at: new Date().toISOString(),
         };
@@ -487,7 +488,8 @@ export class CollaborationService {
   }
   async preview(
     proof: string | undefined,
-    kind: 'PROJECT' | 'TEAM' | 'COMPANY' = 'PROJECT',
+    kind:
+      'PROJECT' | 'TEAM' | 'COMPANY' | 'CONVERSATION' | 'MEETING' = 'PROJECT',
   ) {
     this.kernel.assertEnabled();
     const hint = await this.db.client.contextInvitation.findUnique({
@@ -629,7 +631,8 @@ export class CollaborationService {
     proof: string | undefined,
     revision: number,
     accept: boolean,
-    kind: 'PROJECT' | 'TEAM' | 'COMPANY' = 'PROJECT',
+    kind:
+      'PROJECT' | 'TEAM' | 'COMPANY' | 'CONVERSATION' | 'MEETING' = 'PROJECT',
   ) {
     const hint = await this.invitationHint(id, proof),
       issuerUser = await this.userForAccess(

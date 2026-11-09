@@ -229,7 +229,8 @@ export class SharedLifecycleService {
   async status(
     actor: RequestActor,
     spaceId: string,
-    kind: 'PROJECT' | 'TEAM' | 'COMPANY' = 'PROJECT',
+    kind:
+      'PROJECT' | 'TEAM' | 'COMPANY' | 'CONVERSATION' | 'MEETING' = 'PROJECT',
   ) {
     return this.kernel.lifecycleParticipant(
       actor,
@@ -259,7 +260,8 @@ export class SharedLifecycleService {
     spaceId: string,
     expected: number,
     password: string,
-    kind: 'PROJECT' | 'TEAM' | 'COMPANY' = 'PROJECT',
+    kind:
+      'PROJECT' | 'TEAM' | 'COMPANY' | 'CONVERSATION' | 'MEETING' = 'PROJECT',
   ) {
     return this.collaboration.signed(
       actor,
@@ -315,7 +317,8 @@ export class SharedLifecycleService {
     proof: string | undefined,
     password: string,
     sourceEffect: (tx: Prisma.TransactionClient, now: Date) => Promise<void>,
-    kind: 'PROJECT' | 'TEAM' | 'COMPANY' = 'PROJECT',
+    kind:
+      'PROJECT' | 'TEAM' | 'COMPANY' | 'CONVERSATION' | 'MEETING' = 'PROJECT',
   ) {
     return this.collaboration.signed(
       actor,
@@ -412,7 +415,13 @@ export class SharedLifecycleService {
         });
         await tx.accessScope.updateMany({
           where: { spaceId: c.spaceId, id: c.scopeId },
-          data: { state: 'ACTIVE' },
+          data: {
+            state: 'ACTIVE',
+            ...(['CONVERSATION', 'MEETING'].includes(kind) &&
+            job.state !== 'OWNER_EXIT_FROZEN'
+              ? { restoreGeneration: { increment: 1 } }
+              : {}),
+          },
         });
         await sourceEffect(tx, now);
         await this.kernel.offerEffect(
@@ -469,7 +478,10 @@ export class SharedLifecycleService {
       await tx.$executeRaw`UPDATE "SharedLifecycleJob" SET "spaceId"=NULL,"recoveryHash"=NULL,progress=jsonb_build_object('stage','CANCELED','releases',COALESCE(progress->'releases','{}'::jsonb)),"leaseUntil"=NULL WHERE id IN(SELECT id FROM "SharedLifecycleJob" WHERE "spaceId"=${s.spaceId}::uuid AND state='CANCELED' ORDER BY id LIMIT 200)`;
     return jobs === 0;
   }
-  next(kind: 'PROJECT' | 'TEAM' | 'COMPANY' = 'PROJECT') {
+  next(
+    kind:
+      'PROJECT' | 'TEAM' | 'COMPANY' | 'CONVERSATION' | 'MEETING' = 'PROJECT',
+  ) {
     return this.db.client.sharedLifecycleJob.findFirst({
       where: {
         spaceId: { not: null },
@@ -490,7 +502,8 @@ export class SharedLifecycleService {
       s: SharedCleanupScope,
       stage: string,
     ) => Promise<LifecycleStep>,
-    kind: 'PROJECT' | 'TEAM' | 'COMPANY' = 'PROJECT',
+    kind:
+      'PROJECT' | 'TEAM' | 'COMPANY' | 'CONVERSATION' | 'MEETING' = 'PROJECT',
     contentGuard?: (
       tx: Prisma.TransactionClient,
       spaceId: string,
@@ -587,6 +600,7 @@ export class SharedLifecycleService {
           );
         const configuration = parsed.data;
         if (
+          !['CONVERSATION', 'MEETING'].includes(kind) &&
           Object.values(configuration.classRules).some(
             (r) => r.disposalAction !== 'PURGE',
           )
@@ -644,6 +658,53 @@ export class SharedLifecycleService {
             'RETENTION_WINDOW',
             new Date(deadline),
           );
+        if (
+          Object.values(configuration.classRules).some(
+            (r) => r.disposalAction !== 'PURGE',
+          )
+        ) {
+          const actors = await tx.sharedActor.findMany({
+            where: { spaceId, state: { not: 'ERASED' } },
+            orderBy: { id: 'asc' },
+            take: 25,
+          });
+          const ids = actors.map((a) => a.id);
+          const seats = await tx.contextAccess.findMany({
+            where: { spaceId, actorId: { in: ids } },
+          });
+          for (const seat of seats) {
+            const endedAt =
+              seat.endedAt ??
+              new Date(Math.max(now.getTime(), seat.joinedAt.getTime()));
+            await tx.contextAccess.update({
+              where: { id: seat.id },
+              data: { state: 'ERASED', endedAt, revision: { increment: 1 } },
+            });
+            await tx.contextAccessInterval.updateMany({
+              where: {
+                accessId: seat.id,
+                generation: seat.generation,
+                endedAt: null,
+              },
+              data: { endedAt },
+            });
+          }
+          await tx.sharedActor.updateMany({
+            where: { spaceId, id: { in: ids } },
+            data: { userId: null, state: 'ERASED', erasedAt: now },
+          });
+          p.communicationPseudonymization = {
+            actorIds: ids,
+            policyVersion: job.retentionPolicyVersion,
+            custodyId: spaceId,
+          };
+          p.accountableDisposition = 'RETAIN_PROTECTED_RECORD_OPERATOR_REVIEW';
+          return wait(
+            'BLOCKED_POLICY',
+            'PSEUDONYMIZED_RECORD_RETAINED',
+            new Date(now.getTime() + (ids.length === 25 ? 1000 : 86400000)),
+          );
+        }
         const leaseId = randomUUID(),
           leaseUntil = new Date(now.getTime() + 120000),
           stage = typeof p.stage === 'string' ? p.stage : 'FILES';

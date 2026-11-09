@@ -22,6 +22,15 @@
 **G4 (P4):** company custody first; typed safe legacy team/project attachment after; HR privacy/access evidence, expense immutable adjustments, budget reservations and partial reimbursements.
 **G5 (P5):** owner policy already decided: author delete-for-everyone <=48h in DM/private groups, organization-policy-gated in work channels, self-only afterward; explicit retention and immutable history rules; scale/replay/revoke messaging tests; controlled media processing and DM privacy. Owner-approved [ADR 0044](../docs/adr/0044-phase-5-rest-polling-and-realtime-deferral.md) requires durable REST and frontend-driven incremental polling. P5-01 proves bounded ordered history/catch-up, idempotent sends, current source and conversation authorization, revocation/rejoin denial for stale cursors/receipts, tenant isolation, audit privacy, additive migrations, Zod/OpenAPI parity, the 13-stage quality gate and compiled smoke. P5-04 socket/presence/typing/connection-management acceptance remains DEFERRED, never PASSED; Push Notifications remain P5-03. Later-batch feature gates are not P5-01 deliverables.
 **G6 (P6):** group and independent activity consistency; financial rounding/idempotent settlements; lost/found independent of existing loan; album quota and private derivative access.
+
+G5 local completion is evaluated under approved ADRs 0044–0049. Every original
+P5-04 requirement is classified in [the P5-06 audit](../docs/p5-06-p5-04-requirements-audit.md).
+Transport-independent recovery, synchronization, authorization and polling load
+remain mandatory. WebSocket/Presence/Typing and socket-specific tests remain
+DEFERRED/NOT RUN. ADR 0049 permits bounded structural/metadata media checks for
+local acceptance; a real malware engine is NOT RUN and blocks deployment/Shared
+activation. Synthetic load and restore tests do not constitute production capacity,
+SLO, full operational restore, deployment or later-phase approval.
 **G7 (P7):** real admin strong MFA + zero default private-content access; dynamic feature flags/plan/counter testing in free simulation; safe manual assignment; explicitly no live payment/charges.
 **GL (production launch):** SLO/RPO/RTO approved, customer-region legal analysis, production-like load/soak, automated restore/recovery tests, monitoring/runbooks, privacy requests and secure deploy evidence. Failing GL does not imply unbuilt features but BLOCKS launch.
 

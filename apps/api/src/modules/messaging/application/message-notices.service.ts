@@ -62,6 +62,17 @@ export class MessageNotices {
     const recipients = invitation
       ? await this.authority.hints([invitation.recipientActorId])
       : [];
+    const author = activity.messageId
+      ? await this.db.client.messageEntry.findUnique({
+          where: { id: activity.messageId },
+          select: {
+            author: { select: { Member: { select: { actorId: true } } } },
+          },
+        })
+      : null;
+    const senders = author
+      ? await this.authority.hints([author.author.Member.actorId])
+      : [];
     return this.base.operation(
       actor ?? { userId, requestId: randomUUID(), correlationId: randomUUID() },
       activity.conversationId,
@@ -71,7 +82,7 @@ export class MessageNotices {
           await this.advanced.validateSources(s, sources);
         return work(s);
       },
-      [userId, ...recipients],
+      [userId, ...recipients, ...senders],
       true,
       sources,
       !actor,
@@ -102,6 +113,24 @@ export class MessageNotices {
           activity.messageId!,
         );
         if (e.memberId === member.id) return null;
+        const sender = await s.tx.conversationMember.findUniqueOrThrow({
+          where: { id: e.memberId },
+        });
+        const senderUser = await this.authority.user(
+          s.tx,
+          s.conv.spaceId,
+          sender.actorId,
+        );
+        if (
+          !(await this.base.contacts.allowed(
+            s.tx,
+            senderUser,
+            userId,
+            s.locked,
+            activity.createdAt,
+          ))
+        )
+          return null;
         if ((await this.media.view(receiver, member, e)).state !== 'VISIBLE')
           return null;
         mentioned = !!(await s.tx.messageMention.findFirst({
@@ -128,6 +157,16 @@ export class MessageNotices {
             invitation.inviterActorId,
           ),
           proof = await this.base.proof(s, issuer);
+        if (
+          !(await this.base.contacts.allowed(
+            s.tx,
+            issuer,
+            userId,
+            s.locked,
+            activity.createdAt,
+          ))
+        )
+          return null;
         if (
           invitation.inviterAccessId !== proof.accessId ||
           invitation.inviterGeneration !== proof.generation ||

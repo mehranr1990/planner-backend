@@ -1,4 +1,5 @@
 import type { Prisma } from '../../../generated/prisma/client.js';
+import { z } from 'zod';
 import { SharedReplaySchema } from '../../../platform/lifecycle/shared-replay.js';
 import type { SharedReplay } from '../../../platform/lifecycle/shared-replay.js';
 import { validateRoleDefaults } from '../domain/shared-policy.js';
@@ -192,6 +193,47 @@ export async function applySharedReplay(
   if (c.kind === 'COMPANY' && !r.companyRestricted)
     throw new Error('Company replay requires restrictive domain evidence');
   const recovering = r.action === 'lifecycle.recover';
+  const pseudo = r.job?.progress.communicationPseudonymization;
+  if (pseudo !== undefined) {
+    const data = z
+      .strictObject({
+        actorIds: z.array(z.uuid()).max(25),
+        policyVersion: z.string(),
+        custodyId: z.uuid(),
+      })
+      .parse(pseudo);
+    if (
+      !['CONVERSATION', 'MEETING'].includes(c.kind) ||
+      data.policyVersion !== c.retentionPolicyVersion ||
+      data.custodyId !== spaceId ||
+      r.custody.state !== 'BLOCKED_POLICY' ||
+      r.job?.state !== 'BLOCKED_POLICY'
+    )
+      throw new Error('Invalid communication disposition replay');
+    const seats = await tx.contextAccess.findMany({
+      where: { spaceId, actorId: { in: data.actorIds } },
+    });
+    for (const seat of seats) {
+      const endedAt =
+        seat.endedAt ?? new Date(Math.max(Date.now(), seat.joinedAt.getTime()));
+      await tx.contextAccess.update({
+        where: { id: seat.id },
+        data: { state: 'ERASED', endedAt, revision: { increment: 1 } },
+      });
+      await tx.contextAccessInterval.updateMany({
+        where: {
+          accessId: seat.id,
+          generation: seat.generation,
+          endedAt: null,
+        },
+        data: { endedAt },
+      });
+    }
+    await tx.sharedActor.updateMany({
+      where: { spaceId, id: { in: data.actorIds } },
+      data: { userId: null, state: 'ERASED', erasedAt: new Date() },
+    });
+  }
   const deleted = r.custody.state === 'DELETED';
   if (deleted) {
     const oldAccess = await tx.contextAccess.findMany({

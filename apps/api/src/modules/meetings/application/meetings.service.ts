@@ -355,6 +355,62 @@ export class MeetingsService {
   get(actor: RequestActor, id: string) {
     return this.op.operation(actor, id, 'meeting.read', (s) => this.view(s));
   }
+  restoreAdmission(
+    actor: RequestActor,
+    id: string,
+    expected: number | undefined,
+    key: string | undefined,
+  ) {
+    return this.op.operation(
+      actor,
+      id,
+      'meeting.admission.restore',
+      async (s) => {
+        s.proof = await this.op.proof(s);
+        const p = s.proof;
+        const old = await s.tx.meetingMember.findUnique({
+          where: { meetingId_actorId: { meetingId: id, actorId: p.actorId } },
+        });
+        if (
+          !old ||
+          old.state !== 'ACTIVE' ||
+          !['ACCEPTED', 'TENTATIVE'].includes(old.rsvp) ||
+          old.sourceAccessId !== p.accessId ||
+          old.sourceGeneration !== p.generation
+        )
+          throw new NotFoundException();
+        await this.op.once(
+          s,
+          key,
+          { action: 'restore-admission', expected },
+          'meeting.admission.restore',
+          async () => {
+            meetingRevision(expected, old.revision);
+            if (old.restoreGeneration === p.restoreGeneration)
+              throw new ConflictException({
+                code: 'RESTORE_ADMISSION_NOT_REQUIRED',
+              });
+            await this.op.admit(
+              s,
+              p,
+              p.role === 'VIEWER'
+                ? 'PARTICIPANT'
+                : old.role === 'ORGANIZER'
+                  ? 'ORGANIZER'
+                  : 'PARTICIPANT',
+              old.rsvp === 'TENTATIVE' ? 'TENTATIVE' : 'ACCEPTED',
+            );
+            return old.id;
+          },
+          undefined,
+          0,
+        );
+        return this.memberDto(await this.op.member(s));
+      },
+      [],
+      true,
+    );
+  }
   async list(actor: RequestActor, q: Page) {
     const actors = await this.op.authority.actors(actor),
       stamp = meetingHash(actors.sort()),

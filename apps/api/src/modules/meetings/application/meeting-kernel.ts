@@ -28,6 +28,8 @@ import type {
   SharedFeatureKey,
 } from '../../spaces/public/index.js';
 import { meetingManages } from '../domain/meeting-policy.js';
+import { purgeMeetings } from './meeting-cleanup.js';
+import type { SharedCleanupScope } from '../../../platform/lifecycle/shared-cleanup.js';
 export { meetingManages } from '../domain/meeting-policy.js';
 export type MeetingProof = Awaited<ReturnType<MessagingAuthority['proof']>>;
 export type SourceOperation = {
@@ -38,7 +40,7 @@ export type SourceOperation = {
   kind: string;
   now: Date;
   locked: string[];
-  begin: () => Promise<string>;
+  begin: (resourceId?: string) => Promise<string>;
   proof: MeetingProof | null;
   open: boolean;
 };
@@ -68,10 +70,107 @@ export class MeetingKernel {
     @Inject(SpacesService) readonly spaces: SpacesService,
   ) {}
   async disposalBlocker(tx: Prisma.TransactionClient, spaceId: string) {
-    return (await tx.meeting.count({ where: { spaceId } })) ||
-      (await tx.announcement.count({ where: { spaceId } }))
-      ? 'MEETING_RETENTION_PENDING'
-      : null;
+    // The lifecycle coordinator's reviewed FK catalog remains the final fence.
+    void tx;
+    void spaceId;
+    return null;
+  }
+  cleanup(tx: Prisma.TransactionClient, s: SharedCleanupScope) {
+    return purgeMeetings(tx, s);
+  }
+  async reconcileSeats(after?: string) {
+    const rows = await this.authority.independentSeatHints('MEETING', after);
+    let worked = false;
+    const ended = new Set(
+      (
+        await this.db.client.meetingMember.findMany({
+          where: {
+            sourceAccessId: { in: rows.map((r) => r.id) },
+            state: { not: 'ACTIVE' },
+          },
+          select: { sourceAccessId: true },
+          take: 25,
+        })
+      ).map((r) => r.sourceAccessId),
+    );
+    for (const hint of rows) {
+      if (!ended.has(hint.id)) continue;
+      worked =
+        (await this.authority.reconcileIndependentSeat(
+          'MEETING',
+          hint,
+          async (tx) => {
+            const member = await tx.meetingMember.findUnique({
+              where: {
+                meetingId_actorId: {
+                  meetingId: hint.spaceId,
+                  actorId: hint.actorId,
+                },
+              },
+            });
+            if (
+              !member ||
+              member.state === 'ACTIVE' ||
+              member.sourceAccessId !== hint.id ||
+              member.sourceGeneration !== hint.generation
+            )
+              return null;
+            return (
+              (
+                await tx.meetingAdmission.findUnique({
+                  where: {
+                    memberId_generation: {
+                      memberId: member.id,
+                      generation: member.generation,
+                    },
+                  },
+                })
+              )?.endedAt ?? null
+            );
+          },
+        )) || worked;
+    }
+    return { after: rows.length === 25 ? rows.at(-1)!.id : undefined, worked };
+  }
+  async recoverMember(
+    tx: Prisma.TransactionClient,
+    actor: RequestActor,
+    id: string,
+    now: Date,
+  ) {
+    const meeting = await tx.meeting.findUniqueOrThrow({ where: { id } });
+    if (
+      meeting.kind !== 'INDEPENDENT' ||
+      meeting.spaceId !== id ||
+      meeting.scopeId !== id
+    )
+      throw new NotFoundException();
+    const locked = [actor.userId],
+      proof = await this.authority.proof(tx, actor, id, actor.userId, locked);
+    const s: MeetingOperation = {
+      tx,
+      actor,
+      meeting,
+      now,
+      locked,
+      proof,
+      spaceId: id,
+      scopeId: id,
+      kind: 'INDEPENDENT',
+      open: true,
+      begin: async () => {
+        throw new ForbiddenException();
+      },
+    };
+    await this.admit(s, proof, 'ORGANIZER', 'ACCEPTED');
+    await tx.meetingInvitation.updateMany({
+      where: { meetingId: id, state: 'PENDING' },
+      data: { state: 'REVOKED', revision: { increment: 1 } },
+    });
+    await tx.meeting.update({
+      where: { id },
+      data: { revision: { increment: 1 } },
+    });
   }
   async personalTaskReferences(
     tx: Prisma.TransactionClient,
@@ -364,7 +463,7 @@ export class MeetingKernel {
       s.proof.actorId,
       action,
       resourceId,
-      await s.begin(),
+      await s.begin(resourceId),
       feature ? { actorId: s.proof.actorId, feature, delta: 1 } : undefined,
     );
   }
@@ -493,6 +592,13 @@ export class MeetingKernel {
       where: { id: member.id },
       data: { state, rsvp: 'DECLINED', revision: { increment: 1 } },
     });
+    if (s.kind === 'INDEPENDENT')
+      await this.authority.endIndependentSeat(
+        s.tx,
+        s.spaceId,
+        member.actorId,
+        s.now,
+      );
     await s.tx.meeting.update({
       where: { id: s.meeting.id },
       data: { revision: { increment: 1 } },

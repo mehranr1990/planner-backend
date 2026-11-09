@@ -16,6 +16,37 @@ const identifier = (value: string) => {
     throw new Error('Invalid owned table');
   return '"' + value + '"';
 };
+/** A bounded owner-selected child path for tables without a redundant Space key.
+ * The final parent supplies the physical custody and optional domain boundary. */
+export async function sharedChildDeleteBatch(
+  tx: Prisma.TransactionClient,
+  s: SharedCleanupScope,
+  table: string,
+  path: readonly { table: string; foreignKey: string; targetKey?: string }[],
+  extra = '',
+) {
+  s.verify(tx);
+  if (!path.length || path.length > 3)
+    throw new Error('Invalid cleanup parent path');
+  let previous = 't';
+  const joins = path
+    .map((p, i) => {
+      const alias = 'p' + i;
+      const join = `JOIN ${identifier(p.table)} ${alias} ON ${alias}.${identifier(p.targetKey ?? 'id')}=${previous}.${identifier(p.foreignKey)}`;
+      previous = alias;
+      return join;
+    })
+    .join(' ');
+  const last = 'p' + (path.length - 1),
+    scope = s.scopeId ? ` AND ${last}."scopeId"=$2::uuid` : '';
+  return (
+    (await tx.$executeRawUnsafe(
+      `DELETE FROM ${identifier(table)} WHERE ctid IN(SELECT t.ctid FROM ${identifier(table)} t ${joins} WHERE ${last}."spaceId"=$1::uuid${scope} ${extra} LIMIT 200)`,
+      s.spaceId,
+      ...(s.scopeId ? [s.scopeId] : []),
+    )) === 0
+  );
+}
 /** Only owner facades pass their fixed table names. No HTTP-selected identifiers. */
 export async function sharedDeleteBatch(
   tx: Prisma.TransactionClient,

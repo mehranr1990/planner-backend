@@ -26,6 +26,9 @@ import {
   MessagingAuthority,
 } from '../../spaces/public/index.js';
 import { managesChannel, sameAdmission } from '../domain/messaging-policy.js';
+import { DmContacts } from './dm-contacts.service.js';
+import { purgeMessaging } from './messaging-cleanup.js';
+import type { SharedCleanupScope } from '../../../platform/lifecycle/shared-cleanup.js';
 
 type Tx = Prisma.TransactionClient;
 type Proof = Awaited<ReturnType<MessagingAuthority['proof']>>;
@@ -37,7 +40,7 @@ export type MessageOperation = {
   conv: Conversation;
   now: Date;
   locked: string[];
-  begin: () => Promise<string>;
+  begin: (resourceId?: string) => Promise<string>;
   proof: Proof | null;
 };
 type Operation = MessageOperation;
@@ -85,6 +88,7 @@ const messageView = (m: ConversationMessage) =>
 @Injectable()
 export class MessagingService {
   constructor(
+    @Inject(DmContacts) readonly contacts: DmContacts,
     @Inject(DatabaseService) private readonly db: DatabaseService,
     @Inject(SharedKernel) private readonly kernel: SharedKernel,
     @Inject(CollaborationService)
@@ -94,11 +98,106 @@ export class MessagingService {
   request(ip: string, actor: RequestActor) {
     return this.collaboration.request(ip, actor);
   }
-  /** Owner read under the lifecycle coordinator's custody fence. Disposal is
-   * deliberately unavailable until the approved P5 retention implementation. */
+  cleanup(tx: Tx, s: SharedCleanupScope) {
+    return purgeMessaging(tx, s);
+  }
+  async reconcileSeats(after?: string) {
+    const rows = await this.authority.independentSeatHints(
+      'CONVERSATION',
+      after,
+    );
+    let worked = false;
+    const ended = new Set(
+      (
+        await this.db.client.conversationMember.findMany({
+          where: {
+            sourceAccessId: { in: rows.map((r) => r.id) },
+            state: { not: 'ACTIVE' },
+          },
+          select: { sourceAccessId: true },
+          take: 25,
+        })
+      ).map((r) => r.sourceAccessId),
+    );
+    for (const hint of rows) {
+      if (!ended.has(hint.id)) continue;
+      worked =
+        (await this.authority.reconcileIndependentSeat(
+          'CONVERSATION',
+          hint,
+          async (tx) => {
+            const member = await tx.conversationMember.findUnique({
+              where: {
+                conversationId_actorId: {
+                  conversationId: hint.spaceId,
+                  actorId: hint.actorId,
+                },
+              },
+            });
+            if (
+              !member ||
+              member.state === 'ACTIVE' ||
+              member.sourceAccessId !== hint.id ||
+              member.sourceGeneration !== hint.generation
+            )
+              return null;
+            return (
+              (
+                await tx.conversationAdmission.findUnique({
+                  where: {
+                    memberId_generation: {
+                      memberId: member.id,
+                      generation: member.generation,
+                    },
+                  },
+                })
+              )?.endedAt ?? null
+            );
+          },
+        )) || worked;
+    }
+    return { after: rows.length === 25 ? rows.at(-1)!.id : undefined, worked };
+  }
+  async recoverMember(tx: Tx, actor: RequestActor, id: string, now: Date) {
+    const conv = await tx.conversation.findUniqueOrThrow({ where: { id } });
+    if (!independent(conv.kind) || conv.spaceId !== id || conv.scopeId !== id)
+      throw new NotFoundException();
+    const locked = [actor.userId],
+      proof = await this.authority.proof(tx, actor, id, actor.userId, locked);
+    await this.admit(
+      {
+        tx,
+        actor,
+        conv,
+        now,
+        locked,
+        proof,
+        begin: async () => {
+          throw new ForbiddenException();
+        },
+      },
+      proof,
+      'ADMIN',
+    );
+    await tx.conversationInvitation.updateMany({
+      where: { conversationId: id, state: 'PENDING' },
+      data: { state: 'REVOKED', revision: { increment: 1 } },
+    });
+    await tx.conversation.update({
+      where: { id },
+      data: { revision: { increment: 1 } },
+    });
+  }
+  /** Foreign live references are obligations, never authority to delete another
+   * custody's messages. The operator sees a typed, retryable policy blocker. */
   async disposalBlocker(tx: Tx, spaceId: string) {
-    return (await tx.conversation.count({ where: { spaceId } }))
-      ? 'MESSAGING_RETENTION_PENDING'
+    return (await tx.messageEntry.count({
+      where: {
+        source: { conversation: { spaceId } },
+        conversation: { spaceId: { not: spaceId } },
+      },
+    }))
+      ? 'OUTSIDE_MESSAGE_REFERENCE'
       : null;
   }
   /** Internal owner-module transaction contract, reused by advanced messaging. */
@@ -166,12 +265,26 @@ export class MessagingService {
     }
     return result;
   }
-  async writable(s: Operation) {
+  async dmContact(s: Operation, at?: Date) {
+    if (s.conv.kind !== 'DM') return true;
+    const invitation = await s.tx.conversationInvitation.findFirst({
+      where: { conversationId: s.conv.id },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+    });
+    if (!invitation) return true;
+    const [a, b] = await Promise.all(
+      [s.conv.createdByActorId, invitation.recipientActorId].map((id) =>
+        this.authority.user(s.tx, s.conv.spaceId, id),
+      ),
+    );
+    return this.contacts.allowed(s.tx, a!, b!, s.locked, at);
+  }
+  async writable(s: Operation, retraction = false) {
     if (s.proof?.role === 'VIEWER') return false;
     if (!independent(s.conv.kind)) return true;
     const members = await this.validMembers(s);
     return s.conv.kind === 'DM'
-      ? members.length === 2
+      ? members.length === 2 && (retraction || (await this.dmContact(s)))
       : members.some((m) => m.role === 'ADMIN');
   }
   private async view(s: Operation) {
@@ -351,7 +464,7 @@ export class MessagingService {
   ) {
     if (!actorId) throw new NotFoundException();
     if (feature) await this.kernel.featureGrowth(s.tx, s.conv.scopeId, feature);
-    const auditId = await s.begin();
+    const auditId = await s.begin(resourceId);
     await this.kernel.offerEffect(
       s.tx,
       s.actor,
@@ -439,6 +552,8 @@ export class MessagingService {
       s.conv.spaceId,
       input.userId,
     );
+    if (s.conv.kind === 'DM')
+      await this.contacts.require(s.tx, s.actor.userId, input.userId, s.locked);
     if (recipient.id === proof.actorId) throw new BadRequestException();
     const keyDigest = keyHash(key),
       bodyHash = fingerprint(input);
@@ -689,6 +804,70 @@ export class MessagingService {
   get(actor: RequestActor, id: string) {
     return this.operation(actor, id, 'messaging.read', (s) => this.view(s));
   }
+  /** Explicit consent after restrictive restore replay. This never repairs a
+   * departed/revoked source seat or bypasses a new source membership generation. */
+  restoreAdmission(
+    actor: RequestActor,
+    id: string,
+    expected: number,
+    key: string | undefined,
+  ) {
+    const digest = keyHash(key),
+      bodyHash = fingerprint({ action: 'restore-admission', expected });
+    return this.operation(
+      actor,
+      id,
+      'messaging.admission.restore',
+      async (s) => {
+        s.proof = await this.proof(s);
+        const p = s.proof;
+        const old = await s.tx.conversationMember.findUnique({
+          where: {
+            conversationId_actorId: { conversationId: id, actorId: p.actorId },
+          },
+        });
+        if (
+          !old ||
+          old.state !== 'ACTIVE' ||
+          old.sourceAccessId !== p.accessId ||
+          old.sourceGeneration !== p.generation
+        )
+          throw new NotFoundException();
+        const receipt = await s.tx.messageMutation.findFirst({
+          where: { conversationId: id, memberId: old.id, keyHash: digest },
+          orderBy: { generation: 'desc' },
+        });
+        if (receipt) {
+          if (receipt.fingerprint !== bodyHash)
+            throw new ConflictException({ code: 'IDEMPOTENCY_CONFLICT' });
+          return memberView(await this.currentMember(s));
+        }
+        match(expected, old.revision);
+        if (old.restoreGeneration === p.restoreGeneration)
+          throw new ConflictException({
+            code: 'RESTORE_ADMISSION_NOT_REQUIRED',
+          });
+        if (!(await this.dmContact(s)))
+          throw new ForbiddenException({ code: 'CONTACT_UNAVAILABLE' });
+        await s.tx.messageMutation.create({
+          data: {
+            conversationId: id,
+            memberId: old.id,
+            generation: old.generation,
+            keyHash: digest,
+            fingerprint: bodyHash,
+            resourceId: old.id,
+            action: 'restore-admission',
+          },
+        });
+        await this.admit(s, p, old.role === 'ADMIN' ? 'ADMIN' : 'MEMBER');
+        await this.effect(s, 'messaging.admission.restore', old.id);
+        return memberView(await this.currentMember(s));
+      },
+      [],
+      true,
+    );
+  }
   async list(actor: RequestActor, q: Page) {
     const stamp = hash('messaging-list-v1'),
       context = 'conversations';
@@ -821,6 +1000,8 @@ export class MessagingService {
     );
   }
   private async eligibleInvitation(s: Operation, row: ConversationInvitation) {
+    if (!(await this.dmContact(s, row.createdAt)))
+      throw new ForbiddenException({ code: 'CONTACT_UNAVAILABLE' });
     if (row.expiresAt <= s.now)
       throw new ConflictException({ code: 'INVITATION_EXPIRED' });
     const issuer = await this.authority.user(
@@ -914,7 +1095,7 @@ export class MessagingService {
           return this.invitationView(s.conv, row);
         match(revision, row.revision);
         if (row.state !== 'PENDING') throw new ConflictException();
-        await this.eligibleInvitation(s, row);
+        if (accept) await this.eligibleInvitation(s, row);
         if (accept) {
           if (independent(s.conv.kind))
             await this.authority.independentSeat(
@@ -1014,6 +1195,13 @@ export class MessagingService {
             where: { memberId: row.id, endedAt: null },
             data: { endedAt: s.now },
           });
+        if (!role && independent(s.conv.kind))
+          await this.authority.endIndependentSeat(
+            s.tx,
+            s.conv.spaceId,
+            row.actorId,
+            s.now,
+          );
         await s.tx.conversation.update({
           where: { id },
           data: { revision: { increment: 1 } },
@@ -1039,6 +1227,13 @@ export class MessagingService {
         where: { memberId: member.id, endedAt: null },
         data: { endedAt: s.now },
       });
+      if (independent(s.conv.kind))
+        await this.authority.endIndependentSeat(
+          s.tx,
+          s.conv.spaceId,
+          member.actorId,
+          s.now,
+        );
       await s.tx.conversation.update({
         where: { id },
         data: { revision: { increment: 1 } },

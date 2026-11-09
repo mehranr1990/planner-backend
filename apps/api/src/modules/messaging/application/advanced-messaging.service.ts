@@ -447,11 +447,18 @@ export class AdvancedMessagingService {
       'messaging.' + a.action.replaceAll('-', '.'),
       async (s, m) => {
         if (
-          !['hide', 'report', 'resolve-report', 'moderate', 'policy'].includes(
-            a.action,
-          )
+          ![
+            'hide',
+            'report',
+            'resolve-report',
+            'moderate',
+            'policy',
+            'delete',
+          ].includes(a.action)
         )
           await this.writer(s);
+        if (a.action === 'delete' && !(await this.base.writable(s, true)))
+          throw new ForbiddenException();
         if (a.action === 'pin') await this.moderator(s, m, true);
         if (['moderate', 'resolve-report', 'policy'].includes(a.action))
           await this.moderator(s, m);
@@ -563,6 +570,21 @@ export class AdvancedMessagingService {
               const target = await s.tx.conversationMember.findUniqueOrThrow({
                 where: { id: memberId },
               });
+              const targetUser = await this.authority.user(
+                s.tx,
+                s.conv.spaceId,
+                target.actorId,
+              );
+              if (
+                targetUser !== s.actor.userId &&
+                !(await this.base.contacts.allowed(
+                  s.tx,
+                  s.actor.userId,
+                  targetUser,
+                  s.locked,
+                ))
+              )
+                continue;
               await s.tx.messageMention.create({
                 data: {
                   conversationId: id,

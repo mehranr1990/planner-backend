@@ -53,12 +53,38 @@ export class MessagingDataRepository extends MessagingData {
   }
   async erase(tx: Prisma.TransactionClient, scope: AuthorizedSpace) {
     await this.suspend(tx, scope);
+    // PersonalLifecycle already durably claims and fences identity erasure.
+    // Private cleanup must not require Shared activation or its signing keys.
+    await tx.dmContactState.deleteMany({
+      where: { ownerUserId: scope.actor.userId },
+    });
   }
   async snapshot(
     tx: Prisma.TransactionClient,
     scope: AuthorizedSpace,
     budget: ExportBudget,
   ) {
+    await budget.collect(
+      'privateDmBlocks',
+      (after: string | undefined) =>
+        tx.dmContactBlock.findMany({
+          where: {
+            ownerUserId: scope.actor.userId,
+            ...(after ? { id: { gt: after } } : {}),
+          },
+          select: {
+            id: true,
+            sourceConversationId: true,
+            active: true,
+            revision: true,
+            createdAt: true,
+            updatedAt: true,
+          },
+          orderBy: { id: 'asc' },
+          take: 100,
+        }),
+      (row) => row.id,
+    );
     await this.batches(tx, scope, async (actors) => {
       const admission = { Member: { actorId: { in: actors } } };
       await budget.collect(

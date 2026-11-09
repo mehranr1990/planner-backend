@@ -42,6 +42,14 @@ export class MessageMediaController {
     @Inject(MessageProgressService)
     private readonly progress: MessageProgressService,
   ) {}
+  @Get('recovery')
+  recovery(
+    @CurrentActor() a: RequestActor,
+    @Param('id', uuid) id: string,
+    @Query(page) q: z.infer<typeof c.ConversationPageQuerySchema>,
+  ) {
+    return this.media.recovery(a, id, q);
+  }
   @Post('attachments')
   initiate(
     @CurrentActor() a: RequestActor,

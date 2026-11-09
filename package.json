@@ -69,7 +69,8 @@
     "smoke:p4-03": "node --env-file-if-exists=.env.test.local tooling/scripts/p4-03-smoke.ts",
     "smoke:p4-04": "node --env-file-if-exists=.env.test.local tooling/scripts/p4-04-smoke.ts",
     "smoke:p4-05": "node --env-file-if-exists=.env.test.local tooling/scripts/p4-05-smoke.ts",
-    "smoke:p4-06": "node --env-file-if-exists=.env.test.local tooling/scripts/p4-06-smoke.ts"
+    "smoke:p4-06": "node --env-file-if-exists=.env.test.local tooling/scripts/p4-06-smoke.ts",
+    "smoke:p5-06": "node --env-file-if-exists=.env.test.local tooling/scripts/p5-01-smoke.ts --advanced --media --meetings --privacy"
   },
   "devDependencies": {
     "@nestjs/throttler": "6.7.1",

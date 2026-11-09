@@ -22,7 +22,10 @@ import {
 import type { LifecycleStep } from '../../spaces/public/index.js';
 import { SharedTasksCleanup } from '../../tasks/public/index.js';
 import { SharedGoalsCleanup } from '../../goals/public/index.js';
-import { SharedScheduling } from '../../calendar/public/index.js';
+import {
+  SharedScheduling,
+  SharedCalendar,
+} from '../../calendar/public/index.js';
 import { SharedWorkNotifications } from '../../notifications/public/index.js';
 @Injectable()
 export class ProjectCleanupService {
@@ -35,6 +38,7 @@ export class ProjectCleanupService {
     @Inject(SharedTasksCleanup) private readonly tasks: SharedTasksCleanup,
     @Inject(SharedGoalsCleanup) private readonly goals: SharedGoalsCleanup,
     @Inject(SharedScheduling) private readonly calendar: SharedScheduling,
+    @Inject(SharedCalendar) private readonly events: SharedCalendar,
     @Inject(SharedWorkNotifications)
     private readonly notifications: SharedWorkNotifications,
   ) {}
@@ -124,6 +128,12 @@ export class ProjectCleanupService {
             const files = await this.files.purgePlan(tx, s);
             return files.length ? { files } : { nextStage: 'ADMISSIONS' };
           }
+          if (
+            stage === 'ADMISSIONS' &&
+            (!(await this.meetings.cleanup(tx, s)) ||
+              !(await this.messaging.cleanup(tx, s)))
+          )
+            return {};
           if (stage === 'ADMISSIONS')
             return (await this.lifecycle.admissions(tx, s))
               ? { nextStage: 'NOTIFICATIONS' }
@@ -133,7 +143,8 @@ export class ProjectCleanupService {
               ? { nextStage: 'CALENDAR' }
               : {};
           if (stage === 'CALENDAR')
-            return (await this.calendar.cleanup(tx, s, calendar.blockIds))
+            return (await this.calendar.cleanup(tx, s, calendar.blockIds)) &&
+              (await this.events.cleanup(tx, s))
               ? { nextStage: 'PROJECTS' }
               : {};
           if (stage === 'PROJECTS')

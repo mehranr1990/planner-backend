@@ -217,6 +217,8 @@ export class SharedControl {
   verifyCursor(token: string): unknown {
     if (token.length > 2048 || !/^[A-Za-z0-9_-]+$/.test(token))
       throw new Error('Invalid shared cursor');
+    if (Buffer.from(token, 'base64url').toString('base64url') !== token)
+      throw new Error('Noncanonical shared cursor');
     const envelope = z
       .strictObject({
         keyId: z.string().min(1).max(40),
