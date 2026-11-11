@@ -1,0 +1,673 @@
+{
+  "batch": "P6-01",
+  "baseline": "834df8d3a1d8e7df18886716f7c432b1c7570f76",
+  "note": "These are implementation requirement IDs, not a fabricated enumeration of the owner’s 45 Phase 6 capability IDs.",
+  "phase6_batches_retained": [
+    "P6-01",
+    "P6-02",
+    "P6-03",
+    "P6-04",
+    "P6-05",
+    "P6-06"
+  ],
+  "excluded": [
+    "c09: transferring, reassigning or assuming another person’s debt, receivable or financial obligation",
+    "P6-02+ execution",
+    "P5-04 realtime",
+    "social feeds",
+    "payment features",
+    "deployment",
+    "Shared activation"
+  ],
+  "operation_count": 40,
+  "requirements": [
+    {
+      "requirement_id": "P6-01.R01",
+      "requirement": "Exact verified-email discovery",
+      "source": [
+        "Owner P6-01 instruction 2026-11-11",
+        "Approved ADR 0050 (all A)",
+        "V3 documents 01–05, 10–13"
+      ],
+      "owner": "Social",
+      "status": "PROVEN",
+      "scope": "Verified current actor; Personal owner or exact Social Group admission/capability; no friendship-to-membership inheritance",
+      "operations": [
+        {
+          "method": "post",
+          "path": "/api/v1/social/discovery",
+          "operationId": "socialpostsocialdiscovery"
+        }
+      ],
+      "database_tables": ["SocialPrivacy"],
+      "transaction": "Current account/identity locks before custody; actor-scoped idempotency or optimistic revision; durable audit/outbox and restrictive controls as applicable",
+      "tests": [
+        {
+          "file": "apps/api/test/integration/social.spec.ts",
+          "name_prefix": "defaults to undiscoverable"
+        },
+        {
+          "file": "apps/api/test/integration/social.spec.ts",
+          "name_prefix": "returns only opted-in opaque ID"
+        },
+        {
+          "file": "apps/api/test/integration/social.spec.ts",
+          "name_prefix": "cannot expose either direction of blocking"
+        },
+        {
+          "file": "apps/api/test/integration/social.spec.ts",
+          "name_prefix": "email invitations keep known and unknown"
+        }
+      ],
+      "migration_evidence": "p6-01-migration-review.md; tooling/testing/social-upgrade.ts",
+      "acceptance_evidence": "p6-01-report.md",
+      "acceptance_status": "Locally verified; owner acceptance pending"
+    },
+    {
+      "requirement_id": "P6-01.R02",
+      "requirement": "Owner-private privacy settings",
+      "source": [
+        "Owner P6-01 instruction 2026-11-11",
+        "Approved ADR 0050 (all A)",
+        "V3 documents 01–05, 10–13"
+      ],
+      "owner": "Social",
+      "status": "PROVEN",
+      "scope": "Verified current actor; Personal owner or exact Social Group admission/capability; no friendship-to-membership inheritance",
+      "operations": [
+        {
+          "method": "get",
+          "path": "/api/v1/social/privacy",
+          "operationId": "socialgetsocialprivacy"
+        },
+        {
+          "method": "patch",
+          "path": "/api/v1/social/privacy",
+          "operationId": "socialpatchsocialprivacy"
+        }
+      ],
+      "database_tables": ["SocialPrivacy"],
+      "transaction": "Current account/identity locks before custody; actor-scoped idempotency or optimistic revision; durable audit/outbox and restrictive controls as applicable",
+      "tests": [
+        {
+          "file": "apps/api/test/integration/social.spec.ts",
+          "name_prefix": "request opt-out prevents new requests"
+        },
+        {
+          "file": "apps/api/test/integration/social.spec.ts",
+          "name_prefix": "signed restrictive privacy evidence"
+        }
+      ],
+      "migration_evidence": "p6-01-migration-review.md; tooling/testing/social-upgrade.ts",
+      "acceptance_evidence": "p6-01-report.md",
+      "acceptance_status": "Locally verified; owner acceptance pending"
+    },
+    {
+      "requirement_id": "P6-01.R03",
+      "requirement": "Mutual friend requests, acceptance, decline, cancellation and removal",
+      "source": [
+        "Owner P6-01 instruction 2026-11-11",
+        "Approved ADR 0050 (all A)",
+        "V3 documents 01–05, 10–13"
+      ],
+      "owner": "Social",
+      "status": "PROVEN",
+      "scope": "Verified current actor; Personal owner or exact Social Group admission/capability; no friendship-to-membership inheritance",
+      "operations": [
+        {
+          "method": "get",
+          "path": "/api/v1/social/connections",
+          "operationId": "socialgetsocialconnections"
+        },
+        {
+          "method": "post",
+          "path": "/api/v1/social/connections",
+          "operationId": "socialpostsocialconnections"
+        },
+        {
+          "method": "post",
+          "path": "/api/v1/social/connections/{id}/{action}",
+          "operationId": "socialpostsocialconnectionsidaction"
+        }
+      ],
+      "database_tables": ["SocialConnection"],
+      "transaction": "Current account/identity locks before custody; actor-scoped idempotency or optimistic revision; durable audit/outbox and restrictive controls as applicable",
+      "tests": [
+        {
+          "file": "apps/api/test/integration/social.spec.ts",
+          "name_prefix": "requires recipient acceptance"
+        },
+        {
+          "file": "apps/api/test/integration/social.spec.ts",
+          "name_prefix": "deduplicates creation"
+        },
+        {
+          "file": "apps/api/test/integration/social.spec.ts",
+          "name_prefix": "opposing requests never silently accept"
+        },
+        {
+          "file": "apps/api/test/integration/social.spec.ts",
+          "name_prefix": "decline, cancel and removal"
+        }
+      ],
+      "migration_evidence": "p6-01-migration-review.md; tooling/testing/social-upgrade.ts",
+      "acceptance_evidence": "p6-01-report.md",
+      "acceptance_status": "Locally verified; owner acceptance pending"
+    },
+    {
+      "requirement_id": "P6-01.R04",
+      "requirement": "Single-authority blocking and fresh consent after unblock",
+      "source": [
+        "Owner P6-01 instruction 2026-11-11",
+        "Approved ADR 0050 (all A)",
+        "V3 documents 01–05, 10–13"
+      ],
+      "owner": "Messaging pair-block authority with atomic Social-owned consequence",
+      "status": "PROVEN",
+      "scope": "Verified current actor; Personal owner or exact Social Group admission/capability; no friendship-to-membership inheritance",
+      "operations": [
+        {
+          "method": "get",
+          "path": "/api/v1/social/blocks",
+          "operationId": "socialgetsocialblocks"
+        },
+        {
+          "method": "post",
+          "path": "/api/v1/social/blocks",
+          "operationId": "socialpostsocialblocks"
+        },
+        {
+          "method": "post",
+          "path": "/api/v1/social/blocks/{id}/unblock",
+          "operationId": "socialpostsocialblocksidunblock"
+        }
+      ],
+      "database_tables": [
+        "DmContactState",
+        "DmContactBlock",
+        "DmContactMutation",
+        "SocialConnection",
+        "SocialCircleMember"
+      ],
+      "transaction": "Current account/identity locks before custody; actor-scoped idempotency or optimistic revision; durable audit/outbox and restrictive controls as applicable",
+      "tests": [
+        {
+          "file": "apps/api/test/integration/social.spec.ts",
+          "name_prefix": "social block terminates friendship"
+        },
+        {
+          "file": "apps/api/test/integration/social.spec.ts",
+          "name_prefix": "existing DM block endpoints"
+        },
+        {
+          "file": "apps/api/test/integration/social.spec.ts",
+          "name_prefix": "blocks pending pair requests"
+        },
+        {
+          "file": "apps/api/test/integration/social.spec.ts",
+          "name_prefix": "database-committed block wins"
+        }
+      ],
+      "migration_evidence": "p6-01-migration-review.md; tooling/testing/social-upgrade.ts",
+      "acceptance_evidence": "p6-01-report.md",
+      "acceptance_status": "Locally verified; owner acceptance pending"
+    },
+    {
+      "requirement_id": "P6-01.R05",
+      "requirement": "Private personal Circle labels",
+      "source": [
+        "Owner P6-01 instruction 2026-11-11",
+        "Approved ADR 0050 (all A)",
+        "V3 documents 01–05, 10–13"
+      ],
+      "owner": "Social",
+      "status": "PROVEN",
+      "scope": "Verified current actor; Personal owner or exact Social Group admission/capability; no friendship-to-membership inheritance",
+      "operations": [
+        {
+          "method": "get",
+          "path": "/api/v1/social/circles",
+          "operationId": "socialgetsocialcircles"
+        },
+        {
+          "method": "post",
+          "path": "/api/v1/social/circles",
+          "operationId": "socialpostsocialcircles"
+        },
+        {
+          "method": "get",
+          "path": "/api/v1/social/circles/{id}",
+          "operationId": "socialgetsocialcirclesid"
+        },
+        {
+          "method": "patch",
+          "path": "/api/v1/social/circles/{id}",
+          "operationId": "socialpatchsocialcirclesid"
+        },
+        {
+          "method": "delete",
+          "path": "/api/v1/social/circles/{id}",
+          "operationId": "socialdeletesocialcirclesid"
+        },
+        {
+          "method": "get",
+          "path": "/api/v1/social/circles/{id}/members",
+          "operationId": "socialgetsocialcirclesidmembers"
+        },
+        {
+          "method": "put",
+          "path": "/api/v1/social/circles/{id}/members/{connectionId}",
+          "operationId": "socialputsocialcirclesidmembersconnectionId"
+        },
+        {
+          "method": "delete",
+          "path": "/api/v1/social/circles/{id}/members/{connectionId}",
+          "operationId": "socialdeletesocialcirclesidmembersconnectionId"
+        }
+      ],
+      "database_tables": ["SocialCircle", "SocialCircleMember"],
+      "transaction": "Current account/identity locks before custody; actor-scoped idempotency or optimistic revision; durable audit/outbox and restrictive controls as applicable",
+      "tests": [
+        {
+          "file": "apps/api/test/integration/social.spec.ts",
+          "name_prefix": "Circles remain private labels"
+        },
+        {
+          "file": "apps/api/test/integration/social.spec.ts",
+          "name_prefix": "friend removal atomically removes labels"
+        },
+        {
+          "file": "apps/api/test/integration/social.spec.ts",
+          "name_prefix": "rejects SQL-level cross-owner Circle labels"
+        }
+      ],
+      "migration_evidence": "p6-01-migration-review.md; tooling/testing/social-upgrade.ts",
+      "acceptance_evidence": "p6-01-report.md",
+      "acceptance_status": "Locally verified; owner acceptance pending"
+    },
+    {
+      "requirement_id": "P6-01.R06",
+      "requirement": "Independent private Social Groups",
+      "source": [
+        "Owner P6-01 instruction 2026-11-11",
+        "Approved ADR 0050 (all A)",
+        "V3 documents 01–05, 10–13"
+      ],
+      "owner": "Social",
+      "status": "PROVEN",
+      "scope": "Verified current actor; Personal owner or exact Social Group admission/capability; no friendship-to-membership inheritance",
+      "operations": [
+        {
+          "method": "post",
+          "path": "/api/v1/social-groups",
+          "operationId": "socialpostsocialgroups"
+        },
+        {
+          "method": "get",
+          "path": "/api/v1/social-groups",
+          "operationId": "socialgetsocialgroups"
+        },
+        {
+          "method": "get",
+          "path": "/api/v1/social-groups/{id}",
+          "operationId": "socialgetsocialgroupsid"
+        },
+        {
+          "method": "patch",
+          "path": "/api/v1/social-groups/{id}",
+          "operationId": "socialpatchsocialgroupsid"
+        }
+      ],
+      "database_tables": [
+        "Space",
+        "SharedCustody",
+        "AccessScope",
+        "SharedActor",
+        "SocialGroup"
+      ],
+      "transaction": "Current account/identity locks before custody; actor-scoped idempotency or optimistic revision; durable audit/outbox and restrictive controls as applicable",
+      "tests": [
+        {
+          "file": "apps/api/test/integration/social.spec.ts",
+          "name_prefix": "private Group is absent from discovery"
+        },
+        {
+          "file": "apps/api/test/integration/social.spec.ts",
+          "name_prefix": "uses the existing feature policy seam"
+        }
+      ],
+      "migration_evidence": "p6-01-migration-review.md; tooling/testing/social-upgrade.ts",
+      "acceptance_evidence": "p6-01-report.md",
+      "acceptance_status": "Locally verified; owner acceptance pending"
+    },
+    {
+      "requirement_id": "P6-01.R07",
+      "requirement": "Opt-in minimal Group discovery with mandatory admission",
+      "source": [
+        "Owner P6-01 instruction 2026-11-11",
+        "Approved ADR 0050 (all A)",
+        "V3 documents 01–05, 10–13"
+      ],
+      "owner": "Social",
+      "status": "PROVEN",
+      "scope": "Verified current actor; Personal owner or exact Social Group admission/capability; no friendship-to-membership inheritance",
+      "operations": [
+        {
+          "method": "get",
+          "path": "/api/v1/social-groups/discover",
+          "operationId": "socialgetsocialgroupsdiscover"
+        }
+      ],
+      "database_tables": ["SocialGroup"],
+      "transaction": "Current account/identity locks before custody; actor-scoped idempotency or optimistic revision; durable audit/outbox and restrictive controls as applicable",
+      "tests": [
+        {
+          "file": "apps/api/test/integration/social.spec.ts",
+          "name_prefix": "discoverable previews contain only explicitly public metadata"
+        },
+        {
+          "file": "apps/api/test/integration/social.spec.ts",
+          "name_prefix": "signed Group privacy survives restored metadata"
+        }
+      ],
+      "migration_evidence": "p6-01-migration-review.md; tooling/testing/social-upgrade.ts",
+      "acceptance_evidence": "p6-01-report.md",
+      "acceptance_status": "Locally verified; owner acceptance pending"
+    },
+    {
+      "requirement_id": "P6-01.R08",
+      "requirement": "Verified named-recipient invitations",
+      "source": [
+        "Owner P6-01 instruction 2026-11-11",
+        "Approved ADR 0050 (all A)",
+        "V3 documents 01–05, 10–13"
+      ],
+      "owner": "Social orchestration / Spaces admission and lifecycle authority",
+      "status": "PROVEN",
+      "scope": "Verified current actor; Personal owner or exact Social Group admission/capability; no friendship-to-membership inheritance",
+      "operations": [
+        {
+          "method": "post",
+          "path": "/api/v1/social-groups/{id}/invitations",
+          "operationId": "socialpostsocialgroupsidinvitations"
+        },
+        {
+          "method": "get",
+          "path": "/api/v1/social-groups/{id}/invitations/{offerId}",
+          "operationId": "socialgetsocialgroupsidinvitationsofferId"
+        },
+        {
+          "method": "post",
+          "path": "/api/v1/social-groups/{id}/invitations/{offerId}/revoke",
+          "operationId": "socialpostsocialgroupsidinvitationsofferIdrevoke"
+        },
+        {
+          "method": "get",
+          "path": "/api/v1/social-group-invitations/preview",
+          "operationId": "socialgetsocialgroupinvitationspreview"
+        },
+        {
+          "method": "post",
+          "path": "/api/v1/social-group-invitations/{id}/accept",
+          "operationId": "socialpostsocialgroupinvitationsidaccept"
+        },
+        {
+          "method": "post",
+          "path": "/api/v1/social-group-invitations/{id}/decline",
+          "operationId": "socialpostsocialgroupinvitationsiddecline"
+        }
+      ],
+      "database_tables": [
+        "ContextInvitation",
+        "ContextAccess",
+        "ContextAccessInterval"
+      ],
+      "transaction": "Current account/identity locks before custody; actor-scoped idempotency or optimistic revision; durable audit/outbox and restrictive controls as applicable",
+      "tests": [
+        {
+          "file": "apps/api/test/integration/social.spec.ts",
+          "name_prefix": "requires named recipient acceptance"
+        },
+        {
+          "file": "apps/api/test/integration/social.spec.ts",
+          "name_prefix": "revoked and expired invitations"
+        },
+        {
+          "file": "apps/api/test/integration/social.spec.ts",
+          "name_prefix": "issuer demotion"
+        },
+        {
+          "file": "apps/api/test/integration/social.spec.ts",
+          "name_prefix": "blocking an inviter"
+        }
+      ],
+      "migration_evidence": "p6-01-migration-review.md; tooling/testing/social-upgrade.ts",
+      "acceptance_evidence": "p6-01-report.md",
+      "acceptance_status": "Locally verified; owner acceptance pending"
+    },
+    {
+      "requirement_id": "P6-01.R09",
+      "requirement": "Applicant consent, join requests and approval",
+      "source": [
+        "Owner P6-01 instruction 2026-11-11",
+        "Approved ADR 0050 (all A)",
+        "V3 documents 01–05, 10–13"
+      ],
+      "owner": "Social",
+      "status": "PROVEN",
+      "scope": "Verified current actor; Personal owner or exact Social Group admission/capability; no friendship-to-membership inheritance",
+      "operations": [
+        {
+          "method": "post",
+          "path": "/api/v1/social-groups/{id}/join-requests",
+          "operationId": "socialpostsocialgroupsidjoinrequests"
+        },
+        {
+          "method": "get",
+          "path": "/api/v1/social-groups/{id}/join-requests",
+          "operationId": "socialgetsocialgroupsidjoinrequests"
+        },
+        {
+          "method": "post",
+          "path": "/api/v1/social-groups/{id}/join-requests/{requestId}/{action}",
+          "operationId": "socialpostsocialgroupsidjoinrequestsrequestIdaction"
+        }
+      ],
+      "database_tables": [
+        "SocialJoinRequest",
+        "ContextAccess",
+        "ContextAccessInterval"
+      ],
+      "transaction": "Current account/identity locks before custody; actor-scoped idempotency or optimistic revision; durable audit/outbox and restrictive controls as applicable",
+      "tests": [
+        {
+          "file": "apps/api/test/integration/social.spec.ts",
+          "name_prefix": "join request grants no rights"
+        },
+        {
+          "file": "apps/api/test/integration/social.spec.ts",
+          "name_prefix": "applicants see only their own requests"
+        },
+        {
+          "file": "apps/api/test/integration/social.spec.ts",
+          "name_prefix": "join cancellation and rejection"
+        },
+        {
+          "file": "apps/api/test/integration/social.spec.ts",
+          "name_prefix": "join creation keys"
+        }
+      ],
+      "migration_evidence": "p6-01-migration-review.md; tooling/testing/social-upgrade.ts",
+      "acceptance_evidence": "p6-01-report.md",
+      "acceptance_status": "Locally verified; owner acceptance pending"
+    },
+    {
+      "requirement_id": "P6-01.R10",
+      "requirement": "Fixed Owner/Admin/Member roles and member management",
+      "source": [
+        "Owner P6-01 instruction 2026-11-11",
+        "Approved ADR 0050 (all A)",
+        "V3 documents 01–05, 10–13"
+      ],
+      "owner": "Social orchestration / Spaces admission and lifecycle authority",
+      "status": "PROVEN",
+      "scope": "Verified current actor; Personal owner or exact Social Group admission/capability; no friendship-to-membership inheritance",
+      "operations": [
+        {
+          "method": "get",
+          "path": "/api/v1/social-groups/{id}/memberships",
+          "operationId": "socialgetsocialgroupsidmemberships"
+        },
+        {
+          "method": "patch",
+          "path": "/api/v1/social-groups/{id}/memberships/{accessId}",
+          "operationId": "socialpatchsocialgroupsidmembershipsaccessId"
+        }
+      ],
+      "database_tables": ["ContextAccess", "SharedCustody"],
+      "transaction": "Current account/identity locks before custody; actor-scoped idempotency or optimistic revision; durable audit/outbox and restrictive controls as applicable",
+      "tests": [
+        {
+          "file": "apps/api/test/integration/social.spec.ts",
+          "name_prefix": "Owner alone promotes Admin"
+        },
+        {
+          "file": "apps/api/test/integration/social.spec.ts",
+          "name_prefix": "Admin may remove an ordinary Member"
+        },
+        {
+          "file": "apps/api/test/integration/social.spec.ts",
+          "name_prefix": "rejoining after removal increments"
+        }
+      ],
+      "migration_evidence": "p6-01-migration-review.md; tooling/testing/social-upgrade.ts",
+      "acceptance_evidence": "p6-01-report.md",
+      "acceptance_status": "Locally verified; owner acceptance pending"
+    },
+    {
+      "requirement_id": "P6-01.R11",
+      "requirement": "Inherited owner succession, departure and bounded lifecycle",
+      "source": [
+        "Owner P6-01 instruction 2026-11-11",
+        "Approved ADR 0050 (all A)",
+        "V3 documents 01–05, 10–13"
+      ],
+      "owner": "Social orchestration / Spaces admission and lifecycle authority",
+      "status": "PROVEN",
+      "scope": "Verified current actor; Personal owner or exact Social Group admission/capability; no friendship-to-membership inheritance",
+      "operations": [
+        {
+          "method": "post",
+          "path": "/api/v1/social-groups/{id}/leave",
+          "operationId": "socialpostsocialgroupsidleave"
+        },
+        {
+          "method": "post",
+          "path": "/api/v1/social-groups/{id}/handovers",
+          "operationId": "socialpostsocialgroupsidhandovers"
+        },
+        {
+          "method": "get",
+          "path": "/api/v1/social-groups/{id}/handovers/{handoverId}",
+          "operationId": "socialgetsocialgroupsidhandovershandoverId"
+        },
+        {
+          "method": "post",
+          "path": "/api/v1/social-groups/{id}/handovers/{handoverId}/decline",
+          "operationId": "socialpostsocialgroupsidhandovershandoverIddecline"
+        },
+        {
+          "method": "post",
+          "path": "/api/v1/social-groups/{id}/handovers/{handoverId}/revoke",
+          "operationId": "socialpostsocialgroupsidhandovershandoverIdrevoke"
+        },
+        {
+          "method": "post",
+          "path": "/api/v1/social-groups/{id}/handovers/{handoverId}/accept",
+          "operationId": "socialpostsocialgroupsidhandovershandoverIdaccept"
+        }
+      ],
+      "database_tables": [
+        "OwnerHandover",
+        "SharedLifecycleJob",
+        "SharedExitWork",
+        "SocialGroup"
+      ],
+      "transaction": "Current account/identity locks before custody; actor-scoped idempotency or optimistic revision; durable audit/outbox and restrictive controls as applicable",
+      "tests": [
+        {
+          "file": "apps/api/test/integration/social.spec.ts",
+          "name_prefix": "succession needs named successor acceptance"
+        },
+        {
+          "file": "apps/api/test/integration/social.spec.ts",
+          "name_prefix": "last departure creates the existing 30-day closure"
+        },
+        {
+          "file": "apps/api/test/integration/social.spec.ts",
+          "name_prefix": "purges a Social Group only after the recovery deadline"
+        }
+      ],
+      "migration_evidence": "p6-01-migration-review.md; tooling/testing/social-upgrade.ts",
+      "acceptance_evidence": "p6-01-report.md",
+      "acceptance_status": "Locally verified; owner acceptance pending"
+    },
+    {
+      "requirement_id": "P6-01.R12",
+      "requirement": "Portability, erasure, sessions, scoped receipts and restore controls",
+      "source": [
+        "Owner P6-01 instruction 2026-11-11",
+        "Approved ADR 0050 (all A)",
+        "V3 documents 01–05, 10–13"
+      ],
+      "owner": "Social",
+      "status": "PROVEN",
+      "scope": "Verified current actor; Personal owner or exact Social Group admission/capability; no friendship-to-membership inheritance",
+      "operations": [
+        {
+          "method": "post",
+          "path": "/api/v1/social/restore-replay",
+          "operationId": "socialpostsocialrestorereplay"
+        }
+      ],
+      "database_tables": [
+        "SocialPrivacy",
+        "IdempotencyRecord",
+        "SecurityAuditEvent",
+        "OutboxEvent",
+        "SharedAuditEvent",
+        "SharedOutboxEvent"
+      ],
+      "transaction": "Current account/identity locks before custody; actor-scoped idempotency or optimistic revision; durable audit/outbox and restrictive controls as applicable",
+      "tests": [
+        {
+          "file": "apps/api/test/integration/social.spec.ts",
+          "name_prefix": "private social portability and erasure"
+        },
+        {
+          "file": "apps/api/test/integration/social.spec.ts",
+          "name_prefix": "requires current sessions"
+        },
+        {
+          "file": "apps/api/test/integration/social.spec.ts",
+          "name_prefix": "strict HTTP schemas"
+        },
+        {
+          "file": "apps/api/test/integration/social.spec.ts",
+          "name_prefix": "ordinary validation conflicts"
+        },
+        {
+          "file": "apps/api/test/integration/social.spec.ts",
+          "name_prefix": "Social suspension cancels pending requests"
+        },
+        {
+          "file": "apps/api/test/integration/social.spec.ts",
+          "name_prefix": "current revocation wins"
+        }
+      ],
+      "migration_evidence": "p6-01-migration-review.md; tooling/testing/social-upgrade.ts",
+      "acceptance_evidence": "p6-01-report.md",
+      "acceptance_status": "Locally verified; owner acceptance pending"
+    }
+  ]
+}

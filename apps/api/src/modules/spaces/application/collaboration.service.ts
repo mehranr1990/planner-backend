@@ -89,7 +89,10 @@ export class CollaborationService {
     await this.limit.request(ip, actor?.userId, preview);
     await this.control.records();
   }
-  async requireContextKind(spaceId: string, kind: 'PROJECT' | 'TEAM') {
+  async requireContextKind(
+    spaceId: string,
+    kind: 'PROJECT' | 'TEAM' | 'SOCIAL_GROUP',
+  ) {
     const domain = await this.db.client.domainScopeCustody.findUnique({
       where: { scopeId: spaceId },
     });
@@ -121,7 +124,12 @@ export class CollaborationService {
     ) => Promise<T>,
     lifecycle = false,
     lifecycleKind:
-      'PROJECT' | 'TEAM' | 'COMPANY' | 'CONVERSATION' | 'MEETING' = 'PROJECT',
+      | 'PROJECT'
+      | 'TEAM'
+      | 'COMPANY'
+      | 'CONVERSATION'
+      | 'MEETING'
+      | 'SOCIAL_GROUP' = 'PROJECT',
     fence?: (
       body: (
         tx: Prisma.TransactionClient,
@@ -299,6 +307,11 @@ export class CollaborationService {
     spaceId: string,
     input: z.infer<typeof c.ContextInvitationCreateSchema>,
     key: string | undefined,
+    contactCheck?: (
+      tx: Prisma.TransactionClient,
+      recipient: string,
+      locked: string[],
+    ) => Promise<void>,
   ) {
     const keyValue = keyHash(key),
       body = c.ContextInvitationCreateSchema.parse(input);
@@ -374,6 +387,8 @@ export class CollaborationService {
         )
           throw new ConflictException({ code: 'IDENTITY_CHANGED_RESTART' });
         if (!email && !recipient) throw new NotFoundException();
+        if (contactCheck && recipient)
+          await contactCheck(tx, recipient.id, locked);
         if (location.spaceId !== location.scopeId) {
           if (!recipient) throw new NotFoundException();
           await this.kernel.companyRootAdmission(
@@ -489,7 +504,12 @@ export class CollaborationService {
   async preview(
     proof: string | undefined,
     kind:
-      'PROJECT' | 'TEAM' | 'COMPANY' | 'CONVERSATION' | 'MEETING' = 'PROJECT',
+      | 'PROJECT'
+      | 'TEAM'
+      | 'COMPANY'
+      | 'CONVERSATION'
+      | 'MEETING'
+      | 'SOCIAL_GROUP' = 'PROJECT',
   ) {
     this.kernel.assertEnabled();
     const hint = await this.db.client.contextInvitation.findUnique({
@@ -608,11 +628,18 @@ export class CollaborationService {
         );
       }
       return (
-        kind === 'TEAM'
-          ? c.TeamInvitationPreviewSchema
-          : c.InvitationPreviewSchema
+        kind === 'SOCIAL_GROUP'
+          ? c.SocialGroupInvitationPreviewSchema
+          : kind === 'TEAM'
+            ? c.TeamInvitationPreviewSchema
+            : c.InvitationPreviewSchema
       ).parse({
-        contextLabel: kind === 'TEAM' ? 'Team' : 'Project',
+        contextLabel:
+          kind === 'SOCIAL_GROUP'
+            ? 'Social Group'
+            : kind === 'TEAM'
+              ? 'Team'
+              : 'Project',
         offerCategory: 'MEMBERSHIP',
         expiresAt: row.expiresAt.toISOString(),
       });
@@ -632,7 +659,18 @@ export class CollaborationService {
     revision: number,
     accept: boolean,
     kind:
-      'PROJECT' | 'TEAM' | 'COMPANY' | 'CONVERSATION' | 'MEETING' = 'PROJECT',
+      | 'PROJECT'
+      | 'TEAM'
+      | 'COMPANY'
+      | 'CONVERSATION'
+      | 'MEETING'
+      | 'SOCIAL_GROUP' = 'PROJECT',
+    contactCheck?: (
+      tx: Prisma.TransactionClient,
+      issuer: string,
+      locked: string[],
+      createdAt: Date,
+    ) => Promise<void>,
   ) {
     const hint = await this.invitationHint(id, proof),
       issuerUser = await this.userForAccess(
@@ -652,6 +690,10 @@ export class CollaborationService {
         if ((await this.contextKind(tx, row.scopeId)) !== kind)
           throw new NotFoundException();
         if (row.proofHash !== proofHash(proof)) throw new NotFoundException();
+        if (accept && contactCheck) {
+          if (!issuerUser) throw new NotFoundException();
+          await contactCheck(tx, issuerUser, locked, row.createdAt);
+        }
         if (row.state === 'ACCEPTED' && accept) {
           const access = await tx.contextAccess.findUnique({
               where: { id: row.acceptedAccessId! },

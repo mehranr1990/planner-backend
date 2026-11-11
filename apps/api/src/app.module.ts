@@ -1,4 +1,5 @@
 import { CompaniesModule } from './modules/companies/public/index.js';
+import { SocialModule } from './modules/social/public/index.js';
 import {
   MessagingModule,
   MessagingMediaModule,
@@ -89,6 +90,7 @@ export class AppModule {
     return {
       module: AppModule,
       imports: [
+        SocialModule,
         MessagingModule,
         messagingMedia,
         meetingWorkflows,
@@ -112,6 +114,7 @@ export class AppModule {
         SpacesModule,
         SyncModule.register([tasks, planning, HabitsModule, notes, capture]),
         AccountLifecycleModule.register([
+          SocialModule,
           storage,
           tasks,
           planning,

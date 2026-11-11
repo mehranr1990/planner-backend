@@ -46,6 +46,7 @@ import {
   ],
   controllers: [SpaceCollaborationController, InvitationRecipientController],
   exports: [
+    SharedIdentity,
     MessagingAuthority,
     CompanyErasure,
     CompanyAccess,

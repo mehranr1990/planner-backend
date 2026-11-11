@@ -145,7 +145,10 @@ async function http(
   headers: Record<string, string> = {},
 ) {
   // The longer media smoke respects the unchanged shared IP/actor minute budgets.
-  if (process.argv.includes('--media') && !route.startsWith('/api/v1/auth/')) {
+  if (
+    (process.argv.includes('--media') || process.argv.includes('--social')) &&
+    !route.startsWith('/api/v1/auth/')
+  ) {
     await pace();
     if (
       ipRequests >= 25 ||
@@ -265,6 +268,7 @@ try {
           applicableContexts: [
             'CONVERSATION',
             'PROJECT',
+            ...(process.argv.includes('--social') ? ['SOCIAL_GROUP'] : []),
             ...(process.argv.includes('--meetings') ? ['MEETING'] : []),
           ],
           marketScope: 'isolated local smoke',
@@ -474,8 +478,31 @@ try {
           version,
         )
       : null;
+    const socialExtension = process.argv.includes('--social')
+      ? await import('./p6-01-smoke.ts')
+      : null;
+    const socialPeople = socialExtension
+      ? { owner: sourceOwner, peer: recipient }
+      : null;
+    const socialState =
+      socialExtension && socialPeople
+        ? await socialExtension.beforeSocialRestart(
+            http,
+            db,
+            socialPeople.owner,
+            socialPeople.peer,
+            version,
+          )
+        : null;
     await stop(api);
     api = await apiStart();
+    if (socialExtension && socialState && socialPeople)
+      await socialExtension.afterSocialRestart(
+        http,
+        socialPeople.owner,
+        socialPeople.peer,
+        socialState,
+      );
     if (meetingExtension && meetingState)
       await meetingExtension.afterMeetingsRestart(
         http,

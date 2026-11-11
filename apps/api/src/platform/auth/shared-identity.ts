@@ -26,6 +26,12 @@ export class SharedIdentity {
       select: { id: true, email: true, emailVerified: true },
     });
   }
+  directory(tx: Prisma.TransactionClient, userId: string) {
+    return tx.user.findUnique({
+      where: { id: userId },
+      select: { id: true, name: true, email: true, emailVerified: true },
+    });
+  }
   async require(tx: Prisma.TransactionClient, actor: RequestActor) {
     if (!actor.sessionId) throw new ForbiddenException();
     const sessions = await tx.$queryRaw<{ id: string }[]>`

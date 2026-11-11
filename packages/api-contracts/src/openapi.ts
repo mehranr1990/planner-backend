@@ -1,4 +1,5 @@
 import { meetingPaths } from './meetings-openapi.js';
+import { socialPaths } from './social-openapi.js';
 import { communicationLifecyclePaths } from './communication-lifecycle-openapi.js';
 import { companyAssociationPaths } from './company-associations-openapi.js';
 import { companyLifecyclePaths } from './company-lifecycle-openapi.js';
@@ -260,6 +261,7 @@ export function createOpenApiDocument() {
       ...teamInteractionsPaths(),
       ...messagingPaths(),
       ...meetingPaths(),
+      ...socialPaths(),
       ...communicationLifecyclePaths(),
       ...advancedMessagingPaths(),
       ...messagingMediaPaths(),

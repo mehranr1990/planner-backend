@@ -1,9 +1,10 @@
 import { createHash } from 'node:crypto';
 import { ConflictException } from '@nestjs/common';
 import type { Prisma } from '../../generated/prisma/client.js';
-// Filled only after the final P2-07 catalog review; future FK changes must extend owner cleanup first.
+// Reviewed through P6-01: Social owns all eleven new relations and Group cleanup.
+// Future FK changes still fail closed until their owner cleanup is reviewed.
 export const SHARED_CLEANUP_FK_SHA256 =
-  '5a1b650b7cca7dec58699c9aff14e8354e58f73b9983f7ad55ce53e0a578792a';
+  '3554e0a2b9c5afe6be29e29efd0d8c5ff9bf2575c3ad1200775d353ab7d2239e';
 export async function assertSharedCleanupCatalog(tx: Prisma.TransactionClient) {
   const rows = await tx.$queryRaw<
     { table: string; name: string; target: string; definition: string }[]

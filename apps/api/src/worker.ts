@@ -17,6 +17,7 @@ import { SyncService } from './modules/sync/public/index.js';
 import { ProjectCleanupService } from './modules/projects/public/index.js';
 import { CompanyCleanupService } from './modules/companies/public/index.js';
 import { TeamCleanupService } from './modules/teams/public/index.js';
+import { SocialLifecycle } from './modules/social/public/index.js';
 import {
   SharedKernel,
   CollaborationService,
@@ -48,6 +49,7 @@ try {
     const sharedExit = await app.get(SharedKernel).consumeExit();
     const projectCleanup = await app.get(ProjectCleanupService).consume();
     const teamCleanup = await app.get(TeamCleanupService).consume();
+    const socialCleanup = await app.get(SocialLifecycle).consume();
     const companyCleanup = await app.get(CompanyCleanupService).consume();
     const conversationCleanup = await app.get(ConversationLifecycle).consume();
     const meetingCleanup = await app.get(MeetingLifecycle).consume();
@@ -62,6 +64,7 @@ try {
       sharedExit ||
       projectCleanup ||
       teamCleanup ||
+      socialCleanup ||
       companyCleanup ||
       conversationCleanup ||
       meetingCleanup ||

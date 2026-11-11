@@ -4,3 +4,5 @@ export { MessagingMediaModule } from '../messaging-media.module.js';
 export { MessageNoticeWorker } from '../application/message-notice-worker.js';
 export { MessagingData } from './personal-data.js';
 export { ConversationLifecycle } from '../application/messaging-lifecycle.service.js';
+
+export { DmContacts } from '../application/dm-contacts.service.js';

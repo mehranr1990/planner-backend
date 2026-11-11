@@ -87,11 +87,13 @@ export const companyDefaultPolicy: RoleDefaults = {
 export function roleInContext(role: string | null, kind: string) {
   return (
     role === null ||
-    (kind === 'COMPANY'
-      ? ['ORG_ADMIN', 'DEPT_MANAGER', 'TEAM_LEAD', 'MEMBER', 'VIEWER']
-      : kind === 'TEAM'
-        ? ['ADMIN', 'LEAD', 'MEMBER', 'VIEWER']
-        : ['ADMIN', 'MANAGER', 'MEMBER', 'VIEWER']
+    (kind === 'SOCIAL_GROUP'
+      ? ['ADMIN', 'MEMBER']
+      : kind === 'COMPANY'
+        ? ['ORG_ADMIN', 'DEPT_MANAGER', 'TEAM_LEAD', 'MEMBER', 'VIEWER']
+        : kind === 'TEAM'
+          ? ['ADMIN', 'LEAD', 'MEMBER', 'VIEWER']
+          : ['ADMIN', 'MANAGER', 'MEMBER', 'VIEWER']
     ).includes(role)
   );
 }

@@ -1,0 +1,237 @@
+{
+  "batch": "P6-01",
+  "date": "2026-11-11",
+  "timezone": "Asia/Tehran",
+  "baseline": "834df8d3a1d8e7df18886716f7c432b1c7570f76",
+  "canonicalTestDatabase": "p601_acceptance_985936cc5acf4b80ab817b1a8dcae73b_test",
+  "localAcceptance": "PASS; owner acceptance pending",
+  "fullGate": {
+    "command": "node --env-file-if-exists=.env.test.local .tools/p6-01-baseline.mjs --run quality",
+    "invocations": 1,
+    "originalExitCode": 1,
+    "stageResults": [
+      {
+        "stage": "config:check",
+        "originalResult": "PASS",
+        "finalEvidence": "PASS through original run or affected rerun"
+      },
+      {
+        "stage": "db:generate",
+        "originalResult": "PASS",
+        "finalEvidence": "PASS through original run or affected rerun"
+      },
+      {
+        "stage": "auth:schema:check",
+        "originalResult": "FAIL",
+        "finalEvidence": "PASS through original run or affected rerun"
+      },
+      {
+        "stage": "db:validate",
+        "originalResult": "PASS",
+        "finalEvidence": "PASS through original run or affected rerun"
+      },
+      {
+        "stage": "build",
+        "originalResult": "PASS",
+        "finalEvidence": "PASS through original run or affected rerun"
+      },
+      {
+        "stage": "typecheck",
+        "originalResult": "PASS",
+        "finalEvidence": "PASS through original run or affected rerun"
+      },
+      {
+        "stage": "format:check",
+        "originalResult": "PASS",
+        "finalEvidence": "PASS through original run or affected rerun"
+      },
+      {
+        "stage": "lint",
+        "originalResult": "PASS",
+        "finalEvidence": "PASS through original run or affected rerun"
+      },
+      {
+        "stage": "architecture",
+        "originalResult": "PASS",
+        "finalEvidence": "PASS through original run or affected rerun"
+      },
+      {
+        "stage": "test",
+        "originalResult": "FAIL",
+        "finalEvidence": "PASS through original run or affected rerun"
+      },
+      {
+        "stage": "openapi:check",
+        "originalResult": "PASS",
+        "finalEvidence": "PASS through original run or affected rerun"
+      },
+      {
+        "stage": "test:integration",
+        "originalResult": "FAIL",
+        "finalEvidence": "PASS through original run or affected rerun"
+      },
+      {
+        "stage": "db:migrations:check",
+        "originalResult": "PASS",
+        "finalEvidence": "PASS through original run or affected rerun"
+      }
+    ],
+    "findings": [
+      "Auth checker application-owned inverse relation normalization",
+      "Static migration inventory requires M045",
+      "Shared cleanup catalog intentionally fails closed until reviewed 777-FK hash is registered"
+    ]
+  },
+  "checks": [
+    {
+      "command": "node --env-file-if-exists=.env.test.local .tools/p6-01-baseline.mjs --run auth:schema:check",
+      "result": "PASS; pinned provider scalar fields/indexes/relations retained; only exact reviewed application inverse metadata excluded"
+    },
+    {
+      "command": "pnpm.cmd test apps/api/src/platform/database/foundation.spec.ts tooling/compatibility/auth-provider-model.spec.ts",
+      "result": "PASS",
+      "files": 2,
+      "cases": 11
+    },
+    {
+      "command": "pnpm.cmd test packages/api-contracts/src/social.spec.ts apps/api/test/contract/social-openapi.spec.ts tooling/compatibility/openapi.spec.ts",
+      "result": "PASS",
+      "files": 3,
+      "cases": 16
+    },
+    {
+      "command": "node --env-file-if-exists=.env.test.local .tools/p6-01-baseline.mjs --run test:integration apps/api/test/integration/social.spec.ts apps/api/test/integration/project-collaboration.spec.ts apps/api/test/integration/messaging.spec.ts apps/api/test/integration/communication-lifecycle.spec.ts apps/api/test/integration/team-lifecycle.spec.ts apps/api/test/integration/company-finance.spec.ts apps/api/test/integration/company-lifecycle.spec.ts",
+      "result": "PASS",
+      "files": 7,
+      "cases": 260,
+      "includesP601Cases": 43
+    },
+    {
+      "command": "node --env-file-if-exists=.env.test.local .tools/p6-01-baseline.mjs --run build",
+      "result": "PASS"
+    },
+    {
+      "command": "node --env-file-if-exists=.env.test.local .tools/p6-01-baseline.mjs --run typecheck",
+      "result": "PASS"
+    },
+    {
+      "command": "node --env-file-if-exists=.env.test.local .tools/p6-01-baseline.mjs --run openapi:check",
+      "result": "PASS"
+    },
+    {
+      "command": "node --env-file-if-exists=.env.test.local .tools/p6-01-baseline.mjs --run db:migrations:check",
+      "result": "PASS"
+    },
+    {
+      "command": "node --env-file-if-exists=.env.test.local .tools/p6-01-baseline.mjs --run smoke:p6-01",
+      "result": "PASS"
+    },
+    {
+      "command": "node --env-file-if-exists=.env.test.local .tools/p6-01-preservation.mjs",
+      "result": "PASS",
+      "protectedDatabases": 8,
+      "unrelatedDocuments": 12,
+      "environmentFilesAndExamples": 5,
+      "historicalMigrationArtifacts": 69,
+      "stagedPaths": 0
+    }
+  ],
+  "coverage": {
+    "originalNonIntegration": {
+      "files": 144,
+      "cases": 715,
+      "passed": 714,
+      "failed": 1
+    },
+    "originalIntegration": {
+      "files": 45,
+      "cases": 995,
+      "passed": 973,
+      "failed": 22
+    },
+    "finalDistinctCasesProvenCumulatively": {
+      "nonIntegration": 717,
+      "integration": 997
+    },
+    "note": "Cumulative evidence combines the one full gate with affected passing reruns and additional focused regression cases. No second full 717/997-case run is claimed."
+  },
+  "migration": {
+    "name": "202611110045_social_foundation",
+    "sha256": "30d00bf27efcda10291f0596b05dc9bee48452c2f0ed5aa431bd90a81278a25e",
+    "publishedPredecessorChecksumsPreserved": 68,
+    "predecessorDatasetsPreserved": 238,
+    "totalMigrations": 69,
+    "totalPublicTables": 245,
+    "totalForeignKeys": 777,
+    "foreignKeyCatalogSha256": "3554e0a2b9c5afe6be29e29efd0d8c5ff9bf2575c3ad1200775d353ab7d2239e",
+    "interruptedRollback": "PASS",
+    "repeatDeploy": "PASS"
+  },
+  "api": {
+    "artifact": "docs/api/openapi.json",
+    "sha256": "c9bf9ec01cbfdeed4183c7e963c4ab4fc6d09e0f3bddab4c3b12f1582d8d200e",
+    "operations": 841,
+    "additiveOperations": 40,
+    "resolvedReferences": 7649,
+    "p506AdditionalFrozenSignatures": 182,
+    "priorSignatures": "PASS",
+    "swagger": "No UI/JSON route configured; actual compiled GET /api/v1/docs and /api/v1/openapi.json both return 404."
+  },
+  "compiledSmoke": {
+    "apiRestart": "PASS",
+    "workerRestart": "PASS",
+    "actualIsolatedProcesses": true,
+    "publicGroupRenamePreservesPrivacyAndSummary": "PASS",
+    "circleAndFriendshipBlockPersistence": "PASS",
+    "acceptedGroupMembershipDespitePairBlock": "PASS",
+    "originalDMDurabilityAndHoldAssertions": "PASS",
+    "fixtureCorrections": [
+      "Use the existing third fixture identity for the Social block pair so original DM assertions retain their independent pair.",
+      "Reuse existing verified fixture users without changing or bypassing provider rate limits."
+    ]
+  },
+  "notRun": [
+    "Production Docker/HTTPS/proxy deployment",
+    "Shared activation",
+    "Actual external SMTP/Web Push/browser delivery",
+    "Operational backup/restore and production capacity/SLO/RPO/RTO",
+    "Actual malware-engine integration (existing release blocker)",
+    "Deferred P5-04 realtime/Presence/Typing",
+    "Optional phone discovery: no approved verified-phone identity lifecycle",
+    "P6-02+ execution"
+  ],
+  "rawEvidence": [
+    {
+      "path": ".tools/p6-01-quality.log",
+      "sha256": "d890603af70e579432c68137176edae4e499a861426ae1bb26769f8c8cbe5988"
+    },
+    {
+      "path": ".tools/p6-01-auth-schema-check.log",
+      "sha256": "2b360abe741dcf9ad83de5139531a77999b034393037ec37b81fe7028f83eaa8"
+    },
+    {
+      "path": ".tools/p6-01-test-integration.log",
+      "sha256": "0648b278ffb11dc59300362a45a00870889bc01ab8eb1aa2f15d0ede715f8e73"
+    },
+    {
+      "path": ".tools/p6-01-build.log",
+      "sha256": "e19a4611074c75796425c6858f34286aad6a61c546d26de286082ae9cf8f03e2"
+    },
+    {
+      "path": ".tools/p6-01-typecheck.log",
+      "sha256": "82596854d3ffe97d052aaa1d4a4f37bb9f818ff9428fb883603ad1efded05dc9"
+    },
+    {
+      "path": ".tools/p6-01-openapi-check.log",
+      "sha256": "5f5b271cdd32a20bff184602c0f0c7063a7004321a6f203afeb079d072993062"
+    },
+    {
+      "path": ".tools/p6-01-db-migrations-check.log",
+      "sha256": "6fb4fb15a7d5398374c7714d798415e70f6a745604dc4de80af3b4858c4dd647"
+    },
+    {
+      "path": ".tools/p6-01-smoke-p6-01.log",
+      "sha256": "c6acaeee564d677888db292b9f0d443c421c21529939d81dca98e422c2cb3bc2"
+    }
+  ]
+}

@@ -511,6 +511,12 @@ export class SharedKernel {
     feature: SharedFeatureKey,
     ownerUserId?: string,
   ) {
+    if (feature === 'social.group')
+      return (
+        await tx.$queryRaw<
+          { count: number }[]
+        >`SELECT count(*)::int count FROM "SharedCustody" c JOIN "ContextAccess" a ON a.id=c."primaryOwnerAccessId" JOIN "SharedActor" s ON s.id=a."actorId" WHERE c.kind='SOCIAL_GROUP' AND s."userId"=${ownerUserId ?? null}::uuid AND c.state IN ('ACTIVE','ARCHIVED') AND a.state='ACTIVE' AND s.state='ACTIVE'`
+      )[0]!.count;
     if (feature === 'company.context-membership')
       return (
         await tx.$queryRaw<
@@ -521,7 +527,7 @@ export class SharedKernel {
       return (
         await tx.$queryRaw<
           { count: number }[]
-        >`SELECT count(*)::int AS count FROM "SharedCustody" c JOIN "ContextAccess" a ON a.id=c."primaryOwnerAccessId" JOIN "SharedActor" s ON s.id=a."actorId" WHERE s."userId"=${ownerUserId ?? null}::uuid AND c.kind IN ('PROJECT','TEAM','COMPANY') AND c.state IN ('ACTIVE','ARCHIVED') AND a.state='ACTIVE' AND s.state='ACTIVE'`
+        >`SELECT count(*)::int AS count FROM "SharedCustody" c JOIN "ContextAccess" a ON a.id=c."primaryOwnerAccessId" JOIN "SharedActor" s ON s.id=a."actorId" WHERE s."userId"=${ownerUserId ?? null}::uuid AND c.kind IN ('PROJECT','TEAM','COMPANY','SOCIAL_GROUP') AND c.state IN ('ACTIVE','ARCHIVED') AND a.state='ACTIVE' AND s.state='ACTIVE'`
       )[0]!.count;
     if (feature === 'shared.membership') {
       let count = 0;
@@ -622,7 +628,7 @@ export class SharedKernel {
   }
   async readableContextHints(
     actor: RequestActor,
-    kind: 'PROJECT' | 'TEAM' | 'COMPANY' = 'PROJECT',
+    kind: 'PROJECT' | 'TEAM' | 'COMPANY' | 'SOCIAL_GROUP' = 'PROJECT',
   ) {
     this.enabled();
     if (!actor.sessionId) throw new ForbiddenException();
@@ -1680,7 +1686,12 @@ export class SharedKernel {
     ) => Promise<T>,
     onRetry?: () => Promise<void>,
     kind:
-      'PROJECT' | 'TEAM' | 'COMPANY' | 'CONVERSATION' | 'MEETING' = 'PROJECT',
+      | 'PROJECT'
+      | 'TEAM'
+      | 'COMPANY'
+      | 'CONVERSATION'
+      | 'MEETING'
+      | 'SOCIAL_GROUP' = 'PROJECT',
     readOnly = false,
   ) {
     this.enabled();
@@ -2469,6 +2480,85 @@ export class SharedKernel {
   }
   /** Private contact commands use the same account/session lock order, without
    * requiring conversation admission or granting any conversation authority. */
+  async socialApplicant(
+    tx: Prisma.TransactionClient,
+    spaceId: string,
+    userId: string,
+    locked: string[],
+  ) {
+    if (!locked.includes(userId)) throw new ConflictException();
+    await this.verifiedRecipient(tx, userId);
+    const custody = await tx.sharedCustody.findUnique({ where: { spaceId } });
+    if (custody?.kind !== 'SOCIAL_GROUP' || custody.state !== 'ACTIVE')
+      throw new NotFoundException();
+    return (
+      (await tx.sharedActor.findFirst({
+        where: { spaceId, userId, state: 'ACTIVE' },
+      })) ??
+      tx.sharedActor.create({
+        data: { id: randomUUID(), spaceId, userId, state: 'ACTIVE' },
+      })
+    );
+  }
+  /** Social's approved join request supplies applicant consent; Spaces alone owns admission. */
+  async admitSocialMember(
+    tx: Prisma.TransactionClient,
+    spaceId: string,
+    userId: string,
+    now: Date,
+    locked: string[],
+    base: { baseGeneration: number | null; baseRevision: number | null },
+  ) {
+    const local = await this.socialApplicant(tx, spaceId, userId, locked);
+    const prior = await tx.contextAccess.findUnique({
+      where: {
+        spaceId_scopeId_actorId: {
+          spaceId,
+          scopeId: spaceId,
+          actorId: local.id,
+        },
+      },
+    });
+    if (
+      (prior?.generation ?? null) !== base.baseGeneration ||
+      (prior?.revision ?? null) !== base.baseRevision
+    )
+      throw new ConflictException({ code: 'ADMISSION_CHANGED' });
+    if (prior && !['LEFT', 'REVOKED'].includes(prior.state))
+      throw new ConflictException({ code: 'ADMISSION_UNAVAILABLE' });
+    await this.featureGrowth(tx, spaceId, 'shared.membership');
+    const access = prior
+      ? await tx.contextAccess.update({
+          where: { id: prior.id },
+          data: {
+            state: 'ACTIVE',
+            memberRole: 'MEMBER',
+            generation: { increment: 1 },
+            revision: { increment: 1 },
+            joinedAt: now,
+            endedAt: null,
+          },
+        })
+      : await tx.contextAccess.create({
+          data: {
+            id: randomUUID(),
+            spaceId,
+            scopeId: spaceId,
+            actorId: local.id,
+            state: 'ACTIVE',
+            memberRole: 'MEMBER',
+            joinedAt: now,
+          },
+        });
+    await tx.contextAccessInterval.create({
+      data: {
+        accessId: access.id,
+        generation: access.generation,
+        joinedAt: now,
+      },
+    });
+    return access;
+  }
   async contactOperation<T>(
     actor: RequestActor,
     users: string[],
@@ -3249,7 +3339,12 @@ export class SharedKernel {
       },
     ) => Promise<void>,
     kind:
-      'PROJECT' | 'TEAM' | 'COMPANY' | 'CONVERSATION' | 'MEETING' = 'PROJECT',
+      | 'PROJECT'
+      | 'TEAM'
+      | 'COMPANY'
+      | 'CONVERSATION'
+      | 'MEETING'
+      | 'SOCIAL_GROUP' = 'PROJECT',
     additionalUsers: string[] = [],
   ) {
     this.enabled();
@@ -3302,6 +3397,8 @@ export class SharedKernel {
             code: 'SHARED_RETENTION_DISPOSITION_UNAVAILABLE',
           });
         await this.featureGrowth(tx, spaceId, 'shared.custody', actor.userId);
+        if (kind === 'SOCIAL_GROUP')
+          await this.featureGrowth(tx, spaceId, 'social.group', actor.userId);
         const actorId = randomUUID(),
           accessId = randomUUID(),
           auditId = randomUUID();
@@ -3346,19 +3443,27 @@ export class SharedKernel {
             scopeId: spaceId,
             version: 1,
             roleDefaults:
-              kind === 'COMPANY'
-                ? companyDefaultPolicy
-                : kind === 'TEAM'
-                  ? teamDefaultPolicy
-                  : kind === 'CONVERSATION'
-                    ? {
-                        OWNER: ['task.read'],
-                        ADMIN: ['task.read'],
-                        MANAGER: ['task.read'],
-                        MEMBER: ['task.read'],
-                        VIEWER: ['task.read'],
-                      }
-                    : defaultPolicy,
+              kind === 'SOCIAL_GROUP'
+                ? {
+                    OWNER: ['task.read'],
+                    ADMIN: ['task.read'],
+                    MANAGER: [],
+                    MEMBER: ['task.read'],
+                    VIEWER: [],
+                  }
+                : kind === 'COMPANY'
+                  ? companyDefaultPolicy
+                  : kind === 'TEAM'
+                    ? teamDefaultPolicy
+                    : kind === 'CONVERSATION'
+                      ? {
+                          OWNER: ['task.read'],
+                          ADMIN: ['task.read'],
+                          MANAGER: ['task.read'],
+                          MEMBER: ['task.read'],
+                          VIEWER: ['task.read'],
+                        }
+                      : defaultPolicy,
             exportMaxRecords: 10000,
             exportMaxBytes: 10485760,
             publishedByActorId: actorId,

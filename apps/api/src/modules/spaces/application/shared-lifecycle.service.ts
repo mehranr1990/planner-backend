@@ -230,7 +230,12 @@ export class SharedLifecycleService {
     actor: RequestActor,
     spaceId: string,
     kind:
-      'PROJECT' | 'TEAM' | 'COMPANY' | 'CONVERSATION' | 'MEETING' = 'PROJECT',
+      | 'PROJECT'
+      | 'TEAM'
+      | 'COMPANY'
+      | 'CONVERSATION'
+      | 'MEETING'
+      | 'SOCIAL_GROUP' = 'PROJECT',
   ) {
     return this.kernel.lifecycleParticipant(
       actor,
@@ -261,7 +266,12 @@ export class SharedLifecycleService {
     expected: number,
     password: string,
     kind:
-      'PROJECT' | 'TEAM' | 'COMPANY' | 'CONVERSATION' | 'MEETING' = 'PROJECT',
+      | 'PROJECT'
+      | 'TEAM'
+      | 'COMPANY'
+      | 'CONVERSATION'
+      | 'MEETING'
+      | 'SOCIAL_GROUP' = 'PROJECT',
   ) {
     return this.collaboration.signed(
       actor,
@@ -318,7 +328,12 @@ export class SharedLifecycleService {
     password: string,
     sourceEffect: (tx: Prisma.TransactionClient, now: Date) => Promise<void>,
     kind:
-      'PROJECT' | 'TEAM' | 'COMPANY' | 'CONVERSATION' | 'MEETING' = 'PROJECT',
+      | 'PROJECT'
+      | 'TEAM'
+      | 'COMPANY'
+      | 'CONVERSATION'
+      | 'MEETING'
+      | 'SOCIAL_GROUP' = 'PROJECT',
   ) {
     return this.collaboration.signed(
       actor,
@@ -480,7 +495,12 @@ export class SharedLifecycleService {
   }
   next(
     kind:
-      'PROJECT' | 'TEAM' | 'COMPANY' | 'CONVERSATION' | 'MEETING' = 'PROJECT',
+      | 'PROJECT'
+      | 'TEAM'
+      | 'COMPANY'
+      | 'CONVERSATION'
+      | 'MEETING'
+      | 'SOCIAL_GROUP' = 'PROJECT',
   ) {
     return this.db.client.sharedLifecycleJob.findFirst({
       where: {
@@ -503,7 +523,12 @@ export class SharedLifecycleService {
       stage: string,
     ) => Promise<LifecycleStep>,
     kind:
-      'PROJECT' | 'TEAM' | 'COMPANY' | 'CONVERSATION' | 'MEETING' = 'PROJECT',
+      | 'PROJECT'
+      | 'TEAM'
+      | 'COMPANY'
+      | 'CONVERSATION'
+      | 'MEETING'
+      | 'SOCIAL_GROUP' = 'PROJECT',
     contentGuard?: (
       tx: Prisma.TransactionClient,
       spaceId: string,

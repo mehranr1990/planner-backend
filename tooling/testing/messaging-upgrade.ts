@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import { verifyMeetingsUpgrade } from './meetings-upgrade.ts';
 import { verifyCommunicationLifecycleUpgrade } from './communication-lifecycle-upgrade.ts';
+import { verifySocialUpgrade } from './social-upgrade.ts';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import type { Client } from 'pg';
@@ -125,4 +126,5 @@ export async function verifyMessagingUpgrade(input: {
   await verifyMessagingMediaUpgrade(input);
   await verifyMeetingsUpgrade(input);
   await verifyCommunicationLifecycleUpgrade(input);
+  await verifySocialUpgrade(input);
 }

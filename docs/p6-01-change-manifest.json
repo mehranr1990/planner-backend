@@ -1,0 +1,303 @@
+{
+  "batch": "P6-01",
+  "date": "2026-11-11",
+  "baseline": "834df8d3a1d8e7df18886716f7c432b1c7570f76",
+  "status": "COMPLETE_LOCAL_PENDING_OWNER_ACCEPTANCE",
+  "staged": false,
+  "committed": false,
+  "pushed": false,
+  "deployed": false,
+  "sharedActivated": false,
+  "scope": "P6-01 only; c09 and all P6-02+ implementation excluded",
+  "pathCount": 57,
+  "hashAlgorithm": "SHA-256 of exact current working-tree file bytes",
+  "selfHashExemption": "The manifest includes its own path with sha256=null to avoid recursive hashing. Every other task file is hashed.",
+  "preservedUnrelated": ["docs/architecture/", "docs/frontend-handoff/"],
+  "files": [
+    {
+      "path": "apps/api/src/app.module.ts",
+      "status": "MODIFIED",
+      "sha256": "b238c17916470771f0dabed7c66f7b7bc35751be5fc71285dcd939e1c879e312"
+    },
+    {
+      "path": "apps/api/src/modules/account/infrastructure/lifecycle.repository.ts",
+      "status": "MODIFIED",
+      "sha256": "eb9814d9e0f04f286b922126aa85450beaf2eb4397aabae5353b8c99bb10f262"
+    },
+    {
+      "path": "apps/api/src/modules/messaging/application/dm-contacts.service.ts",
+      "status": "MODIFIED",
+      "sha256": "e548de6aa9382e43477fd21d18c90bc8cb56248e370ca4bca6680de5bf967a1a"
+    },
+    {
+      "path": "apps/api/src/modules/messaging/messaging.module.ts",
+      "status": "MODIFIED",
+      "sha256": "52a41ffce76f2b26c190b7090a6a4a6df1899181082b107284e76adcddedcee5"
+    },
+    {
+      "path": "apps/api/src/modules/messaging/public/index.ts",
+      "status": "MODIFIED",
+      "sha256": "f2b9daa733d2b6dd18a756364498543fa6bc508c734d8e4a0fe67be4bc959a03"
+    },
+    {
+      "path": "apps/api/src/modules/social/application/connections.service.ts",
+      "status": "UNTRACKED",
+      "sha256": "471cfee38ab43a8f64722757a96f9e74af428e0677093aa33119c6dbd32cb517"
+    },
+    {
+      "path": "apps/api/src/modules/social/application/groups.service.ts",
+      "status": "UNTRACKED",
+      "sha256": "5ee25e73fd90438b98df0bfc95b73e5de7a4f56ea12bbca8a27e75224d949090"
+    },
+    {
+      "path": "apps/api/src/modules/social/application/social-context.ts",
+      "status": "UNTRACKED",
+      "sha256": "89087d3c09176da306265d8878e317b9ca37a03dca72916fa2125602e9179f75"
+    },
+    {
+      "path": "apps/api/src/modules/social/application/social-data.ts",
+      "status": "UNTRACKED",
+      "sha256": "3285616a1ff4f77ceb0bd66df44e3348d8e2c5fc46a338139e7aad19f7703d4c"
+    },
+    {
+      "path": "apps/api/src/modules/social/application/social-lifecycle.ts",
+      "status": "UNTRACKED",
+      "sha256": "b4634934d851ebbb65781fd9f41666a36bea962e8e41985fa0a101bbbfa713de"
+    },
+    {
+      "path": "apps/api/src/modules/social/http/groups.controller.ts",
+      "status": "UNTRACKED",
+      "sha256": "df0cbb83d3709a2bf11e08d11907573cc43cc8e48f3b0c04d67e41f39bf62d32"
+    },
+    {
+      "path": "apps/api/src/modules/social/http/social.controller.ts",
+      "status": "UNTRACKED",
+      "sha256": "a0e1db5e2ae5d9ad449aa5a16d6a2d64c073ea84ed91f1b17fb03ea5a22bfe8f"
+    },
+    {
+      "path": "apps/api/src/modules/social/public/index.ts",
+      "status": "UNTRACKED",
+      "sha256": "05e6eebdd9b751d4c54404a44bc49baeb261aa446dae5f251ef35c462e2dffa1"
+    },
+    {
+      "path": "apps/api/src/modules/social/public/personal-data.ts",
+      "status": "UNTRACKED",
+      "sha256": "236856bf59280e2cedb30fde8fd08d53da2594fe8f4eba4cc8f5d172c8481b64"
+    },
+    {
+      "path": "apps/api/src/modules/social/social.module.ts",
+      "status": "UNTRACKED",
+      "sha256": "dfb4319ecc8b9c1c33285d226eec6d9b15019c28337ba0a02d57b749d5bb697b"
+    },
+    {
+      "path": "apps/api/src/modules/spaces/application/collaboration.service.ts",
+      "status": "MODIFIED",
+      "sha256": "d157da63060c367d093ed9e354efb9fbe4db261d9242ba856de38f585c87b3da"
+    },
+    {
+      "path": "apps/api/src/modules/spaces/application/shared-kernel.service.ts",
+      "status": "MODIFIED",
+      "sha256": "82b6d1ee94a8395c6258a1133acc804724efe065d2d3c0f1b229390aeefa543a"
+    },
+    {
+      "path": "apps/api/src/modules/spaces/application/shared-lifecycle.service.ts",
+      "status": "MODIFIED",
+      "sha256": "c6b387da61d4f33c1b18b3e506e5c434428de1817db60c33503da421b2d0385a"
+    },
+    {
+      "path": "apps/api/src/modules/spaces/application/shared-retention.ts",
+      "status": "MODIFIED",
+      "sha256": "ae41bbe575941cea7f503efbcc9d8d6e4ef949ac5a71618fd7c17e9d58b1e24b"
+    },
+    {
+      "path": "apps/api/src/modules/spaces/domain/shared-policy.ts",
+      "status": "MODIFIED",
+      "sha256": "f5eb7f263c976748fbebc97a767bfa021e07f87d5e8fdd650055d96fd08b02af"
+    },
+    {
+      "path": "apps/api/src/modules/spaces/public/shared-features.ts",
+      "status": "MODIFIED",
+      "sha256": "28976c9f87cf8884ca967286a223762a4ebd1463628e0d5a7766eb958c945b86"
+    },
+    {
+      "path": "apps/api/src/modules/spaces/spaces.module.ts",
+      "status": "MODIFIED",
+      "sha256": "133d551e7ad8e8ba34476c3965611ee098b231bf104850c5f5374ea6ea73184a"
+    },
+    {
+      "path": "apps/api/src/platform/auth/shared-identity.ts",
+      "status": "MODIFIED",
+      "sha256": "2179a4de4e10e5a4fd3de0d48fc06289c96f6f8f00679a79191840705079e53e"
+    },
+    {
+      "path": "apps/api/src/platform/database/foundation.spec.ts",
+      "status": "MODIFIED",
+      "sha256": "6c7dacad7efa4dfe398fe1bbc1d6c3f85a0862a21c6fc7e1598a5420edbf0c6c"
+    },
+    {
+      "path": "apps/api/src/platform/lifecycle/shared-cleanup-catalog.ts",
+      "status": "MODIFIED",
+      "sha256": "31f5969f9b8cc177f59da4a0efe2de4fadd3cfcac8459cb99c8d54c9af90158e"
+    },
+    {
+      "path": "apps/api/src/worker.ts",
+      "status": "MODIFIED",
+      "sha256": "fd2626d99139a5dafdf69789427ea3960a9bac6de8ad65d2dc8c152d7a9405a2"
+    },
+    {
+      "path": "apps/api/test/contract/social-openapi.spec.ts",
+      "status": "UNTRACKED",
+      "sha256": "c80e92d9702d03426f4e3acc902737787ae1cf1ab202ab0e5548629b6c9516e4"
+    },
+    {
+      "path": "apps/api/test/integration/social.spec.ts",
+      "status": "UNTRACKED",
+      "sha256": "6730ec7cf8b18583c9103472c22a43095ff04204b38a69cc9abcb88fe286a06a"
+    },
+    {
+      "path": "docs/adr/0050-social-discovery-connections-and-group-admission.md",
+      "status": "UNTRACKED",
+      "sha256": "1c470427c40abfe5278dec338fe60409e93b3b5cb544036b581e1f4a75c3a48a"
+    },
+    {
+      "path": "docs/api/openapi.json",
+      "status": "MODIFIED",
+      "sha256": "c9bf9ec01cbfdeed4183c7e963c4ab4fc6d09e0f3bddab4c3b12f1582d8d200e"
+    },
+    {
+      "path": "docs/p6-01-change-manifest.json",
+      "status": "UNTRACKED",
+      "sha256": null
+    },
+    {
+      "path": "docs/p6-01-contract.md",
+      "status": "UNTRACKED",
+      "sha256": "c39ec052b1bb78275e66e2c41642f14c65b22aa075991b621ce74b9b125f4eb4"
+    },
+    {
+      "path": "docs/p6-01-migration-review.md",
+      "status": "UNTRACKED",
+      "sha256": "e6a5a0c60032977437a6fe3f6d226661c4ca1041ed9e1f9ee5e8ef185e5b515e"
+    },
+    {
+      "path": "docs/p6-01-report.md",
+      "status": "UNTRACKED",
+      "sha256": "979f84272e077d187c02b512bad12a0aa3c65d89ceec6989c5137378b9abc9fc"
+    },
+    {
+      "path": "docs/p6-01-test-evidence.json",
+      "status": "UNTRACKED",
+      "sha256": "e3aa2278c92bab1b6c0fcc62cbc5f0c78737027e8adccc361f6445b9e1027799"
+    },
+    {
+      "path": "docs/p6-01-traceability.json",
+      "status": "UNTRACKED",
+      "sha256": "7dc87ddedb06ef712c9c3fcf88fa93eaae5ae9f53f0713e8ef9741b23b390538"
+    },
+    {
+      "path": "package.json",
+      "status": "MODIFIED",
+      "sha256": "9445c491d19d48c98d026ee4b92c98b5c3313ac7929e82b7d300a1abea973430"
+    },
+    {
+      "path": "packages/api-contracts/src/index.ts",
+      "status": "MODIFIED",
+      "sha256": "3ea95308819da085f829488760d6a92f41bc1b40b41b4a06ea1b5dbe6a387dc6"
+    },
+    {
+      "path": "packages/api-contracts/src/openapi.ts",
+      "status": "MODIFIED",
+      "sha256": "f0bcc7da5298bcf664bc72c4954249b7092db69de6fb322420b4ab1118a1f489"
+    },
+    {
+      "path": "packages/api-contracts/src/social-openapi.ts",
+      "status": "UNTRACKED",
+      "sha256": "7ea57d52775bfc9e055f74462802fdd184d743cb0b7246a1c709c023af4eb062"
+    },
+    {
+      "path": "packages/api-contracts/src/social.spec.ts",
+      "status": "UNTRACKED",
+      "sha256": "2e9c5e223076120ed4e31792b90c7fb12f8bf12603b302e4019c062ed57d9b95"
+    },
+    {
+      "path": "packages/api-contracts/src/social.ts",
+      "status": "UNTRACKED",
+      "sha256": "3cf323fe3db5c9789cec83f8c5e2c7ffac9de24d5da0b9d5378434c86ee44d73"
+    },
+    {
+      "path": "prisma/migrations/202611110045_social_foundation/migration.sql",
+      "status": "UNTRACKED",
+      "sha256": "30d00bf27efcda10291f0596b05dc9bee48452c2f0ed5aa431bd90a81278a25e"
+    },
+    {
+      "path": "prisma/schema.prisma",
+      "status": "MODIFIED",
+      "sha256": "75754e07c81a929e0587484dbc374f44b5b2ca54d844ed5047cc7434f421cee2"
+    },
+    {
+      "path": "tooling/compatibility/auth-provider-model.spec.ts",
+      "status": "UNTRACKED",
+      "sha256": "1288bf9774e7c9089fa3ee7b7b5df2fbe96182902b41970ef263e93783fffd44"
+    },
+    {
+      "path": "tooling/compatibility/openapi.spec.ts",
+      "status": "MODIFIED",
+      "sha256": "899ecd099ca1ac121b693afeceb58601d8dca4b25d1ef7a6e459a3d98c5da574"
+    },
+    {
+      "path": "tooling/compatibility/p5-06-api-signatures.json",
+      "status": "UNTRACKED",
+      "sha256": "cf68a15148330e5909ae98ccdef4a09bd96104459fa24a13565e630862a8ff55"
+    },
+    {
+      "path": "tooling/scripts/auth-schema-check.ts",
+      "status": "MODIFIED",
+      "sha256": "d8c285de25e8bb5d16b7a9f82477c18fe7e9e21bc32dd73bb21b53414f7000f6"
+    },
+    {
+      "path": "tooling/scripts/migrations-check.ts",
+      "status": "MODIFIED",
+      "sha256": "83adb7bfd2ff23f806becfbad33917ee2f6fa4be28af5f0e5e400936e5d292b6"
+    },
+    {
+      "path": "tooling/scripts/openapi.ts",
+      "status": "MODIFIED",
+      "sha256": "325df2962c75cdf942bc16da338eb3b7d4c154e108158fb20bfc55b5e6da1c05"
+    },
+    {
+      "path": "tooling/scripts/p5-01-smoke.ts",
+      "status": "MODIFIED",
+      "sha256": "70fa58b2cb2891306c83626502a1495fc5aef7a23886c00a076b1d9a7e4cba95"
+    },
+    {
+      "path": "tooling/scripts/p6-01-smoke.ts",
+      "status": "UNTRACKED",
+      "sha256": "4a1a224230991e6b637871a2224cb791a9ac354cd9b60a84fdab5cdcb1c18b12"
+    },
+    {
+      "path": "tooling/testing/auth-provider-model.ts",
+      "status": "UNTRACKED",
+      "sha256": "5bc51f6b9cb9afe275a952ca73f89e1403e85d0d4b4dc3187b3a98a03a529e34"
+    },
+    {
+      "path": "tooling/testing/messaging-upgrade.ts",
+      "status": "MODIFIED",
+      "sha256": "020abda07dc5bca9c4ca7c782a1d60ab1ff86abaa459b32b9c0400b8d3185225"
+    },
+    {
+      "path": "tooling/testing/migration-safety.ts",
+      "status": "MODIFIED",
+      "sha256": "1bb331641c545e613fb3cefb9a692f2b910e47c01c63e1ce823a07c2a5b37ba6"
+    },
+    {
+      "path": "tooling/testing/reviewed-social-migration.ts",
+      "status": "UNTRACKED",
+      "sha256": "7d3869b29fd6471652dda520b18f8a840dea1b62a6e42c9374ce522c10ca11a3"
+    },
+    {
+      "path": "tooling/testing/social-upgrade.ts",
+      "status": "UNTRACKED",
+      "sha256": "56322d442ea607acf9fe05d4ed116331215a88ac87387aaef8d572ebb15ac636"
+    }
+  ]
+}

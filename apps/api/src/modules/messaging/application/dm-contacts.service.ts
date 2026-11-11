@@ -210,10 +210,19 @@ export class DmContacts {
     key: string | undefined,
     expected: number | undefined,
     byBlock = false,
+    contact?: {
+      target: string;
+      validate: (tx: Tx, locked: string[]) => Promise<void>;
+    },
   ) {
     if (byBlock && active) throw new NotFoundException();
     const keyHash = messageKey(key),
-      fingerprint = hash({ id, active, byBlock });
+      fingerprint = hash({
+        id,
+        active,
+        byBlock,
+        ...(contact ? { target: contact.target } : {}),
+      });
     let intent: SharedControlRecord | undefined;
     const abort = async () => {
       if (intent) {
@@ -224,14 +233,14 @@ export class DmContacts {
     try {
       const result = await this.kernel.contactOperation(
         actor,
-        await this.hints(actor, id, byBlock),
-        async (tx, now) => {
-          const { target, conversationId } = await this.known(
-              tx,
-              actor,
-              id,
-              byBlock,
-            ),
+        contact
+          ? [actor.userId, contact.target]
+          : await this.hints(actor, id, byBlock),
+        async (tx, now, locked) => {
+          if (contact) await contact.validate(tx, locked);
+          const { target, conversationId } = contact
+              ? { target: contact.target, conversationId: null }
+              : await this.known(tx, actor, id, byBlock),
             n = await this.current(tx, actor.userId);
           const old = await tx.dmContactBlock.findFirst({
               where: { ownerUserId: actor.userId, targetUserId: target },
