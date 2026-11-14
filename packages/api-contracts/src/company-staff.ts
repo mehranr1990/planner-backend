@@ -8,6 +8,9 @@ export const CompanyStaffMemberSchema = z.strictObject({
   accessId: uuid,
   generation: positive,
 });
+export const CompanyStaffMemberDisplaySchema = CompanyStaffMemberSchema.extend({
+  displayName: z.string().nullable().optional(),
+});
 export const CompanyStaffProfileCreateSchema = z.strictObject({
   id: uuid,
   member: CompanyStaffMemberSchema,
@@ -26,9 +29,9 @@ export const CompanyStaffProfileSchema = z.strictObject({
   id: uuid,
   spaceId: uuid,
   scopeId: uuid,
-  member: CompanyStaffMemberSchema,
+  member: CompanyStaffMemberDisplaySchema,
   position: text(300).nullable(),
-  supervisor: CompanyStaffMemberSchema.nullable(),
+  supervisor: CompanyStaffMemberDisplaySchema.nullable(),
   workStatus: z.enum(['ACTIVE', 'INACTIVE']),
   workEmail: z.email().nullable(),
   redactedAt: instant.nullable(),
@@ -65,6 +68,7 @@ export const CompanyAvailabilityPatchSchema = z.strictObject({
 });
 export const CompanyAvailabilitySchema = CompanyAvailabilityCreateSchema.extend(
   {
+    member: CompanyStaffMemberDisplaySchema,
     spaceId: uuid,
     scopeId: uuid,
     revision: positive,
@@ -84,6 +88,7 @@ export const CompanyResourcePatchSchema = z
   })
   .refine((v) => Object.keys(v).length > 0);
 export const CompanyResourceSchema = CompanyResourceCreateSchema.extend({
+  typeId: uuid.nullable(),
   spaceId: uuid,
   scopeId: uuid,
   state: z.enum(['ACTIVE', 'RETIRED']),
@@ -107,7 +112,7 @@ export const CompanyAllocationSchema = z.strictObject({
   spaceId: uuid,
   scopeId: uuid,
   resourceId: uuid,
-  member: CompanyStaffMemberSchema,
+  member: CompanyStaffMemberDisplaySchema,
   startAt: instant,
   endAt: instant,
   state: z.enum(['ALLOCATED', 'CANCELED', 'RETURNED']),
@@ -127,9 +132,9 @@ export const CompanyEmployeeCaseSchema = z.strictObject({
   id: uuid,
   spaceId: uuid,
   scopeId: uuid,
-  author: CompanyStaffMemberSchema,
-  subject: CompanyStaffMemberSchema,
-  reviewer: CompanyStaffMemberSchema,
+  author: CompanyStaffMemberDisplaySchema,
+  subject: CompanyStaffMemberDisplaySchema,
+  reviewer: CompanyStaffMemberDisplaySchema,
   reason: text(10000).nullable(),
   evidence: z.string().max(10000).nullable(),
   state: z.enum(['OPEN', 'RESOLVED']),
@@ -159,6 +164,7 @@ export const CompanyCaseEntrySchema = z.strictObject({
   kind: z.enum(['CORRECTION', 'RESPONSE', 'APPEAL', 'REVIEW']),
   body: text(10000).nullable(),
   createdByActorId: uuid,
+  createdByDisplayName: z.string().nullable().optional(),
   revision: positive,
   createdAt: instant,
   updatedAt: instant,

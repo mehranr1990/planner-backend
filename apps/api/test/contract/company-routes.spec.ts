@@ -39,5 +39,5 @@ it('matches every exported Company operation to an actual compiled controller ha
     Object.keys(ops).map((method) => method + ' ' + path),
   );
   expect(actual.sort()).toEqual(expected.sort());
-  expect(actual).toHaveLength(23);
+  expect(actual).toHaveLength(26);
 });

@@ -268,6 +268,16 @@ describe('scoped persistence and API conventions', () => {
       '202611090043_meetings_decisions_announcements',
       '202611090044_communication_privacy_lifecycle',
       '202611110045_social_foundation',
+      '202611120046_project_display_metadata',
+      '202611120047_project_planning_metadata',
+      '202611130048_meeting_minutes_attribution',
+      '202611130048_team_completion',
+      '202611130049_company_completion',
+      '202611130050_backend_completion',
+      '202611130051_team_file_library',
+      '202611130052_gap_closure',
+      '202611130053_company_goal_source',
+      '202611140054_final_closure',
     ]);
     for (const sql of [
       '',

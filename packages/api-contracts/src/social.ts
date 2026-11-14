@@ -50,6 +50,8 @@ export const SocialConnectionActionSchema = z.enum([
 ]);
 export const SocialJoinActionSchema = z.enum(['approve', 'reject', 'cancel']);
 export const SocialConnectionSchema = z.strictObject({
+  requesterDisplayName: z.string().nullable().optional(),
+  recipientDisplayName: z.string().nullable().optional(),
   id,
   requesterUserId: id,
   recipientUserId: id,
@@ -129,6 +131,7 @@ export const SocialGroupDiscoveryPageSchema = z.strictObject({
 });
 export const SocialJoinCreateSchema = z.strictObject({ id });
 export const SocialJoinRequestSchema = z.strictObject({
+  requesterDisplayName: z.string().nullable().optional(),
   id,
   groupId: id,
   requesterUserId: id,
@@ -158,11 +161,53 @@ export const SocialGroupInvitationPreviewSchema = z.strictObject({
   expiresAt: z.iso.datetime(),
 });
 export const SocialMembershipSchema = SharedMembershipSchema.extend({
+  displayName: z.string().nullable().optional(),
   memberRole: z.enum(['ADMIN', 'MEMBER']).nullable(),
   role: z.enum(['OWNER', 'ADMIN', 'MEMBER']).nullable(),
 });
+export const SocialGroupAccessMeSchema = z.strictObject({
+  accessId: id,
+  actorId: id,
+  role: z.enum(['OWNER', 'ADMIN', 'MEMBER']),
+  state: z.literal('ACTIVE'),
+  generation: z.number().int().positive(),
+  revision: z.number().int().positive(),
+  groupState: z.string(),
+  capabilities: z.array(
+    z.enum([
+      'task.read',
+      'settings.manage',
+      'membership.member',
+      'membership.admin',
+      'membership.leave',
+      'custody.handover',
+    ]),
+  ),
+});
 export const SocialMembershipPageSchema = z.strictObject({
   items: z.array(SocialMembershipSchema).max(100),
+  nextCursor: z.string().nullable(),
+});
+export const SocialGroupHistoryActionSchema = z.enum([
+  'social.group.create',
+  'social.group.update',
+  'social.group.private',
+  'social.group.public',
+  'membership.admit',
+  'membership.change',
+  'membership.leave',
+  'handover.accept',
+]);
+export const SocialGroupHistoryEventSchema = z.strictObject({
+  id,
+  actorId: id,
+  actorDisplayName: z.string().nullable(),
+  action: SocialGroupHistoryActionSchema,
+  resourceId: id.nullable(),
+  occurredAt: z.iso.datetime(),
+});
+export const SocialGroupHistoryPageSchema = z.strictObject({
+  items: z.array(SocialGroupHistoryEventSchema).max(100),
   nextCursor: z.string().nullable(),
 });
 export const SocialMembershipChangeSchema = z.strictObject({

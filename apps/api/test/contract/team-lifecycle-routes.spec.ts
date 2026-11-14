@@ -31,5 +31,5 @@ it('matches every exported Team operation to an actual compiled controller handl
     Object.keys(ops).map((method) => method + ' ' + path),
   );
   expect(actual.sort()).toEqual(expected.sort());
-  expect(actual).toHaveLength(12);
+  expect(actual).toHaveLength(13);
 });

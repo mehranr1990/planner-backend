@@ -7,3 +7,10 @@ export { AnalyticsGoals } from './analytics.js';
 export { GoalsData } from './personal-data.js';
 
 export { GoalCustodyGraph } from '../application/goals-custody-graph.js';
+export { OwnedGoals, ownedGoalStatuses } from '../application/owned-goals.js';
+export type { OwnedGoalScope } from '../application/owned-goals.js';
+export {
+  keyResultProgress,
+  goalProgress,
+  periodProgress,
+} from '../domain/key-results.js';

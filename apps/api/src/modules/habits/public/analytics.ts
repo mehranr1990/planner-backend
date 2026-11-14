@@ -14,4 +14,11 @@ export abstract class AnalyticsHabits {
     },
     now: Date,
   ): Promise<InsightReadModel>;
+  /** B4: recorded (done) habit days with the habit title. */
+  abstract entries(
+    tx: Prisma.TransactionClient,
+    scope: AuthorizedSpace,
+    fromDate: string,
+    toDate: string,
+  ): Promise<{ habitId: string; title: string; localDate: string }[]>;
 }

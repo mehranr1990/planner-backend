@@ -346,4 +346,40 @@ export class SharedTasksRepository extends SharedTasks {
     });
     return view(row);
   }
+  async changes(
+    tx: Prisma.TransactionClient,
+    a: SharedAuthority,
+    space: string,
+    limit: number,
+  ) {
+    a.require(tx, space, 'task.read');
+    const rows = await tx.taskChange.findMany({
+      where: {
+        spaceId: a.space(tx, space),
+        scopeId: a.scope(tx, space),
+        kind: { in: ['CREATED', 'UPDATED', 'COMPLETED', 'REOPENED'] },
+        Task_TaskChange_spaceId_scopeId_taskIdToTask: { deletedAt: null },
+      },
+      include: {
+        Task_TaskChange_spaceId_scopeId_taskIdToTask: {
+          select: { title: true },
+        },
+      },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: Math.min(Math.max(limit, 1), 100) * 4,
+    });
+    return rows
+      .filter((r) => r.kind !== 'UPDATED' || r.beforeStatus !== r.afterStatus)
+      .slice(0, limit)
+      .map((r) => ({
+        id: r.id,
+        taskId: r.taskId,
+        title: r.Task_TaskChange_spaceId_scopeId_taskIdToTask!.title,
+        kind: r.kind,
+        beforeStatus: r.beforeStatus,
+        afterStatus: r.afterStatus,
+        actorId: r.actorId,
+        createdAt: r.createdAt,
+      }));
+  }
 }

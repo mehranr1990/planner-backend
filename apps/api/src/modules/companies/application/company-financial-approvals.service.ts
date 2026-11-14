@@ -476,17 +476,25 @@ export class CompanyFinancialApprovalsService implements OnModuleInit {
         s,
         'financial.approval.events:' + target,
         q,
-        async () =>
-          (
-            await s.tx.companyFinancialApprovalEvent.findMany({
+        async () => {
+          const events = await s.tx.companyFinancialApprovalEvent.findMany({
               where: { ...this.op.where(s), approvalId: target },
-            })
-          ).map((e) => ({
+            }),
+            reasons = new Map(
+              (
+                await s.tx.companyDecisionReason.findMany({
+                  where: { approvalEventId: { in: events.map((e) => e.id) } },
+                })
+              ).map((r) => [r.approvalEventId, r.reason]),
+            );
+          return events.map((e) => ({
             ...dates(e),
             reviewer: e.reviewerAccessId
               ? ref(e.reviewerAccessId, e.reviewerGeneration!)
               : null,
-          })),
+            reason: reasons.get(e.id) ?? null,
+          }));
+        },
       );
     });
   }
@@ -496,11 +504,13 @@ export class CompanyFinancialApprovalsService implements OnModuleInit {
     action: string,
     stepId: string | null = null,
     reviewer: StaffMember | null = null,
+    reason: string | null = null,
   ) {
+    const eventId = randomUUID();
     await s.tx.companyFinancialApprovalEvent.create({
       data: {
         ...this.op.where(s),
-        id: randomUUID(),
+        id: eventId,
         approvalId: a.id,
         stepId,
         action,
@@ -509,6 +519,17 @@ export class CompanyFinancialApprovalsService implements OnModuleInit {
         reviewerGeneration: reviewer?.generation ?? null,
       },
     });
+    // ER/AT: erasable reason beside the immutable decision event.
+    if (reason)
+      await s.tx.companyDecisionReason.create({
+        data: {
+          ...this.op.where(s),
+          id: randomUUID(),
+          approvalEventId: eventId,
+          authorActorId: s.root.actorId,
+          reason,
+        },
+      });
   }
   async published(
     s: StaffContext,
@@ -844,7 +865,14 @@ export class CompanyFinancialApprovalsService implements OnModuleInit {
         if (!this.op.self(s, reviewer)) throw new ForbiddenException();
         await this.priorDecisions(s, a);
         await s.change();
-        await this.event(s, a, input.decision, st.id, reviewer);
+        await this.event(
+          s,
+          a,
+          input.decision,
+          st.id,
+          reviewer,
+          input.reason ?? null,
+        );
         const final =
           input.decision === 'REJECT' || a.stepIndex === steps.length - 1;
         let sourceRevision = a.sourceRevision;

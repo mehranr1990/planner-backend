@@ -35,6 +35,7 @@ import { CompaniesService } from '../../src/modules/companies/public/index.js';
 import { testApplication } from '../support/application.js';
 import { migrationSandbox } from '../../../../tooling/testing/migration-sandbox.js';
 import { isolatedTestDatabaseUrl } from '../../../../tooling/testing/test-database.js';
+import type { z } from 'zod';
 import * as c from '@mehran/api-contracts';
 import { Readable } from 'node:stream';
 import {
@@ -381,6 +382,182 @@ describe('P5-05 meetings decisions and announcements', () => {
     );
     return documents.finalize(owner.actor, id, v.id, v.revision, randomUUID());
   }
+  it('stabilization M-X4/M-X5: invites source roster actors after organizer checks and hints meeting sources', async () => {
+    const team = await work('TEAM'),
+      other = await work('TEAM'),
+      co = await work('COMPANY');
+    await join(team.id, alice, 'MEMBER', 'TEAM');
+    await join(other.id, bob, 'MEMBER', 'TEAM');
+    const own = await teams.accessMe(owner.actor, team.id);
+    expect(own.capabilities).toContain('meeting.create');
+    expect(
+      (await teams.accessMe(alice.actor, team.id)).capabilities,
+    ).not.toContain('meeting.create');
+    expect(
+      (await companies.accessMe(owner.actor, co.id, co.id)).capabilities,
+    ).toContain('meeting.create');
+    const roster = await teams.members(owner.actor, team.id, page);
+    expect(JSON.stringify(roster)).not.toContain(alice.actor.userId);
+    const target = roster.items.find((r) => r.actorId !== own.actorId)!;
+    const m = await meetings.create(
+      owner.actor,
+      c.MeetingCreateSchema.parse({
+        id: randomUUID(),
+        event,
+        kind: 'TEAM',
+        sourceId: team.id,
+        participantActorIds: [target.actorId],
+      }),
+      randomUUID(),
+    );
+    await admit(m.id);
+    const foreign = (await teams.members(bob.actor, other.id, page)).items[0]!;
+    const invite = async (who: Person, actorId: string) =>
+      meetings.invite(
+        who.actor,
+        m.id,
+        (await meetings.get(owner.actor, m.id)).revision,
+        { id: randomUUID(), actorId },
+        randomUUID(),
+      );
+    await expect(invite(owner, foreign.actorId)).rejects.toThrow();
+    await expect(invite(owner, randomUUID())).rejects.toThrow();
+    await join(team.id, bob, 'MEMBER', 'TEAM');
+    const bobActor = (await teams.members(owner.actor, team.id, page)).items
+      .map((r) => r.actorId)
+      .find((a) => a !== own.actorId && a !== target.actorId)!;
+    await expect(invite(alice, bobActor)).rejects.toThrow();
+    await invite(owner, bobActor);
+    await admit(m.id, bob);
+    expect(
+      (await meetings.members(owner.actor, m.id, page)).items,
+    ).toHaveLength(3);
+  });
+  it('stabilization M-X6/M-X7/M-A1: pins minutes attributions to current admissions and names announcement authors', async () => {
+    const m = await meeting();
+    await admit(m.id);
+    const target = await memberId(m.id),
+      host = await memberId(m.id, owner);
+    const minutes = (
+      decisions: z.infer<typeof c.MeetingVersionCreateSchema>['decisions'],
+      actions: z.infer<typeof c.MeetingVersionCreateSchema>['actions'],
+    ) => ({
+      id: randomUUID(),
+      minutes: 'Attributed minutes',
+      decisions,
+      actions,
+      attachments: [],
+      contributors: [],
+    });
+    const v = await documents.create(
+      owner.actor,
+      m.id,
+      minutes(
+        [{ id: randomUUID(), text: 'Ship', proposedByMemberId: target }],
+        [
+          {
+            id: randomUUID(),
+            title: 'Follow up',
+            description: null,
+            assigneeMemberId: target,
+            dueDate: '2026-12-15',
+          },
+          { id: randomUUID(), title: 'Open', description: null },
+        ],
+      ),
+      randomUUID(),
+    );
+    expect(v.decisions[0]!.proposedByMemberId).toBe(target);
+    expect(v.actions).toMatchObject([
+      { assigneeMemberId: target, dueDate: '2026-12-15' },
+      { assigneeMemberId: null, dueDate: null },
+    ]);
+    await expect(
+      documents.create(
+        alice.actor,
+        m.id,
+        minutes(
+          [{ id: randomUUID(), text: 'x', proposedByMemberId: host }],
+          [],
+        ),
+        randomUUID(),
+      ),
+    ).rejects.toThrow();
+    await expect(
+      documents.create(
+        owner.actor,
+        m.id,
+        minutes(
+          [],
+          [
+            {
+              id: randomUUID(),
+              title: 'x',
+              description: null,
+              assigneeMemberId: randomUUID(),
+            },
+          ],
+        ),
+        randomUUID(),
+      ),
+    ).rejects.toThrow();
+    const source = await work();
+    await join(source.id);
+    const a = await announcements.create(
+      owner.actor,
+      { id: randomUUID(), kind: 'PROJECT', sourceId: source.id },
+      randomUUID(),
+    );
+    let n = await announcements.createVersion(
+      owner.actor,
+      a.id,
+      {
+        id: randomUUID(),
+        title: 'Notice',
+        text: 'Body',
+        acknowledgement: false,
+        attachments: [],
+      },
+      randomUUID(),
+    );
+    n = await announcements.publish(
+      owner.actor,
+      a.id,
+      n.id,
+      { audience: 'ALL' },
+      n.revision,
+      randomUUID(),
+    );
+    const read = await announcements.getVersion(alice.actor, a.id, n.id);
+    expect(read.authorDisplayName).toEqual(expect.any(String));
+    expect(JSON.stringify(read)).not.toContain(owner.actor.userId);
+  });
+  it('consolidated gaps: member names follow explicit meeting admission without account disclosure', async () => {
+    const m = await meeting();
+    await expect(meetings.members(alice.actor, m.id, page)).rejects.toThrow();
+    await admit(m.id);
+    const roster = await meetings.members(alice.actor, m.id, page);
+    expect(roster.items).toHaveLength(2);
+    expect(
+      roster.items.every((row) => typeof row.displayName === 'string'),
+    ).toBe(true);
+    expect(JSON.stringify(roster)).not.toContain(owner.email);
+    expect(JSON.stringify(roster)).not.toContain(owner.actor.userId);
+    const me = await meetings.accessMe(alice.actor, m.id);
+    expect(me).toMatchObject({
+      meetingId: m.id,
+      memberId: roster.items.find((r) => r.role === 'PARTICIPANT')!.id,
+      role: 'PARTICIPANT',
+      state: 'ACTIVE',
+    });
+    expect(me.capabilities).not.toContain('meeting.manage');
+    expect((await meetings.accessMe(owner.actor, m.id)).capabilities).toContain(
+      'meeting.manage',
+    );
+    await expect(meetings.accessMe(outsider.actor, m.id)).rejects.toThrow();
+    await meetings.leave(alice.actor, m.id, me.revision, randomUUID());
+    await expect(meetings.accessMe(alice.actor, m.id)).rejects.toThrow();
+  });
   it('creates one authoritative calendar event and exposes only safe invitation metadata until explicit acceptance', async () => {
     const m = await meeting();
     expect(m.event.title).toBe(event.title);
@@ -1406,5 +1583,112 @@ describe('P5-05 meetings decisions and announcements', () => {
         authorMemberId: randomUUID(),
       })
       .expect(400);
+  });
+
+  it('OD-12: organizer-chosen busy-only blocks show source members schedule and recurrence only', async () => {
+    const source = await work();
+    await join(source.id);
+    await join(source.id, bob);
+    const m = await meeting([alice], { id: source.id, kind: 'PROJECT' });
+    await admit(m.id);
+    const q = { sourceKind: 'PROJECT' as const, sourceId: source.id };
+    expect((await meetings.busy(bob.actor, q)).items).toEqual([]);
+    await expect(
+      meetings.setBusyVisibility(alice.actor, m.id, 1, {
+        visibility: 'SOURCE',
+      }),
+    ).rejects.toThrow();
+    const set = await meetings.setBusyVisibility(owner.actor, m.id, 1, {
+      visibility: 'SOURCE',
+    });
+    expect(set).toEqual({ meetingId: m.id, visibility: 'SOURCE', revision: 2 });
+    await expect(
+      meetings.setBusyVisibility(owner.actor, m.id, 1, { visibility: 'NONE' }),
+    ).rejects.toMatchObject({ status: 409 });
+    const busy = await meetings.busy(bob.actor, q);
+    expect(busy.items).toEqual([
+      {
+        schedule: expect.objectContaining({
+          kind: 'ALL_DAY',
+          startDate: '2026-12-01',
+        }),
+        recurrence: null,
+      },
+    ]);
+    const text = JSON.stringify(busy);
+    for (const secret of [
+      'Confidential meeting',
+      m.id,
+      'example.test',
+      alice.actor.userId,
+    ])
+      expect(text).not.toContain(secret);
+    expect((await meetings.busy(alice.actor, q)).items).toEqual([]);
+    await expect(meetings.busy(outsider.actor, q)).rejects.toThrow();
+    const independent = await meeting();
+    await expect(
+      meetings.setBusyVisibility(owner.actor, independent.id, 1, {
+        visibility: 'SOURCE',
+      }),
+    ).rejects.toMatchObject({ status: 409 });
+    await meetings.setBusyVisibility(owner.actor, m.id, 2, {
+      visibility: 'NONE',
+    });
+    expect((await meetings.busy(bob.actor, q)).items).toEqual([]);
+  });
+
+  it('OD-13: managers remind unacknowledged current recipients once per day into a private inbox', async () => {
+    const source = await work();
+    await join(source.id);
+    await join(source.id, viewer, 'VIEWER');
+    const a = await announcements.create(
+      owner.actor,
+      { id: randomUUID(), kind: 'PROJECT', sourceId: source.id },
+      randomUUID(),
+    );
+    let v = await announcements.createVersion(
+      owner.actor,
+      a.id,
+      {
+        id: randomUUID(),
+        title: 'Policy',
+        text: 'Please confirm',
+        acknowledgement: true,
+        attachments: [],
+      },
+      randomUUID(),
+    );
+    v = await announcements.publish(
+      owner.actor,
+      a.id,
+      v.id,
+      { audience: 'ALL' },
+      v.revision,
+      randomUUID(),
+    );
+    await announcements.acknowledge(viewer.actor, a.id, v.id);
+    await expect(
+      announcements.remind(alice.actor, a.id, v.id),
+    ).rejects.toThrow();
+    const first = await announcements.remind(owner.actor, a.id, v.id);
+    expect(first.delivered).toBeGreaterThanOrEqual(1);
+    expect(await announcements.remind(owner.actor, a.id, v.id)).toEqual({
+      delivered: 0,
+    });
+    const inbox = await announcements.reminders(alice.actor);
+    const mine = inbox.items.filter((r) => r.versionId === v.id);
+    expect(mine).toHaveLength(1);
+    expect(mine[0]).toMatchObject({ announcementId: a.id, readAt: null });
+    expect(
+      (await announcements.reminders(viewer.actor)).items.filter(
+        (r) => r.versionId === v.id,
+      ),
+    ).toEqual([]);
+    await expect(
+      announcements.readReminder(bob.actor, mine[0]!.id),
+    ).rejects.toMatchObject({ status: 404 });
+    expect(
+      (await announcements.readReminder(alice.actor, mine[0]!.id)).readAt,
+    ).not.toBeNull();
   });
 });

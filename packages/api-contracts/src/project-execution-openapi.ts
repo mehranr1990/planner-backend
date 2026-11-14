@@ -15,6 +15,18 @@ type Operation = {
 };
 export const projectExecutionOperations: Operation[] = [
   {
+    path: '/projects/{projectId}/reports/snapshots',
+    method: 'get',
+    output: c.ProjectReportSnapshotPageSchema,
+    query: ProjectPageQuerySchema,
+  },
+  {
+    path: '/projects/{projectId}/change-plans/csv/inspection',
+    method: 'post',
+    output: c.ProjectCsvInspectionSchema,
+    input: c.ProjectCsvInspectionInputSchema,
+  },
+  {
     path: '/projects/{projectId}/register-items',
     method: 'get',
     output: c.ProjectRegisterPageSchema,

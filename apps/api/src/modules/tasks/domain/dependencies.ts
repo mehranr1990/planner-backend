@@ -19,7 +19,8 @@ export class DependencyRuleError extends Error {
     readonly code:
       | 'GRAPH_LIMIT'
       | 'INVALID_EDGE'
-      | 'CYCLE'
+      | 'DEPENDENCY_CYCLE'
+      | 'DEPENDENCY_DUPLICATE'
       | 'INVALID_SCHEDULE'
       | 'TIMED_SCHEDULE_REQUIRED'
       | 'DEPENDENCY_CONFLICT',
@@ -53,10 +54,10 @@ export function dependencyOrder(
       e.predecessorId === e.successorId ||
       !['FS', 'SS', 'FF', 'SF'].includes(e.kind) ||
       !Number.isSafeInteger(e.lagMinutes) ||
-      Math.abs(e.lagMinutes) > graphLimits.lagMinutes ||
-      seen.has(key)
+      Math.abs(e.lagMinutes) > graphLimits.lagMinutes
     )
       throw new DependencyRuleError('INVALID_EDGE');
+    if (seen.has(key)) throw new DependencyRuleError('DEPENDENCY_DUPLICATE');
     seen.add(key);
     incoming.set(e.successorId, incoming.get(e.successorId)! + 1);
     outgoing.set(e.predecessorId, [
@@ -77,7 +78,8 @@ export function dependencyOrder(
       }
     }
   }
-  if (result.length !== taskIds.length) throw new DependencyRuleError('CYCLE');
+  if (result.length !== taskIds.length)
+    throw new DependencyRuleError('DEPENDENCY_CYCLE');
   return result;
 }
 function interval(t: ScheduledTask) {

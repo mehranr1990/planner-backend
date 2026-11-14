@@ -5,6 +5,11 @@ import {
 } from './messaging-openapi.js';
 export const meetingOperations: Operation[] = [
   {
+    path: '/meetings/{id}/access/me',
+    method: 'get',
+    output: c.MeetingAccessMeSchema,
+  },
+  {
     path: '/meetings',
     method: 'get',
     output: c.MeetingPageSchema,

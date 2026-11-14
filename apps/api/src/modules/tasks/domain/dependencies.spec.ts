@@ -46,10 +46,12 @@ describe('P2-05 dependency graph and explicit reschedule plan', () => {
     for (const edges of [
       [edge('FS', 0, 'a', 'a')],
       [edge('FS', 0, 'a', 'x')],
-      [edge(), edge()],
       [edge('FS', 525601)],
     ])
       expect(() => dependencyOrder(['a', 'b'], edges)).toThrow('INVALID_EDGE');
+    expect(() => dependencyOrder(['a', 'b'], [edge(), edge()])).toThrow(
+      'DEPENDENCY_DUPLICATE',
+    );
   });
   it.each([
     ['FS', task('a', 1, 3), task('b', 3, 5), true],

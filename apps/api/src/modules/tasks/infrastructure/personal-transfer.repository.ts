@@ -42,6 +42,10 @@ const known = [
   'TaskRescheduleItem_spaceId_scopeId_taskId_fkey',
   'TaskWorkflowApproval_spaceId_scopeId_taskId_fkey',
   'TaskWorkflowBinding_spaceId_scopeId_taskId_fkey',
+  // Team scope only: a Personal Task never satisfies (spaceId, scopeId, taskId).
+  'TeamTaskState_task',
+  'TeamTaskAssignment_task',
+  'TeamTaskPoints_task',
   'Task_parent_scope_fk',
   'Task_spaceId_parentTaskId_fkey',
   'TimeBlockSharedTaskLink_spaceId_scopeId_taskId_fkey',

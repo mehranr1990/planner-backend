@@ -569,6 +569,10 @@ describe('P4-06 Company lifecycle and preservation', () => {
   }
   it('disposes only Company-owned knowledge and financial history after the deadline, retaining independent Project and Personal records', async () => {
     const co = await company();
+    // OD-9: Company finance records require the fixed Company currency first (revision 2).
+    await companies.setCurrency(owner.actor, co.id, co.revision, {
+      currency: 'USD',
+    });
     const folder = await knowledge.folderCreate(
       owner.actor,
       co.id,
@@ -655,7 +659,7 @@ describe('P4-06 Company lifecycle and preservation', () => {
     const personal = await client.space.findFirstOrThrow({
       where: { ownerUserId: owner.actor.userId, kind: 'PERSONAL' },
     });
-    await life.change(owner.actor, co.id, 1, 'delete', password);
+    await life.change(owner.actor, co.id, 2, 'delete', password);
     expect(await cleanup.consume()).toBe(false);
     await expect(
       client.companyKnowledgeVersion.delete({ where: { id: v.id } }),

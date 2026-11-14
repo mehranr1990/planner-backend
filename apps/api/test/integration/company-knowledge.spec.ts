@@ -24,7 +24,7 @@ import { Client } from 'pg';
 import request from 'supertest';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import type { z } from 'zod';
-import type * as c from '@mehran/api-contracts';
+import * as c from '@mehran/api-contracts';
 import { PrismaClient } from '../../src/generated/prisma/client.js';
 import type { DatabaseService } from '../../src/platform/database/database.service.js';
 import type { RequestActor } from '../../src/platform/auth/request-actor.js';
@@ -259,7 +259,7 @@ describe('P4-05 Company knowledge, reports and privacy', () => {
     await sandbox?.close();
   });
   async function company() {
-    return companies.create(
+    const co = await companies.create(
       owner.actor,
       {
         id: randomUUID(),
@@ -268,6 +268,11 @@ describe('P4-05 Company knowledge, reports and privacy', () => {
       },
       randomUUID(),
     );
+    // OD-9: Company finance records require the fixed Company currency first.
+    await companies.setCurrency(owner.actor, co.id, co.revision, {
+      currency: 'USD',
+    });
+    return companies.read(owner.actor, co.id);
   }
   async function admit(
     id: string,
@@ -385,6 +390,203 @@ describe('P4-05 Company knowledge, reports and privacy', () => {
     for await (const part of stream) text += String(part);
     return text;
   }
+  it('consolidated gaps: Company admissions, authorized names and proof-preserving pending lists', async () => {
+    const f = await fixture();
+    expect(
+      await companies.accessMe(owner.actor, f.co.id, f.co.id),
+    ).toMatchObject({
+      role: 'OWNER',
+      capabilities: expect.arrayContaining([
+        'conversation.create',
+        'announcement.publish',
+        'export.visible',
+      ]),
+    });
+    expect(
+      (await companies.accessMe(viewer.actor, f.co.id, f.co.id)).capabilities,
+    ).not.toContain('staff.manage');
+    await expect(
+      companies.accessMe(outsider.actor, f.co.id, f.co.id),
+    ).rejects.toThrow();
+    const department = await companies.createContext(
+      owner.actor,
+      f.co.id,
+      null,
+      { id: randomUUID(), title: 'Scoped', description: null },
+      randomUUID(),
+    );
+    const childAccess = await companies.accessMe(
+      owner.actor,
+      f.co.id,
+      department.id,
+    );
+    expect(childAccess.capabilities).toContain('structure.read');
+    expect(childAccess.capabilities).not.toContain('staff.manage');
+    await expect(
+      companies.accessMe(viewer.actor, f.co.id, department.id),
+    ).rejects.toThrow();
+    const roster = await companies.members(owner.actor, f.co.id, f.co.id, {
+      limit: 100,
+    });
+    expect(
+      roster.items.every((r) => r.displayName === 'Synthetic staff fixture'),
+    ).toBe(true);
+    expect(JSON.stringify(roster)).not.toContain(member.actor.userId);
+    const profile = await staff.createProfile(
+      owner.actor,
+      f.co.id,
+      f.co.id,
+      {
+        id: randomUUID(),
+        member: ref(f.subject),
+        position: null,
+        supervisor: null,
+        workStatus: 'ACTIVE',
+      },
+      randomUUID(),
+    );
+    expect(profile.member.displayName).toBe('Synthetic staff fixture');
+    const confidential = await cases.create(
+      owner.actor,
+      f.co.id,
+      f.co.id,
+      {
+        id: randomUUID(),
+        subject: ref(f.subject),
+        reviewer: ref(f.reviewer),
+        reason: 'Private case',
+        evidence: 'Confidential evidence',
+      },
+      randomUUID(),
+    );
+    expect(confidential.subject.displayName).toBe('Synthetic staff fixture');
+    const entry = await cases.append(
+      owner.actor,
+      f.co.id,
+      f.co.id,
+      confidential.id,
+      confidential.revision,
+      { id: randomUUID(), kind: 'CORRECTION', body: 'Private correction' },
+      randomUUID(),
+    );
+    expect(entry.entry.createdByDisplayName).toBe('Synthetic staff fixture');
+    const currentCase = await cases.read(
+      member.actor,
+      f.co.id,
+      f.co.id,
+      confidential.id,
+    );
+    const redacted = await cases.erase(
+      member.actor,
+      f.co.id,
+      f.co.id,
+      confidential.id,
+      currentCase.revision,
+    );
+    expect(redacted.subject.displayName).toBeNull();
+    expect(redacted.author.displayName).toBeNull();
+    expect(
+      (
+        await cases.entries(member.actor, f.co.id, f.co.id, confidential.id, {
+          limit: 25,
+        })
+      ).items[0],
+    ).toMatchObject({ body: null, createdByDisplayName: null });
+    const next = await person();
+    const offer = await companies.invite(
+      owner.actor,
+      f.co.id,
+      f.co.id,
+      { memberRole: 'MEMBER', recipient: { email: next.email } },
+      randomUUID(),
+    );
+    const pending = await access.pending(next.actor, { limit: 100 });
+    expect(pending.items).toContainEqual({
+      id: offer.invitation.id,
+      contextLabel: 'Company',
+      revision: 1,
+      expiresAt: offer.invitation.expiresAt,
+    });
+    expect(JSON.stringify(pending)).not.toContain(offer.proof!);
+    expect(
+      (
+        await access.pendingSent(owner.actor, f.co.id, f.co.id, { limit: 100 })
+      ).items.map((r) => r.id),
+    ).toContain(offer.invitation.id);
+    await expect(
+      access.pendingSent(member.actor, f.co.id, f.co.id, { limit: 100 }),
+    ).rejects.toThrow();
+    await expect(
+      access.decide(next.actor, offer.invitation.id, undefined, 1, true),
+    ).rejects.toThrow();
+    await access.decide(next.actor, offer.invitation.id, offer.proof!, 1, true);
+    expect(
+      (await access.pending(next.actor, { limit: 100 })).items.map((r) => r.id),
+    ).not.toContain(offer.invitation.id);
+  });
+  it('consolidated gaps: inline exports have typed bodies and authorized publication status without retained artifacts', async () => {
+    const f = await fixture();
+    for (const dataset of [
+      'OPERATIONS',
+      'FINANCE',
+      'PORTFOLIO',
+      'AUDIT',
+      'KNOWLEDGE',
+    ] as const) {
+      const out = await reports.export(owner.actor, f.co.id, f.co.id, {
+        ...window,
+        dataset,
+        format: 'JSON',
+      });
+      expect(
+        c.CompanyExportJsonSchema.safeParse(JSON.parse(out.body)).success,
+      ).toBe(true);
+      expect(
+        await reports.exportStatus(owner.actor, f.co.id, f.co.id, out.exportId),
+      ).toMatchObject({
+        id: out.exportId,
+        state: 'PUBLISHED',
+        downloadAvailable: false,
+      });
+    }
+    const publications = await reports.exports(owner.actor, f.co.id, f.co.id, {
+      limit: 1,
+    });
+    expect(publications.items).toHaveLength(1);
+    expect(publications.nextCursor).toBeTruthy();
+    expect(
+      (
+        await reports.exports(owner.actor, f.co.id, f.co.id, {
+          limit: 100,
+          after: publications.nextCursor!,
+        })
+      ).items,
+    ).toHaveLength(4);
+    await expect(
+      reports.exports(viewer.actor, f.co.id, f.co.id, { limit: 100 }),
+    ).rejects.toThrow();
+    const other = await company();
+    await expect(
+      reports.exportStatus(
+        owner.actor,
+        other.id,
+        other.id,
+        publications.items[0]!.id,
+      ),
+    ).rejects.toThrow();
+    const response = await request(app.getHttpServer())
+      .post(
+        '/api/v1/companies/' + f.co.id + '/contexts/' + f.co.id + '/exports',
+      )
+      .set('Cookie', owner.cookie)
+      .set('Origin', origin)
+      .send({ ...window, dataset: 'OPERATIONS', format: 'JSON' })
+      .expect(200);
+    expect(response.headers['x-export-id']).toBeTruthy();
+    expect(c.CompanyExportJsonSchema.safeParse(response.body).success).toBe(
+      true,
+    );
+  });
   it('keeps drafts and their folder/search metadata invisible to ordinary readers', async () => {
     const f = await kb();
     await expect(
@@ -764,7 +966,7 @@ describe('P4-05 Company knowledge, reports and privacy', () => {
       reports.operations(viewer.actor, f.co.id, f.co.id, window),
     ).rejects.toThrow();
   });
-  it('retains exact separate currency totals, omits pending expense and preserves full budget period', async () => {
+  it('reports only the fixed Company currency (OD-9), omits pending expense and preserves full budget period', async () => {
     const f = await fixture();
     const category = await finance.categoryCreate(
       owner.actor,
@@ -773,10 +975,30 @@ describe('P4-05 Company knowledge, reports and privacy', () => {
       { id: randomUUID(), title: 'Sensitive category' },
       randomUUID(),
     );
-    for (const [currency, value] of [
-      ['USD', '0.10'],
-      ['JPY', '2'],
-    ] as const) {
+    // OD-9: a second currency is refused at entry instead of producing mixed totals.
+    await expect(
+      finance.expenseCreate(
+        member.actor,
+        f.co.id,
+        f.co.id,
+        {
+          id: randomUUID(),
+          amount: '2',
+          currency: 'JPY',
+          categoryId: category.id,
+          occurredDate: '2026-11-07',
+          timezone: 'UTC',
+          vendor: null,
+          payer: null,
+          projectReferenceId: null,
+          allocations: [],
+        },
+        randomUUID(),
+      ),
+    ).rejects.toMatchObject({
+      response: { code: 'COMPANY_CURRENCY_MISMATCH' },
+    });
+    for (const [currency, value] of [['USD', '0.10']] as const) {
       const d = await finance.expenseCreate(
         member.actor,
         f.co.id,
@@ -832,7 +1054,6 @@ describe('P4-05 Company knowledge, reports and privacy', () => {
     );
     const r = await reports.financial(owner.actor, f.co.id, f.co.id, window);
     expect(r.currencies.map((v) => [v.currency, v.spent])).toEqual([
-      ['JPY', '2'],
       ['USD', '0.10'],
     ]);
     expect(JSON.stringify(r)).not.toContain('SECRET_VENDOR');

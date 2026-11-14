@@ -8,6 +8,7 @@ import { MessagingModule } from './messaging.module.js';
 import { MessageMediaService } from './application/message-media.service.js';
 import { MessageProgressService } from './application/message-progress.service.js';
 import { MessageMediaController } from './http/message-media.controller.js';
+import { ConversationSummaryController } from './http/conversation-summary.controller.js';
 import { MessageNotices } from './application/message-notices.service.js';
 import { MessageNoticeWorker } from './application/message-notice-worker.js';
 import { MessageNoticesController } from './http/message-notices.controller.js';
@@ -37,6 +38,7 @@ export class MessagingMediaModule {
         { provide: MessagingData, useClass: MessagingDataRepository },
       ],
       controllers: [
+        ConversationSummaryController,
         MessageMediaController,
         MessageNoticesController,
         ConversationLifecycleController,

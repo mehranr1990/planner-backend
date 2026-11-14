@@ -1,3 +1,8 @@
+import {
+  RetentionController,
+  RetentionGuard,
+} from './http/retention.controller.js';
+import { RetentionSelectionService } from './application/retention-selection.service.js';
 import { CompanyAccess } from './application/company-access.service.js';
 import { MessagingAuthority } from './public/messaging-authority.js';
 import { CompanyErasure } from './public/company-erasure.js';
@@ -23,6 +28,8 @@ import {
   CollaborationGuard,
   SpaceCollaborationController,
   InvitationRecipientController,
+  ProjectInvitationListController,
+  InvitationProofController,
 } from './http/collaboration.controller.js';
 
 @Module({
@@ -40,11 +47,19 @@ import {
     { provide: SharedFeaturePolicy, useValue: freeSharedFeaturePolicy },
     CollaborationLimit,
     CollaborationGuard,
+    RetentionGuard,
+    RetentionSelectionService,
     { provide: SPACES_REPOSITORY, useClass: SpacesRepository },
     SpacesService,
     SpacePolicyService,
   ],
-  controllers: [SpaceCollaborationController, InvitationRecipientController],
+  controllers: [
+    SpaceCollaborationController,
+    InvitationRecipientController,
+    ProjectInvitationListController,
+    InvitationProofController,
+    RetentionController,
+  ],
   exports: [
     SharedIdentity,
     MessagingAuthority,

@@ -242,6 +242,16 @@ export class ProjectExecutionController {
     const v = await this.plans.csv(actor, pid, input, key);
     return v;
   }
+  @Post('change-plans/csv/inspection')
+  @HttpCode(200)
+  csvInspection(
+    @CurrentActor() actor: RequestActor,
+    @Param('projectId', uuid) pid: string,
+    @Body(new ZodValidationPipe(c.ProjectCsvInspectionInputSchema))
+    input: z.infer<typeof c.ProjectCsvInspectionInputSchema>,
+  ) {
+    return this.plans.inspectCsv(actor, pid, input);
+  }
   @Get('change-plans/:planId')
   async planGet(
     @CurrentActor() actor: RequestActor,
@@ -495,6 +505,15 @@ export class ProjectExecutionController {
   ) {
     const v = await this.metrics.createSnapshot(actor, pid, input, key);
     return v;
+  }
+  @Get('reports/snapshots')
+  snapshotList(
+    @CurrentActor() actor: RequestActor,
+    @Param('projectId', uuid) pid: string,
+    @Query(new ZodValidationPipe(c.ProjectPageQuerySchema))
+    query: z.infer<typeof c.ProjectPageQuerySchema>,
+  ) {
+    return this.metrics.listSnapshots(actor, pid, query);
   }
   @Get('reports/snapshots/:snapshotId')
   async snapshotGet(

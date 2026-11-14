@@ -1,0 +1,74 @@
+{
+  "get /api/v1/companies/{id}/settings response 200": {
+    "previous": "0a980ec0a4c835c1198d9424b75defaae97b271aee8c01b935085857c908a62f",
+    "approved": "7949989aa07b8b0fa8cfe00ae5ac58ae16d257d5e98080ae90464485ddc268e9"
+  },
+  "put /api/v1/companies/{id}/settings/currency response 200": {
+    "previous": "0a980ec0a4c835c1198d9424b75defaae97b271aee8c01b935085857c908a62f",
+    "approved": "7949989aa07b8b0fa8cfe00ae5ac58ae16d257d5e98080ae90464485ddc268e9"
+  },
+  "post /api/v1/companies/{id}/contexts/{scopeId}/expenses/{target}/decision request": {
+    "previous": "aa72d0258a5dbb2338d624a50a785ffea75aef32815702096fc520c8685641a9",
+    "approved": "41d24ecab8bc2cdad899b8efa2adca2c66fd727f226ab0317aaa1c9543e45f49"
+  },
+  "get /api/v1/companies/{id}/contexts/{scopeId}/finance/approvals/{target}/history response 200": {
+    "previous": "0cc9862636f70563db82d4316ff4ed0324bcba6933caebe9b21b741ce8637a3a",
+    "approved": "70d13a27b54118d5962ea9bfa9114d244367323318604fdcabf6fc675cc6e983"
+  },
+  "post /api/v1/companies/{id}/contexts/{scopeId}/finance/approvals/{target}/decision request": {
+    "previous": "aa72d0258a5dbb2338d624a50a785ffea75aef32815702096fc520c8685641a9",
+    "approved": "41d24ecab8bc2cdad899b8efa2adca2c66fd727f226ab0317aaa1c9543e45f49"
+  },
+  "get /api/v1/meetings/{id}/versions response 200": {
+    "previous": "8fd6b509b1ecbf47424056989c5693a2eb52030cb443886e3f66a6c6809904d8",
+    "approved": "ef3196cac6a971cd492ed32ac601ccba899b36d5ae6a8424172506248b1dd01e"
+  },
+  "post /api/v1/meetings/{id}/versions request": {
+    "previous": "211703f661a2ea6cf08107ca8c7bafbe83f906251d46a5e834acb4c055888d28",
+    "approved": "fff1e9817836b382d7902fcc492fd0248e3a3acc1149ab1a128274fc1d22667e"
+  },
+  "post /api/v1/meetings/{id}/versions response 201": {
+    "previous": "ea7b7e3c563b478dacd3b0f786ed3eebba448ed9ef49fd46fcac40fd3c38fa15",
+    "approved": "ddbb29013c840ae46d5103893314eb367450bad843ba7d90de111ba9541d0c18"
+  },
+  "get /api/v1/meetings/{id}/versions/{versionId} response 200": {
+    "previous": "ea7b7e3c563b478dacd3b0f786ed3eebba448ed9ef49fd46fcac40fd3c38fa15",
+    "approved": "ddbb29013c840ae46d5103893314eb367450bad843ba7d90de111ba9541d0c18"
+  },
+  "patch /api/v1/meetings/{id}/versions/{versionId}/reviewer response 200": {
+    "previous": "ea7b7e3c563b478dacd3b0f786ed3eebba448ed9ef49fd46fcac40fd3c38fa15",
+    "approved": "ddbb29013c840ae46d5103893314eb367450bad843ba7d90de111ba9541d0c18"
+  },
+  "post /api/v1/meetings/{id}/versions/{versionId}/submit response 201": {
+    "previous": "ea7b7e3c563b478dacd3b0f786ed3eebba448ed9ef49fd46fcac40fd3c38fa15",
+    "approved": "ddbb29013c840ae46d5103893314eb367450bad843ba7d90de111ba9541d0c18"
+  },
+  "post /api/v1/meetings/{id}/versions/{versionId}/review response 201": {
+    "previous": "ea7b7e3c563b478dacd3b0f786ed3eebba448ed9ef49fd46fcac40fd3c38fa15",
+    "approved": "ddbb29013c840ae46d5103893314eb367450bad843ba7d90de111ba9541d0c18"
+  },
+  "post /api/v1/meetings/{id}/versions/{versionId}/finalize response 201": {
+    "previous": "ea7b7e3c563b478dacd3b0f786ed3eebba448ed9ef49fd46fcac40fd3c38fa15",
+    "approved": "ddbb29013c840ae46d5103893314eb367450bad843ba7d90de111ba9541d0c18"
+  },
+  "post /api/v1/meetings/{id}/versions/{versionId}/withdraw response 201": {
+    "previous": "ea7b7e3c563b478dacd3b0f786ed3eebba448ed9ef49fd46fcac40fd3c38fa15",
+    "approved": "ddbb29013c840ae46d5103893314eb367450bad843ba7d90de111ba9541d0c18"
+  },
+  "get /api/v1/teams/{id}/thanks response 200": {
+    "previous": "1b08971e25fe42990e06ee55324268dcba93f8a8d024976480c306ba7013c45e",
+    "approved": "87dfc9e90844704ea2c5a7ca77d6835e5a0b1bd61e14de29b57a63f09249047a"
+  },
+  "post /api/v1/teams/{id}/thanks request": {
+    "previous": "9f4e7039ce95cbd71ceaefcf9859f8ac862ac915c84ef93c42d88493bfc583bb",
+    "approved": "fec3aaa98a76355b34d6198064e398841cda94719a27c99acf86ce3c51db7921"
+  },
+  "post /api/v1/teams/{id}/thanks response 201": {
+    "previous": "028043742ac893037ff82c3dbf8235971187c8c6af19d1ee01e8c50943be0c07",
+    "approved": "15efa5eb617d78614ec0867ecdc37d3b830e4e72cb06b10152df7e06d4ea6ff6"
+  },
+  "put /api/v1/teams/{id}/thanks/{thanksId}/hidden response 200": {
+    "previous": "028043742ac893037ff82c3dbf8235971187c8c6af19d1ee01e8c50943be0c07",
+    "approved": "15efa5eb617d78614ec0867ecdc37d3b830e4e72cb06b10152df7e06d4ea6ff6"
+  }
+}

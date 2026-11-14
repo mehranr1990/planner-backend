@@ -1,8 +1,21 @@
 import * as c from './index.js';
+import { z } from 'zod';
+import { embeddedJsonSchema, pointerSegment } from './embedded-json-schema.js';
 import { companyPaths } from './companies-openapi.js';
 export const companyKnowledgeOperations: NonNullable<
   Parameters<typeof companyPaths>[0]
 > = [
+  {
+    method: 'get',
+    path: '/companies/{id}/contexts/{scopeId}/exports',
+    output: c.CompanyExportPublicationPageSchema,
+    query: c.CompanyPageQuerySchema,
+  },
+  {
+    method: 'get',
+    path: '/companies/{id}/contexts/{scopeId}/exports/{exportId}',
+    output: c.CompanyExportPublicationSchema,
+  },
   {
     method: 'post',
     path: '/companies/{id}/contexts/{scopeId}/knowledge/folders',
@@ -195,13 +208,26 @@ export function companyKnowledgePaths() {
   exportResponses['200'] = {
     description: 'Authorized bounded inline Company export',
     headers: {
+      'X-Export-Id': { schema: { type: 'string', format: 'uuid' } },
       'Cache-Control': {
         schema: { type: 'string', const: 'private, no-store' },
       },
       'Content-Disposition': { schema: { type: 'string' } },
     },
     content: {
-      'application/json': { schema: { type: 'object' } },
+      'application/json': {
+        schema: embeddedJsonSchema(
+          z.toJSONSchema(c.CompanyExportJsonSchema, {
+            target: 'draft-2020-12',
+            io: 'input',
+          }),
+          '#/paths/' +
+            pointerSegment(
+              '/api/v1/companies/{id}/contexts/{scopeId}/exports',
+            ) +
+            '/post/responses/200/content/application~1json/schema',
+        ),
+      },
       'text/csv': { schema: { type: 'string' } },
     },
   };

@@ -26,7 +26,7 @@ describe('P1-08 private writing, capture and personal search', () => {
     databaseUrl = isolatedTestDatabaseUrl(process.env);
   const call = (
     actor: Actor,
-    method: 'get' | 'post' | 'patch' | 'delete',
+    method: 'get' | 'post' | 'put' | 'patch' | 'delete',
     path: string,
     revision?: number,
   ) => {
@@ -1119,5 +1119,276 @@ describe('P1-08 private writing, capture and personal search', () => {
         where: { spaceId: a.spaceId },
       }),
     ).toEqual(existing);
+  });
+
+  it('B3: Brain Dump pages keep order and sort tags, send real Inbox captures, undo removal and stay private', async () => {
+    const day = '2031-03-04',
+      one = randomUUID(),
+      two = randomUUID(),
+      three = randomUUID();
+    const saved = (
+      await call(a, 'put', '/brain-dump/pages/' + day)
+        .send({
+          lines: [
+            { id: one, text: 'Call the bank' },
+            { id: two, text: 'Idea for the garden' },
+            { id: randomUUID(), text: '' },
+          ],
+        })
+        .expect(200)
+    ).body;
+    expect(saved.lines.map((l: { text: string }) => l.text)).toEqual([
+      'Call the bank',
+      'Idea for the garden',
+    ]);
+    await call(a, 'post', '/brain-dump/pages/' + day + '/lines')
+      .send({ id: three, text: 'Buy stamps' })
+      .expect(201);
+    const taskId = randomUUID();
+    const sorted = (
+      await call(a, 'post', '/brain-dump/pages/' + day + '/sort')
+        .send({ ids: [one], to: 'TASK', day: '2031-03-05', targetId: taskId })
+        .expect(200)
+    ).body;
+    expect(sorted.lines[0]).toMatchObject({
+      sortedTo: 'TASK',
+      sortedDay: '2031-03-05',
+      targetId: taskId,
+    });
+    const resaved = (
+      await call(a, 'put', '/brain-dump/pages/' + day)
+        .send({
+          lines: [
+            { id: one, text: 'Call the bank today' },
+            { id: two, text: 'Idea for the garden' },
+            { id: three, text: 'Buy stamps' },
+          ],
+        })
+        .expect(200)
+    ).body;
+    expect(resaved.lines[0]).toMatchObject({
+      text: 'Call the bank today',
+      sortedTo: 'TASK',
+    });
+    const sent = (
+      await call(a, 'post', '/brain-dump/pages/' + day + '/send-to-inbox')
+        .send({ ids: [two] })
+        .expect(200)
+    ).body;
+    const inboxId = sent.lines[1].targetId as string;
+    expect(sent.lines[1]).toMatchObject({ sortedTo: 'INBOX' });
+    expect(
+      (await call(a, 'get', '/capture/' + inboxId).expect(200)).body,
+    ).toMatchObject({
+      id: inboxId,
+      text: 'Idea for the garden',
+    });
+    await call(a, 'post', '/brain-dump/pages/' + day + '/strike')
+      .send({ ids: [three], struck: true })
+      .expect(200);
+    const removed = (
+      await call(a, 'post', '/brain-dump/pages/' + day + '/remove')
+        .send({ ids: [one] })
+        .expect(200)
+    ).body;
+    expect(removed.page.lines).toHaveLength(2);
+    const restored = (
+      await call(a, 'post', '/brain-dump/pages/' + day + '/restore')
+        .send({ lines: removed.removed })
+        .expect(200)
+    ).body;
+    expect(restored.lines[0]).toMatchObject({ id: one, sortedTo: 'TASK' });
+    await call(a, 'post', '/brain-dump/pages/' + day + '/sort')
+      .send({ ids: [randomUUID()], to: 'NOTE' })
+      .expect(404);
+    const list = (await call(a, 'get', '/brain-dump/pages').expect(200)).body;
+    expect(
+      list.items.find((p: { day: string }) => p.day === day),
+    ).toMatchObject({
+      lineCount: 3,
+      unsortedCount: 0,
+    });
+    expect(
+      (await call(b, 'get', '/brain-dump/pages/' + day).expect(200)).body.lines,
+    ).toEqual([]);
+  });
+
+  it('B4: Insights patterns use recorded data only, with collecting states', async () => {
+    const actor = await identity();
+    const q = (id: string) =>
+      '/insights/patterns?id=' +
+      id +
+      '&from=2024-05-01&to=2024-05-14&timezone=UTC';
+    expect((await call(actor, 'get', q('estimates')).expect(200)).body).toEqual(
+      { status: 'collecting', have: 0, need: 5 },
+    );
+    expect((await call(actor, 'get', q('signals')).expect(200)).body).toEqual({
+      status: 'collecting',
+      have: 0,
+      need: 7,
+    });
+    expect(
+      (await call(actor, 'get', q('focus')).expect(200)).body,
+    ).toMatchObject({
+      status: 'collecting',
+      need: 5,
+    });
+    for (let d = 1; d <= 7; d++)
+      await mood(
+        { localDate: '2024-05-0' + d, mood: d % 2 ? 4 : 2, energy: 3 },
+        actor,
+      );
+    const signals = (await call(actor, 'get', q('signals')).expect(200)).body;
+    expect(signals.status).toBe('ready');
+    expect(signals.pattern.days).toHaveLength(14);
+    expect(signals.pattern.days[0]).toMatchObject({
+      day: '2024-05-01',
+      mood: 4,
+      energy: 3,
+      focusMinutes: 0,
+    });
+    expect(signals.pattern.moodWithFocus).toBeNull();
+    expect(signals.pattern.moodWithoutFocus).toBeCloseTo(3.14, 2);
+    expect((await call(actor, 'get', q('habits')).expect(200)).body).toEqual({
+      status: 'collecting',
+      have: 7,
+      need: 10,
+    });
+    await call(
+      actor,
+      'get',
+      '/insights/patterns?id=focus&from=2024-05-02&to=2024-05-01&timezone=UTC',
+    ).expect(400);
+    // Estimate accuracy: explicit Personal Task categories, real estimates and recorded time only.
+    const other = b;
+    const now = Date.now(),
+      day = (ms: number) => new Date(ms).toISOString().slice(0, 10);
+    const range =
+      '/insights/patterns?id=estimates&from=' +
+      day(now - 86400000) +
+      '&to=' +
+      day(now + 86400000) +
+      '&timezone=UTC';
+    const at = (minutesAgo: number) =>
+      new Date(
+        Math.floor(now / 1000) * 1000 - minutesAgo * 60000,
+      ).toISOString();
+    const done = async (
+      category: string | null,
+      estimate: number | null,
+      actual: number,
+    ) => {
+      const t = (
+        await call(actor, 'post', '/tasks').send({ title: 'Est' }).expect(201)
+      ).body as { id: string; revision: number };
+      let revision = t.revision;
+      if (estimate !== null)
+        revision = (
+          await call(
+            actor,
+            'patch',
+            '/tasks/' + t.id + '/productivity',
+            revision,
+          )
+            .send({ estimatedMinutes: estimate })
+            .expect(200)
+        ).body.revision;
+      if (category !== null) {
+        const set = (
+          await call(actor, 'put', '/tasks/' + t.id + '/category', revision)
+            .send({ category })
+            .expect(200)
+        ).body;
+        expect(set).toEqual({ taskId: t.id, revision: revision + 1, category });
+        revision = set.revision;
+      }
+      // Two fully overlapping entries count once (interval union).
+      for (let i = 0; actual && i < 2; i++)
+        await call(actor, 'post', '/time-entries')
+          .set('Idempotency-Key', randomUUID())
+          .send({
+            startAt: at(actual + 10),
+            endAt: at(10),
+            taskId: t.id,
+            taskRevision: revision,
+          })
+          .expect(201);
+      revision = (
+        await call(actor, 'get', '/tasks/' + t.id + '/category').expect(200)
+      ).body.revision;
+      await call(
+        actor,
+        'post',
+        '/tasks/' + t.id + '/complete',
+        revision,
+      ).expect(200);
+      return t.id;
+    };
+    const first = await done('design', 60, 90);
+    // Stale revision, invalid category, other users and missing tasks are refused.
+    await call(actor, 'put', '/tasks/' + first + '/category', 1)
+      .send({ category: 'admin' })
+      .expect(409);
+    await call(actor, 'put', '/tasks/' + first + '/category')
+      .send({ category: 'admin' })
+      .expect(400);
+    await call(actor, 'put', '/tasks/' + first + '/category', 9)
+      .send({ category: 'ops' })
+      .expect(400);
+    await call(other, 'get', '/tasks/' + first + '/category').expect(404);
+    await call(other, 'put', '/tasks/' + first + '/category', 9)
+      .send({ category: null })
+      .expect(404);
+    await call(actor, 'get', '/tasks/' + randomUUID() + '/category').expect(
+      404,
+    );
+    expect((await call(actor, 'get', range).expect(200)).body).toEqual({
+      status: 'collecting',
+      have: 1,
+      need: 5,
+    });
+    await done('design', 60, 90);
+    await done('design', 60, 108);
+    await done('admin', 60, 48);
+    await done('admin', 60, 48);
+    await done('admin', 60, 48);
+    await done(null, 60, 30);
+    await done('writing', null, 30);
+    await done('errands', 30, 0);
+    expect((await call(actor, 'get', range).expect(200)).body).toEqual({
+      status: 'ready',
+      pattern: {
+        id: 'estimates',
+        categories: [
+          {
+            id: 'design',
+            ratio: 1.6,
+            tasks: 3,
+            estimatedMinutes: 180,
+            actualMinutes: 288,
+          },
+          {
+            id: 'admin',
+            ratio: 0.8,
+            tasks: 3,
+            estimatedMinutes: 180,
+            actualMinutes: 144,
+          },
+        ],
+        suggestion: { category: 'design', bufferPercent: 60 },
+        excluded: { uncategorized: 1, unestimated: 1, untracked: 1 },
+      },
+    });
+    // Isolation: another user's Personal data is never counted.
+    expect((await call(other, 'get', range).expect(200)).body).toEqual({
+      status: 'collecting',
+      have: 0,
+      need: 5,
+    });
+    // Shared Task rows can never carry a Personal category (DB rule).
+    const [rule] = await db.client.$queryRaw<
+      { def: string }[]
+    >`SELECT pg_get_constraintdef(oid) def FROM pg_constraint WHERE conname='Task_category_check'`;
+    expect(rule?.def).toContain('"scopeId" IS NULL');
   });
 });

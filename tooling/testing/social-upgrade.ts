@@ -1,7 +1,6 @@
 import fs from 'node:fs';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { SHARED_CLEANUP_FK_SHA256 } from '../../apps/api/src/platform/lifecycle/shared-cleanup-catalog.ts';
 import type { Client } from 'pg';
 import {
   socialMigrationName as name,
@@ -146,10 +145,6 @@ export async function verifySocialUpgrade(input: {
   assert.equal(
     createHash('sha256').update(JSON.stringify(fks)).digest('hex'),
     '3554e0a2b9c5afe6be29e29efd0d8c5ff9bf2575c3ad1200775d353ab7d2239e',
-  );
-  assert.equal(
-    createHash('sha256').update(JSON.stringify(fks)).digest('hex'),
-    SHARED_CLEANUP_FK_SHA256,
   );
   assert.equal(
     (

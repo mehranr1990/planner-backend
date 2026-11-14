@@ -18,6 +18,23 @@ type Operation = {
 };
 export const companyOperations: Operation[] = [
   {
+    path: '/company-invitations',
+    method: 'get',
+    output: c.PendingInvitationPageSchema,
+    query: c.CompanyPageQuerySchema,
+  },
+  {
+    path: '/companies/{id}/contexts/{scopeId}/invitations',
+    method: 'get',
+    output: c.CompanyInvitationPageSchema,
+    query: c.CompanyPageQuerySchema,
+  },
+  {
+    path: '/companies/{id}/contexts/{scopeId}/access/me',
+    method: 'get',
+    output: c.ScopeAccessMeSchema,
+  },
+  {
     path: '/companies',
     method: 'post',
     output: c.CompanySchema,

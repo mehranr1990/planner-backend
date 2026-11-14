@@ -450,12 +450,121 @@ export class CompanyAssociationsService {
       action === 'revoke' || action === 'detach',
     );
   }
+  /**
+   * C3 summary of one ATTACHED association whose source the caller already
+   * reads through independent membership: name, lifecycle, responsible
+   * person and member count only. Never grants or widens source access.
+   */
+  private async summary(
+    tx: Prisma.TransactionClient,
+    a: SharedAuthority,
+    row: z.infer<typeof c.CompanyAssociationSchema>,
+  ) {
+    let source = null;
+    const custody = await tx.sharedCustody.findUnique({
+      where: { spaceId: row.sourceId },
+    });
+    if (
+      a.has(tx, row.sourceId, 'task.read') &&
+      custody &&
+      ['ACTIVE', 'ARCHIVED'].includes(custody.state)
+    ) {
+      const item = await this.source(row.kind).hint(row.sourceId),
+        owner = custody.primaryOwnerAccessId
+          ? await tx.contextAccess.findUnique({
+              where: { id: custody.primaryOwnerAccessId },
+            })
+          : null;
+      source = {
+        title: item.title,
+        lifecycleState: custody.state,
+        responsibleDisplayName: owner
+          ? await this.signed.displayName(tx, row.sourceId, owner.actorId)
+          : null,
+        memberCount: await tx.contextAccess.count({
+          where: {
+            spaceId: row.sourceId,
+            scopeId: row.sourceId,
+            state: 'ACTIVE',
+          },
+        }),
+      };
+    }
+    return c.CompanyAssociationSummarySchema.parse({
+      associationId: row.id,
+      kind: row.kind,
+      sourceId: row.sourceId,
+      state: row.state,
+      source,
+    });
+  }
+  async summaries(
+    actor: RequestActor,
+    id: string,
+    scopeId: string,
+    q: z.infer<typeof c.CompanyAssociationQuerySchema>,
+  ) {
+    return this.list(actor, id, scopeId, q, true, true);
+  }
+  /**
+   * Attach candidates: ACTIVE Projects / Teams the caller holds as primary
+   * owner (the only party that may request attachment) and that have no
+   * live association with this Company. Requires current Company context admission.
+   */
+  async candidates(actor: RequestActor, id: string, scopeId: string) {
+    await this.companies.hint(id);
+    if (scopeId === id) throw new NotFoundException();
+    const hints = [
+      ...(await this.kernel.readableContextHints(actor, 'PROJECT')).ids.map(
+        (sourceId) => ({ kind: 'PROJECT' as const, sourceId }),
+      ),
+      ...(await this.kernel.readableContextHints(actor, 'TEAM')).ids.map(
+        (sourceId) => ({ kind: 'TEAM' as const, sourceId }),
+      ),
+    ];
+    if (hints.length > 200) throw new PayloadTooLargeException();
+    return this.access.read(actor, id, async (ctx) => {
+      await this.companies.staffVisibility(ctx, scopeId, true);
+      const items = [];
+      for (const h of hints) {
+        const custody = await ctx.tx.sharedCustody.findUnique({
+          where: { spaceId: h.sourceId },
+        });
+        if (custody?.state !== 'ACTIVE' || custody.kind !== h.kind) continue;
+        try {
+          if (
+            (await this.kernel.custodian(ctx.tx, h.sourceId)).userId !==
+            actor.userId
+          )
+            continue;
+        } catch (e) {
+          if (e instanceof NotFoundException) continue;
+          throw e;
+        }
+        const live = (
+          await this.source(h.kind).rows(ctx.tx, {
+            sourceId: h.sourceId,
+            companySpaceId: id,
+          })
+        ).filter(
+          (r) =>
+            r.state !== 'REVOKED' && !(r.expiresAt && r.expiresAt <= ctx.now),
+        );
+        if (live.length) continue;
+        const row = await this.source(h.kind).hint(h.sourceId);
+        items.push({ kind: h.kind, sourceId: h.sourceId, title: row.title });
+      }
+      items.sort((a, b) => a.sourceId.localeCompare(b.sourceId));
+      return c.CompanyAttachCandidatePageSchema.parse({ items });
+    });
+  }
   async list(
     actor: RequestActor,
     id: string,
     scopeId: string,
     q: z.infer<typeof c.CompanyAssociationQuerySchema>,
     attached = false,
+    summarize = false,
   ) {
     await this.companies.hint(id);
     const hints = [
@@ -581,10 +690,16 @@ export class CompanyAssociationsService {
             q.after,
           ),
           rows = out.filter((r) => !after || r.id > after),
-          items = rows.slice(0, q.limit);
+          items = rows.slice(0, q.limit),
+          nextCursor = rows.length > q.limit ? items.at(-1)!.id : null;
+        if (summarize)
+          return this.kernel.cursorPage(context, stamp, actor.userId, {
+            items: await Promise.all(items.map((r) => this.summary(tx, a, r))),
+            nextCursor,
+          });
         return this.kernel.cursorPage(context, stamp, actor.userId, {
           items,
-          nextCursor: rows.length > q.limit ? items.at(-1)!.id : null,
+          nextCursor,
         });
       },
       undefined,

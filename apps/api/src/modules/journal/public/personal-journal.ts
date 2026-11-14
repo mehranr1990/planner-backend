@@ -21,4 +21,11 @@ export abstract class PersonalJournal {
     r: SearchRequest,
     kind: 'JOURNAL' | 'MOOD',
   ): Promise<PersonalSearchHit[]>;
+  /** B4: current recorded mood entries by local date (mood and energy are 1–5). */
+  abstract moods(
+    tx: Prisma.TransactionClient,
+    scope: AuthorizedSpace,
+    fromDate: string,
+    toDate: string,
+  ): Promise<{ localDate: string; mood: number; energy: number | null }[]>;
 }

@@ -364,7 +364,10 @@ describe('P4-02 staff privacy, availability and exclusive Company allocations', 
       await staff.createProfile(owner.actor, co.id, co.id, body, key),
     ).toEqual(row);
     expect(row.workEmail).toBeNull();
-    expect(row.member).toEqual(ref(subject));
+    expect(row.member).toEqual({
+      ...ref(subject),
+      displayName: 'Synthetic staff fixture',
+    });
     expect(
       (await staff.profiles(member.actor, co.id, co.id, { limit: 25 })).items,
     ).toHaveLength(1);

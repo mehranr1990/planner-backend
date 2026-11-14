@@ -1,3 +1,5 @@
+import { MessagingExtensionsService } from './application/messaging-extensions.service.js';
+import { MessagingExtensionsController } from './http/messaging-extensions.controller.js';
 import { Module } from '@nestjs/common';
 import { DatabaseModule } from '../../platform/database/database.module.js';
 import { AuditModule } from '../../platform/audit/audit.service.js';
@@ -19,12 +21,14 @@ import {
     AdvancedMessagingService,
     MessagingGuard,
     DmContacts,
+    MessagingExtensionsService,
   ],
   controllers: [
     DmContactsController,
     MessagingController,
     ConversationInvitationsController,
     AdvancedMessagingController,
+    MessagingExtensionsController,
   ],
   exports: [
     MessagingService,

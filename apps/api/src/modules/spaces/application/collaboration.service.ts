@@ -5,6 +5,7 @@ import {
   ConflictException,
   BadRequestException,
   HttpException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import * as c from '@mehran/api-contracts';
@@ -22,6 +23,7 @@ import type { RequestActor } from '../../../platform/auth/request-actor.js';
 import { SharedControl } from '../../../platform/storage/shared-control.js';
 import type { SharedControlRecord } from '../../../platform/storage/shared-control.js';
 import { SharedKernel } from './shared-kernel.service.js';
+import type { SharedAuthority } from '../public/shared-authority.js';
 import { CollaborationLimit } from './collaboration-limit.js';
 import {
   roleAdministration,
@@ -33,6 +35,12 @@ import type { MemberRole } from '../domain/shared-policy.js';
 
 const hash = (value: string) =>
   createHash('sha256').update(value).digest('hex');
+type RecipientCheck = (
+  tx: Prisma.TransactionClient,
+  now: Date,
+  locked: string[],
+  row: ContextInvitation,
+) => Promise<void>;
 const week = 7 * 86400000;
 function keyHash(key: string | undefined) {
   if (!key || !/^[\x21-\x7e]{1,128}$/.test(key))
@@ -302,6 +310,147 @@ export class CollaborationService {
           : access.memberRole,
     });
   }
+  /** Call only after authorizing the containing projection. No directory authority. */
+  async displayName(
+    tx: Prisma.TransactionClient,
+    spaceId: string,
+    actorId: string,
+  ) {
+    const local = await tx.sharedActor.findFirst({
+      where: { id: actorId, spaceId, state: 'ACTIVE' },
+    });
+    if (
+      !local?.userId ||
+      !(await this.kernel.identityPresent(tx, local.userId))
+    )
+      return null;
+    const admission = await tx.contextAccess.findFirst({
+      where: {
+        spaceId,
+        actorId,
+        scopeId: spaceId,
+        state: 'ACTIVE',
+        memberRole: { not: null },
+      },
+    });
+    if (!admission) return null;
+    const exit = await tx.sharedExitWork.findUnique({
+      where: { userId: local.userId },
+    });
+    if (exit && exit.closedAt >= admission.joinedAt) return null;
+    const personal = await tx.space.findFirst({
+      where: {
+        kind: 'PERSONAL',
+        ownerUserId: local.userId,
+        accessClosedAt: null,
+      },
+    });
+    return personal
+      ? ((await this.identity.display(tx, local.userId))?.name ?? null)
+      : null;
+  }
+  /** Full-scope readers only. Named-resource grants never grant directory access. */
+  async socialGroupHistory(
+    tx: Prisma.TransactionClient,
+    authority: SharedAuthority,
+    id: string,
+    after: string | undefined,
+    limit: number,
+  ) {
+    const access = authority.require(tx, id, 'task.read');
+    const custody = await tx.sharedCustody.findUniqueOrThrow({
+      where: { spaceId: access.spaceId },
+    });
+    if (
+      custody.kind !== 'SOCIAL_GROUP' ||
+      access.spaceId !== id ||
+      access.scopeId !== id
+    )
+      throw new NotFoundException();
+    const admission = await tx.contextAccess.findUniqueOrThrow({
+      where: { id: access.accessId },
+    });
+    const rows = await tx.sharedAuditEvent.findMany({
+      where: {
+        spaceId: id,
+        scopeId: id,
+        action: { in: c.SocialGroupHistoryActionSchema.options },
+        occurredAt: { gte: admission.joinedAt },
+        ...(after ? { id: { gt: after } } : {}),
+      },
+      select: {
+        id: true,
+        actorId: true,
+        action: true,
+        resourceId: true,
+        occurredAt: true,
+      },
+      orderBy: { id: 'asc' },
+      take: limit + 1,
+    });
+    return Promise.all(
+      rows.map(async (r) =>
+        c.SocialGroupHistoryEventSchema.parse({
+          ...r,
+          occurredAt: r.occurredAt.toISOString(),
+          actorDisplayName: await this.displayName(tx, id, r.actorId),
+        }),
+      ),
+    );
+  }
+  async memberDirectory(
+    tx: Prisma.TransactionClient,
+    authority: SharedAuthority,
+    selector: string,
+    after: string | undefined,
+    limit: number,
+  ) {
+    authority.require(tx, selector, 'task.read');
+    const items = [];
+    let position = after;
+    for (;;) {
+      const rows = await tx.contextAccess.findMany({
+        where: {
+          spaceId: authority.space(tx, selector),
+          scopeId: authority.scope(tx, selector),
+          state: 'ACTIVE',
+          memberRole: { not: null },
+          ...(position ? { id: { gt: position } } : {}),
+        },
+        orderBy: { id: 'asc' },
+        take: 100,
+      });
+      for (const row of rows) {
+        if (
+          !(await this.kernel.visibleWorkMember(
+            tx,
+            authority,
+            selector,
+            row.id,
+            row.generation,
+          ))
+        )
+          continue;
+        const userId = await this.kernel.memberUserInTransaction(
+          tx,
+          selector,
+          row.id,
+        );
+        if (!userId) continue;
+        const display = await this.identity.display(tx, userId);
+        if (!display) continue;
+        items.push(
+          c.ProjectMemberDisplaySchema.parse({
+            ...(await this.memberView(tx, row)),
+            displayName: display.name,
+          }),
+        );
+        if (items.length > limit) return items;
+      }
+      if (rows.length < 100) return items;
+      position = rows.at(-1)!.id;
+    }
+  }
   async createInvitation(
     actor: RequestActor,
     spaceId: string,
@@ -498,6 +647,277 @@ export class CollaborationService {
           locked,
         );
         return invitationView(row);
+      },
+    );
+  }
+  async pendingSent(
+    actor: RequestActor,
+    spaceId: string,
+    q: { after?: string | undefined; limit: number },
+  ) {
+    return this.kernel.participate(
+      actor,
+      spaceId,
+      [],
+      async (tx, now, locked) => {
+        const access = await this.kernel.participantAuthority(
+          tx,
+          actor,
+          actor.userId,
+          { spaceId, scopeId: spaceId, capability: 'membership.member' },
+          locked,
+        );
+        const context = 'team-pending:' + spaceId,
+          stamp = String(access.authorizationVersion);
+        const after = this.kernel.cursorPosition(
+          context,
+          stamp,
+          actor.userId,
+          q.after,
+        );
+        const rows = await tx.contextInvitation.findMany({
+          where: {
+            spaceId,
+            scopeId: spaceId,
+            companyScopeId: null,
+            state: 'PENDING',
+            expiresAt: { gt: now },
+            ...(after ? { id: { gt: after } } : {}),
+          },
+          orderBy: { id: 'asc' },
+          take: q.limit + 1,
+        });
+        const items = [];
+        for (const row of rows.slice(0, q.limit)) {
+          try {
+            await this.kernel.participantAuthority(
+              tx,
+              actor,
+              actor.userId,
+              {
+                spaceId,
+                scopeId: spaceId,
+                capability: roleAdministration(row.memberRole as MemberRole),
+              },
+              locked,
+            );
+            items.push(invitationView(row));
+          } catch (error) {
+            if (
+              !(error instanceof ForbiddenException) &&
+              !(error instanceof NotFoundException)
+            )
+              throw error;
+          }
+        }
+        return this.kernel.cursorPage(context, stamp, actor.userId, {
+          items,
+          nextCursor: rows.length > q.limit ? rows[q.limit - 1]!.id : null,
+        });
+      },
+    );
+  }
+  /** Recipient-only metadata. Acceptance requires a one-time proof (issued in-app via issueRecipientProof). */
+  async pendingOffers(
+    actor: RequestActor,
+    kind: 'TEAM' | 'COMPANY' | 'PROJECT',
+    q: { after?: string | undefined; limit: number },
+    check?: RecipientCheck,
+  ) {
+    this.kernel.assertEnabled();
+    const identity = await this.db.client.$transaction(async (tx) => {
+      await this.kernel.personalIdentity(tx, actor);
+      return this.identity.current(tx, actor.userId);
+    });
+    if (!identity?.emailVerified) throw new NotFoundException();
+    const context = 'my-pending:' + kind,
+      stamp = hash(identity.email);
+    const after = this.kernel.cursorPosition(
+      context,
+      stamp,
+      actor.userId,
+      q.after,
+    );
+    const candidates = await this.db.client.contextInvitation.findMany({
+      where: {
+        state: 'PENDING',
+        expiresAt: { gt: new Date() },
+        OR: [
+          { recipientUserId: actor.userId },
+          { recipientEmail: this.identity.canonicalEmail(identity.email) },
+        ],
+        ...(kind === 'COMPANY'
+          ? { companyScopeId: { not: null } }
+          : { companyScopeId: null }),
+        ...(after ? { id: { gt: after } } : {}),
+      },
+      orderBy: { id: 'asc' },
+      take: q.limit + 1,
+    });
+    const items = [];
+    for (const hint of candidates.slice(0, q.limit)) {
+      const issuer = await this.userForAccess(
+        this.db.client,
+        hint.inviterAccessId,
+      );
+      if (!issuer) continue;
+      try {
+        const item = await this.kernel.participate(
+          actor,
+          hint.spaceId,
+          [issuer],
+          async (tx, now, locked) => {
+            const row = await this.recipientOffer(
+              tx,
+              now,
+              locked,
+              actor,
+              hint.id,
+              issuer,
+              kind,
+              check,
+            );
+            return (
+              kind === 'PROJECT'
+                ? c.ProjectPendingInvitationSummarySchema
+                : c.PendingInvitationSummarySchema
+            ).parse({
+              id: row.id,
+              contextLabel:
+                kind === 'TEAM'
+                  ? 'Team'
+                  : kind === 'PROJECT'
+                    ? 'Project'
+                    : 'Company',
+              revision: row.revision,
+              expiresAt: row.expiresAt.toISOString(),
+            });
+          },
+        );
+        items.push(item);
+      } catch (error) {
+        if (
+          !(error instanceof NotFoundException) &&
+          !(error instanceof ForbiddenException) &&
+          !(error instanceof ConflictException)
+        )
+          throw error;
+      }
+    }
+    return this.kernel.cursorPage(context, stamp, actor.userId, {
+      items,
+      nextCursor:
+        candidates.length > q.limit ? candidates[q.limit - 1]!.id : null,
+    });
+  }
+  /** Verified intended recipient of a current, unexpired offer whose issuer still holds authority. */
+  private async recipientOffer(
+    tx: Prisma.TransactionClient,
+    now: Date,
+    locked: string[],
+    actor: RequestActor,
+    id: string,
+    issuer: string,
+    kind: 'TEAM' | 'COMPANY' | 'PROJECT',
+    check?: RecipientCheck,
+  ) {
+    const row = await tx.contextInvitation.findUnique({ where: { id } });
+    const current = await this.identity.current(tx, actor.userId);
+    const custody = row
+      ? await tx.sharedCustody.findUnique({ where: { spaceId: row.spaceId } })
+      : null;
+    if (
+      !row ||
+      !custody ||
+      custody.kind !== kind ||
+      row.state !== 'PENDING' ||
+      row.expiresAt <= now ||
+      !current?.emailVerified ||
+      (row.recipientUserId !== actor.userId &&
+        row.recipientEmail !== this.identity.canonicalEmail(current.email))
+    )
+      throw new NotFoundException();
+    if (kind !== 'COMPANY') {
+      const authority = await this.kernel.participantAuthority(
+        tx,
+        actor,
+        issuer,
+        {
+          spaceId: row.spaceId,
+          scopeId: row.scopeId,
+          capability: roleAdministration(row.memberRole as MemberRole),
+        },
+        locked,
+      );
+      if (
+        authority.accessId !== row.inviterAccessId ||
+        authority.generation !== row.inviterGeneration
+      )
+        throw new NotFoundException();
+    }
+    if (check) await check(tx, now, locked, row);
+    return row;
+  }
+  /**
+   * OD-4 in-app delivery: the verified recipient obtains a fresh one-time
+   * proof. Rotation (with a revision fence) invalidates every earlier copy,
+   * including the inviter's; accept/decline keep their existing checks.
+   */
+  async issueRecipientProof(
+    actor: RequestActor,
+    kind: 'TEAM' | 'COMPANY' | 'PROJECT',
+    id: string,
+    revision: number,
+    check?: RecipientCheck,
+  ) {
+    this.kernel.assertEnabled();
+    const hint = await this.db.client.contextInvitation.findUnique({
+      where: { id },
+    });
+    const issuer = hint
+      ? await this.userForAccess(this.db.client, hint.inviterAccessId)
+      : null;
+    if (!hint || !issuer) throw new NotFoundException();
+    const proof = randomBytes(32).toString('base64url');
+    return this.signed(
+      actor,
+      hint.scopeId,
+      [issuer],
+      'invitation.proof.issue',
+      id,
+      async (tx, now, locked, begin) => {
+        const row = await this.recipientOffer(
+          tx,
+          now,
+          locked,
+          actor,
+          id,
+          issuer,
+          kind,
+          check,
+        );
+        if (row.revision !== revision) throw new ConflictException();
+        const local = await this.actor(tx, row.spaceId, actor.userId);
+        const auditId = await begin();
+        const updated = await tx.contextInvitation.update({
+          where: { id, revision: row.revision },
+          data: { proofHash: hash(proof), revision: { increment: 1 } },
+        });
+        await this.kernel.offerEffect(
+          tx,
+          actor,
+          row.scopeId,
+          local.id,
+          'invitation.proof.issue',
+          id,
+          auditId,
+        );
+        return c.RecipientInvitationProofSchema.parse({
+          invitationId: id,
+          proof,
+          revision: updated.revision,
+          expiresAt: updated.expiresAt.toISOString(),
+        });
       },
     );
   }
@@ -1134,6 +1554,25 @@ export class CollaborationService {
         return handoverView(row);
       },
     );
+  }
+  async handoverPage(
+    tx: Prisma.TransactionClient,
+    authority: SharedAuthority,
+    selector: string,
+    after: string | undefined,
+    limit: number,
+  ) {
+    authority.require(tx, selector, 'custody.handover');
+    const rows = await tx.ownerHandover.findMany({
+      where: {
+        spaceId: authority.space(tx, selector),
+        scopeId: authority.scope(tx, selector),
+        ...(after ? { id: { gt: after } } : {}),
+      },
+      orderBy: { id: 'asc' },
+      take: limit + 1,
+    });
+    return rows.map(handoverView);
   }
   async decideHandover(
     actor: RequestActor,

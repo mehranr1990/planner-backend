@@ -60,7 +60,7 @@ it('keeps independent creation and typed resource offers strict with no future a
 });
 it('publishes exactly the implemented Project operation set and carries proofs only in headers', () => {
   const paths = projectPaths();
-  expect(Object.values(paths).flatMap(Object.keys)).toHaveLength(38);
+  expect(Object.values(paths).flatMap(Object.keys)).toHaveLength(44);
   const preview = paths['/api/v1/resource-invitations/preview']!.get as {
     security: unknown[];
     parameters: { in: string; name: string }[];

@@ -104,6 +104,8 @@ export class MeetingsService {
           return this.view(s);
         },
       );
+    const actorIds =
+      body.kind === 'INDEPENDENT' ? [] : body.participantActorIds;
     const seed = async (s: Op) => {
       await this.op.admit(s, s.proof!, 'ORGANIZER');
       for (const userId of body.participants)
@@ -111,6 +113,12 @@ export class MeetingsService {
           s,
           { id: randomUUID(), userId },
           body.id + ':' + userId,
+        );
+      for (const actorId of actorIds)
+        await this.issue(
+          s,
+          { id: randomUUID(), actorId },
+          body.id + ':actor:' + actorId,
         );
     };
     const insert = async (s: SourceOperation, eventId: string) =>
@@ -244,7 +252,13 @@ export class MeetingsService {
           );
           return this.view(s);
         },
-        body.participants,
+        [
+          ...body.participants,
+          ...(await this.op.authority.spaceHints(
+            await this.op.shared.custodySpace(body.sourceId),
+            actorIds,
+          )),
+        ],
       );
     } catch (error) {
       if (
@@ -542,15 +556,14 @@ export class MeetingsService {
   ) {
     const me = await this.op.organizer(s);
     await this.active(s);
-    if (!s.locked.includes(input.userId) || input.userId === s.actor.userId)
+    const userId =
+      'userId' in input
+        ? input.userId
+        : await this.op.authority.user(s.tx, s.spaceId, input.actorId);
+    if (!s.locked.includes(userId) || userId === s.actor.userId)
       throw new BadRequestException();
-    const recipient = await this.op.authority.actor(
-        s.tx,
-        s.spaceId,
-        input.userId,
-      ),
-      proof =
-        s.kind === 'INDEPENDENT' ? null : await this.op.proof(s, input.userId);
+    const recipient = await this.op.authority.actor(s.tx, s.spaceId, userId),
+      proof = s.kind === 'INDEPENDENT' ? null : await this.op.proof(s, userId);
     const member = await s.tx.meetingMember.findUnique({
       where: {
         meetingId_actorId: { meetingId: s.meeting.id, actorId: recipient.id },
@@ -611,14 +624,18 @@ export class MeetingsService {
       },
     });
   }
-  invite(
+  async invite(
     actor: RequestActor,
     id: string,
     expected: number | undefined,
     input: z.infer<typeof c.MeetingInviteInputSchema>,
     key: string | undefined,
   ) {
-    const body = c.MeetingInviteInputSchema.parse(input);
+    const body = c.MeetingInviteInputSchema.parse(input),
+      hint =
+        'userId' in body
+          ? null
+          : await this.op.db.client.meeting.findUnique({ where: { id } });
     return this.op.operation(
       actor,
       id,
@@ -648,7 +665,11 @@ export class MeetingsService {
           }),
         );
       },
-      [body.userId],
+      'userId' in body
+        ? [body.userId]
+        : hint
+          ? await this.op.authority.spaceHints(hint.spaceId, [body.actorId])
+          : [],
     );
   }
   async invitations(actor: RequestActor, q: Page) {
@@ -938,12 +959,44 @@ export class MeetingsService {
         }),
         items = [];
       for (const row of rows) {
-        if (await this.op.eligible(s, row.id)) items.push(this.memberDto(row));
+        if (await this.op.eligible(s, row.id))
+          items.push({
+            ...this.memberDto(row),
+            displayName: await this.op.authority.displayName(
+              s.tx,
+              s.spaceId,
+              row.actorId,
+            ),
+          });
         if (items.length > q.limit) break;
       }
       return c.MeetingMemberPageSchema.parse(
         this.op.page(actor, context, stamp, items, q.limit),
       );
+    });
+  }
+  accessMe(actor: RequestActor, id: string) {
+    return this.op.operation(actor, id, 'meeting.access.read', async (s) => {
+      const member = await this.op.member(s);
+      const { id: memberId, ...view } = this.memberDto(member);
+      const capabilities: z.infer<
+        typeof c.MeetingAccessMeSchema
+      >['capabilities'] = ['meeting.read', 'membership.leave'];
+      if (s.meeting.state === 'ACTIVE' && s.proof?.role !== 'VIEWER')
+        capabilities.push('agenda.propose', 'minutes.draft');
+      if (s.meeting.state === 'ACTIVE' && (await this.op.canOrganize(s)))
+        capabilities.push('meeting.manage');
+      return c.MeetingAccessMeSchema.parse({
+        ...view,
+        meetingId: id,
+        memberId,
+        capabilities,
+        displayName: await this.op.authority.displayName(
+          s.tx,
+          s.spaceId,
+          member.actorId,
+        ),
+      });
     });
   }
   memberRole(
@@ -1169,5 +1222,99 @@ export class MeetingsService {
       generation: row.generation,
       revision: row.revision,
     });
+  }
+  /** OD-12: organizer chooses whether non-invited source members see busy-only blocks (default hidden). */
+  setBusyVisibility(
+    actor: RequestActor,
+    id: string,
+    revision: number,
+    input: z.infer<typeof c.MeetingBusyVisibilityInputSchema>,
+  ) {
+    const body = c.MeetingBusyVisibilityInputSchema.parse(input);
+    return this.op.operation(actor, id, 'meeting.busy.update', async (s) => {
+      await this.op.organizer(s);
+      if (s.kind === 'INDEPENDENT')
+        throw new ConflictException({ code: 'MEETING_HAS_NO_SOURCE' });
+      const before = await s.tx.meetingBusySetting.findUnique({
+        where: { meetingId: id },
+      });
+      if ((before?.revision ?? 1) !== revision)
+        throw new ConflictException({ code: 'REVISION_CONFLICT' });
+      const row = before
+        ? await s.tx.meetingBusySetting.update({
+            where: { meetingId: id },
+            data: {
+              visibility: body.visibility,
+              updatedAt: s.now,
+              revision: { increment: 1 },
+            },
+          })
+        : await s.tx.meetingBusySetting.create({
+            data: { meetingId: id, visibility: body.visibility },
+          });
+      return c.MeetingBusyVisibilitySchema.parse({
+        meetingId: id,
+        visibility: row.visibility,
+        revision: row.revision,
+      });
+    });
+  }
+  /**
+   * OD-12: busy-only blocks of a source workspace for a member who is not in
+   * the meeting. Only schedule and recurrence are served, never the title,
+   * description, attendees, agenda or meeting id.
+   */
+  busy(actor: RequestActor, query: z.infer<typeof c.MeetingBusyQuerySchema>) {
+    const q = c.MeetingBusyQuerySchema.parse(query);
+    return this.op.source(
+      actor,
+      q.sourceId,
+      q.sourceKind,
+      'meeting.busy.read',
+      q.sourceId,
+      (s) =>
+        this.op.withAuthority(s, [], async (a) => {
+          const p = s.proof!;
+          const rows = await s.tx.meeting.findMany({
+            where: {
+              scopeId: q.sourceId,
+              state: 'ACTIVE',
+              legacyTeamMeetingId: null,
+              MeetingMember_meeting: {
+                none: { actorId: p.actorId, state: 'ACTIVE' },
+              },
+            },
+            orderBy: { id: 'asc' },
+            take: 501,
+          });
+          if (rows.length > 500) throw new PayloadTooLargeException();
+          const shared = new Set(
+            (
+              await s.tx.meetingBusySetting.findMany({
+                where: {
+                  meetingId: { in: rows.map((r) => r.id) },
+                  visibility: 'SOURCE',
+                },
+              })
+            ).map((r) => r.meetingId),
+          );
+          const items = [];
+          for (const row of rows) {
+            if (!shared.has(row.id)) continue;
+            const event = c.TeamCalendarEventSchema.parse(
+              await this.calendar.run(s.tx, a, s.actor, q.sourceId, {
+                kind: 'READ',
+                id: row.eventId,
+              }),
+            );
+            if (event.status !== 'ACTIVE') continue;
+            items.push({
+              schedule: event.schedule,
+              recurrence: event.recurrence,
+            });
+          }
+          return c.MeetingBusyListSchema.parse({ items });
+        }),
+    );
   }
 }

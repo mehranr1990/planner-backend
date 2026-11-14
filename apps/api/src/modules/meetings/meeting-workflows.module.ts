@@ -10,6 +10,7 @@ import { MeetingsGuard } from './http/meetings.guard.js';
 import { MeetingsController } from './http/meetings.controller.js';
 import { MeetingDocumentsController } from './http/meeting-documents.controller.js';
 import { AnnouncementsController } from './http/announcements.controller.js';
+import { MeetingExtensionsController } from './http/meeting-extensions.controller.js';
 import { MeetingAttachmentsController } from './http/meeting-attachments.controller.js';
 import { AnnouncementAttachmentsController } from './http/announcement-attachments.controller.js';
 import { MeetingLifecycle } from './application/meetings-lifecycle.service.js';
@@ -46,6 +47,7 @@ export class MeetingWorkflowsModule {
         MeetingsController,
         MeetingDocumentsController,
         AnnouncementsController,
+        MeetingExtensionsController,
         MeetingAttachmentsController,
         AnnouncementAttachmentsController,
       ],

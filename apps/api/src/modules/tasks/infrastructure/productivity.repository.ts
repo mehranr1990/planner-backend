@@ -6,8 +6,14 @@ import {
   ConflictException,
   BadRequestException,
 } from '@nestjs/common';
-import { ProductivityTaskSchema } from '@mehran/api-contracts';
-import type { ProductivityTaskPatch } from '@mehran/api-contracts';
+import {
+  ProductivityTaskSchema,
+  TaskCategoryViewSchema,
+} from '@mehran/api-contracts';
+import type {
+  ProductivityTaskPatch,
+  TaskCategoryView,
+} from '@mehran/api-contracts';
 import type { Prisma } from '../../../generated/prisma/client.js';
 import type { AuthorizedSpace } from '../../../platform/authorization/authorized-space.js';
 import { DatabaseService } from '../../../platform/database/database.service.js';
@@ -70,6 +76,31 @@ export class TaskProductivityRepository
       quadrants,
     };
   }
+  async completedEstimates(
+    tx: Prisma.TransactionClient,
+    scope: AuthorizedSpace,
+    from: Date,
+    to: Date,
+  ) {
+    const rows = await tx.task.findMany({
+      where: {
+        spaceId: scope.spaceId,
+        scopeId: null,
+        deletedAt: null,
+        status: 'DONE',
+        completedAt: { gte: from, lt: to },
+      },
+      select: { id: true, category: true, estimatedMinutes: true },
+      orderBy: { id: 'asc' },
+      take: 10001,
+    });
+    if (rows.length > 10000) throw new BadRequestException();
+    return rows.map((r) => ({
+      taskId: r.id,
+      category: r.category,
+      estimatedMinutes: r.estimatedMinutes,
+    }));
+  }
   run<T>(
     scope: AuthorizedSpace,
     work: (tx: TaskProductivityTransaction) => Promise<T>,
@@ -101,8 +132,73 @@ export class TaskProductivityRepository
               row.occurrence?.state === 'CANCELED',
           };
         };
+        const updated = async (
+          id: string,
+          revision: number,
+          fields: Array<
+            'estimatedMinutes' | 'important' | 'urgent' | 'category'
+          >,
+        ) => {
+          await writeAudit(tx, {
+            action: 'TASK_PRODUCTIVITY_UPDATE',
+            outcome: 'SUCCEEDED',
+            actorUserId: scope.actor.userId,
+            resourceId: id,
+            requestId: scope.actor.requestId,
+            correlationId: scope.actor.correlationId,
+            productivityFields: fields,
+          });
+          await appendOutbox(tx, scope, {
+            type: 'task.updated',
+            version: 1,
+            aggregateId: id,
+            payload: {},
+          });
+          await appendSyncChanges(tx, scope, [
+            { entity: 'TASK', resourceId: id, revision: revision + 1 },
+          ]);
+        };
+        const category = async (id: string) => {
+          const row = await read(id);
+          const { category } = await tx.task.findFirstOrThrow({
+            where: { spaceId: scope.spaceId, id },
+            select: { category: true },
+          });
+          return {
+            ...TaskCategoryViewSchema.parse({
+              taskId: id,
+              revision: row.revision,
+              category,
+            }),
+            unavailable: row.unavailable,
+          };
+        };
         return work({
           read,
+          category,
+          setCategory: async (
+            id: string,
+            revision: number,
+            value: TaskCategoryView['category'],
+          ) => {
+            if (
+              (
+                await tx.task.updateMany({
+                  where: {
+                    spaceId: scope.spaceId,
+                    id,
+                    revision,
+                    scopeId: null,
+                  },
+                  data: { category: value, revision: { increment: 1 } },
+                })
+              ).count !== 1
+            )
+              throw new ConflictException();
+            await updated(id, revision, ['category']);
+            const { unavailable: _, ...rest } = await category(id);
+            return rest;
+          },
           update: async (
             id: string,
             revision: number,
@@ -130,24 +226,7 @@ export class TaskProductivityRepository
               ).count !== 1
             )
               throw new ConflictException();
-            await writeAudit(tx, {
-              action: 'TASK_PRODUCTIVITY_UPDATE',
-              outcome: 'SUCCEEDED',
-              actorUserId: scope.actor.userId,
-              resourceId: id,
-              requestId: scope.actor.requestId,
-              correlationId: scope.actor.correlationId,
-              productivityFields: fields,
-            });
-            await appendOutbox(tx, scope, {
-              type: 'task.updated',
-              version: 1,
-              aggregateId: id,
-              payload: {},
-            });
-            await appendSyncChanges(tx, scope, [
-              { entity: 'TASK', resourceId: id, revision: revision + 1 },
-            ]);
+            await updated(id, revision, fields);
             const { unavailable: _, ...rest } = await read(id);
             return rest;
           },

@@ -25,6 +25,10 @@ const known = [
   'Note_spaceId_goalId_fkey',
   'ProjectGoal_spaceId_scopeId_goalId_fkey',
   'ResourceGrantOffer_spaceId_scopeId_goalId_fkey',
+  // Team scope only: a Personal Goal never satisfies (spaceId, scopeId, goalId).
+  'TeamKeyResult_goal',
+  // Company scope only: a Personal Goal never satisfies (spaceId, scopeId, goalId).
+  'CompanyGoal_goal',
 ];
 @Injectable()
 export class PersonalGoalTransferRepository extends PersonalGoalTransfer {

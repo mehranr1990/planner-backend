@@ -33,6 +33,13 @@ import { testApplication } from '../support/application.js';
 import { migrationSandbox } from '../../../../tooling/testing/migration-sandbox.js';
 import { isolatedTestDatabaseUrl } from '../../../../tooling/testing/test-database.js';
 import { ProjectsService } from '../../src/modules/projects/public/index.js';
+import { ProjectOverviewService } from '../../src/modules/projects/application/project-overview.service.js';
+import { WorkService } from '../../src/modules/projects/public/index.js';
+import {
+  ProjectPlansService,
+  ProjectToolsService,
+  ProjectWorkMetricsService,
+} from '../../src/modules/projects/public/index.js';
 import * as c from '@mehran/api-contracts';
 import type { MemberRole } from '../../src/modules/spaces/domain/shared-policy.js';
 
@@ -370,6 +377,477 @@ describe('P2-03 independent Projects and authorized shared sources', () => {
     if (!('grant' in accepted)) throw new Error('Expected accepted grant');
     return { offer, accepted };
   }
+  it('coverage matrix R1 returns current self authority without exposing account identity or grant scope escalation', async () => {
+    const overview = app.get(ProjectOverviewService),
+      p = await project();
+    const own = await overview.accessMe(owner.actor, p.id);
+    expect(own).toMatchObject({
+      role: 'OWNER',
+      state: 'ACTIVE',
+      scope: 'FULL',
+      projectState: 'ACTIVE',
+    });
+    expect(own.capabilities).toContain('settings.manage');
+    expect(own.capabilities).toContain('meeting.create');
+    expect(JSON.stringify(own)).not.toContain(owner.actor.userId);
+    const admitted = await join(p.id);
+    const mine = await overview.accessMe(member.actor, p.id);
+    expect(mine.accessId).toBe(admitted.id);
+    expect(mine.capabilities).toContain('task.update');
+    expect(mine.capabilities).not.toContain('settings.manage');
+    expect(mine.capabilities).not.toContain('meeting.create');
+    await expect(overview.accessMe(outsider.actor, p.id)).rejects.toThrow();
+    await grant(p.id, { kind: 'PROJECT', id: p.id });
+    expect(await overview.accessMe(outsider.actor, p.id)).toMatchObject({
+      role: null,
+      scope: 'PROJECT',
+      capabilities: ['task.read'],
+    });
+    await projects.lifecycle(owner.actor, p.id, 1, 'archive');
+    expect(
+      (await overview.accessMe(owner.actor, p.id)).capabilities,
+    ).not.toContain('task.update');
+    await request(app.getHttpServer())
+      .get('/api/v1/projects/' + p.id + '/access/me')
+      .set('Cookie', owner.cookie)
+      .expect(200);
+  });
+
+  it('coverage matrix R3 stores declared planning dates and notes without changing source task schedules', async () => {
+    const overview = app.get(ProjectOverviewService),
+      p = await project(),
+      t = await task(p.id);
+    const schedule = await app
+      .get(WorkService)
+      .schedule(owner.actor, p.id, t.id);
+    const metadata = await overview.patchMetadata(owner.actor, p.id, 1, {
+      startDate: '2026-11-01',
+      endDate: '2026-12-31',
+      statusNote: 'Declared plan, no inferred health',
+    });
+    expect(metadata).toMatchObject({
+      startDate: '2026-11-01',
+      endDate: '2026-12-31',
+      statusNote: 'Declared plan, no inferred health',
+    });
+    await expect(
+      overview.patchMetadata(owner.actor, p.id, 2, { endDate: '2026-10-01' }),
+    ).rejects.toThrow();
+    expect(
+      await app.get(WorkService).schedule(owner.actor, p.id, t.id),
+    ).toEqual(schedule);
+    expect(
+      (
+        await overview.patchMetadata(owner.actor, p.id, 2, {
+          startDate: null,
+          endDate: null,
+          statusNote: null,
+        })
+      ).statusNote,
+    ).toBeNull();
+  });
+
+  it('coverage matrix R8 exposes safe distinct dependency diagnostics in the existing error envelope', async () => {
+    const tools = app.get(ProjectToolsService),
+      p = await project(),
+      a = await task(p.id),
+      b = await task(p.id);
+    const edge = {
+      predecessorId: a.id,
+      successorId: b.id,
+      kind: 'FS' as const,
+      lagMinutes: 0,
+    };
+    await tools.dependency(owner.actor, p.id, { id: randomUUID(), ...edge });
+    const duplicate = await request(app.getHttpServer())
+      .post('/api/v1/projects/' + p.id + '/dependencies')
+      .set('Cookie', owner.cookie)
+      .set('Origin', origin)
+      .send({ id: randomUUID(), ...edge })
+      .expect(400);
+    expect(duplicate.body.error).toMatchObject({
+      code: 'VALIDATION_ERROR',
+      details: [{ path: 'dependencies', code: 'DEPENDENCY_DUPLICATE' }],
+    });
+    const cycle = await request(app.getHttpServer())
+      .post('/api/v1/projects/' + p.id + '/dependencies')
+      .set('Cookie', owner.cookie)
+      .set('Origin', origin)
+      .send({
+        id: randomUUID(),
+        ...edge,
+        predecessorId: b.id,
+        successorId: a.id,
+      })
+      .expect(400);
+    expect(cycle.body.error.details).toEqual([
+      { path: 'dependencies', code: 'DEPENDENCY_CYCLE' },
+    ]);
+  });
+
+  it('coverage matrix R9 lists captured historical reports with current source authorization and scoped cursors', async () => {
+    const metrics = app.get(ProjectWorkMetricsService),
+      p = await project(),
+      t = await task(p.id);
+    const window = {
+      fromAt: new Date(Date.now() - 86400000).toISOString(),
+      toAt: new Date(Date.now() + 86400000).toISOString(),
+    };
+    await metrics.createSnapshot(
+      owner.actor,
+      p.id,
+      { id: randomUUID(), ...window },
+      randomUUID(),
+    );
+    await projects.patchTask(
+      owner.actor,
+      p.id,
+      t.id,
+      t.revision,
+      { status: 'DONE' },
+      randomUUID(),
+    );
+    await metrics.createSnapshot(
+      owner.actor,
+      p.id,
+      { id: randomUUID(), ...window },
+      randomUUID(),
+    );
+    const first = await metrics.listSnapshots(owner.actor, p.id, { limit: 1 });
+    expect(first.nextCursor).not.toBeNull();
+    const second = await metrics.listSnapshots(owner.actor, p.id, {
+      limit: 1,
+      after: first.nextCursor!,
+    });
+    expect(first.items[0]!.id).not.toBe(second.items[0]!.id);
+    expect(
+      [
+        first.items[0]!.report.statusCounts.DONE,
+        second.items[0]!.report.statusCounts.DONE,
+      ].sort(),
+    ).toEqual([0, 1]);
+    await expect(
+      metrics.listSnapshots(outsider.actor, p.id, { limit: 25 }),
+    ).rejects.toThrow();
+    const other = await project();
+    await expect(
+      metrics.listSnapshots(owner.actor, other.id, {
+        limit: 1,
+        after: first.nextCursor!,
+      }),
+    ).rejects.toThrow();
+    await request(app.getHttpServer())
+      .get('/api/v1/projects/' + p.id + '/reports/snapshots')
+      .set('Cookie', owner.cookie)
+      .expect(200);
+  });
+
+  it('coverage matrix R10 inspects bounded CSV without creating a plan or any source data', async () => {
+    const plans = app.get(ProjectPlansService),
+      p = await project();
+    const taskCount = await client.task.count(),
+      planCount = await client.projectChangePlan.count();
+    const result = await plans.inspectCsv(owner.actor, p.id, {
+      csv: '\uFEFFTitle,Owner\r\n"quoted, value",person\r\nsecond,other',
+    });
+    expect(result).toMatchObject({
+      columns: ['Title', 'Owner'],
+      rowCount: 2,
+      sampleRows: [
+        ['quoted, value', 'person'],
+        ['second', 'other'],
+      ],
+      samplesTruncated: false,
+      errors: [],
+    });
+    expect(
+      (await plans.inspectCsv(owner.actor, p.id, { csv: 'title\n"unclosed' }))
+        .errors[0]!.code,
+    ).toBe('CSV_SYNTAX');
+    expect(
+      (
+        await plans.inspectCsv(owner.actor, p.id, {
+          csv: 'title\n' + 'x'.repeat(2100),
+        })
+      ).samplesTruncated,
+    ).toBe(true);
+    await join(p.id);
+    await expect(
+      plans.inspectCsv(member.actor, p.id, { csv: 'title\nx' }),
+    ).rejects.toThrow();
+    await expect(
+      plans.inspectCsv(outsider.actor, p.id, { csv: 'title\nx' }),
+    ).rejects.toThrow();
+    await request(app.getHttpServer())
+      .post('/api/v1/projects/' + p.id + '/change-plans/csv/inspection')
+      .set('Cookie', owner.cookie)
+      .set('Origin', origin)
+      .send({ csv: 'title\none' })
+      .expect(200);
+    expect(await client.task.count()).toBe(taskCount);
+    expect(await client.projectChangePlan.count()).toBe(planCount);
+  });
+
+  it('coverage matrix R11 lists handover history only for the current Project owner', async () => {
+    const overview = app.get(ProjectOverviewService),
+      p = await project(),
+      admitted = await join(p.id);
+    const offer = await service.createHandover(
+      owner.actor,
+      p.id,
+      { successorAccessId: admitted.id },
+      randomUUID(),
+    );
+    expect(
+      (await overview.handovers(owner.actor, p.id, { limit: 25 })).items[0],
+    ).toMatchObject({ id: offer.id, state: 'PENDING' });
+    await expect(
+      overview.handovers(member.actor, p.id, { limit: 25 }),
+    ).rejects.toThrow();
+    await expect(
+      overview.handovers(outsider.actor, p.id, { limit: 25 }),
+    ).rejects.toThrow();
+    await service.decideHandover(
+      member.actor,
+      p.id,
+      offer.id,
+      offer.revision,
+      'accept',
+      password,
+    );
+    const history = await overview.handovers(member.actor, p.id, { limit: 25 });
+    expect(history.items[0]).toMatchObject({ id: offer.id, state: 'ACCEPTED' });
+    await expect(
+      overview.handovers(owner.actor, p.id, { limit: 25 }),
+    ).rejects.toThrow();
+    await request(app.getHttpServer())
+      .get('/api/v1/projects/' + p.id + '/ownership-handovers')
+      .set('Cookie', member.cookie)
+      .expect(200);
+  });
+
+  it('frontend contract metadata preserves legacy fields, concurrency, RBAC and database checks', async () => {
+    const overview = app.get(ProjectOverviewService),
+      p = await project();
+    const before = await overview.metadata(owner.actor, p.id);
+    expect(before).toMatchObject({
+      key: null,
+      color: null,
+      summary: null,
+      status: 'ACTIVE',
+      revision: 1,
+    });
+    const changed = await overview.patchMetadata(owner.actor, p.id, 1, {
+      key: 'PLAN',
+      color: '#12abEF',
+      summary: 'One canonical description',
+    });
+    expect(changed).toMatchObject({
+      key: 'PLAN',
+      color: '#12abEF',
+      summary: 'One canonical description',
+      revision: 2,
+    });
+    expect((await projects.read(owner.actor, p.id)).description).toBe(
+      changed.summary,
+    );
+    expect(
+      c.ProjectSchema.safeParse(await projects.read(owner.actor, p.id)).success,
+    ).toBe(true);
+    await expect(
+      overview.patchMetadata(owner.actor, p.id, 1, { key: null }),
+    ).rejects.toThrow();
+    await join(p.id);
+    await expect(
+      overview.patchMetadata(member.actor, p.id, 2, { key: 'ESCALATE' }),
+    ).rejects.toThrow();
+    await expect(overview.metadata(outsider.actor, p.id)).rejects.toThrow();
+    await expect(
+      client.project.update({ where: { id: p.id }, data: { color: 'red' } }),
+    ).rejects.toThrow();
+    await expect(
+      client.project.update({ where: { id: p.id }, data: { key: 'bad key' } }),
+    ).rejects.toThrow();
+    const other = await project();
+    await overview.patchMetadata(owner.actor, other.id, 1, { key: 'PLAN' }); // display labels are not globally unique
+    const response = await request(app.getHttpServer())
+      .get('/api/v1/projects/' + p.id + '/metadata')
+      .set('Cookie', owner.cookie)
+      .expect(200);
+    expect(response.headers.etag).toBe('"2"');
+    await request(app.getHttpServer())
+      .patch('/api/v1/projects/' + p.id + '/metadata')
+      .set('Cookie', owner.cookie)
+      .set('Origin', origin)
+      .set('If-Match', '"2"')
+      .send({ status: 'DONE' })
+      .expect(400);
+    await request(app.getHttpServer())
+      .patch('/api/v1/projects/' + p.id + '/metadata')
+      .set('Cookie', owner.cookie)
+      .set('Origin', origin)
+      .set('If-Match', '"2"')
+      .send({ key: null, color: null })
+      .expect(200);
+    await projects.lifecycle(owner.actor, p.id, 3, 'archive');
+    expect((await overview.metadata(owner.actor, p.id)).status).toBe(
+      'ARCHIVED',
+    );
+  });
+
+  it('frontend contract members returns names only with scoped pagination and current admission checks', async () => {
+    const overview = app.get(ProjectOverviewService),
+      p = await project();
+    const admitted = await join(p.id);
+    await client.user.update({
+      where: { id: member.actor.userId },
+      data: {
+        name: 'Display name only',
+        image: 'https://private.example.test/profile',
+      },
+    });
+    const all = await overview.members(owner.actor, p.id, { limit: 100 });
+    const display = all.items.find((v) => v.id === admitted.id)!;
+    expect(display).toMatchObject({
+      actorId: admitted.actorId,
+      displayName: 'Display name only',
+      role: 'MEMBER',
+    });
+    expect(all.items.find((v) => v.role === 'OWNER')).toBeDefined();
+    const serialized = JSON.stringify(all);
+    for (const privateValue of [
+      member.email,
+      member.actor.userId,
+      'https://private.example.test/profile',
+    ])
+      expect(serialized).not.toContain(privateValue);
+    expect(Object.keys(display).sort()).toEqual(
+      Object.keys(c.ProjectMemberDisplaySchema.shape).sort(),
+    );
+    const page = await overview.members(member.actor, p.id, { limit: 1 });
+    expect(page.nextCursor).not.toBeNull();
+    const next = await overview.members(member.actor, p.id, {
+      limit: 1,
+      after: page.nextCursor!,
+    });
+    expect(next.items).toHaveLength(1);
+    expect(next.items[0]!.id).not.toBe(page.items[0]!.id);
+    const other = await project();
+    await expect(
+      overview.members(owner.actor, other.id, {
+        limit: 1,
+        after: page.nextCursor!,
+      }),
+    ).rejects.toThrow();
+    await join(p.id, viewer, 'VIEWER');
+    await expect(
+      overview.members(member.actor, p.id, {
+        limit: 1,
+        after: page.nextCursor!,
+      }),
+    ).rejects.toThrow();
+    await grant(p.id, { kind: 'PROJECT', id: p.id });
+    await expect(
+      overview.members(outsider.actor, p.id, { limit: 25 }),
+    ).rejects.toThrow();
+    await expect(
+      overview.metadata(outsider.actor, p.id),
+    ).resolves.toHaveProperty('id', p.id);
+    await service.changeMembership(owner.actor, p.id, admitted.id, 1, {
+      state: 'SUSPENDED',
+      memberRole: 'MEMBER',
+    });
+    expect(
+      (await overview.members(owner.actor, p.id, { limit: 100 })).items.some(
+        (v) => v.id === admitted.id,
+      ),
+    ).toBe(false);
+    await expect(
+      overview.members(member.actor, p.id, { limit: 25 }),
+    ).rejects.toThrow();
+    const http = await request(app.getHttpServer())
+      .get('/api/v1/projects/' + p.id + '/members')
+      .set('Cookie', owner.cookie)
+      .query({ limit: 1 })
+      .expect(200);
+    expect(http.headers['cache-control']).toBe('no-store');
+  });
+
+  it('frontend contract dashboard measures real project tasks and denies grants and outsiders', async () => {
+    const overview = app.get(ProjectOverviewService),
+      p = await project();
+    const window = {
+      fromAt: new Date(Date.now() - 86400000).toISOString(),
+      toAt: new Date(Date.now() + 86400000).toISOString(),
+    };
+    expect(
+      (await overview.dashboard(owner.actor, p.id, window)).progress,
+    ).toMatchObject({ eligibleTasks: 0, percent: null });
+    const open = await task(p.id),
+      done = await task(p.id),
+      canceled = await task(p.id);
+    await projects.patchTask(
+      owner.actor,
+      p.id,
+      done.id,
+      1,
+      { status: 'DONE' },
+      randomUUID(),
+    );
+    await projects.patchTask(
+      owner.actor,
+      p.id,
+      canceled.id,
+      1,
+      { status: 'CANCELED' },
+      randomUUID(),
+    );
+    await app.get(WorkService).schedule(owner.actor, p.id, open.id, {
+      revision: open.revision,
+      value: {
+        dueAt: new Date(Date.now() - 3600000).toISOString(),
+        plannedStartAt: null,
+        scheduledDate: null,
+      },
+    });
+    const other = await project();
+    await task(other.id);
+    const result = await overview.dashboard(owner.actor, p.id, window);
+    expect(result.report).toMatchObject({
+      taskCount: 3,
+      statusCounts: { OPEN: 1, IN_PROGRESS: 0, DONE: 1, CANCELED: 1 },
+      unknownEstimates: 3,
+    });
+    expect(result.progress).toMatchObject({
+      completedTasks: 1,
+      eligibleTasks: 2,
+      percent: 50,
+    });
+    expect(result.health).toMatchObject({
+      overdueTaskCount: 1,
+      openRiskCount: 0,
+      openIssueCount: 0,
+    });
+    await expect(
+      overview.dashboard(outsider.actor, p.id, window),
+    ).rejects.toThrow();
+    await grant(p.id, { kind: 'PROJECT', id: p.id });
+    await expect(
+      overview.dashboard(outsider.actor, p.id, window),
+    ).rejects.toThrow();
+    await join(p.id, viewer, 'VIEWER');
+    await request(app.getHttpServer())
+      .get('/api/v1/projects/' + p.id + '/dashboard')
+      .set('Cookie', viewer.cookie)
+      .query(window)
+      .expect(200);
+    await request(app.getHttpServer())
+      .get('/api/v1/projects/' + p.id + '/dashboard')
+      .set('Cookie', viewer.cookie)
+      .query({ ...window, extra: 'reject' })
+      .expect(400);
+  });
+
   it('creates a complete independent Project atomically, preserves stable creation replay and owner usage without Team/Company', async () => {
     const input = {
         id: randomUUID(),

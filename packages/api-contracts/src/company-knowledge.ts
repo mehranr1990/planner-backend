@@ -156,6 +156,7 @@ export const CompanyPortfolioReportSchema = z.strictObject({
 });
 export const CompanyAuditQuerySchema = CompanyStaffPageQuerySchema;
 export const CompanyAuditEventSchema = z.strictObject({
+  actorDisplayName: z.string().nullable().optional(),
   id: uuid,
   actorId: uuid,
   action: z.string(),
@@ -170,6 +171,70 @@ export const CompanyExportInputSchema = CompanyReportQuerySchema.safeExtend({
   dataset: z.enum(['KNOWLEDGE', 'OPERATIONS', 'FINANCE', 'PORTFOLIO', 'AUDIT']),
   format: z.enum(['JSON', 'CSV']),
 });
+export const CompanyExportPublicationSchema = z.strictObject({
+  id: uuid,
+  scopeId: uuid,
+  state: z.literal('PUBLISHED'),
+  publishedAt: z.iso.datetime(),
+  downloadAvailable: z.literal(false),
+});
+export const CompanyExportPublicationPageSchema = z.strictObject({
+  items: z.array(CompanyExportPublicationSchema).max(100),
+  nextCursor: z.string().nullable(),
+});
+const exportHeader = z.strictObject({
+  schemaVersion: z.literal(1),
+  spaceId: uuid,
+  scopeId: uuid,
+  generatedAt: z.iso.datetime(),
+  ...CompanyReportQuerySchema.shape,
+});
+export const CompanyExportJsonSchema = z.discriminatedUnion('dataset', [
+  z.strictObject({
+    schemaVersion: z.literal(1),
+    dataset: z.literal('OPERATIONS'),
+    data: CompanyOperationsReportSchema,
+  }),
+  z.strictObject({
+    schemaVersion: z.literal(1),
+    dataset: z.literal('FINANCE'),
+    data: CompanyFinanceReportSchema,
+  }),
+  z.strictObject({
+    schemaVersion: z.literal(1),
+    dataset: z.literal('PORTFOLIO'),
+    data: CompanyPortfolioReportSchema.omit({ basis: true }),
+  }),
+  z.strictObject({
+    schemaVersion: z.literal(1),
+    dataset: z.literal('AUDIT'),
+    data: exportHeader.extend({
+      items: z.array(CompanyAuditEventSchema).max(10000),
+    }),
+  }),
+  z.strictObject({
+    schemaVersion: z.literal(1),
+    dataset: z.literal('KNOWLEDGE'),
+    data: exportHeader.extend({
+      items: z
+        .array(
+          z.strictObject({
+            id: uuid,
+            folderId: uuid,
+            versionId: uuid,
+            title,
+            description,
+            filename: z.string(),
+            mimeType: z.string(),
+            size: z.number().nullable(),
+            sha256: z.string().nullable(),
+            publishedAt: z.iso.datetime(),
+          }),
+        )
+        .max(10000),
+    }),
+  }),
+]);
 
 export const CompanyKnowledgePublishSchema = z.strictObject({
   documentRevision: z.number().int().positive(),

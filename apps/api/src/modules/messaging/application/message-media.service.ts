@@ -46,6 +46,72 @@ export function messageVersion(expected: number | undefined, actual: number) {
 type Page = z.infer<typeof c.ConversationPageQuerySchema>;
 @Injectable()
 export class MessageMediaService {
+  async conversations(actor: RequestActor, q: Page) {
+    const page = await this.base.list(actor, q, (id) =>
+      this.advanced.run(actor, id, 'messaging.summary.read', async (s, m) => {
+        const progress = await s.tx.messageProgress.findUnique({
+          where: {
+            memberId_generation: { memberId: m.id, generation: m.generation },
+          },
+        });
+        const preference = await s.tx.messageNoticePreference.findUnique({
+          where: {
+            memberId_generation: { memberId: m.id, generation: m.generation },
+          },
+        });
+        const readThrough =
+          progress && progress.readThrough > m.historyAfter
+            ? progress.readThrough
+            : m.historyAfter;
+        let lastMessage: z.infer<
+          typeof c.ConversationSummarySchema
+        >['lastMessage'] = null;
+        let unreadCount = 0,
+          before = s.conv.lastSequence + 1n;
+        for (;;) {
+          const rows = await s.tx.messageEntry.findMany({
+            where: {
+              conversationId: id,
+              sequence: { gt: m.historyAfter, lt: before },
+            },
+            orderBy: { sequence: 'desc' },
+            take: 100,
+          });
+          for (const row of rows) {
+            if (lastMessage && row.sequence <= readThrough) break;
+            const value = await this.view(s, m, row);
+            if (value.state !== 'VISIBLE') continue;
+            lastMessage ??= {
+              id: value.id,
+              memberId: value.memberId,
+              kind: value.kind,
+              text: value.text,
+              createdAt: value.createdAt,
+            };
+            if (row.sequence > readThrough && row.memberId !== m.id)
+              unreadCount++;
+          }
+          if (
+            rows.length < 100 ||
+            (lastMessage && rows.at(-1)!.sequence <= readThrough)
+          )
+            break;
+          before = rows.at(-1)!.sequence;
+        }
+        const lastActivityAt =
+          lastMessage?.createdAt ?? s.conv.createdAt.toISOString();
+        return c.ConversationSummarySchema.parse({
+          ...(await this.base.view(s)),
+          lastMessage,
+          unreadCount,
+          muted: preference?.mode === 'MUTED',
+          lastActivityAt,
+          updatedAt: lastActivityAt,
+        });
+      }),
+    );
+    return c.ConversationSummaryPageSchema.parse(page);
+  }
   private readonly fileProofs = new WeakMap<Op, string>();
   async fileRead(s: Op) {
     if (!s.proof) throw new NotFoundException();

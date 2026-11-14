@@ -1,3 +1,4 @@
+import { OwnedGoals } from './application/owned-goals.js';
 import { GoalCustodyGraph } from './application/goals-custody-graph.js';
 import { GoalsData } from './public/personal-data.js';
 import { PersonalGoalTransfer } from './public/personal-transfer.js';
@@ -49,6 +50,7 @@ export class GoalsModule {
         { provide: GoalsData, useClass: GoalsDataRepository },
         { provide: AnalyticsGoals, useClass: AnalyticsGoalsRepository },
         GoalsService,
+        OwnedGoals,
         { provide: PersonalGoals, useClass: PersonalGoalsRepository },
         { provide: GOALS_REPOSITORY, useClass: GoalsRepository },
       ],
@@ -61,6 +63,7 @@ export class GoalsModule {
         SharedGoals,
         PersonalGoalTransfer,
         SharedGoalsCleanup,
+        OwnedGoals,
       ],
     };
   }

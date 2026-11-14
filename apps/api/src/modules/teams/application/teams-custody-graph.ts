@@ -60,6 +60,111 @@ const tables: readonly CustodyGraphTable[] = [
     move: ['spaceId'],
   },
   {
+    table: 'TeamSetting',
+    select: ['spaceId'],
+    move: ['spaceId'],
+  },
+  {
+    table: 'TeamPresence',
+    select: ['spaceId'],
+    move: ['spaceId'],
+  },
+  {
+    table: 'TeamCheckinReply',
+    select: ['spaceId'],
+    move: ['spaceId'],
+  },
+  {
+    table: 'TeamCheckinComment',
+    select: ['spaceId'],
+    move: ['spaceId'],
+  },
+  {
+    table: 'TeamTaskState',
+    select: ['spaceId'],
+    move: ['spaceId'],
+  },
+  {
+    table: 'TeamThanks',
+    select: ['spaceId'],
+    move: ['spaceId'],
+  },
+  {
+    table: 'TeamThanksRecipient',
+    select: ['spaceId'],
+    move: ['spaceId'],
+  },
+  {
+    table: 'TeamFeedbackRequest',
+    select: ['spaceId'],
+    move: ['spaceId'],
+  },
+  {
+    table: 'TeamFeedbackNote',
+    select: ['spaceId'],
+    move: ['spaceId'],
+  },
+  {
+    table: 'TeamTaskAssignment',
+    select: ['spaceId'],
+    move: ['spaceId'],
+  },
+  {
+    table: 'TeamTaskAssignmentEvent',
+    select: ['spaceId'],
+    move: ['spaceId'],
+  },
+  {
+    table: 'TeamTaskPoints',
+    select: ['spaceId'],
+    move: ['spaceId'],
+  },
+  {
+    table: 'TeamTimeOff',
+    select: ['spaceId'],
+    move: ['spaceId'],
+  },
+  {
+    table: 'TeamTimeOffEvent',
+    select: ['spaceId'],
+    move: ['spaceId'],
+  },
+  {
+    table: 'TeamKeyResult',
+    select: ['spaceId'],
+    move: ['spaceId'],
+  },
+  {
+    table: 'TeamKeyResultCheckin',
+    select: ['spaceId'],
+    move: ['spaceId'],
+  },
+  {
+    table: 'TeamMemberProfile',
+    select: ['spaceId'],
+    move: ['spaceId'],
+  },
+  {
+    table: 'TeamNotification',
+    select: ['spaceId'],
+    move: ['spaceId'],
+  },
+  {
+    table: 'TeamFileVersion',
+    select: ['spaceId'],
+    move: ['spaceId'],
+  },
+  {
+    table: 'TeamFile',
+    select: ['spaceId'],
+    move: ['spaceId'],
+  },
+  {
+    table: 'TeamFileFolder',
+    select: ['spaceId'],
+    move: ['spaceId'],
+  },
+  {
     table: 'TeamCompanyAssociation',
     select: ['spaceId'],
     move: ['spaceId'],

@@ -1,5 +1,86 @@
 import { createHash } from 'node:crypto';
 import { historicalCompanyCustodyResponses } from './company-custody-responses.ts';
+import fs from 'node:fs';
+
+// Owner-approved consolidated API gaps (2026-11-13): exact success-response
+// transitions only. Keep every released baseline, request and security hash intact.
+const responseExtensions = JSON.parse(
+  fs.readFileSync(
+    new URL('./consolidated-api-response-extensions.json', import.meta.url),
+    'utf8',
+  ),
+) as Record<string, { previous: string; approved: string }>;
+Object.assign(
+  responseExtensions,
+  JSON.parse(
+    fs.readFileSync(
+      new URL(
+        './social-integration-api-response-extensions.json',
+        import.meta.url,
+      ),
+      'utf8',
+    ),
+  ) as Record<string, { previous: string; approved: string }>,
+);
+// Owner-approved stabilization (2026-11-13): exact transitions that only add
+// an optional request field/alternative (M-X4) and response fields (M-A1).
+Object.assign(
+  responseExtensions,
+  JSON.parse(
+    fs.readFileSync(
+      new URL('./stabilization-api-extensions.json', import.meta.url),
+      'utf8',
+    ),
+  ) as Record<string, { previous: string; approved: string }>,
+);
+
+// Owner-approved Company completion (2026-11-13): resource responses add the
+// nullable manager-defined typeId only (C-M4). Exact transitions; nothing else.
+Object.assign(
+  responseExtensions,
+  JSON.parse(
+    fs.readFileSync(
+      new URL('./company-completion-api-extensions.json', import.meta.url),
+      'utf8',
+    ),
+  ) as Record<string, { previous: string; approved: string }>,
+);
+
+// Owner-approved backend completion (2026-11-13): exact transitions that only add
+// optional fields (LS settings, M-X6/M-X7 minutes attribution, AN Thanks Project,
+// approval-history reason) or the required rejection reason (ER/AT) to requests.
+Object.assign(
+  responseExtensions,
+  JSON.parse(
+    fs.readFileSync(
+      new URL('./backend-completion-api-extensions.json', import.meta.url),
+      'utf8',
+    ),
+  ) as Record<string, { previous: string; approved: string }>,
+);
+
+// Owner-approved gap closure (2026-11-13): KPI `goals` becomes a nullable measured summary (OD-2).
+Object.assign(
+  responseExtensions,
+  JSON.parse(
+    fs.readFileSync(
+      new URL('./gap-closure-api-extensions.json', import.meta.url),
+      'utf8',
+    ),
+  ) as Record<string, { previous: string; approved: string }>,
+);
+
+// Owner-approved final closure (2026-11-14): Insights patterns add the measured 'estimates'
+// pattern (B4); room bookings add the nullable, privacy-filtered booker title.
+Object.assign(
+  responseExtensions,
+  JSON.parse(
+    fs.readFileSync(
+      new URL('./final-closure-api-extensions.json', import.meta.url),
+      'utf8',
+    ),
+  ) as Record<string, { previous: string; approved: string }>,
+);
 
 type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
 function stable(value: Json): string {
@@ -127,7 +208,13 @@ export function assertApiCompatible(
 ): void {
   const current = apiSignatures(historicalCompanyCustodyResponses(document));
   for (const [contract, hash] of Object.entries(baseline)) {
-    if (current[contract] !== hash)
+    const extension = responseExtensions[contract];
+    if (
+      current[contract] !== hash &&
+      !(
+        extension?.previous === hash && extension.approved === current[contract]
+      )
+    )
       throw new Error(
         `Approved API compatibility contract changed: ${contract}`,
       );

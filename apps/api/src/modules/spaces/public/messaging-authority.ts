@@ -24,6 +24,9 @@ export class MessagingAuthority {
     @Inject(SharedKernel) private readonly kernel: SharedKernel,
     @Inject(DatabaseService) private readonly db: DatabaseService,
   ) {}
+  displayName(tx: Prisma.TransactionClient, spaceId: string, actorId: string) {
+    return this.collaboration.displayName(tx, spaceId, actorId);
+  }
   async personal(tx: Prisma.TransactionClient, userId: string) {
     await this.kernel.verifiedRecipient(tx, userId);
     const space = await tx.space.findFirst({
@@ -173,6 +176,16 @@ export class MessagingAuthority {
     return (
       await this.db.client.sharedActor.findMany({
         where: { id: { in: ids } },
+        select: { userId: true },
+      })
+    ).flatMap((row) => (row.userId ? [row.userId] : []));
+  }
+  /** Lock hints only; `user` re-resolves inside the fenced operation. */
+  async spaceHints(spaceId: string, actorIds: string[]) {
+    if (!actorIds.length) return [];
+    return (
+      await this.db.client.sharedActor.findMany({
+        where: { id: { in: actorIds }, spaceId, state: 'ACTIVE' },
         select: { userId: true },
       })
     ).flatMap((row) => (row.userId ? [row.userId] : []));

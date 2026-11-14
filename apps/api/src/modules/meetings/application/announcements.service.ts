@@ -5,6 +5,7 @@ import {
   ConflictException,
   PayloadTooLargeException,
 } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import type { z } from 'zod';
 import * as c from '@mehran/api-contracts';
 import type {
@@ -165,6 +166,11 @@ export class AnnouncementsService {
         },
       });
     return c.AnnouncementVersionSchema.parse({
+      authorDisplayName: await this.op.authority.displayName(
+        s.tx,
+        v.publisherSpaceId,
+        v.publisherActorId,
+      ),
       id: v.id,
       announcementId: v.announcementId,
       number: v.number,
@@ -631,5 +637,119 @@ export class AnnouncementsService {
       },
       true,
     );
+  }
+  /** OD-13: in-app reminder to the eligible, unacknowledged audience; one per recipient per day. */
+  remind(actor: RequestActor, id: string, versionId: string) {
+    return this.operation(
+      actor,
+      id,
+      'announcement.remind',
+      async (s, a) => {
+        await this.op.sourceManager(s);
+        const v = await this.version(s, a, versionId, true);
+        if (v.state !== 'PUBLISHED' || !v.acknowledgement)
+          throw new ConflictException({ code: 'ACKNOWLEDGEMENT_DISABLED' });
+        const targets = await s.tx.announcementTarget.findMany({
+          where: { versionId },
+          orderBy: { accessId: 'asc' },
+          take: 1001,
+        });
+        if (targets.length > 1000) throw new PayloadTooLargeException();
+        const day = new Date(s.now.toISOString().slice(0, 10) + 'T00:00:00Z'),
+          recipients = [];
+        for (const target of targets) {
+          if (target.accessId === s.proof!.accessId) continue;
+          if (!(await this.eligible(s, target))) continue;
+          if (
+            await s.tx.announcementAcknowledgement.findFirst({
+              where: {
+                versionId,
+                accessId: target.accessId,
+                generation: target.generation,
+              },
+            })
+          )
+            continue;
+          recipients.push(target);
+        }
+        const delivered = recipients.length
+          ? (
+              await s.tx.announcementReminder.createMany({
+                data: recipients.map((t) => ({
+                  id: randomUUID(),
+                  spaceId: a.spaceId,
+                  scopeId: a.scopeId,
+                  announcementId: a.id,
+                  versionId,
+                  accessId: t.accessId,
+                  generation: t.generation,
+                  day,
+                })),
+                skipDuplicates: true,
+              })
+            ).count
+          : 0;
+        if (delivered)
+          await this.op.effect(s, 'announcement.remind', versionId);
+        return c.AnnouncementRemindResultSchema.parse({ delivered });
+      },
+      true,
+    );
+  }
+  /** The caller's own announcement reminders (current admissions only). */
+  async reminders(actor: RequestActor) {
+    const actors = await this.op.authority.actors(actor);
+    const seats = await this.op.db.client.contextAccess.findMany({
+      where: { actorId: { in: actors }, state: 'ACTIVE' },
+      select: { id: true, generation: true },
+    });
+    if (!seats.length)
+      return c.AnnouncementReminderListSchema.parse({ items: [] });
+    const rows = await this.op.db.client.announcementReminder.findMany({
+      where: {
+        OR: seats.map((x) => ({ accessId: x.id, generation: x.generation })),
+      },
+      orderBy: { id: 'asc' },
+      take: 200,
+    });
+    return c.AnnouncementReminderListSchema.parse({
+      items: rows.map((r) => ({
+        id: r.id,
+        announcementId: r.announcementId,
+        versionId: r.versionId,
+        createdAt: r.createdAt.toISOString(),
+        readAt: r.readAt?.toISOString() ?? null,
+      })),
+    });
+  }
+  async readReminder(actor: RequestActor, reminderId: string) {
+    const actors = await this.op.authority.actors(actor);
+    const row = await this.op.db.client.announcementReminder.findUnique({
+      where: { id: reminderId },
+    });
+    const seat =
+      row &&
+      (await this.op.db.client.contextAccess.findFirst({
+        where: {
+          id: row.accessId,
+          generation: row.generation,
+          state: 'ACTIVE',
+          actorId: { in: actors },
+        },
+      }));
+    if (!row || !seat) throw new NotFoundException();
+    const updated = row.readAt
+      ? row
+      : await this.op.db.client.announcementReminder.update({
+          where: { id: row.id },
+          data: { readAt: new Date() },
+        });
+    return c.AnnouncementReminderSchema.parse({
+      id: updated.id,
+      announcementId: updated.announcementId,
+      versionId: updated.versionId,
+      createdAt: updated.createdAt.toISOString(),
+      readAt: updated.readAt?.toISOString() ?? null,
+    });
   }
 }

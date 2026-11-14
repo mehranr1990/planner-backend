@@ -292,6 +292,163 @@ describe('P6-01 private social graph and approved Group admission', () => {
     await watcher?.end();
     await sandbox?.close();
   });
+  it('social integration: names belong only to authorized connection and applicant projections, never receipts', async () => {
+    const connection = await friendship();
+    const listed = (await social.list(alice.actor, page)).items.find(
+      (r) => r.id === connection.id,
+    )!;
+    expect(listed).toMatchObject({
+      requesterDisplayName: 'Private identity',
+      recipientDisplayName: 'Private identity',
+    });
+    await social.patchPrivacy(
+      bob.actor,
+      { discoverable: false },
+      randomUUID(),
+      2,
+    );
+    expect(
+      (await social.list(alice.actor, page)).items[0]!.recipientDisplayName,
+    ).toBe('Private identity');
+    expect((await social.list(carol.actor, page)).items).toEqual([]);
+    const g = await group(true);
+    const pending = await groups.join(
+      bob.actor,
+      g.id,
+      { id: randomUUID() },
+      randomUUID(),
+    );
+    await groups.patch(alice.actor, g.id, { discoverable: false }, g.revision);
+    expect(
+      (await groups.requests(alice.actor, g.id, page)).items.find(
+        (r) => r.id === pending.id,
+      )?.requesterDisplayName,
+    ).toBe('Private identity');
+    expect((await groups.requests(carol.actor, g.id, page)).items).toEqual([]);
+    await expect(groups.accessMe(bob.actor, g.id)).rejects.toMatchObject({
+      status: 404,
+    });
+    const receipts = await db.idempotencyRecord.findMany({
+      where: { actorUserId: { in: [alice.actor.userId, bob.actor.userId] } },
+    });
+    expect(JSON.stringify(receipts)).not.toContain('Private identity');
+    await groups.decideJoin(bob.actor, g.id, pending.id, 'cancel', 1);
+    expect(
+      (await groups.requests(alice.actor, g.id, page)).items.find(
+        (r) => r.id === pending.id,
+      )?.requesterDisplayName,
+    ).toBeNull();
+    await social.block(alice.actor, bob.actor.userId, randomUUID(), 1);
+    const removed = (await social.list(alice.actor, page)).items.find(
+      (r) => r.id === connection.id,
+    )!;
+    expect(removed.requesterDisplayName).toBeNull();
+    expect(removed.recipientDisplayName).toBeNull();
+  });
+  it('social integration: Group identity and capability hints follow admission, role changes and revocation', async () => {
+    const g = await group();
+    await expect(groups.accessMe(bob.actor, g.id)).rejects.toMatchObject({
+      status: 404,
+    });
+    const seat = await join(g.id);
+    const owner = await groups.accessMe(alice.actor, g.id);
+    expect(owner).toMatchObject({
+      role: 'OWNER',
+      state: 'ACTIVE',
+      groupState: 'ACTIVE',
+      capabilities: expect.arrayContaining([
+        'membership.admin',
+        'settings.manage',
+        'custody.handover',
+      ]),
+    });
+    expect(await groups.accessMe(bob.actor, g.id)).toMatchObject({
+      accessId: seat.id,
+      actorId: seat.actorId,
+      role: 'MEMBER',
+      capabilities: ['task.read', 'membership.leave'],
+    });
+    const members = await groups.members(alice.actor, g.id, page);
+    expect(
+      members.items.every((r) => r.displayName === 'Private identity'),
+    ).toBe(true);
+    expect(JSON.stringify(members)).not.toContain(bob.email);
+    expect(JSON.stringify(members)).not.toContain(bob.actor.userId);
+    const admin = await collaboration.changeMembership(
+      alice.actor,
+      g.id,
+      seat.id,
+      seat.revision,
+      { state: 'ACTIVE', memberRole: 'ADMIN' },
+    );
+    expect((await groups.accessMe(bob.actor, g.id)).capabilities).toContain(
+      'membership.member',
+    );
+    expect((await groups.accessMe(bob.actor, g.id)).capabilities).not.toContain(
+      'membership.admin',
+    );
+    await collaboration.changeMembership(
+      alice.actor,
+      g.id,
+      seat.id,
+      admin.revision,
+      { state: 'REVOKED', memberRole: 'MEMBER' },
+    );
+    await expect(groups.accessMe(bob.actor, g.id)).rejects.toMatchObject({
+      status: 404,
+    });
+  });
+  it('social integration: Group history is metadata-only, admission-bounded and excludes applicants/invitations', async () => {
+    const g = await group(true);
+    await groups.patch(
+      alice.actor,
+      g.id,
+      { description: 'PRIVATE_DESCRIPTION_SENTINEL' },
+      g.revision,
+    );
+    await groups.join(bob.actor, g.id, { id: randomUUID() }, randomUUID());
+    await groups.patch(
+      alice.actor,
+      g.id,
+      { discoverable: false },
+      (await groups.read(alice.actor, g.id)).revision,
+    );
+    await expect(groups.history(bob.actor, g.id, page)).rejects.toMatchObject({
+      status: 404,
+    });
+    const ownerHistory = await groups.history(alice.actor, g.id, { limit: 1 });
+    expect(ownerHistory.nextCursor).toBeTruthy();
+    const complete = await groups.history(alice.actor, g.id, { limit: 100 });
+    expect(complete.items.some((r) => r.action === 'social.group.update')).toBe(
+      true,
+    );
+    expect(JSON.stringify(complete)).not.toContain(
+      'PRIVATE_DESCRIPTION_SENTINEL',
+    );
+    expect(JSON.stringify(complete)).not.toContain('social.join.request');
+    expect(JSON.stringify(complete)).not.toContain(bob.actor.userId);
+    const seat = await join(g.id, carol);
+    const mine = await groups.history(carol.actor, g.id, page);
+    expect(mine.items.every((r) => r.action !== 'social.group.update')).toBe(
+      true,
+    );
+    await collaboration.changeMembership(
+      alice.actor,
+      g.id,
+      seat.id,
+      seat.revision,
+      { state: 'REVOKED', memberRole: 'MEMBER' },
+    );
+    await expect(groups.history(carol.actor, g.id, page)).rejects.toMatchObject(
+      { status: 404 },
+    );
+    await expect(
+      groups.history(alice.actor, g.id, {
+        limit: 1,
+        after: ownerHistory.nextCursor!,
+      }),
+    ).rejects.toThrow();
+  });
   it('defaults to undiscoverable and returns identical empty shapes for unknown, opted-out, self and unverified identities', async () => {
     expect(await social.privacy(bob.actor)).toEqual({
       discoverable: false,

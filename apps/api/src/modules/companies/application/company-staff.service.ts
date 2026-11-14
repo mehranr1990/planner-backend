@@ -245,6 +245,92 @@ export class CompanyStaffService implements OnModuleInit {
       },
     );
   }
+  private workDetails(r: CompanyStaffProfile) {
+    return c.CompanyWorkDetailsSchema.strip().parse({
+      ...r,
+      profileId: r.id,
+    });
+  }
+  /** C-M3: the employee or a scope manager maintains work phone, location and hours. */
+  async setWorkDetails(
+    actor: RequestActor,
+    id: string,
+    scopeId: string,
+    profileId: string,
+    revision: number,
+    input: z.infer<typeof c.CompanyWorkDetailsInputSchema>,
+  ) {
+    const body = c.CompanyWorkDetailsInputSchema.parse(input);
+    return this.op.write(
+      actor,
+      id,
+      scopeId,
+      'company.profile.workdetails',
+      profileId,
+      async (s) => {
+        const row = await this.profile(s, profileId);
+        if (!this.op.self(s, ref(row))) this.op.manage(s);
+        this.op.match(row.revision, revision);
+        if (row.redactedAt) throw new ConflictException();
+        await s.change();
+        return this.workDetails(
+          await s.tx.companyStaffProfile.update({
+            where: { id: profileId },
+            data: {
+              ...(body.workPhone !== undefined
+                ? { workPhone: body.workPhone }
+                : {}),
+              ...(body.workLocation !== undefined
+                ? { workLocation: body.workLocation }
+                : {}),
+              ...(body.workHours !== undefined
+                ? { workHours: body.workHours }
+                : {}),
+              ...this.op.changed(s),
+            },
+          }),
+        );
+      },
+    );
+  }
+  /**
+   * C-M3 public internal directory: name, position, department (scope) and
+   * work contact only. Supervisors, redacted rows and stale admissions are
+   * never projected; the ordinary directory policy still applies.
+   */
+  async directory(
+    actor: RequestActor,
+    id: string,
+    scopeId: string,
+    q: StaffPage,
+  ) {
+    return this.op.read(actor, id, scopeId, async (s) => {
+      const result = await this.op.page(s, 'company.directory', q, async () => {
+        const live = await this.op.live(s),
+          rows = await s.tx.companyStaffProfile.findMany({
+            where: { ...this.op.where(s), redactedAt: null },
+            take: 1001,
+          });
+        const out = [];
+        for (const r of rows) {
+          if (live.get(r.memberAccessId)?.generation !== r.memberGeneration)
+            continue;
+          const view = await this.profileView(s, r);
+          out.push({
+            id: r.id,
+            entry: c.CompanyDirectoryEntrySchema.strip().parse({
+              ...r,
+              profileId: r.id,
+              member: view.member,
+              workEmail: view.workEmail,
+            }),
+          });
+        }
+        return out;
+      });
+      return { ...result, items: result.items.map((r) => r.entry) };
+    });
+  }
   async eraseProfile(
     actor: RequestActor,
     id: string,
@@ -275,6 +361,9 @@ export class CompanyStaffService implements OnModuleInit {
               supervisorGeneration: null,
               workStatus: 'INACTIVE',
               workEmail: null,
+              workPhone: null,
+              workLocation: null,
+              workHours: null,
               redactedAt: s.now,
               ...this.op.changed(s),
             },
@@ -696,6 +785,9 @@ export class CompanyStaffService implements OnModuleInit {
         supervisorGeneration: null,
         workStatus: 'INACTIVE',
         workEmail: null,
+        workPhone: null,
+        workLocation: null,
+        workHours: null,
         redactedAt: new Date(),
         revision: { increment: 1 },
         updatedAt: new Date(),
@@ -715,6 +807,50 @@ export class CompanyStaffService implements OnModuleInit {
       data: {
         reason: null,
         evidence: null,
+        redactedAt: new Date(),
+        revision: { increment: 1 },
+        updatedAt: new Date(),
+      },
+    });
+    // Resource request reasons (C-M4) are free text written by the requester.
+    await tx.companyResourceRequest.updateMany({
+      where: { spaceId: id, requesterActorId: actorId, redactedAt: null },
+      data: {
+        reason: null,
+        redactedAt: new Date(),
+        revision: { increment: 1 },
+        updatedAt: new Date(),
+      },
+    });
+    const requests = await tx.companyResourceRequest.findMany({
+      where: { spaceId: id, requesterActorId: actorId },
+      select: { id: true },
+      take: 10000 + 1,
+    });
+    if (requests.length > 10000)
+      throw new ConflictException({ code: 'COMPANY_ERASURE_BOUND_EXCEEDED' });
+    await tx.companyResourceRequestEvent.updateMany({
+      where: {
+        spaceId: id,
+        reason: { not: null },
+        OR: [{ actorId }, { requestId: { in: requests.map((r) => r.id) } }],
+      },
+      data: { reason: null },
+    });
+    // ER/AT/BU decision and request reasons are free text written by the erased actor.
+    await tx.companyDecisionReason.updateMany({
+      where: { spaceId: id, authorActorId: actorId, redactedAt: null },
+      data: { reason: null, redactedAt: new Date() },
+    });
+    await tx.companyBudgetChangeRequest.updateMany({
+      where: {
+        spaceId: id,
+        redactedAt: null,
+        OR: [{ requesterActorId: actorId }, { deciderActorId: actorId }],
+      },
+      data: {
+        reason: null,
+        decisionReason: null,
         redactedAt: new Date(),
         revision: { increment: 1 },
         updatedAt: new Date(),

@@ -14,6 +14,7 @@ import {
   Injectable,
   UseGuards,
   BadRequestException,
+  HttpCode,
 } from '@nestjs/common';
 import type { CanActivate, ExecutionContext } from '@nestjs/common';
 import type { Request, Response } from 'express';
@@ -113,6 +114,13 @@ export class TeamsController {
   ) {
     return this.service.members(a, teamId, q);
   }
+  @Get(':id/access/me') accessMe(
+    @CurrentActor() a: RequestActor,
+    @Param('id', id) teamId: string,
+    @Query(empty) _q: unknown,
+  ) {
+    return this.service.accessMe(a, teamId);
+  }
   @Patch(':id/memberships/:accessId') async change(
     @CurrentActor() a: RequestActor,
     @Param('id', id) teamId: string,
@@ -147,6 +155,16 @@ export class TeamsController {
       await this.service.collaboration.createInvitation(a, teamId, b, key),
     );
     return result(res, v, v.invitation.revision);
+  }
+  @Get(':id/invitations') async pendingInvitations(
+    @CurrentActor() a: RequestActor,
+    @Param('id', id) teamId: string,
+    @Query(page) q: z.infer<typeof c.TeamPageQuerySchema>,
+  ) {
+    await this.service.hint(teamId);
+    return c.TeamInvitationPageSchema.parse(
+      await this.service.collaboration.pendingSent(a, teamId, q),
+    );
   }
   @Get(':id/invitations/:offerId') async invitation(
     @CurrentActor() a: RequestActor,
@@ -243,6 +261,14 @@ export class TeamInvitationController {
     @Inject(CollaborationService)
     private readonly service: CollaborationService,
   ) {}
+  @Get()
+  @UseGuards(VerifiedSessionGuard, TeamGuard)
+  pending(
+    @CurrentActor() a: RequestActor,
+    @Query(page) q: z.infer<typeof c.TeamPageQuerySchema>,
+  ) {
+    return this.service.pendingOffers(a, 'TEAM', q);
+  }
   @Get('preview')
   @UseGuards(TeamGuard)
   preview(
@@ -294,5 +320,29 @@ export class TeamInvitationController {
       ),
     );
     return result(res, v, v.revision);
+  }
+}
+/** OD-4 in-app delivery of a fresh one-time proof to the verified recipient. */
+@Controller('team-invitations')
+export class TeamInvitationProofController {
+  constructor(
+    @Inject(CollaborationService)
+    private readonly service: CollaborationService,
+  ) {}
+  @Post(':invitationId/proof')
+  @HttpCode(200)
+  @UseGuards(VerifiedSessionGuard, TeamGuard)
+  issueProof(
+    @CurrentActor() a: RequestActor,
+    @Param('invitationId', id) offerId: string,
+    @Headers('if-match') match: string | undefined,
+    @Body(emptyBody) _b: unknown,
+  ) {
+    return this.service.issueRecipientProof(
+      a,
+      'TEAM',
+      offerId,
+      revision(match),
+    );
   }
 }

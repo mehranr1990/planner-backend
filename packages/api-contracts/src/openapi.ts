@@ -259,6 +259,12 @@ export function createOpenApiDocument() {
       ...teamWorkPaths(),
       ...teamAnalyticsPaths(),
       ...teamInteractionsPaths(),
+      ...teamCompletionPaths(),
+      ...companyCompletionPaths(),
+      ...backendCompletionPaths(),
+      ...teamFilePaths(),
+      ...gapClosurePaths(),
+      ...finalClosurePaths(),
       ...messagingPaths(),
       ...meetingPaths(),
       ...socialPaths(),
@@ -302,6 +308,12 @@ export function createOpenApiDocument() {
 }
 
 import { teamInteractionsPaths } from './team-interactions-openapi.js';
+import { teamCompletionPaths } from './team-completion-openapi.js';
+import { companyCompletionPaths } from './company-completion-openapi.js';
+import { backendCompletionPaths } from './backend-completion-openapi.js';
+import { teamFilePaths } from './team-files-openapi.js';
+import { gapClosurePaths } from './gap-closure-openapi.js';
+import { finalClosurePaths } from './final-closure-openapi.js';
 
 import { teamLifecyclePaths } from './team-lifecycle-openapi.js';
 

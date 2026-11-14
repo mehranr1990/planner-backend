@@ -93,6 +93,72 @@ export class TeamProjects {
       allocations: eligible,
     };
   }
+  /** Active Team link and Project title. Callers must authorize an independent Project read first. */
+  async linkedProject(
+    tx: Prisma.TransactionClient,
+    teamId: string,
+    projectId: string,
+  ) {
+    const ref = await tx.teamProjectReference.findFirst({
+      where: { teamId, projectId, active: true },
+    });
+    if (!ref) return null;
+    const project = await tx.project.findUnique({
+      where: { id: projectId },
+      select: { title: true },
+    });
+    return project ? { spaceId: ref.spaceId, title: project.title } : null;
+  }
+  /** PH (owner-approved): health derived only from deadlines, recorded progress and blocked work. */
+  async health(
+    tx: Prisma.TransactionClient,
+    a: SharedAuthority,
+    teamId: string,
+    projectId: string,
+    asOf: Date,
+  ) {
+    a.require(tx, teamId, 'task.read');
+    const ref = await tx.teamProjectReference.findFirst({
+      where: { teamId, projectId, active: true },
+    });
+    if (!ref) throw new NotFoundException();
+    a.require(tx, ref.spaceId, 'task.read', undefined, projectId);
+    const project = await tx.project.findUniqueOrThrow({
+      where: { id: projectId },
+    });
+    const links = await tx.projectTask.findMany({
+      where: {
+        spaceId: ref.spaceId,
+        scopeId: projectId,
+        projectId,
+        Task: { deletedAt: null },
+      },
+      select: { taskId: true },
+      take: 10001,
+    });
+    if (links.length > 10000) throw new PayloadTooLargeException();
+    const ids = links.map((r) => r.taskId),
+      tasks = await this.work.metrics(tx, a, projectId, ids),
+      blocked = await this.work.blocked(tx, a, projectId, ids),
+      live = tasks.filter(
+        (t) => t.status === 'OPEN' || t.status === 'IN_PROGRESS',
+      ),
+      counted = tasks.filter((t) => t.status !== 'CANCELED').length;
+    return {
+      title: project.title,
+      total: tasks.length,
+      openTasks: live.length,
+      overdueOpenTasks: live.filter(
+        (t) => t.dueAt !== null && new Date(t.dueAt) < asOf,
+      ).length,
+      blockedOpenTasks: live.filter((t) => blocked.has(t.taskId)).length,
+      progress: counted
+        ? Math.round(
+            (tasks.filter((t) => t.status === 'DONE').length * 10000) / counted,
+          )
+        : null,
+    };
+  }
   constructor(
     @Inject(SharedTaskWork) private readonly work: SharedTaskWork,
     @Inject(DatabaseService) private readonly db: DatabaseService,

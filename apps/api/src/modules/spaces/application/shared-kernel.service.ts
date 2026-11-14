@@ -1602,7 +1602,7 @@ export class SharedKernel {
     action: string,
   ) {
     const access = a.require(tx, spaceId, 'task.read');
-    await tx.sharedAuditEvent.create({
+    return tx.sharedAuditEvent.create({
       data: {
         id: randomUUID(),
         spaceId: access.spaceId,

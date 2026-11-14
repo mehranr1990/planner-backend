@@ -1,3 +1,5 @@
+import { CompanyBudgetChangeDecisionSchema } from '@mehran/api-contracts';
+import { CompanyFinanceRequestsService } from '../../src/modules/companies/application/company-finance-requests.service.js';
 import { Readable } from 'node:stream';
 import { SharedFiles } from '../../src/platform/storage/public/index.js';
 import {
@@ -256,7 +258,7 @@ describe('P4-03 exact Company finance and receipt privacy', () => {
     await sandbox?.close();
   });
   async function company() {
-    return companies.create(
+    const co = await companies.create(
       owner.actor,
       {
         id: randomUUID(),
@@ -265,6 +267,11 @@ describe('P4-03 exact Company finance and receipt privacy', () => {
       },
       randomUUID(),
     );
+    // OD-9: Company finance records require the fixed Company currency first.
+    await companies.setCurrency(owner.actor, co.id, co.revision, {
+      currency: 'USD',
+    });
+    return companies.read(owner.actor, co.id);
   }
   async function admit(
     id: string,
@@ -979,8 +986,15 @@ describe('P4-03 exact Company finance and receipt privacy', () => {
       f.co.id,
       d.id,
       reassigned.revision,
-      { decision: 'REJECT' },
+      { decision: 'REJECT', reason: 'Missing receipt' },
     );
+    expect(
+      (
+        await app
+          .get(CompanyFinanceRequestsService)
+          .reviewHistory(member.actor, f.co.id, f.co.id, d.id, { limit: 25 })
+      ).items.find((e) => e.action === 'REJECT'),
+    ).toMatchObject({ reason: 'Missing receipt' });
     expect(
       (await finance.budget(owner.actor, f.co.id, f.co.id, f.budget.id)).spent,
     ).toBe('0.00');
@@ -1297,49 +1311,158 @@ describe('P4-03 exact Company finance and receipt privacy', () => {
       finance.expense(viewer.actor, f.co.id, f.co.id, expense.id),
     ).rejects.toThrow();
   });
-  it('appends successful budget limit changes and rejects archived growth while allowing history', async () => {
+  it('BU: changes approved budgets only through versioned requests decided by another manager', async () => {
     const f = await setup();
-    const increased = await finance.budgetChange(
+    const requests = app.get(CompanyFinanceRequestsService);
+    await expect(
+      finance.budgetChange(owner.actor, f.co.id, f.co.id, f.budget.id, 1, {
+        amount: '10.00',
+        direction: 'INCREASE',
+      }),
+    ).rejects.toMatchObject({
+      response: { code: 'BUDGET_CHANGE_APPROVAL_REQUIRED' },
+    });
+    const key = randomUUID(),
+      input = {
+        id: randomUUID(),
+        amount: '10.00',
+        direction: 'INCREASE' as const,
+        reason: 'Scope grew',
+      };
+    const asked = await requests.create(
       owner.actor,
       f.co.id,
       f.co.id,
       f.budget.id,
+      input,
+      key,
+    );
+    expect(asked).toMatchObject({
+      state: 'PENDING',
+      budgetRevision: 1,
+      can: { decide: false, withdraw: true },
+    });
+    expect(
+      await requests.create(
+        owner.actor,
+        f.co.id,
+        f.co.id,
+        f.budget.id,
+        input,
+        key,
+      ),
+    ).toMatchObject({ id: asked.id });
+    await expect(
+      requests.create(
+        owner.actor,
+        f.co.id,
+        f.co.id,
+        f.budget.id,
+        { ...input, id: randomUUID() },
+        randomUUID(),
+      ),
+    ).rejects.toMatchObject({ response: { code: 'BUDGET_CHANGE_PENDING' } });
+    expect(
+      (await finance.budget(owner.actor, f.co.id, f.co.id, f.budget.id)).limit,
+    ).toBe('100.00');
+    await expect(
+      requests.decide(owner.actor, f.co.id, f.co.id, asked.id, 1, {
+        decision: 'APPROVE',
+        reason: null,
+      }),
+    ).rejects.toMatchObject({ response: { code: 'SELF_APPROVAL_FORBIDDEN' } });
+    await expect(
+      requests.decide(member.actor, f.co.id, f.co.id, asked.id, 1, {
+        decision: 'APPROVE',
+        reason: null,
+      }),
+    ).rejects.toThrow();
+    const approved = await requests.decide(
+      admin.actor,
+      f.co.id,
+      f.co.id,
+      asked.id,
       1,
-      { amount: '10.00', direction: 'INCREASE' },
+      {
+        decision: 'APPROVE',
+        reason: null,
+      },
     );
-    expect(increased.limit).toBe('110.00');
-    const reduced = await finance.budgetChange(
+    expect(approved).toMatchObject({ state: 'APPROVED' });
+    expect(approved.adjustmentId).not.toBeNull();
+    const after = await finance.budget(
       owner.actor,
       f.co.id,
       f.co.id,
       f.budget.id,
-      2,
-      { amount: '5.00', direction: 'DECREASE' },
     );
-    expect(reduced.limit).toBe('105.00');
+    expect(after.limit).toBe('110.00');
+    const shrink = await requests.create(
+      admin.actor,
+      f.co.id,
+      f.co.id,
+      f.budget.id,
+      { id: randomUUID(), amount: '5.00', direction: 'DECREASE', reason: null },
+      randomUUID(),
+    );
+    expect(() =>
+      CompanyBudgetChangeDecisionSchema.parse({
+        decision: 'REJECT',
+        reason: null,
+      }),
+    ).toThrow();
+    const rejected = await requests.decide(
+      owner.actor,
+      f.co.id,
+      f.co.id,
+      shrink.id,
+      1,
+      {
+        decision: 'REJECT',
+        reason: 'Keep the buffer',
+      },
+    );
+    expect(rejected).toMatchObject({
+      state: 'REJECTED',
+      decisionReason: 'Keep the buffer',
+    });
+    expect(
+      (await finance.budget(owner.actor, f.co.id, f.co.id, f.budget.id)).limit,
+    ).toBe('110.00');
+    const stale = await requests.create(
+      admin.actor,
+      f.co.id,
+      f.co.id,
+      f.budget.id,
+      { id: randomUUID(), amount: '1.00', direction: 'INCREASE', reason: null },
+      randomUUID(),
+    );
     const archived = await finance.budgetChange(
       owner.actor,
       f.co.id,
       f.co.id,
       f.budget.id,
-      3,
+      after.revision,
       { archived: true },
     );
-    await expect(
-      finance.commitmentCreate(
-        owner.actor,
-        f.co.id,
-        f.co.id,
-        f.budget.id,
-        { id: randomUUID(), amount: '1.00' },
-        randomUUID(),
-      ),
-    ).rejects.toThrow();
     expect(archived.archived).toBe(true);
+    await expect(
+      requests.decide(owner.actor, f.co.id, f.co.id, stale.id, 1, {
+        decision: 'APPROVE',
+        reason: null,
+      }),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(
+      (
+        await requests.list(owner.actor, f.co.id, f.co.id, f.budget.id, {
+          limit: 25,
+        })
+      ).items,
+    ).toHaveLength(3);
     const rows = await client.companyBudgetAdjustment.findMany({
       where: { budgetId: f.budget.id },
     });
-    expect(rows).toHaveLength(2);
+    expect(rows).toHaveLength(1);
     await expect(
       client.companyBudgetAdjustment.update({
         where: { id: rows[0]!.id },

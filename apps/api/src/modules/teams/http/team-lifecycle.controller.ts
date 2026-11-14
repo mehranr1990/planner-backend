@@ -24,9 +24,11 @@ import {
   revisionTag,
 } from '../../../bootstrap/concurrency.js';
 import { TeamGuard } from './teams.controller.js';
+import { TeamsService } from '../application/teams.service.js';
 import { TeamLifecycleService } from '../application/team-lifecycle.service.js';
 const uuid = new ZodValidationPipe(c.TeamCreateSchema.shape.id),
-  empty = new ZodValidationPipe(c.CollaborationEmptySchema);
+  empty = new ZodValidationPipe(c.CollaborationEmptySchema),
+  page = new ZodValidationPipe(c.TeamPageQuerySchema);
 function rev(v: string | undefined) {
   const n = expectedRevision(v);
   if (n === undefined) throw new BadRequestException();
@@ -38,7 +40,15 @@ export class TeamLifecycleController {
   constructor(
     @Inject(TeamLifecycleService)
     private readonly service: TeamLifecycleService,
+    @Inject(TeamsService) private readonly teams: TeamsService,
   ) {}
+  @Get('ownership-handovers') handovers(
+    @CurrentActor() actor: RequestActor,
+    @Param('id', uuid) id: string,
+    @Query(page) q: z.infer<typeof c.TeamPageQuerySchema>,
+  ) {
+    return this.teams.handovers(actor, id, q);
+  }
   @Post('archive') @HttpCode(200) async archive(
     @CurrentActor() actor: RequestActor,
     @Param('id', uuid) id: string,

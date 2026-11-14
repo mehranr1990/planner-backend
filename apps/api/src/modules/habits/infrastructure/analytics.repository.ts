@@ -105,4 +105,34 @@ export class AnalyticsHabitsRepository extends AnalyticsHabits {
       },
     };
   }
+  async entries(
+    tx: Prisma.TransactionClient,
+    scope: AuthorizedSpace,
+    fromDate: string,
+    toDate: string,
+  ) {
+    await scope.fence(tx);
+    const rows = await tx.habitEntry.findMany({
+      where: {
+        spaceId: scope.spaceId,
+        current: true,
+        state: 'RECORDED',
+        localDate: {
+          gte: new Date(fromDate + 'T00:00:00Z'),
+          lte: new Date(toDate + 'T00:00:00Z'),
+        },
+      },
+      select: {
+        habitId: true,
+        localDate: true,
+        habit: { select: { title: true } },
+      },
+      take: 20000,
+    });
+    return rows.map((r) => ({
+      habitId: r.habitId,
+      title: r.habit.title,
+      localDate: r.localDate.toISOString().slice(0, 10),
+    }));
+  }
 }

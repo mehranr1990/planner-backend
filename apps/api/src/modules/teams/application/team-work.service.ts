@@ -624,11 +624,39 @@ export class TeamWorkService {
         )
       )
         throw new ConflictException();
+      const opening = before.state === 'DRAFT' && body.state === 'ACTIVE',
+        closing = before.state === 'ACTIVE' && body.state === 'CLOSED';
+      if (
+        opening &&
+        before.kind === 'SPRINT' &&
+        (await tx.teamPlan.count({
+          where: {
+            spaceId: a.space(tx, id),
+            scopeId: id,
+            kind: 'SPRINT',
+            state: 'ACTIVE',
+          },
+        }))
+      )
+        throw new ConflictException({ code: 'ACTIVE_SPRINT' });
+      const at =
+        opening || closing
+          ? (
+              await tx.$queryRaw<{ now: Date }[]>`SELECT clock_timestamp() now`
+            )[0]!.now
+          : null;
       const row = await tx.teamPlan.update({
         where: { id: planId },
         data: {
           ...(body.title !== undefined ? { title: body.title } : {}),
           ...(body.state ? { state: body.state } : {}),
+          ...(opening
+            ? {
+                publishedAt: at,
+                publishedByActorId: a.require(tx, id, 'work.manage').actorId,
+              }
+            : {}),
+          ...(closing ? { closedAt: at } : {}),
           revision: { increment: 1 },
         },
       });
@@ -775,6 +803,13 @@ export class TeamWorkService {
                 sourceRevision: body.sourceRevision,
                 position: body.position,
                 createdByActorId: a.require(tx, id, 'work.manage').actorId,
+                plannedAt: body.planId
+                  ? (
+                      await tx.$queryRaw<
+                        { now: Date }[]
+                      >`SELECT clock_timestamp() now`
+                    )[0]!.now
+                  : null,
               },
             });
             await this.effect(
@@ -824,7 +859,21 @@ export class TeamWorkService {
         await this.openPlan(tx, id, body.planId);
         const row = await tx.teamWorkItem.update({
           where: { id: itemId },
-          data: { ...body, revision: { increment: 1 } },
+          data: {
+            ...body,
+            ...(body.planId !== before.planId
+              ? {
+                  plannedAt: body.planId
+                    ? (
+                        await tx.$queryRaw<
+                          { now: Date }[]
+                        >`SELECT clock_timestamp() now`
+                      )[0]!.now
+                    : null,
+                }
+              : {}),
+            revision: { increment: 1 },
+          },
         });
         await this.effect(
           tx,

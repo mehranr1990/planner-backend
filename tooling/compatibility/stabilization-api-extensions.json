@@ -1,0 +1,38 @@
+{
+  "get /api/v1/announcements/scopes/{kind}/{scopeId} response 200": {
+    "previous": "f6c01e0f093cfbd8f110fe028cdcb3d65aecc2ea5f087aec658a271fed5a84d7",
+    "approved": "6f8b12a1f32c3a9330b21eff18704cb0efafe70866165388013413995691dc14"
+  },
+  "get /api/v1/announcements/{id}/versions response 200": {
+    "previous": "f6c01e0f093cfbd8f110fe028cdcb3d65aecc2ea5f087aec658a271fed5a84d7",
+    "approved": "6f8b12a1f32c3a9330b21eff18704cb0efafe70866165388013413995691dc14"
+  },
+  "get /api/v1/announcements/{id}/versions/{versionId} response 200": {
+    "previous": "21c5be3f90e2e542c25797ac630aa7aba8b7c81993a3b9aba43c4bd1a4fca989",
+    "approved": "0eca85b93c52fc5dfaeabb178fa3a3dbf14be65b5feda2e6f787324976e3a2ba"
+  },
+  "patch /api/v1/announcements/{id}/versions/{versionId}/pin response 200": {
+    "previous": "21c5be3f90e2e542c25797ac630aa7aba8b7c81993a3b9aba43c4bd1a4fca989",
+    "approved": "0eca85b93c52fc5dfaeabb178fa3a3dbf14be65b5feda2e6f787324976e3a2ba"
+  },
+  "post /api/v1/announcements/{id}/versions response 201": {
+    "previous": "21c5be3f90e2e542c25797ac630aa7aba8b7c81993a3b9aba43c4bd1a4fca989",
+    "approved": "0eca85b93c52fc5dfaeabb178fa3a3dbf14be65b5feda2e6f787324976e3a2ba"
+  },
+  "post /api/v1/announcements/{id}/versions/{versionId}/publish response 201": {
+    "previous": "21c5be3f90e2e542c25797ac630aa7aba8b7c81993a3b9aba43c4bd1a4fca989",
+    "approved": "0eca85b93c52fc5dfaeabb178fa3a3dbf14be65b5feda2e6f787324976e3a2ba"
+  },
+  "post /api/v1/announcements/{id}/versions/{versionId}/withdraw response 201": {
+    "previous": "21c5be3f90e2e542c25797ac630aa7aba8b7c81993a3b9aba43c4bd1a4fca989",
+    "approved": "0eca85b93c52fc5dfaeabb178fa3a3dbf14be65b5feda2e6f787324976e3a2ba"
+  },
+  "post /api/v1/meetings request": {
+    "previous": "436dee227faad5998d81dd82405d027ed46a3c7d7c97dd27aaf971660562bf01",
+    "approved": "bd0c10e7138570ac5b6b415a135ba6ff4f577555744186fa7521e47ab2ad273c"
+  },
+  "post /api/v1/meetings/{id}/invitations request": {
+    "previous": "d48b7b73a8c4c790458c0624895a30f26eb9cb9cb4e50014bd8cbc0c27ddf4a4",
+    "approved": "4b191d5c3d7b20ad10da930e567db4072baa6be1ab39ace63dfdf38247702b87"
+  }
+}

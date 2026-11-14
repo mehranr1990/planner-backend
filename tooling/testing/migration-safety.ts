@@ -117,6 +117,18 @@ import {
 } from './reviewed-rewards-migration.ts';
 import path from 'node:path';
 import {
+  finalClosureMigrationName,
+  assertReviewedFinalClosureMigration,
+} from './reviewed-final-closure-migration.ts';
+import {
+  companyGoalSourceMigrationName,
+  assertReviewedCompanyGoalSourceMigration,
+} from './reviewed-company-goal-source-migration.ts';
+import {
+  companyCompletionMigrationName,
+  assertReviewedCompanyCompletionMigration,
+} from './reviewed-company-completion-migration.ts';
+import {
   collaborationMigrationName,
   assertReviewedCollaborationMigration,
 } from './reviewed-collaboration-migration.ts';
@@ -184,7 +196,14 @@ export function reviewMigrations(directory = 'prisma/migrations'): string[] {
       path.join(directory, name, 'migration.sql'),
       'utf8',
     );
-    if (name === socialMigrationName) assertReviewedSocialMigration(name, sql);
+    if (name === finalClosureMigrationName)
+      assertReviewedFinalClosureMigration(name, sql);
+    else if (name === companyGoalSourceMigrationName)
+      assertReviewedCompanyGoalSourceMigration(name, sql);
+    else if (name === companyCompletionMigrationName)
+      assertReviewedCompanyCompletionMigration(name, sql);
+    else if (name === socialMigrationName)
+      assertReviewedSocialMigration(name, sql);
     else if (name === communicationLifecycleMigrationName)
       assertReviewedCommunicationLifecycleMigration(name, sql);
     else if (name === meetingsMigrationName)

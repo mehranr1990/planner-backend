@@ -70,6 +70,7 @@ export const CompanyContextPageSchema = z.strictObject({
   nextCursor: z.string().nullable(),
 });
 export const CompanyMembershipSchema = z.strictObject({
+  displayName: z.string().nullable().optional(),
   id,
   spaceId: id,
   scopeId: id,
@@ -107,6 +108,10 @@ export const CompanyInvitationDeliverySchema = z.strictObject({
     .string()
     .regex(/^[A-Za-z0-9_-]{43}$/)
     .nullable(),
+});
+export const CompanyInvitationPageSchema = z.strictObject({
+  items: z.array(CompanyInvitationSchema).max(100),
+  nextCursor: z.string().nullable(),
 });
 export const CompanyInvitationDecisionSchema = z.strictObject({
   invitation: CompanyInvitationSchema,

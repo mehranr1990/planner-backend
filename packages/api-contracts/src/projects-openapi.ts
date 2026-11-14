@@ -1,5 +1,7 @@
 import { z } from 'zod';
 import * as c from './projects.js';
+import * as overview from './project-overview.js';
+import { ProjectReportWindowSchema } from './project-execution.js';
 import * as shared from './collaboration.js';
 import { embeddedJsonSchema, pointerSegment } from './embedded-json-schema.js';
 export function projectPaths(): Record<string, Record<string, unknown>> {
@@ -16,6 +18,7 @@ export function projectPaths(): Record<string, Record<string, unknown>> {
       anonymous?: boolean;
       page?: boolean;
       etag?: boolean;
+      query?: z.ZodType;
     } = {},
   ) => {
     const pointer = `#/paths/${pointerSegment('/api/v1' + path)}/${method}`,
@@ -53,6 +56,19 @@ export function projectPaths(): Record<string, Record<string, unknown>> {
           },
         },
       );
+    if (options.query) {
+      const query = z.toJSONSchema(options.query, {
+        target: 'draft-2020-12',
+        io: 'input',
+      });
+      for (const [name, schema] of Object.entries(query.properties ?? {}))
+        parameters.push({
+          in: 'query',
+          name,
+          required: query.required?.includes(name) ?? false,
+          schema,
+        });
+    }
     if (method !== 'get')
       parameters.push({
         in: 'header',
@@ -154,6 +170,42 @@ export function projectPaths(): Record<string, Record<string, unknown>> {
   add('/projects/{id}', 'patch', c.ProjectSchema, c.ProjectPatchSchema, {
     revision: true,
   });
+  add('/projects/{id}/metadata', 'get', overview.ProjectMetadataSchema);
+  add(
+    '/projects/{id}/access/me',
+    'get',
+    overview.ProjectAccessMeSchema,
+    undefined,
+    { etag: false },
+  );
+  add(
+    '/projects/{id}/ownership-handovers',
+    'get',
+    overview.ProjectHandoverPageSchema,
+    undefined,
+    { page: true, etag: false },
+  );
+  add(
+    '/projects/{id}/metadata',
+    'patch',
+    overview.ProjectMetadataSchema,
+    overview.ProjectMetadataPatchSchema,
+    { revision: true },
+  );
+  add(
+    '/projects/{id}/members',
+    'get',
+    overview.ProjectMemberDisplayPageSchema,
+    undefined,
+    { page: true, etag: false },
+  );
+  add(
+    '/projects/{id}/dashboard',
+    'get',
+    overview.ProjectDashboardSchema,
+    undefined,
+    { query: ProjectReportWindowSchema, etag: false },
+  );
   add(
     '/projects/{id}/archive',
     'post',

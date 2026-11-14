@@ -1,3 +1,4 @@
+import { SharedGoalsCleanup } from '../../goals/public/index.js';
 import { ProjectCompanyAssociations } from '../../projects/public/index.js';
 import { TeamCompanyAssociations } from '../../teams/public/index.js';
 import {
@@ -35,6 +36,7 @@ export class CompanyCleanupService {
     @Inject(SharedLifecycleService) readonly lifecycle: SharedLifecycleService,
     @Inject(SharedFiles) private readonly files: SharedFiles,
     @Inject(SharedCalendar) private readonly events: SharedCalendar,
+    @Inject(SharedGoalsCleanup) private readonly goals: SharedGoalsCleanup,
   ) {}
   async restoreRestrictions(spaceId: string) {
     let rows: StoredFile[] = [];
@@ -60,6 +62,33 @@ export class CompanyCleanupService {
     if (!(await this.projectAssociations.cleanupCompany(tx, s))) return false;
     if (!(await this.teamAssociations.cleanupCompany(tx, s))) return false;
     if (!(await this.projects.cleanupCompany(tx, s))) return false;
+    // Gap closure (OD-2/3/5/6/7/8): children before their sources.
+    if (
+      !(await sharedDeleteBatch(tx, s, [
+        'CompanyNotification',
+        'CompanyKnowledgeAck',
+        'CompanyKnowledgeSetting',
+        'CompanyKnowledgeText',
+        'CompanyRoomProfile',
+        'CompanyRoomBookingTitle',
+        'CompanyPaymentRunItem',
+        'CompanyPaymentRun',
+        'CompanyEmployeeFileLog',
+        'CompanyEmployeeFileRequest',
+        'CompanyEmployeeDocument',
+        'CompanyEmployeeGrant',
+        'CompanyDepartmentTransfer',
+        'CompanyContextMove',
+        'CompanyKeyResultCheckin',
+        'CompanyKeyResult',
+      ]))
+    )
+      return false;
+    if (
+      await tx.$executeRaw`DELETE FROM "CompanyGoal" WHERE "goalId" IN (SELECT p."goalId" FROM "CompanyGoal" p WHERE p."spaceId"=${s.spaceId}::uuid AND NOT EXISTS(SELECT 1 FROM "CompanyGoal" c WHERE c."parentGoalId"=p."goalId") ORDER BY p."goalId" LIMIT 200)`
+    )
+      return false;
+    if (!(await this.goals.batch(tx, s))) return false;
     if (
       await tx.$executeRaw`UPDATE "CompanyKnowledgeDocument" SET "publishedVersionId"=NULL, revision=revision+1, "updatedAt"=clock_timestamp() WHERE id IN (SELECT id FROM "CompanyKnowledgeDocument" WHERE "spaceId"=${s.spaceId}::uuid AND "publishedVersionId" IS NOT NULL ORDER BY id LIMIT 25)`
     )
@@ -68,6 +97,8 @@ export class CompanyCleanupService {
       !(await sharedDeleteBatch(tx, s, [
         'CompanyKnowledgeVersion',
         'CompanyKnowledgeDocument',
+        'CompanyDecisionReason',
+        'CompanyBudgetChangeRequest',
         'CompanyFinancialApprovalEvent',
         'CompanyFinancialApproval',
         'CompanyFinancialWorkflowStep',
@@ -104,8 +135,12 @@ export class CompanyCleanupService {
         'CompanyFinanceProjectReference',
         'CompanyEmployeeCaseEntry',
         'CompanyEmployeeCase',
+        'CompanyResourceRequestEvent',
+        'CompanyResourceRequest',
+        'CompanyResourceWorkflowVersion',
         'CompanyResourceAllocation',
         'CompanyResource',
+        'CompanyResourceType',
         'CompanyAvailabilityDay',
         'CompanyStaffProfile',
       ]))

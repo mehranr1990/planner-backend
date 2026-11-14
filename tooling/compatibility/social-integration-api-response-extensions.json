@@ -1,0 +1,38 @@
+{
+  "get /api/v1/social/connections response 200": {
+    "previous": "f9fde86f9521dffc70f677bdff944501cc9dc23f26d3b82d2ebbd98e4d40f5e4",
+    "approved": "fb5cd74d0bc7f87aa94cd0306b49970d12638d45966b8c527e40ea3043a3e9f0"
+  },
+  "post /api/v1/social/connections response 201": {
+    "previous": "801224e5c2e19705a44ce875598bad6ad9328d5945f0f2520e491bb1d2f11228",
+    "approved": "c3a8425f2aa1a6c5342193d4c13b3a4bab9fcb99728f4b24357175c6c0d89eaa"
+  },
+  "post /api/v1/social/connections/{id}/{action} response 201": {
+    "previous": "801224e5c2e19705a44ce875598bad6ad9328d5945f0f2520e491bb1d2f11228",
+    "approved": "c3a8425f2aa1a6c5342193d4c13b3a4bab9fcb99728f4b24357175c6c0d89eaa"
+  },
+  "get /api/v1/social-groups/{id}/memberships response 200": {
+    "previous": "374f4cd9eb051e38ed862d4418fe052bc6a9e49c8ac714a95a797eed73e63b38",
+    "approved": "f98354df9278e4ba446b66520b7621335f07c7d6d7f38cda47b0b4005772196d"
+  },
+  "patch /api/v1/social-groups/{id}/memberships/{accessId} response 200": {
+    "previous": "bed2687cc4d71718733858632bcc17308bc42a90f05448371b22cd794e95300b",
+    "approved": "5e82d81d7af8374f808880702b2a0614a26a88db97ba2e7b689c47a31d3b7e4a"
+  },
+  "post /api/v1/social-groups/{id}/join-requests response 201": {
+    "previous": "4324ad3b02324774a69540035a2ab1a2edb7c5f88ed1854897e9ad22abcc7fa7",
+    "approved": "21c2781fef77c0d21ef8b4b66559ec0a6416da358cf634c5bac394d0703cfbc4"
+  },
+  "get /api/v1/social-groups/{id}/join-requests response 200": {
+    "previous": "04943b4e8c0498fcc397bd4bce2040cfbe58b0d84825f31db8599e320f46cf7e",
+    "approved": "373fd6b59d53c84008cb9f27a0ffa32504e05e38d7f4bfde1dc1f69ce4c0624c"
+  },
+  "post /api/v1/social-groups/{id}/join-requests/{requestId}/{action} response 201": {
+    "previous": "4324ad3b02324774a69540035a2ab1a2edb7c5f88ed1854897e9ad22abcc7fa7",
+    "approved": "21c2781fef77c0d21ef8b4b66559ec0a6416da358cf634c5bac394d0703cfbc4"
+  },
+  "post /api/v1/social-group-invitations/{id}/accept response 201": {
+    "previous": "4c2fa9d312b15668cf396b34c1a9b1397f1ca0b023ff77409df46f40060317b4",
+    "approved": "14c7849668b9237b2e3bebac68e0c0a80d3e61e3f772516a65a188ec72a146ba"
+  }
+}

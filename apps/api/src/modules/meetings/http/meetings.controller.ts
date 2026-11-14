@@ -80,6 +80,13 @@ export class MeetingsController {
   ) {
     return this.meetings.get(a, id);
   }
+  @Get(':id/access/me') accessMe(
+    @CurrentActor() actor: RequestActor,
+    @Param('id', uuid) id: string,
+    @Query(empty) _q: unknown,
+  ) {
+    return this.meetings.accessMe(actor, id);
+  }
   @Post(':id/restore-admission')
   restoreAdmission(
     @CurrentActor() a: RequestActor,

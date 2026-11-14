@@ -1,0 +1,14 @@
+{
+  "get /api/v1/companies/{id}/contexts/{scopeId}/rooms response 200": {
+    "previous": "4bb471259fc1f54e740ece755bcf5a3d24387560082b598ebd5797785ce85aa6",
+    "approved": "6333332afd9cfba3ad2419525b142ade7605c917478302c16371cb04fabb2639"
+  },
+  "get /api/v1/insights/patterns response 200": {
+    "previous": "92f30db4b3434d894a4db74716c27c5e3d39d9e68b4f5fc4ef53e0306cd6df7e",
+    "approved": "8c031a05e6026efa82a3ee62af85ad96c46e8cb8e1eda3d4946f5163f65350a5"
+  },
+  "put /api/v1/companies/{id}/contexts/{scopeId}/resources/{resourceId}/room response 200": {
+    "previous": "944c6a6ae5068dba5d9050bf275b10f1169b3d0a374fb6cf003d09915e418034",
+    "approved": "892b3ee3f78807328b8cd39da86695b452ed9f3a329bea01cdd8cf5c39dec2ed"
+  }
+}

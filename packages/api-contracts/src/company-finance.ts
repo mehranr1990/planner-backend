@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { financeCurrencyScales } from './finance-currencies.js';
 import {
   CompanyStaffMemberSchema,
+  CompanyStaffMemberDisplaySchema,
   CompanyStaffPageQuerySchema,
 } from './company-staff.js';
 import { FileUploadSchema } from './files.js';
@@ -124,18 +125,24 @@ export const CompanyExpenseCreateSchema = CompanyExpenseFactsSchema.extend({
 export const CompanyExpenseSubmitSchema = z.strictObject({
   reviewer: CompanyStaffMemberSchema,
 });
-export const CompanyExpenseDecisionSchema = z.strictObject({
-  decision: z.enum(['APPROVE', 'REJECT']),
-});
+/** ER (owner-approved): a rejection requires a nonempty reason, kept in authorized history. */
+export const CompanyExpenseDecisionSchema = z
+  .strictObject({
+    decision: z.enum(['APPROVE', 'REJECT']),
+    reason: z.string().trim().min(1).max(1000).optional(),
+  })
+  .refine((v) => v.decision === 'APPROVE' || v.reason !== undefined, {
+    message: 'A rejection requires a reason',
+  });
 export const CompanyExpenseRevisionSchema = z.strictObject({
   ...base,
   expenseId: uuid,
   number: positive,
   kind: z.enum(['ORIGINAL', 'CORRECTION', 'REVERSAL']),
   state: z.enum(['DRAFT', 'SUBMITTED', 'APPROVED', 'REJECTED', 'CANCELED']),
-  requester: CompanyStaffMemberSchema,
-  reviewer: CompanyStaffMemberSchema.nullable(),
-  payer: CompanyStaffMemberSchema.nullable(),
+  requester: CompanyStaffMemberDisplaySchema,
+  reviewer: CompanyStaffMemberDisplaySchema.nullable(),
+  payer: CompanyStaffMemberDisplaySchema.nullable(),
   ...money,
   scale: z.number().int().min(0).max(4),
   categoryId: uuid,

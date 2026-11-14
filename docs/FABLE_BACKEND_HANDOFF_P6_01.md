@@ -1,14 +1,220 @@
 # Fable frontend integration handoff — through P6-01
 
+> **Update 2026-11-13 (backend completion):** The FK-catalog re-pin, transfer-catalog entries and most items listed as blocked here were completed. The contract is now 960 operations. The current status, remaining items and operator setup are in [`backend-pre-frontend-integration-report.md`](backend-pre-frontend-integration-report.md).
+
 Date: 2026-11-11 (Asia/Tehran).
 Published backend code: **`7bcc10e2b133bc67976e5684f2aba82760890ea8`** on `origin/main`.
 This is the integration baseline for completed Phases 0–5 and **Phase 6, batch 01 only**.
 Phase 5 excludes its explicitly deferred P5-04 realtime transport. Phase 6 is not
 complete as a whole. The owner authorized publication of P6-01 after local acceptance.
 
+The Projects additions dated 2026-11-12 below are local, uncommitted working-tree
+changes beyond that published SHA; they have not been deployed or published.
+
+The owner-approved consolidated API gaps dated 2026-11-13 are also local and
+uncommitted. That batch brought the contract to **860 operations** (eleven additions
+to the 849-operation local Projects baseline); the newer Social additions below
+bring the current local total to **863**. See the exact endpoints, response fields,
+authorization, invitation-proof blocker and verification in
+[the implementation report](./consolidated-api-gap-implementation.md).
+X1/X2/M1/X4/M2/Company export reads are implemented; X3 reuses the existing
+privacy-safe `POST /api/v1/social/discovery`. Shared remains disabled; this work
+does not resolve OD-1–OD-14 or authorize Frontend activation, live tests or P6-02.
+
+### Local stabilization (Teams, Companies, Meetings) — 2026-11-13
+
+Local, uncommitted; contract now **864 operations**. No migration. Hints never
+replace endpoint authorization.
+
+- **M-X4**: `POST /meetings` (PROJECT/TEAM/COMPANY) accepts optional
+  `participantActorIds` (source-roster `actorId`s, combined limit 199 with
+  `participants`); `POST /meetings/{id}/invitations` accepts `{id, actorId}` as an
+  alternative to `{id, userId}`. Actors resolve server-side within the meeting's
+  space only after organizer checks; no account IDs are exposed.
+- **M-X5**: `meeting.create` capability hint on existing Team, Project and Company
+  root `access/me` (source management role + `work.manage`; Company: Owner only).
+- **M-A1**: announcement versions add nullable `authorDisplayName`. Ack totals:
+  existing manager-only `.../acknowledgements` summary. No scheduling model exists.
+- **T-M2**: new Owner-only `GET /teams/{id}/ownership-handovers` (signed `after`).
+- **T-M3 / C-M4 candidates**: reuse existing reads. Linked rows embed the visible
+  Project; use Project overview/dashboard for dates/progress. Attach candidates:
+  caller-owned independent Projects/Teams; create rechecks eligibility.
+- **Blocked**: M-X6/M-X7 (new attribution FKs need owner review of the fail-closed
+  shared-cleanup FK catalog); T-M1 (Team assignment/status/planning model batch);
+  T-M2 settings and T-M4 (undefined Team policies/modules); C-M1 (OD-9 currency);
+  C-M2 (policy UI decision); C-M3 (new staff personal-data fields/KPI definitions);
+  C-M4 request records and association names/counts (ADR 0039 allow-list undefined).
+  OD-1 and OD-4 remain unresolved.
+
+### Local Company Backend completion — 2026-11-13
+
+Local, uncommitted; contract now **910 operations** (887 after the Team batch + 23
+Company). Migration `202611130049_company_completion`. Details, coverage and open
+questions: [the report](./company-backend-completion-report.md). This supersedes the
+C-M1, C-M3 and C-M4 entries under "Blocked" above.
+
+- **C-M1**: `GET /companies/{id}/settings` and `PUT .../settings/currency`
+  (If-Match Company revision; Owner/Org Admin). One fixed currency; locked by the
+  first budget or expense version. Finance writes return `COMPANY_CURRENCY_REQUIRED`,
+  `COMPANY_CURRENCY_MISMATCH`, `COMPANY_CURRENCY_LOCKED` or `COMPANY_CURRENCY_CONFLICT`.
+- **C-M3**: `GET ctx/directory` (public fields only) and
+  `PUT ctx/staff-profiles/{profileId}/work-details` (self or manager);
+  `GET ctx/reports/kpis` (manager-only, explicit sources, goals `null`).
+- **C-M4**: resource types, `PUT ctx/resources/{id}/type` (resource rows add nullable
+  `typeId`), versioned role-based `resource-workflows`, resource requests with
+  decision/withdraw/history; `association-summaries` and `association-candidates`.
+- **Still blocked**: C-M2 named policy values, expense rejection reasons, budget-change
+  requests, OD-1–OD-9 items listed in the report. Company/Project disposal fails closed
+  (`CLEANUP_RETRY_REQUIRED`) until the shared-cleanup FK digest is re-pinned (831 FKs).
+
 Recommended handoff boundary: **P6-01**, so frontend and published backend use the
 same current contract. Existing Phase 5 consumers retain their API compatibility.
 This document describes backend integration; it does not prescribe a replacement UI.
+
+### Local Social identity/access completion — 2026-11-13
+
+The local canonical contract now has **863 operations**. New authenticated reads:
+`GET /api/v1/social-groups/{id}/access/me`, `GET /api/v1/meetings/{id}/access/me`
+(current meeting `memberId`, closing X1-M), and
+`GET /api/v1/social-groups/{id}/history` (allowlisted metadata since current admission).
+Existing Social connection, join-request and membership lists now supply authorized
+nullable display names without adding profile/contact or directory access.
+See [the current batch report](./social-integration-completion-report.md) for exact
+fields, permission checks, tests and the operator retention-version requirement.
+The owner approved the policies recorded in [ADR 0051](./adr/0051-social-completion-decisions.md),
+then requested completion of this batch and a stop. Activities and other P6-02+
+features were not started; no Shared activation, migration application to development,
+Frontend change, commit, push or deployment was authorized or performed.
+
+### Local development readiness repair — 2026-11-11
+
+Owner-approved repair targeted only `localhost:5432/mehran_dev`, schema `public`,
+which the owner confirmed contains disposable test data. The ignored local `.env`
+now sets `ERASURE_CONTROL_ROOT` to the absolute existing directory
+`D:/New folder/planner-backend/.tools/private-files-erasure-control`; its signed
+evidence was preserved. The relative path previously resolved under `apps/api`.
+
+`pnpm.cmd db:migrate:deploy` exited 0 and applied all 45 pending migrations, from
+`202611040001_shared_space_kind` through `202611110045_social_foundation`.
+This includes `202611050020_local_security_closeout`, which adds the missing
+`AccountDeletionJob.evidenceKeyId` column responsible for Prisma P2022.
+Read-only verification found all 69 migrations applied, zero pending/unfinished
+migrations and zero checksum mismatches; the formerly failing lifecycle query passed.
+
+Only the local backend dev process was restarted. Replacement API PID `58224`
+(Nest watcher PID `14892`) returned HTTP 200 for both `/health/live` and
+`/health/ready` on `http://127.0.0.1:3000`, with the same PID throughout verification.
+Readiness returned `{"status":"ok","checks":{"database":"up"}}`; startup stderr
+was empty. No remaining readiness errors were observed. `mehran_test` and other
+databases were not accessed; no resets, schema push, ACL/marker changes or Shared
+feature activation occurred. No code, historical migrations or secrets changed.
+No full quality gate, commit, push or deployment was performed.
+
+### Projects contract additions — 2026-11-12
+
+Four additive operations preserve all existing request/response shapes. All use the
+existing verified session, Project guard, Shared activation prerequisites and
+current custody/scope authorization. Shared remains disabled locally; do not
+enable it or supply synthetic acceptance settings for frontend integration.
+
+| Method/path under `/api/v1`     | Fields and frontend use                                                                                                                                                | Required current permission                                                  |
+| ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| `GET /projects/{id}/metadata`   | `id`, `title`, nullable `key`, `color`, `summary`, lifecycle `status`, `revision`; returns `ETag`                                                                      | Project `task.read`, including an exact named Project read grant             |
+| `PATCH /projects/{id}/metadata` | Any nonempty subset of `key`, `color`, `summary`; returns updated metadata and `ETag`; trusted `Origin` and quoted `If-Match` required                                 | Existing `settings.manage` plus full-scope `task.read` (default Owner/Admin) |
+| `GET /projects/{id}/members`    | Existing membership identifiers/role/state/generation/revision plus `displayName`; `items` and `nextCursor`; `limit` defaults 25, maximum 100, optional opaque `after` | Full-scope `task.read`; named-resource/grant-only access is insufficient     |
+| `GET /projects/{id}/dashboard`  | `report`, `progress`, `health`; required UTC `fromAt` and `toAt`, increasing and at most 93 elapsed days apart                                                         | Full-scope `task.read`; named-resource/grant-only access is insufficient     |
+
+Metadata: `key` is an optional, non-unique display label containing 1–32 ASCII
+letters/digits/hyphens; it is not a task-number prefix. `color` is `#RRGGBB`.
+Send JSON null to clear either. `summary` aliases the existing nullable description
+(maximum 10,000 characters), with no duplicated stored text. `status` aliases the
+existing lifecycle state and is read-only; use the existing archive/restore flows,
+not a new workflow status. Continue creating Projects and editing titles with the
+existing APIs, then PATCH metadata using the current Project revision/ETag.
+Metadata and legacy edits share that revision; stale updates return 409.
+
+Members: render `displayName` as plain text and use `actorId`/membership `id` as
+context identifiers. No User UUID, email, avatar URL, contact details, credentials
+or private profile/settings are returned. Only current active full members with
+effective read permission and active accounts appear; suspended, departed,
+revoked, erased, grant-only and closed-account entries are excluded. Follow the
+signed cursor unchanged; authority/context changes invalidate it. No global user
+directory or email/profile lookup is authorized by this endpoint.
+
+Dashboard: `report` reuses the existing authorized current report, including Task
+status counts, estimates/unknown estimates, completion-in-window, overdue Tasks,
+explicit shared effort and open Risk/Issue counts. It excludes Personal Focus and
+other private data. The window bounds completion/effort metrics; Task status and
+health counts describe current authorized data as of `report.asOf`.
+`progress.completedTasks` is DONE; `eligibleTasks` excludes CANCELED; `percent` is
+DONE/eligible × 100 rounded to two decimals, or null when there is no denominator.
+`health` exposes actual `overdueTaskCount`, `openRiskCount` and `openIssueCount`.
+No synthetic health score, traffic-light threshold, forecast, budget or velocity
+is supplied. Use these measured counts and the documented basis fields directly.
+
+Migration `202611120046_project_display_metadata` adds only nullable Project
+`key`/`color` columns and format CHECKs, with no backfill or historical SQL edits.
+SHA-256: `16b337db2e1445a19763556a73dc64bca32b3a0e933121ff8ff33f0cd17ee823`.
+It passed additive-SQL safety review and isolated PostgreSQL integration tests.
+The owner subsequently authorized applying this migration to `mehran_dev`; all
+70 migrations and live/ready HTTP 200 were verified then. The newer planning
+metadata migration below remains unapplied to development. No deployment occurred.
+
+Targeted validation: seven unit/contract cases and four PostgreSQL cases (the three
+`frontend contract` cases in `project-core.spec.ts` and the populated migration
+preservation case), `pnpm.cmd typecheck`, changed-TypeScript lint/format,
+and `pnpm.cmd openapi:generate` / `pnpm.cmd openapi:check`. Direct comparison with
+the published P6-01 snapshot also preserved all 11,023 existing operation signatures.
+The dashboard fixture's
+initial revision mismatch was corrected and that affected case rerun successfully.
+No full quality gate, commit, push, deployment or live Shared activation occurred.
+
+### Projects coverage matrix compatibility — 2026-11-12
+
+Source: read-only inspection of `planner/docs/integration/API_COVERAGE_MATRIX.md`,
+R1–R12, against the actual 845-operation backend. This local revision has **849
+operations**: four new operations, metadata extensions and safe dependency error
+details. Frontend files, live Shared settings and historical migrations were not
+changed. Paths in this table are under `/api/v1/projects/{id}` unless stated.
+
+| Requirement              | Implemented / actual existing mapping                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | Remaining decision or smallest safe frontend alternative                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| R1 — caller access       | **Added `GET /access/me`**: `accessId`, local `actorId`, `role`, active admission `state`, `generation`, `scope`, `projectState`, `capabilities[]`. Existing `/api/v1/me/work/assignments` and `/api/v1/me/work/tasks?projectId=...` are the caller's own work.                                                                                                                                                                                                                                                                                                                                                                                                                                                     | `scope=FULL` denotes full-scope access; `PROJECT` denotes only an exact Project grant, possibly with `role=null`. Never interpret its `task.read` as permission to list Tasks/members/reports. Suspended/closed/revoked access is denied rather than disclosed. Capabilities are current hints, not authorization tokens; targets, consent, revisions and lifecycle remain checked on commands. Resolve lazily and respect existing rate limits.                                                                                                                                                                                                                                         |
+| R2 — members             | Resolved: `GET /members`, names only; membership `id` is the assignment `accessId`, with generation checked.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | No email, User UUID, avatar/profile directory or inferred capacity.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| R3 — Project summary     | **Extended GET/PATCH `/metadata` with nullable `startDate`, `endDate`, `statusNote`**. `tint` maps to `color`; `progressPercent` maps to `/dashboard.progress.percent`. Count all roster pages for a **visible active full-member count**, not total admissions/seats. Own open/overdue counts can be derived from all pages of the caller's `/api/v1/me/work/tasks`, using Task status and returned schedule.                                                                                                                                                                                                                                                                                                      | Metadata dates are explicit YYYY-MM-DD declarations, not inferred Task bounds; patching them never moves Tasks. `statusNote` is nullable text (2,000 characters). Require `startDate <= endDate` when both exist. The Project lifecycle remains separate from traffic-light health. `health` thresholds/manual-vs-computed ownership and `expectedPercent` baseline/calendar/weighting require owner decisions. Render unavailable until defined; never manufacture on-track or linear expected progress. Join existing Project, metadata and dashboard DTOs instead of changing the frozen legacy Project shape.                                                                        |
+| R4 — invitations         | Existing POST/GET/revoke `/api/v1/spaces/{spaceId}/invitations...`, `/api/v1/invitations/preview`, and `/api/v1/invitations/{invitationId}/accept` or `/decline`; resource offers use the existing resource-invitation family.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | **ADR 0027 conflict:** acceptance requires the verified exact recipient **and** `X-Invitation-Proof` plus revision. Proof is returned only on initial issuance. No proofless acceptance, recovered proof, recipient-profile email disclosure, inbox or resend workflow was added. Deliver the initial proof through an approved private link/fragment flow; a lost proof requires explicit revoke/reissue. Inbox discovery, safe display fields and resend/delivery semantics need a reviewed decision.                                                                                                                                                                                  |
+| R5 — item-addressed seam | Resolved frontend change: retain `projectId` on item-addressed operations.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | Keep context IDs and source IDs distinct; do not route shared sources through Personal `/tasks` APIs.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| R6 — workflow            | `GET /views?kind=LIST` includes each Task's `workflow.binding` (workflow/version/state); resolve its immutable definition with `GET /workflows/{workflowId}/versions?version=...`. Count by bound version/state across all visible pages; unbound Tasks use base status. Publish/bind/transition and named approval routes already exist.                                                                                                                                                                                                                                                                                                                                                                           | **P2-05/ADR 0032:** multiple pinned versions are intentional; publishing never migrates old Tasks. No single inferred Project workflow, REVIEW/BLOCKED base category, WIP enforcement or new per-role edge ACL is approved. Review/blocked may be labels on existing categories only. Keep unpublished drafts client-side; a proposed version does not remove states from old bindings. Mandatory limits, automatic migration and role-based transition changes need owner decisions.                                                                                                                                                                                                    |
+| R7 — fields              | `/custom-fields`, `/{fieldId}/versions`, existing Task value operations and LIST `fields.items`. `appliesTo` is Task-only by contract. Checkbox maps to `BOOLEAN`; URL text can use `TEXT` with client URL validation, without claiming server URL enforcement. Count non-null visible values by `fieldId` across all LIST pages; retain version distinctions.                                                                                                                                                                                                                                                                                                                                                      | Required-field enforcement and its effects on old Tasks, pinned versions/defaults/deprecation are unapproved product semantics. Do not pretend values are complete while only one page is loaded. No new field kind or arbitrary target type was added.                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| R8 — scheduling          | **Added safe diagnostics**: HTTP 400, `error.code=VALIDATION_ERROR`, `error.details[]` contains `{path:"dependencies",code:"DEPENDENCY_CYCLE"}` or `DEPENDENCY_DUPLICATE` (same predecessor/successor/kind). Existing `PUT /tasks/{taskId}/schedule` changes only that Task and rejects dependency violations; milestone `targetDate` uses existing component PATCH. Timed CALENDAR/LIST views plus current accepted assignments provide overlap candidates.                                                                                                                                                                                                                                                        | A non-cascading schedule PUT is not a cascade preview. Keep current dependency kind immutable. Automatic milestone-to-Task rescheduling and critical-path duration/calendar/lag definitions need decisions; topological order is not a critical path. Overlap candidates are not attendance or inferred availability.                                                                                                                                                                                                                                                                                                                                                                    |
+| R9 — reports/activity    | **Added `GET /reports/snapshots`**, signed pagination over existing immutable snapshots, with current source checks. Existing POST creates explicit captured points; GET by ID and `/reports/current` remain. Sort captured points by their timestamps and compare the same documented basis/window. Task `GET /tasks/{taskId}/metadata-history` exposes authorized `beforeValue`/`afterValue`; register-item history exposes typed before/after records.                                                                                                                                                                                                                                                           | No arbitrary past status is reconstructed from current Tasks. Per-assignee completion attribution (primary vs contributor, current vs historical assignment) and milestone burn baselines need decisions. General activity remains metadata-only; fetch a currently authorized title/history on demand, never add private historical bodies to the Project-wide feed. Missing historical points stay missing.                                                                                                                                                                                                                                                                            |
+| R10 — imports            | **Added `POST /change-plans/csv/inspection`**, `{csv}` → `columns`, up to five `sampleRows`, `rowCount`, `samplesTruncated`, syntax/bound errors. Reuses the 256-KiB/100-row/16-column parser; sample cells are capped at 2,000 characters. Requires full read + `work.manage`, trusted Origin; no plan/source writes or idempotency key. Existing POST `/change-plans/csv` performs row validation/dry-run and returns errors plus an immutable plan; apply uses its revision/hash.                                                                                                                                                                                                                                | Map uploaded columns/values explicitly to the existing approved CSV headers before preview; render samples as plain text. No owners, grants, file references or arbitrary updates are imported. The plan's 30-minute preview expiry is **not** an undo window. Cancelling before apply is safe; post-apply undo requires conflict, later-edit, retention and compensation rules, so none was invented.                                                                                                                                                                                                                                                                                   |
+| R11 — access/ownership   | Existing GET/PUT `/access-policy` exposes versioned ordinary role defaults/export limits. **Added `GET /ownership-handovers`** with signed pagination for the current Owner, including persisted pending/accepted/expired/revoked/declined states. Existing POST/GET/accept/decline/revoke `/api/v1/spaces/{spaceId}/ownership-handovers...` performs the actual ceremony.                                                                                                                                                                                                                                                                                                                                          | Fixed administrative ceilings are not editable screen toggles. A former Owner/named successor may use the existing known-ID read when permitted; the new collection remains current-Owner-only. Expiry remains enforced by database time and existing maintenance. Ownership-seat succession is not a Team/Company custody move or source transfer.                                                                                                                                                                                                                                                                                                                                      |
+| R12 — detailed facets    | Build rows from LIST Task/schedule/workflow/fields, `/tasks/{taskId}/assignments` joined to membership ID+generation/name, and `/tasks/{taskId}/association` for section/milestone. Calendar uses `/views?kind=CALENDAR&from=...&to=...&timezone=...` (exclusive end, max 93 days). Milestones already have `completed`/`targetDate`; structural responsibilities use `/member-assignments` with existing `work.manage` restriction; remaining counts can use visible Task associations. Risks use `/register-items`; work breakdown uses `/work-allocations` + Task views; explicit capacity uses `/capacity-days`, and totals use `/workload`. Existing files and typed resource-grant offer/revoke flows remain. | No redundant all-in-one Task endpoint was added; adapt the seam to these authorized facets. Shared subtask visibility, dated phase plans, a single primary milestone owner, risk code/three-level probability/checklist/close-reason/new comment targets, binary folders/versions/uploader projections and guest-directory disclosure require explicit domain/permission/retention contracts. Current risk probability is 0–100; Guest is not a new role (grant-only admission has null memberRole). **P2-06 requires null for unknown capacity**: collect explicit daily records, never substitute 40 hours or a non-null default. Text-document versions are not binary-file versions. |
+
+Current activity `action` is an open operation-code vocabulary, not a status enum.
+Verified examples: `project.metadata.update`, `workflow.publish`, `workflow.bind`,
+`workflow.transition`, `workflow.approval.approve/reject`, `field.publish`,
+`field.deprecate`, `field.value`, `dependency.create/update/retire`,
+`reschedule.apply`, `document.publish/retire`, and `comment.create/edit/delete`.
+Expand slash notation to individual codes; render unknown codes with a neutral
+fallback. Previews do not imply an activity event. Target/action IDs grant no
+additional read permission, and actor IDs are never global account IDs.
+
+Planning migration: `202611120047_project_planning_metadata` adds nullable Project
+dates/note and a date-order CHECK only; no backfill, source movement or historical
+SQL changes. SHA-256:
+`8060fe8487bb8bb5d70c75d1e021de791846c68b4247c5eb7aff635b84673558`.
+Prepared and tested against guarded isolated PostgreSQL only; **not applied to
+`mehran_dev`**. Apply through the normal reviewed migration step after owner approval
+before using this updated Prisma client with a persistent database.
+
+Validation: typecheck; 45 targeted unit/contract cases; ten targeted PostgreSQL
+cases including populated migration preservation and the three prior frontend
+regressions (nine passed initially; the optional-capability denial handling was
+corrected and R1 rerun successfully); changed-file lint/format; canonical OpenAPI
+generation/check. No Live Tests, full quality gate, reset, Shared activation,
+frontend edits, commits, pushes or deployment were performed.
 
 ## 1. Instructions to Fable
 
@@ -29,7 +235,7 @@ integration. Report any backend contract gap with method/path and requestId.
 
 | File                                                                                                                           | Purpose                                                                                         |
 | ------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------- |
-| [`api/openapi.json`](api/openapi.json)                                                                                         | Complete implemented contract: OpenAPI 3.1.0, **841 operations**, **7,649 resolved references** |
+| [`api/openapi.json`](api/openapi.json)                                                                                         | Complete implemented contract: OpenAPI 3.1.0, **849 operations**, **7,729 resolved references** |
 | [`p6-01-contract.md`](p6-01-contract.md)                                                                                       | Social scope, ownership, transitions and constraints                                            |
 | [`adr/0050-social-discovery-connections-and-group-admission.md`](adr/0050-social-discovery-connections-and-group-admission.md) | Approved discovery, blocking and Group admission policy                                         |
 | [`p5-06-contract.md`](p5-06-contract.md)                                                                                       | REST recovery, multi-device consistency, blocks and lifecycle                                   |
@@ -419,7 +625,7 @@ production acceptance. Backend deployment/activation remains a separate owner st
 ## 11. Actual API topic index
 
 The following topic counts are extracted from this release's canonical JSON.
-Use them to navigate all 841 operations, then read each operation schema.
+Use them to navigate all 849 operations, then read each operation schema.
 
 | Actual primary tag    | Operations | Example implemented paths                                                                                                                                                             |
 | --------------------- | ---------: | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -442,9 +648,9 @@ Use them to navigate all 841 operations, then read each operation schema.
 | personal-lifecycle    |          8 | `/api/v1/me/export`, `/api/v1/me/exports/{id}`, `/api/v1/me/exports/{id}/download`                                                                                                    |
 | planning              |         18 | `/api/v1/planning/days/{date}`, `/api/v1/planning/days/{date}/items/{taskId}`, `/api/v1/planning/days/{date}/items/{taskId}/move`                                                     |
 | project-collaboration |         30 | `/api/v1/projects/{projectId}/exports`, `/api/v1/projects/{projectId}/files/reconcile`, `/api/v1/projects/{projectId}/content/{targetKind}/{targetId}/comments/{commentId}/history`   |
-| project-execution     |         33 | `/api/v1/projects/{projectId}/register-items`, `/api/v1/projects/{projectId}/register-items/{itemId}`, `/api/v1/projects/{projectId}/register-items/{itemId}/history`                 |
+| project-execution     |         35 | `/api/v1/projects/{projectId}/register-items`, `/api/v1/projects/{projectId}/register-items/{itemId}`, `/api/v1/projects/{projectId}/register-items/{itemId}/history`                 |
 | project-tools         |         26 | `/api/v1/projects/{projectId}/workflows`, `/api/v1/projects/{projectId}/workflows/{workflowId}/versions`, `/api/v1/projects/{projectId}/tasks/{taskId}/workflow`                      |
-| projects              |         38 | `/api/v1/projects`, `/api/v1/projects/{id}`, `/api/v1/projects/{id}/archive`                                                                                                          |
+| projects              |         44 | `/api/v1/projects`, `/api/v1/projects/{id}`, `/api/v1/projects/{id}/archive`                                                                                                          |
 | rewards               |          5 | `/api/v1/rewards/preferences`, `/api/v1/rewards/progress`, `/api/v1/rewards/achievements`                                                                                             |
 | shared-collaboration  |         13 | `/api/v1/spaces/{spaceId}/invitations`, `/api/v1/spaces/{spaceId}/invitations/{id}`, `/api/v1/invitations/preview`                                                                    |
 | shared-work           |         19 | `/api/v1/projects/{projectId}/assignment-policy`, `/api/v1/projects/{projectId}/tasks/{taskId}/assignments`, `/api/v1/projects/{projectId}/tasks/{taskId}/assignments/{assignmentId}` |
@@ -506,4 +712,4 @@ Success codes come from the generated contract; do not assume query-like POST is
 | POST   | `/api/v1/social-group-invitations/{id}/accept`                  | `socialpostsocialgroupinvitationsidaccept`            | R, P           | 201     |
 | POST   | `/api/v1/social-group-invitations/{id}/decline`                 | `socialpostsocialgroupinvitationsiddecline`           | R, P           | 201     |
 
-Canonical OpenAPI SHA-256: `c9bf9ec01cbfdeed4183c7e963c4ab4fc6d09e0f3bddab4c3b12f1582d8d200e`.
+Canonical OpenAPI SHA-256: `ea8c49ef225d6a5e23d00522550e93f96b6b8bba18522b047fb9ea7dc262463f`.

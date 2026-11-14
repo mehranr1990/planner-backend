@@ -987,6 +987,30 @@ describe('P3-01 independent Teams and explicit Project visibility', () => {
       .expect(400);
   });
 
+  it('stabilization T-M2: lists Team ownership handovers to the Owner only with signed pages', async () => {
+    const t = await team(),
+      m = await join(t.id, member, 'ADMIN');
+    expect((await teams.handovers(owner.actor, t.id, page)).items).toEqual([]);
+    const offer = await service.createHandover(
+      owner.actor,
+      t.id,
+      { successorAccessId: m.id },
+      randomUUID(),
+    );
+    const listed = await teams.handovers(owner.actor, t.id, {
+      ...page,
+      limit: 1,
+    });
+    expect(listed).toEqual({
+      items: [expect.objectContaining({ id: offer.id, toAccessId: m.id })],
+      nextCursor: null,
+    });
+    await expect(teams.handovers(member.actor, t.id, page)).rejects.toThrow();
+    await expect(teams.handovers(outsider.actor, t.id, page)).rejects.toThrow();
+    await expect(
+      teams.handovers(owner.actor, t.id, { ...page, after: 'forged' }),
+    ).rejects.toThrow();
+  });
   it('self-departure retains sources, ends only its generation and rejects owner abandonment with remaining members', async () => {
     const t = await team(),
       m = await join(t.id, member, 'LEAD');

@@ -393,6 +393,7 @@ export class CompanyKnowledgeController {
   ) {
     void query;
     const value = await this.reports.export(actor, id, scopeId, body);
+    res.setHeader('X-Export-Id', value.exportId);
     res.setHeader('Cache-Control', 'private, no-store');
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Content-Type', value.mimeType);
@@ -401,6 +402,24 @@ export class CompanyKnowledgeController {
       'attachment; filename="' + value.filename + '"',
     );
     res.send(value.body);
+  }
+  @Get('exports') exports(
+    @CurrentActor() actor: RequestActor,
+    @Param('id', uuid) id: string,
+    @Param('scopeId', uuid) scopeId: string,
+    @Query(new ZodValidationPipe(c.CompanyPageQuerySchema))
+    q: z.infer<typeof c.CompanyPageQuerySchema>,
+  ) {
+    return this.reports.exports(actor, id, scopeId, q);
+  }
+  @Get('exports/:exportId') exportStatus(
+    @CurrentActor() actor: RequestActor,
+    @Param('id', uuid) id: string,
+    @Param('scopeId', uuid) scopeId: string,
+    @Param('exportId', uuid) exportId: string,
+    @Query(empty) _q: unknown,
+  ) {
+    return this.reports.exportStatus(actor, id, scopeId, exportId);
   }
   @Post('knowledge/documents/:documentId/versions/:target/complete')
   @HttpCode(200)

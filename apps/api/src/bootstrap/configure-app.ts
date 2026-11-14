@@ -40,6 +40,7 @@ export async function configureApp(app: NestExpressApplication): Promise<void> {
       'X-Correlation-Id',
       'ETag',
       'Content-Disposition',
+      'X-Export-Id',
     ],
   });
   app.use((req: Request, res: Response, next: NextFunction) => {

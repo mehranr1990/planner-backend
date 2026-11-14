@@ -15,6 +15,8 @@ import {
   SharedKernel,
   SharedAuthority,
   CollaborationService,
+  ordinaryCapabilities,
+  fixedCapabilities,
 } from '../../spaces/public/index.js';
 import type { SharedRequest } from '../../spaces/public/index.js';
 import { TeamProjects } from '../../projects/public/index.js';
@@ -145,6 +147,45 @@ export class TeamsService {
         this.view(tx, a, await tx.team.findUniqueOrThrow({ where: { id } })),
     );
   }
+  async accessMe(actor: RequestActor, id: string) {
+    await this.hint(id);
+    const catalog = [...ordinaryCapabilities, ...fixedCapabilities];
+    return this.kernel.run(
+      actor,
+      { userIds: [], spaceIds: [id] },
+      [this.request(id)],
+      async (tx, a) => {
+        const access = a.require(tx, id, 'task.read');
+        const capabilities: string[] = catalog.filter((cap) =>
+          a.has(tx, id, cap),
+        );
+        if ((await this.kernel.contextState(tx, a, id, id)) === 'ACTIVE') {
+          if (['OWNER', 'ADMIN'].includes(access.role ?? ''))
+            capabilities.push('conversation.create');
+          if (['OWNER', 'ADMIN', 'LEAD'].includes(access.role ?? ''))
+            capabilities.push('announcement.publish');
+          // Mirrors meeting source management: role and work.manage.
+          if (
+            ['OWNER', 'ADMIN', 'LEAD'].includes(access.role ?? '') &&
+            capabilities.includes('work.manage')
+          )
+            capabilities.push('meeting.create');
+        }
+        return c.ScopeAccessMeSchema.strip().parse({ ...access, capabilities });
+      },
+      undefined,
+      catalog.map((capability) => ({
+        ...this.request(id, capability),
+        allowArchived: [
+          'task.read',
+          'file.read',
+          'custody.archive',
+          'custody.accept',
+        ].includes(capability),
+      })),
+      true,
+    );
+  }
   async patch(
     actor: RequestActor,
     id: string,
@@ -247,9 +288,14 @@ export class TeamsService {
           .filter((r) => !after || r.id > after)
           .slice(0, q.limit + 1);
         const items = await Promise.all(
-          selected
-            .slice(0, q.limit)
-            .map((row) => this.collaboration.memberView(tx, row)),
+          selected.slice(0, q.limit).map(async (row) => ({
+            ...(await this.collaboration.memberView(tx, row)),
+            displayName: await this.collaboration.displayName(
+              tx,
+              access.spaceId,
+              row.actorId,
+            ),
+          })),
         );
         return c.TeamMembershipPageSchema.parse({
           items,
@@ -261,6 +307,38 @@ export class TeamsService {
                   actor.userId,
                   items.at(-1)!.id,
                 )
+              : null,
+        });
+      },
+    );
+  }
+  /** Owner-only, signed pages over the shared handover history. */
+  async handovers(actor: RequestActor, id: string, q: Page) {
+    await this.hint(id);
+    return this.kernel.run(
+      actor,
+      { userIds: [], spaceIds: [id] },
+      [this.request(id, 'custody.handover')],
+      async (tx, a) => {
+        const access = a.require(tx, id, 'custody.handover'),
+          context = 'team-handovers:' + id,
+          stamp = hash([
+            String(access.authorizationVersion),
+            access.generation,
+          ]),
+          rows = await this.collaboration.handoverPage(
+            tx,
+            a,
+            id,
+            this.kernel.cursorPosition(context, stamp, actor.userId, q.after),
+            q.limit,
+          ),
+          items = rows.slice(0, q.limit);
+        return c.TeamHandoverPageSchema.parse({
+          items,
+          nextCursor:
+            rows.length > q.limit
+              ? this.cursor(context, stamp, actor.userId, items.at(-1)!.id)
               : null,
         });
       },

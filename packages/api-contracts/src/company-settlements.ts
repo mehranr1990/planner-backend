@@ -1,5 +1,8 @@
 import { z } from 'zod';
-import { CompanyStaffMemberSchema } from './company-staff.js';
+import {
+  CompanyStaffMemberSchema,
+  CompanyStaffMemberDisplaySchema,
+} from './company-staff.js';
 import {
   CompanyMoneySchema,
   CompanyFinancePageQuerySchema,
@@ -48,6 +51,8 @@ export const CompanyFinancialWorkflowVersionSchema = z.strictObject({
   state: z.enum(['DRAFT', 'PUBLISHED', 'ARCHIVED']),
   steps: z.array(
     CompanyFinancialWorkflowStepInputSchema.extend({
+      primary: CompanyStaffMemberDisplaySchema,
+      alternate: CompanyStaffMemberDisplaySchema.nullable(),
       id: uuid,
       position: z.number().int().nonnegative(),
     }),
@@ -56,16 +61,22 @@ export const CompanyFinancialWorkflowVersionSchema = z.strictObject({
 export const CompanyFinancialWorkflowBindSchema = z.strictObject({
   workflowVersionId: uuid,
 });
-export const CompanyFinancialApprovalDecisionSchema = z.strictObject({
-  decision: z.enum(['APPROVE', 'REJECT']),
-});
+/** ER/AT (owner-approved): a rejection requires a nonempty reason, kept in authorized history. */
+export const CompanyFinancialApprovalDecisionSchema = z
+  .strictObject({
+    decision: z.enum(['APPROVE', 'REJECT']),
+    reason: z.string().trim().min(1).max(1000).optional(),
+  })
+  .refine((v) => v.decision === 'APPROVE' || v.reason !== undefined, {
+    message: 'A rejection requires a reason',
+  });
 export const CompanyFinancialApprovalSchema = z.strictObject({
   ...base,
   workflowVersionId: uuid,
   expenseVersionId: uuid.nullable(),
   reimbursementId: uuid.nullable(),
-  requester: CompanyStaffMemberSchema,
-  beneficiary: CompanyStaffMemberSchema.nullable(),
+  requester: CompanyStaffMemberDisplaySchema,
+  beneficiary: CompanyStaffMemberDisplaySchema.nullable(),
   attempt: positive,
   state: z.enum(['ACTIVE', 'APPROVED', 'REJECTED', 'CANCELED']),
   stepIndex: z.number().int().nonnegative(),
@@ -85,7 +96,10 @@ export const CompanyFinancialApprovalEventSchema = z.strictObject({
     'CANCEL',
   ]),
   createdByActorId: uuid,
-  reviewer: CompanyStaffMemberSchema.nullable(),
+  createdByDisplayName: z.string().nullable().optional(),
+  reviewer: CompanyStaffMemberDisplaySchema.nullable(),
+  /** Decision reason; null when none was given or it was erased. */
+  reason: z.string().nullable().optional(),
 });
 export const CompanyReimbursementCreateSchema = z.strictObject({
   id: uuid,
@@ -99,7 +113,7 @@ export const CompanyReimbursementSchema = z.strictObject({
   ...base,
   bucketId: uuid,
   expenseVersionId: uuid,
-  beneficiary: CompanyStaffMemberSchema,
+  beneficiary: CompanyStaffMemberDisplaySchema,
   amount: CompanyMoneySchema,
   currency: z.string().length(3),
   scale: z.number().int().min(0).max(4),
@@ -126,7 +140,7 @@ export const CompanyPaymentAcknowledgementSchema = z.strictObject({
   ...base,
   requestId: uuid,
   bucketId: uuid,
-  author: CompanyStaffMemberSchema,
+  author: CompanyStaffMemberDisplaySchema,
   amount: CompanyMoneySchema,
   reference: title.nullable(),
   state: z.enum([
@@ -150,7 +164,7 @@ export const CompanyAcknowledgementCorrectionSchema = z.strictObject({
   paymentId: uuid,
   requestId: uuid,
   bucketId: uuid,
-  author: CompanyStaffMemberSchema,
+  author: CompanyStaffMemberDisplaySchema,
   amount: CompanyMoneySchema,
   reason: z.string().min(1).max(1000),
   state: z.enum(['PROPOSED', 'ACKNOWLEDGED', 'DECLINED', 'CANCELED']),
@@ -182,11 +196,13 @@ export const CompanyReimbursementEffectSchema = z.strictObject({
   acknowledged: signed,
   pending: signed,
   createdByActorId: uuid,
+  createdByDisplayName: z.string().nullable().optional(),
 });
 export const CompanyReimbursementBalanceSchema = z.strictObject({
   ...base,
   expenseId: uuid,
   beneficiaryActorId: uuid,
+  beneficiaryDisplayName: z.string().nullable().optional(),
   currency: z.string().length(3),
   scale: z.number().int().min(0).max(4),
   entitlement: CompanyMoneySchema,

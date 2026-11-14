@@ -13,6 +13,7 @@ import {
   BadRequestException,
   Injectable,
   SetMetadata,
+  HttpCode,
 } from '@nestjs/common';
 import type { CanActivate, ExecutionContext } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
@@ -71,6 +72,23 @@ export class CollaborationGuard implements CanActivate {
         'PROJECT',
       );
     return true;
+  }
+}
+/** OD-4: the caller's own pending Project offers (metadata only, no proof). */
+@Controller('project-invitations')
+@UseGuards(VerifiedSessionGuard, CollaborationGuard)
+export class ProjectInvitationListController {
+  constructor(
+    @Inject(CollaborationService)
+    private readonly service: CollaborationService,
+  ) {}
+  @Get()
+  pending(
+    @CurrentActor() actor: RequestActor,
+    @Query(new ZodValidationPipe(c.ProjectPageQuerySchema))
+    q: z.infer<typeof c.ProjectPageQuerySchema>,
+  ) {
+    return this.service.pendingOffers(actor, 'PROJECT', q);
   }
 }
 @Controller('invitations')
@@ -301,5 +319,30 @@ export class SpaceCollaborationController {
       'revoke',
     );
     return result(res, value, value.revision);
+  }
+}
+/** OD-4 in-app delivery of a fresh one-time proof to the verified recipient. */
+@Controller('invitations')
+export class InvitationProofController {
+  constructor(
+    @Inject(CollaborationService)
+    private readonly service: CollaborationService,
+  ) {}
+  @Post(':invitationId/proof')
+  @HttpCode(200)
+  @UseGuards(VerifiedSessionGuard, CollaborationGuard)
+  issueProof(
+    @CurrentActor() actor: RequestActor,
+    @Param('invitationId', id) invitationId: string,
+    @Headers('if-match') match: string | undefined,
+    @Body(empty) _b: unknown,
+    @Query(query) _q: unknown,
+  ) {
+    return this.service.issueRecipientProof(
+      actor,
+      'PROJECT',
+      invitationId,
+      revision(match),
+    );
   }
 }

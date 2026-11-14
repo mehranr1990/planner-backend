@@ -1,4 +1,6 @@
 import { ProjectCustodyGraph } from './application/projects-custody-graph.js';
+import { ProjectOverviewService } from './application/project-overview.service.js';
+import { ProjectOverviewController } from './http/project-overview.controller.js';
 import { ProjectCompanyAssociations } from './application/project-company-associations.js';
 import { Module } from '@nestjs/common';
 import { MessagingModule } from '../messaging/public/index.js';
@@ -58,6 +60,7 @@ export class ProjectsModule {
         storage,
       ],
       providers: [
+        ProjectOverviewService,
         ProjectCustodyGraph,
         ProjectCompanyAssociations,
         ProjectFinanceReferences,
@@ -78,6 +81,7 @@ export class ProjectsModule {
         ProjectToolsService,
       ],
       controllers: [
+        ProjectOverviewController,
         ProjectLifecycleController,
         ProjectTransferController,
         ProjectCollaborationController,

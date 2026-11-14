@@ -1,16 +1,32 @@
 import 'reflect-metadata';
 import { it, expect } from 'vitest';
-import { METHOD_METADATA, PATH_METADATA } from '@nestjs/common/constants.js';
+import {
+  METHOD_METADATA,
+  PATH_METADATA,
+  GUARDS_METADATA,
+} from '@nestjs/common/constants.js';
 import { RequestMethod } from '@nestjs/common';
 import {
   ProjectsController,
   ResourceInvitationController,
+  ProjectGuard,
 } from '../../src/modules/projects/http/projects.controller.js';
+import { VerifiedSessionGuard } from '../../src/platform/auth/session.guard.js';
 import { projectPaths } from '../../../../packages/api-contracts/src/projects-openapi.js';
 import { executableProjectAssociation } from '../../src/modules/projects/public/index.js';
+import { ProjectOverviewController } from '../../src/modules/projects/http/project-overview.controller.js';
+it('retains session verification and Shared activation guards on all overview routes', () => {
+  expect(
+    Reflect.getMetadata(GUARDS_METADATA, ProjectOverviewController),
+  ).toEqual([VerifiedSessionGuard, ProjectGuard]);
+});
 it('matches every exported Project operation to an actual compiled controller handler', () => {
   const actual: string[] = [];
-  for (const controller of [ProjectsController, ResourceInvitationController])
+  for (const controller of [
+    ProjectsController,
+    ResourceInvitationController,
+    ProjectOverviewController,
+  ])
     for (const name of Object.getOwnPropertyNames(controller.prototype)) {
       const handler = Object.getOwnPropertyDescriptor(
         controller.prototype,
@@ -35,7 +51,7 @@ it('matches every exported Project operation to an actual compiled controller ha
     Object.keys(ops).map((method) => method + ' ' + path),
   );
   expect(actual.sort()).toEqual(expected.sort());
-  expect(actual).toHaveLength(38);
+  expect(actual).toHaveLength(44);
 });
 it('leaves future Team/Company association intents non-executable', () => {
   expect(executableProjectAssociation({ kind: 'INDEPENDENT' })).toBe(true);

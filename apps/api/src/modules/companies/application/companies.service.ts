@@ -23,9 +23,12 @@ import {
   validCompanyOverride,
 } from '../domain/company-policy.js';
 import type { CompanyRule } from '../domain/company-policy.js';
+import { moveAccessChanges, moveRefusal } from '../domain/context-move.js';
+import type { MoveNode } from '../domain/context-move.js';
 const hash = (v: unknown) =>
   createHash('sha256').update(JSON.stringify(v)).digest('hex');
 type Page = z.infer<typeof c.CompanyPageQuerySchema>;
+type PolicyChain = z.infer<typeof c.CompanyPolicySchema>[];
 @Injectable()
 export class CompaniesService {
   constructor(
@@ -247,6 +250,147 @@ export class CompaniesService {
       await this.access.effect(ctx, 'company.update', id, audit);
       return this.company(changed);
     });
+  }
+  /** Counted financial records (OD-9): any CompanyBudget or CompanyExpenseVersion in the Company. */
+  private async financialRecords(ctx: CompanyTransaction) {
+    const [budgets, versions] = await Promise.all([
+      ctx.tx.companyBudget.count({ where: { spaceId: ctx.spaceId } }),
+      ctx.tx.companyExpenseVersion.count({ where: { spaceId: ctx.spaceId } }),
+    ]);
+    return budgets + versions;
+  }
+  private settingsView(row: Company, locked: boolean) {
+    return c.CompanySettingsSchema.parse({
+      companyId: row.id,
+      currency: row.currency,
+      scale: row.scale,
+      currencyLocked: locked,
+      legalName: row.legalName,
+      fiscalStartMonth: row.fiscalStartMonth,
+      revision: row.revision,
+    });
+  }
+  /** LS (owner-approved): legal name and fiscal-year start month; no registration details are inferred. */
+  async setLegal(
+    actor: RequestActor,
+    id: string,
+    revision: number,
+    input: z.infer<typeof c.CompanyLegalSettingsInputSchema>,
+  ) {
+    await this.hint(id);
+    const body = c.CompanyLegalSettingsInputSchema.parse(input);
+    return this.access.write(
+      actor,
+      id,
+      'company.settings.legal',
+      id,
+      async (ctx) => {
+        if (!this.access.isAdmin(ctx)) throw new ForbiddenException();
+        const row = await ctx.tx.company.findUniqueOrThrow({ where: { id } });
+        if (row.revision !== revision) throw new ConflictException();
+        const audit = await ctx.begin(),
+          changed = await ctx.tx.company.update({
+            where: { id },
+            data: {
+              ...(body.legalName !== undefined
+                ? { legalName: body.legalName }
+                : {}),
+              ...(body.fiscalStartMonth !== undefined
+                ? { fiscalStartMonth: body.fiscalStartMonth }
+                : {}),
+              revision: { increment: 1 },
+              updatedAt: ctx.now,
+            },
+          });
+        await this.access.effect(ctx, 'company.settings.legal', id, audit);
+        return this.settingsView(
+          changed,
+          changed.currency !== null && (await this.financialRecords(ctx)) > 0,
+        );
+      },
+    );
+  }
+  async settings(actor: RequestActor, id: string) {
+    await this.hint(id);
+    return this.access.read(actor, id, async (ctx) => {
+      await this.visible(ctx, id, 'structure.read');
+      const row = await ctx.tx.company.findUniqueOrThrow({ where: { id } });
+      return this.settingsView(
+        row,
+        row.currency !== null && (await this.financialRecords(ctx)) > 0,
+      );
+    });
+  }
+  /**
+   * OD-9/F1: one fixed currency, changeable only before the first financial
+   * record. A legacy Company with records may only confirm the single
+   * currency those records already use; nothing is ever converted.
+   */
+  async setCurrency(
+    actor: RequestActor,
+    id: string,
+    revision: number,
+    input: z.infer<typeof c.CompanyCurrencyInputSchema>,
+  ) {
+    await this.hint(id);
+    const body = c.CompanyCurrencyInputSchema.parse(input),
+      scale = c.financeCurrencyScales[body.currency]!;
+    return this.access.write(
+      actor,
+      id,
+      'company.currency.set',
+      id,
+      async (ctx) => {
+        if (!this.access.isAdmin(ctx)) throw new ForbiddenException();
+        // Serializes against record creation, which holds a share lock on this row.
+        await ctx.tx
+          .$queryRaw`SELECT 1 FROM "Company" WHERE id=${id}::uuid FOR UPDATE`;
+        const row = await ctx.tx.company.findUniqueOrThrow({ where: { id } });
+        if (row.revision !== revision) throw new ConflictException();
+        if (row.currency === body.currency)
+          return this.settingsView(row, (await this.financialRecords(ctx)) > 0);
+        if ((await this.financialRecords(ctx)) > 0) {
+          if (row.currency !== null)
+            throw new ConflictException({ code: 'COMPANY_CURRENCY_LOCKED' });
+          const conflicting =
+            (await ctx.tx.companyBudget.count({
+              where: {
+                spaceId: id,
+                OR: [
+                  { currency: { not: body.currency } },
+                  { scale: { not: scale } },
+                ],
+              },
+            })) +
+            (await ctx.tx.companyExpenseVersion.count({
+              where: {
+                spaceId: id,
+                OR: [
+                  { currency: { not: body.currency } },
+                  { scale: { not: scale } },
+                ],
+              },
+            }));
+          if (conflicting)
+            throw new ConflictException({ code: 'COMPANY_CURRENCY_CONFLICT' });
+        }
+        const audit = await ctx.begin(),
+          changed = await ctx.tx.company.update({
+            where: { id },
+            data: {
+              currency: body.currency,
+              scale,
+              revision: { increment: 1 },
+              updatedAt: ctx.now,
+            },
+          });
+        await this.access.effect(ctx, 'company.currency.set', id, audit);
+        return this.settingsView(
+          changed,
+          (await this.financialRecords(ctx)) > 0,
+        );
+      },
+    );
   }
   async createContext(
     actor: RequestActor,
@@ -473,11 +617,293 @@ export class CompaniesService {
       },
     );
   }
+  private async node(ctx: CompanyTransaction, scopeId: string) {
+    const department = await ctx.tx.companyDepartment.findFirst({
+      where: { id: scopeId, spaceId: ctx.spaceId },
+    });
+    if (department)
+      return {
+        id: department.id,
+        kind: 'DEPARTMENT' as const,
+        departmentId: null,
+        revision: department.revision,
+      };
+    const unit = await ctx.tx.companyUnit.findFirst({
+      where: { id: scopeId, spaceId: ctx.spaceId },
+    });
+    if (!unit) throw new NotFoundException();
+    return {
+      id: unit.id,
+      kind: 'UNIT' as const,
+      departmentId: unit.departmentId,
+      revision: unit.revision,
+    };
+  }
+  private async latestPolicy(ctx: CompanyTransaction, scopeId: string) {
+    const row = await ctx.tx.companyScopePolicy.findFirst({
+      where: { spaceId: ctx.spaceId, scopeId },
+      orderBy: { version: 'desc' },
+    });
+    if (!row) throw new NotFoundException();
+    return c.CompanyPolicySchema.parse({
+      spaceId: row.spaceId,
+      scopeId: row.scopeId,
+      version: row.version,
+      rules: row.rules,
+    });
+  }
+  /** OD-5: what moving a context under `parentId` (null = Company root) would change. */
+  private async movePlan(
+    ctx: CompanyTransaction,
+    scopeId: string,
+    parentId: string | null,
+  ) {
+    if (!this.access.isAdmin(ctx)) throw new ForbiddenException();
+    const scope = await this.node(ctx, scopeId),
+      parent: MoveNode | null = parentId
+        ? await this.node(ctx, parentId)
+        : null;
+    let chains: { before: PolicyChain; after: PolicyChain } | null = null;
+    if (
+      scope.kind === 'UNIT' &&
+      parent?.kind === 'DEPARTMENT' &&
+      parent.id !== scope.departmentId
+    ) {
+      const [root, from, to, own] = await Promise.all(
+        [ctx.spaceId, scope.departmentId!, parent.id, scope.id].map((id) =>
+          this.latestPolicy(ctx, id),
+        ),
+      );
+      chains = { before: [root!, from!, own!], after: [root!, to!, own!] };
+    }
+    const refusal = moveRefusal(
+      scope,
+      parent,
+      chains
+        ? { ancestors: chains.after.slice(0, 2), own: chains.after[2]! }
+        : null,
+    );
+    const [seats, teams, budgets] = await Promise.all([
+      ctx.tx.contextAccess.findMany({
+        where: { spaceId: ctx.spaceId, scopeId, state: 'ACTIVE' },
+        select: { memberRole: true },
+      }),
+      ctx.tx.domainScopeCustody.count({
+        where: {
+          spaceId: ctx.spaceId,
+          parentScopeId: scopeId,
+          state: 'ACTIVE',
+        },
+      }),
+      ctx.tx.companyBudget.findMany({
+        where: { spaceId: ctx.spaceId, scopeId, archived: false },
+        select: { currency: true, limit: true },
+        orderBy: { id: 'asc' },
+      }),
+    ]);
+    const totals = new Map<string, (typeof budgets)[number]['limit']>();
+    for (const b of budgets)
+      totals.set(b.currency, totals.get(b.currency)?.plus(b.limit) ?? b.limit);
+    return {
+      scope,
+      parentId: parent?.id ?? null,
+      people: seats.length,
+      teams,
+      budgets: [...totals].map(([currency, limit]) => ({
+        currency,
+        limit: limit.toString(),
+      })),
+      accessChanges: chains
+        ? moveAccessChanges(
+            seats.map((r) => c.CompanyRoleSchema.parse(r.memberRole)),
+            chains.before,
+            chains.after,
+          )
+        : 0,
+      refusal,
+    };
+  }
+  async contextMovePreview(
+    actor: RequestActor,
+    id: string,
+    q: z.infer<typeof c.ContextMoveQuerySchema>,
+  ) {
+    await this.hint(id);
+    return this.access.read(actor, id, async (ctx) => {
+      const plan = await this.movePlan(ctx, q.scopeId, q.parentId ?? null);
+      return c.ContextMovePreviewSchema.parse({
+        scopeId: plan.scope.id,
+        kind: plan.scope.kind,
+        fromParentId: plan.scope.departmentId,
+        parentId: plan.parentId,
+        people: plan.people,
+        teams: plan.teams,
+        budgets: plan.budgets,
+        accessChanges: plan.accessChanges,
+        revision: plan.scope.revision,
+        allowed: plan.refusal === null,
+        refusal: plan.refusal,
+      });
+    });
+  }
+  /**
+   * OD-5 (owner-approved): move a unit with its seats, Project/Team scopes,
+   * budgets and own policy to another department. Company OWNER/ORG_ADMIN only;
+   * If-Match is the unit revision. Seats stay root-bound; the destination policy
+   * chain applies from the next request (authorization is evaluated live), so no
+   * access inherited from the old department survives. The move is recorded
+   * first (the DB lets departmentId change only to a recorded move) and audited.
+   */
+  async contextMove(
+    actor: RequestActor,
+    id: string,
+    revision: number,
+    input: z.infer<typeof c.ContextMoveCreateSchema>,
+  ) {
+    await this.hint(id);
+    const body = c.ContextMoveCreateSchema.parse(input);
+    const view = (r: {
+      id: string;
+      scopeId: string;
+      fromDepartmentId: string;
+      toDepartmentId: string;
+      unitRevision: number;
+      accessChanges: number;
+      createdAt: Date;
+    }) =>
+      c.ContextMoveSchema.parse({
+        id: r.id,
+        scopeId: r.scopeId,
+        fromParentId: r.fromDepartmentId,
+        parentId: r.toDepartmentId,
+        revision: r.unitRevision,
+        accessChanges: r.accessChanges,
+        createdAt: r.createdAt.toISOString(),
+      });
+    return this.access.write(
+      actor,
+      id,
+      'company.context.move',
+      body.scopeId,
+      async (ctx) => {
+        if (!this.access.isAdmin(ctx)) throw new ForbiddenException();
+        const replay = await ctx.tx.companyContextMove.findUnique({
+          where: { id: body.id },
+        });
+        if (replay) {
+          if (
+            replay.spaceId !== ctx.spaceId ||
+            replay.scopeId !== body.scopeId ||
+            replay.toDepartmentId !== body.parentId
+          )
+            throw new ConflictException({ code: 'IDEMPOTENCY_CONFLICT' });
+          return view(replay);
+        }
+        const plan = await this.movePlan(ctx, body.scopeId, body.parentId);
+        if (plan.scope.revision !== revision)
+          throw new ConflictException({ code: 'STALE_REVISION' });
+        if (plan.refusal) throw new ConflictException({ code: plan.refusal });
+        const audit = await ctx.begin();
+        const row = await ctx.tx.companyContextMove.create({
+          data: {
+            id: body.id,
+            spaceId: ctx.spaceId,
+            scopeId: body.scopeId,
+            fromDepartmentId: plan.scope.departmentId!,
+            toDepartmentId: body.parentId,
+            unitRevision: revision + 1,
+            accessChanges: plan.accessChanges,
+            actorId: ctx.root.actorId,
+          },
+        });
+        if (
+          (
+            await ctx.tx.companyUnit.updateMany({
+              where: { id: body.scopeId, spaceId: ctx.spaceId, revision },
+              data: {
+                departmentId: body.parentId,
+                revision: { increment: 1 },
+                updatedAt: ctx.now,
+              },
+            })
+          ).count !== 1
+        )
+          throw new ConflictException({ code: 'STALE_REVISION' });
+        await this.access.effect(
+          ctx,
+          'company.context.move',
+          body.scopeId,
+          audit,
+        );
+        return view(row);
+      },
+    );
+  }
   async members(actor: RequestActor, id: string, scopeId: string, q: Page) {
     await this.hint(id);
     return this.access.read(actor, id, async (ctx) => {
       await this.visible(ctx, scopeId, 'directory.read');
       return this.access.members(ctx, scopeId, q);
+    });
+  }
+  async accessMe(actor: RequestActor, id: string, scopeId: string) {
+    await this.hint(id);
+    return this.access.read(actor, id, async (ctx) => {
+      await this.path(ctx, scopeId);
+      let seat = ctx.root;
+      let admitted = scopeId === id;
+      try {
+        seat = await this.access.seat(ctx, scopeId);
+        admitted = true;
+      } catch (error) {
+        if (!this.access.isAdmin(ctx) || !(error instanceof NotFoundException))
+          throw error;
+      }
+      const capabilities: string[] = [];
+      for (const key of ['structure.read', 'directory.read'] as const) {
+        try {
+          await this.visible(ctx, scopeId, key);
+          capabilities.push(key);
+        } catch (error) {
+          if (!(error instanceof NotFoundException)) throw error;
+        }
+      }
+      const custody = await ctx.tx.sharedCustody.findUniqueOrThrow({
+        where: { spaceId: id },
+      });
+      if (custody.state === 'ACTIVE') {
+        if (
+          admitted &&
+          (this.access.isAdmin(ctx) ||
+            (scopeId !== id && seat.role === 'DEPT_MANAGER'))
+        )
+          capabilities.push(
+            'staff.manage',
+            'finance.manage',
+            'knowledge.manage',
+            'export.visible',
+          );
+        if (
+          this.access.isAdmin(ctx) ||
+          (scopeId !== id && seat.role === 'DEPT_MANAGER')
+        )
+          capabilities.push('invitation.member');
+        if (this.access.isAdmin(ctx))
+          capabilities.push(
+            'settings.manage',
+            'policy.publish',
+            'membership.manage',
+          );
+        if (ctx.root.role === 'OWNER')
+          capabilities.push('membership.org-admin', 'custody.handover');
+        if (scopeId === id && this.access.isAdmin(ctx))
+          capabilities.push('conversation.create', 'announcement.publish');
+        // Company meetings need a root management role plus work.manage,
+        // which the fixed Company policy grants only to the Owner.
+        if (scopeId === id && ctx.root.role === 'OWNER')
+          capabilities.push('meeting.create');
+      }
+      return c.ScopeAccessMeSchema.strip().parse({ ...seat, capabilities });
     });
   }
   /** Staff content requires actual child admission even for Company administrators. */

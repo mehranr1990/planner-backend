@@ -3,6 +3,10 @@ export { SpacesService } from '../application/spaces.service.js';
 export { initialSpaceRelations } from './identity-creation.js';
 export { personalScope } from './personal-scope.js';
 export { SharedKernel } from '../application/shared-kernel.service.js';
+export {
+  ordinaryCapabilities,
+  fixedCapabilities,
+} from '../domain/shared-policy.js';
 export { SharedLifecycleService } from '../application/shared-lifecycle.service.js';
 export type {
   LifecycleFile,

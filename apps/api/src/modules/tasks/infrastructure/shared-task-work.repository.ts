@@ -398,4 +398,216 @@ export class SharedTaskWorkRepository extends SharedTaskWork {
       voidedAt,
     }));
   }
+  async taskEffort(
+    tx: Prisma.TransactionClient,
+    a: SharedAuthority,
+    spaceId: string,
+    ids: string[],
+    from: Date,
+    to: Date,
+  ) {
+    a.require(tx, spaceId, 'task.read');
+    if (ids.length > 10000) throw new BadRequestException();
+    const rows = await tx.sharedTaskWorkLog.findMany({
+      where: {
+        spaceId: a.space(tx, spaceId),
+        scopeId: a.scope(tx, spaceId),
+        taskId: { in: ids },
+        voidedAt: null,
+        startedAt: { lt: to },
+        endedAt: { gt: from },
+      },
+      select: {
+        taskId: true,
+        accessId: true,
+        generation: true,
+        startedAt: true,
+        endedAt: true,
+      },
+      take: 10001,
+    });
+    if (rows.length > 10000)
+      throw new BadRequestException({ code: 'REPORT_LIMIT' });
+    return rows;
+  }
+  async firstStarted(
+    tx: Prisma.TransactionClient,
+    a: SharedAuthority,
+    spaceId: string,
+    ids: string[],
+  ) {
+    a.require(tx, spaceId, 'task.read');
+    if (ids.length > 10000) throw new BadRequestException();
+    const rows = await tx.taskChange.groupBy({
+      by: ['taskId'],
+      where: {
+        spaceId: a.space(tx, spaceId),
+        taskId: { in: ids },
+        afterStatus: 'IN_PROGRESS',
+      },
+      _min: { createdAt: true },
+    });
+    return new Map(
+      rows.flatMap((r) =>
+        r._min.createdAt ? [[r.taskId, r._min.createdAt] as const] : [],
+      ),
+    );
+  }
+  async blocked(
+    tx: Prisma.TransactionClient,
+    a: SharedAuthority,
+    spaceId: string,
+    ids: string[],
+  ) {
+    a.require(tx, spaceId, 'task.read');
+    if (ids.length > 10000) throw new BadRequestException();
+    const space = a.space(tx, spaceId),
+      scopeId = a.scope(tx, spaceId);
+    const edges = await tx.taskDependency.findMany({
+      where: {
+        spaceId: space,
+        scopeId,
+        successorId: { in: ids },
+        retiredAt: null,
+      },
+      select: { predecessorId: true, successorId: true },
+      take: 50001,
+    });
+    if (edges.length > 50000)
+      throw new BadRequestException({ code: 'REPORT_LIMIT' });
+    const open = new Set(
+      (
+        await tx.task.findMany({
+          where: {
+            spaceId: space,
+            scopeId,
+            id: { in: [...new Set(edges.map((e) => e.predecessorId))] },
+            deletedAt: null,
+            status: { in: ['OPEN', 'IN_PROGRESS'] },
+          },
+          select: { id: true },
+        })
+      ).map((r) => r.id),
+    );
+    return new Set(
+      edges.filter((e) => open.has(e.predecessorId)).map((e) => e.successorId),
+    );
+  }
+  async checklist(
+    tx: Prisma.TransactionClient,
+    a: SharedAuthority,
+    spaceId: string,
+    taskId: string,
+  ) {
+    a.require(tx, spaceId, 'task.read', { kind: 'TASK', id: taskId });
+    const task = await tx.task.findFirst({
+      where: {
+        id: taskId,
+        spaceId: a.space(tx, spaceId),
+        scopeId: a.scope(tx, spaceId),
+        deletedAt: null,
+      },
+      select: { id: true },
+    });
+    if (!task) throw new NotFoundException();
+    return tx.taskChecklistItem.findMany({
+      where: { spaceId: a.space(tx, spaceId), taskId },
+      orderBy: [{ position: 'asc' }, { id: 'asc' }],
+      select: { id: true, title: true, completed: true, position: true },
+      take: 200,
+    });
+  }
+  async changeChecklist(
+    tx: Prisma.TransactionClient,
+    a: SharedAuthority,
+    ctx: TaskToolContext,
+    taskId: string,
+    revision: number,
+    change:
+      | { kind: 'ADD'; id: string; title: string }
+      | {
+          kind: 'UPDATE';
+          id: string;
+          title?: string | undefined;
+          completed?: boolean | undefined;
+        }
+      | { kind: 'DELETE'; id: string }
+      | { kind: 'REORDER'; ids: string[] },
+  ) {
+    const task = await source(tx, a, ctx, taskId, 'task.update');
+    if (task.revision !== revision)
+      throw new ConflictException({ code: 'STALE_REVISION' });
+    const where = { spaceId: ctx.spaceId, taskId };
+    const items = await tx.taskChecklistItem.findMany({
+      where,
+      orderBy: [{ position: 'asc' }, { id: 'asc' }],
+    });
+    if (change.kind === 'ADD') {
+      if (items.length >= 100)
+        throw new ConflictException({ code: 'CHECKLIST_LIMIT' });
+      if (await tx.taskChecklistItem.findUnique({ where: { id: change.id } }))
+        throw new ConflictException();
+      await tx.taskChecklistItem.create({
+        data: {
+          id: change.id,
+          ...where,
+          title: normalizeTitle(change.title),
+          position: (items.at(-1)?.position ?? -1) + 1,
+        },
+      });
+    } else if (change.kind === 'REORDER') {
+      if (
+        change.ids.length !== items.length ||
+        new Set(change.ids).size !== items.length ||
+        items.some((i) => !change.ids.includes(i.id))
+      )
+        throw new ConflictException({ code: 'CHECKLIST_ORDER_MISMATCH' });
+      for (const [position, id] of change.ids.entries())
+        await tx.taskChecklistItem.update({
+          where: { id },
+          data: { position },
+        });
+    } else {
+      if (!items.some((i) => i.id === change.id)) throw new NotFoundException();
+      if (change.kind === 'DELETE')
+        await tx.taskChecklistItem.delete({ where: { id: change.id } });
+      else
+        await tx.taskChecklistItem.update({
+          where: { id: change.id },
+          data: {
+            ...(change.title !== undefined
+              ? { title: normalizeTitle(change.title) }
+              : {}),
+            ...(change.completed !== undefined
+              ? { completed: change.completed }
+              : {}),
+          },
+        });
+    }
+    await ctx.begin?.();
+    const updated = await tx.task.update({
+      where: { id: taskId },
+      data: { revision: { increment: 1 } },
+    });
+    await event(tx, a, ctx, updated, 'CHECKLIST', null, change);
+    return updated.revision;
+  }
+  async actorEffort(
+    tx: Prisma.TransactionClient,
+    actorIds: string[],
+    from: Date,
+    to: Date,
+  ) {
+    if (!actorIds.length) return [];
+    return tx.sharedTaskWorkLog.findMany({
+      where: {
+        actorId: { in: actorIds },
+        voidedAt: null,
+        startedAt: { lt: to },
+        endedAt: { gt: from },
+      },
+      select: { scopeId: true, startedAt: true, endedAt: true },
+      take: 10000,
+    });
+  }
 }

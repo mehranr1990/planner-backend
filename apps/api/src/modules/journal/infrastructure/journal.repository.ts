@@ -438,4 +438,31 @@ export class PersonalJournalRepository extends PersonalJournal {
       createdAt: v.createdAt.toISOString(),
     }));
   }
+  async moods(
+    tx: Prisma.TransactionClient,
+    scope: AuthorizedSpace,
+    fromDate: string,
+    toDate: string,
+  ) {
+    await scope.fence(tx);
+    return (
+      await tx.moodEntry.findMany({
+        where: {
+          spaceId: scope.spaceId,
+          current: true,
+          state: 'RECORDED',
+          localDate: {
+            gte: new Date(fromDate + 'T00:00:00Z'),
+            lte: new Date(toDate + 'T00:00:00Z'),
+          },
+        },
+        select: { localDate: true, mood: true, energy: true },
+        take: 5000,
+      })
+    ).map((r) => ({
+      localDate: r.localDate.toISOString().slice(0, 10),
+      mood: r.mood,
+      energy: r.energy,
+    }));
+  }
 }

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import * as c from './messaging.js';
+import { ScopeAccessMeSchema } from './scope-access.js';
 import { embeddedJsonSchema, pointerSegment } from './embedded-json-schema.js';
 import { advancedMessagingOperations } from './advanced-messaging-openapi.js';
 export type Operation = {
@@ -19,6 +20,25 @@ export type Operation = {
 };
 export const messagingOperations: Operation[] = [
   {
+    path: '/conversations/{id}',
+    method: 'patch',
+    input: c.ConversationRenameSchema,
+    output: c.ConversationSchema,
+    revision: true,
+    etag: true,
+  },
+  {
+    path: '/conversations/{id}/invitations',
+    method: 'get',
+    output: c.ConversationInvitationPageSchema,
+    query: c.ConversationPageQuerySchema,
+  },
+  {
+    path: '/conversations/{id}/access/me',
+    method: 'get',
+    output: ScopeAccessMeSchema,
+  },
+  {
     path: '/conversations',
     method: 'post',
     input: c.ConversationCreateSchema,
@@ -30,7 +50,7 @@ export const messagingOperations: Operation[] = [
     path: '/conversations',
     method: 'get',
     query: c.ConversationPageQuerySchema,
-    output: c.ConversationPageSchema,
+    output: c.ConversationSummaryPageSchema,
   },
   {
     path: '/conversations/{id}',

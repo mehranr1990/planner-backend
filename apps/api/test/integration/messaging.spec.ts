@@ -1,3 +1,4 @@
+import { MessagingExtensionsService } from '../../src/modules/messaging/application/messaging-extensions.service.js';
 import 'reflect-metadata';
 import {
   beforeAll,
@@ -383,6 +384,274 @@ describe('P5-01 durable messaging, explicit participation and polling', () => {
     await sandbox?.close();
   });
 
+  it('consolidated gaps: returns current Team and conversation capabilities and private display names', async () => {
+    const team = await work('TEAM');
+    await join(team.id, alice, 'VIEWER', 'TEAM');
+    expect(await teams.accessMe(owner.actor, team.id)).toMatchObject({
+      role: 'OWNER',
+      capabilities: expect.arrayContaining([
+        'settings.manage',
+        'conversation.create',
+        'announcement.publish',
+      ]),
+    });
+    const view = await teams.accessMe(alice.actor, team.id);
+    expect(view.role).toBe('VIEWER');
+    expect(view.capabilities).not.toContain('settings.manage');
+    await expect(teams.accessMe(outsider.actor, team.id)).rejects.toThrow();
+    const people = await teams.members(owner.actor, team.id, { limit: 25 });
+    expect(
+      people.items.every(
+        (m) => m.displayName === 'Synthetic messaging participant',
+      ),
+    ).toBe(true);
+    expect(JSON.stringify(people)).not.toContain(alice.email);
+    expect(JSON.stringify(people)).not.toContain(alice.actor.userId);
+    const conv = await create();
+    await expect(messages.accessMe(alice.actor, conv.id)).rejects.toThrow();
+    await accept(conv.id);
+    expect(await messages.accessMe(owner.actor, conv.id)).toMatchObject({
+      role: 'ADMIN',
+      capabilities: expect.arrayContaining([
+        'conversation.rename',
+        'membership.manage',
+      ]),
+    });
+    expect(
+      (await messages.accessMe(alice.actor, conv.id)).capabilities,
+    ).not.toContain('conversation.rename');
+    const roster = await messages.members(owner.actor, conv.id, page);
+    expect(
+      roster.items.every(
+        (m) => m.displayName === 'Synthetic messaging participant',
+      ),
+    ).toBe(true);
+    await messages.leave(
+      alice.actor,
+      conv.id,
+      (await member(conv.id)).revision,
+    );
+    expect(
+      (await messages.members(owner.actor, conv.id, page)).items.find(
+        (r) => r.id === roster.items.find((r) => r.role === 'MEMBER')!.id,
+      )?.displayName,
+    ).toBeNull();
+  });
+  it('consolidated gaps: lists only own pending Team offers without disclosing or bypassing proofs', async () => {
+    const team = await work('TEAM');
+    const offer = await collaboration.createInvitation(
+      owner.actor,
+      team.id,
+      {
+        kind: 'MEMBERSHIP',
+        memberRole: 'MEMBER',
+        recipient: { email: alice.email },
+      },
+      randomUUID(),
+    );
+    const mine = await collaboration.pendingOffers(alice.actor, 'TEAM', {
+      limit: 25,
+    });
+    expect(mine.items).toEqual([
+      {
+        id: offer.invitation.id,
+        contextLabel: 'Team',
+        revision: 1,
+        expiresAt: offer.invitation.expiresAt,
+      },
+    ]);
+    expect(
+      (await collaboration.pendingOffers(bob.actor, 'TEAM', { limit: 25 }))
+        .items,
+    ).toEqual([]);
+    expect(
+      (
+        await collaboration.pendingSent(owner.actor, team.id, { limit: 25 })
+      ).items.map((r) => r.id),
+    ).toContain(offer.invitation.id);
+    await expect(
+      collaboration.pendingSent(outsider.actor, team.id, { limit: 25 }),
+    ).rejects.toThrow();
+    await expect(
+      collaboration.decideInvitation(
+        alice.actor,
+        offer.invitation.id,
+        undefined,
+        1,
+        true,
+        'TEAM',
+      ),
+    ).rejects.toThrow();
+    await collaboration.decideInvitation(
+      alice.actor,
+      offer.invitation.id,
+      offer.proof!,
+      1,
+      true,
+      'TEAM',
+    );
+    expect(
+      (await collaboration.pendingOffers(alice.actor, 'TEAM', { limit: 25 }))
+        .items,
+    ).toEqual([]);
+  });
+  it('consolidated gaps: summaries honor read floors, private mute, own sends, hides and deletes', async () => {
+    const conv = await create();
+    await send(conv.id, owner, 'Before join');
+    await accept(conv.id);
+    const summary = async () =>
+      (await media.conversations(alice.actor, page)).items.find(
+        (r) => r.id === conv.id,
+      )!;
+    expect(await summary()).toMatchObject({
+      lastMessage: null,
+      unreadCount: 0,
+      muted: false,
+    });
+    const incoming = await send(conv.id, owner, 'Incoming');
+    expect(await summary()).toMatchObject({
+      lastMessage: { id: incoming.id, text: 'Incoming' },
+      unreadCount: 1,
+    });
+    await send(conv.id, alice, 'My own message');
+    expect((await summary()).unreadCount).toBe(1);
+    await progress.acknowledge(
+      alice.actor,
+      conv.id,
+      { messageId: incoming.id, state: 'READ' },
+      randomUUID(),
+    );
+    expect((await summary()).unreadCount).toBe(0);
+    await progress.setNoticeSettings(
+      alice.actor,
+      conv.id,
+      { mode: 'MUTED', quietStart: null, quietEnd: null, mentionQuiet: false },
+      randomUUID(),
+      1,
+    );
+    expect((await summary()).muted).toBe(true);
+    expect(
+      (await media.conversations(owner.actor, page)).items.find(
+        (r) => r.id === conv.id,
+      )!.muted,
+    ).toBe(false);
+    const hidden = await send(conv.id, owner, 'Hidden');
+    await advanced.act(
+      alice.actor,
+      conv.id,
+      { action: 'hide', messageId: hidden.id },
+      randomUUID(),
+    );
+    const deleted = await send(conv.id, owner, 'Deleted');
+    await advanced.act(
+      owner.actor,
+      conv.id,
+      { action: 'delete', messageId: deleted.id },
+      randomUUID(),
+      1,
+    );
+    expect(await summary()).toMatchObject({
+      unreadCount: 0,
+      lastMessage: { text: 'My own message' },
+    });
+    expect((await media.conversations(outsider.actor, page)).items).toEqual([]);
+  });
+  it('consolidated gaps: renames require administration and serialize stale writers; invitation lists are scoped', async () => {
+    const conv = await create();
+    expect(
+      (await messages.sentInvitations(owner.actor, conv.id, page)).items,
+    ).toHaveLength(1);
+    await accept(conv.id);
+    expect(
+      (await messages.sentInvitations(owner.actor, conv.id, page)).items,
+    ).toHaveLength(0);
+    await expect(
+      messages.sentInvitations(alice.actor, conv.id, page),
+    ).rejects.toThrow();
+    const revision = (await messages.get(owner.actor, conv.id)).revision;
+    await expect(
+      messages.rename(alice.actor, conv.id, revision, {
+        title: 'Unauthorized',
+      }),
+    ).rejects.toThrow();
+    const results = await Promise.allSettled(
+      ['First', 'Second'].map((title) =>
+        messages.rename(owner.actor, conv.id, revision, { title }),
+      ),
+    );
+    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    expect((await messages.get(owner.actor, conv.id)).revision).toBe(
+      revision + 1,
+    );
+    const dm = await create('DM');
+    await expect(
+      messages.rename(owner.actor, dm.id, dm.revision, { title: 'DM title' }),
+    ).rejects.toThrow();
+    const ownerCookie = await cookie(owner);
+    await request(app.getHttpServer())
+      .patch('/api/v1/conversations/' + conv.id)
+      .set('Cookie', ownerCookie)
+      .set('Origin', origin)
+      .send({ title: 'Missing revision' })
+      .expect(400);
+    await request(app.getHttpServer())
+      .patch('/api/v1/conversations/' + conv.id)
+      .set('Cookie', ownerCookie)
+      .set('Origin', origin)
+      .set('If-Match', '"' + (revision + 1) + '"')
+      .send({ title: 'HTTP rename' })
+      .expect(200)
+      .expect('ETag', '"' + (revision + 2) + '"');
+    await request(app.getHttpServer())
+      .get('/api/v1/conversations')
+      .set('Cookie', ownerCookie)
+      .expect(200)
+      .then((response) =>
+        expect(
+          c.ConversationSummaryPageSchema.safeParse(response.body).success,
+        ).toBe(true),
+      );
+  });
+  it('consolidated gaps: forwarding summaries disappear when source authority is revoked', async () => {
+    const source = await create(),
+      target = await create();
+    await accept(source.id);
+    await accept(target.id);
+    const msg = await send(source.id);
+    const fid = randomUUID();
+    await advanced.act(
+      owner.actor,
+      target.id,
+      {
+        action: 'forward',
+        id: fid,
+        sourceConversationId: source.id,
+        sourceId: msg.id,
+      },
+      randomUUID(),
+    );
+    expect(
+      (await media.conversations(alice.actor, page)).items.find(
+        (r) => r.id === target.id,
+      ),
+    ).toMatchObject({
+      unreadCount: 1,
+      lastMessage: { id: fid, text: msg.text },
+    });
+    const admission = await member(source.id);
+    await messages.changeMember(
+      owner.actor,
+      source.id,
+      admission.id,
+      admission.revision,
+      null,
+    );
+    expect(
+      (await media.conversations(alice.actor, page)).items.find(
+        (r) => r.id === target.id,
+      ),
+    ).toMatchObject({ unreadCount: 0, lastMessage: null });
+  });
   it('requires explicit DM acceptance, current named recipient, and a fixed pair', async () => {
     const conv = await create('DM');
     expect(conv.writable).toBe(false);
@@ -3887,5 +4156,147 @@ describe('P5-01 durable messaging, explicit participation and polling', () => {
         .send({ messageId: msg.id, state: 'READ', userId: alice.actor.userId })
         .expect(400);
     });
+  });
+
+  it('OD-10/OD-11: admin-only channel settings, enforced pin and history rules, private reports and authorized global search', async () => {
+    const ext = app.get(MessagingExtensionsService);
+    const conv = await create();
+    await accept(conv.id);
+    const s0 = await ext.settings(alice.actor, conv.id);
+    expect(s0).toMatchObject({
+      linkPreviews: null,
+      newcomerHistory: null,
+      membersCanPin: null,
+      canManage: false,
+    });
+    await expect(
+      ext.updateSettings(alice.actor, conv.id, s0.revision, {
+        membersCanPin: false,
+      }),
+    ).rejects.toMatchObject({ status: 403 });
+    const s1 = await ext.updateSettings(owner.actor, conv.id, s0.revision, {
+      membersCanPin: false,
+      newcomerHistory: 'FULL',
+    });
+    expect(s1).toMatchObject({
+      membersCanPin: false,
+      newcomerHistory: 'FULL',
+      canManage: true,
+    });
+    await expect(
+      ext.updateSettings(owner.actor, conv.id, s0.revision, {
+        linkPreviews: false,
+      }),
+    ).rejects.toMatchObject({ status: 409 });
+    const token = 'zebra' + randomUUID().slice(0, 8);
+    const msg = await send(
+      conv.id,
+      owner,
+      'Plan ' + token + ' https://example.test/doc',
+    );
+    await expect(
+      advanced.act(
+        alice.actor,
+        conv.id,
+        { action: 'pin', messageId: msg.id, active: true },
+        randomUUID(),
+        1,
+      ),
+    ).rejects.toMatchObject({ status: 403 });
+    await advanced.act(
+      owner.actor,
+      conv.id,
+      { action: 'pin', messageId: msg.id, active: true },
+      randomUUID(),
+      1,
+    );
+    await messages.invite(
+      owner.actor,
+      conv.id,
+      (await messages.get(owner.actor, conv.id)).revision,
+      { id: randomUUID(), userId: bob.actor.userId },
+      randomUUID(),
+    );
+    await accept(conv.id, bob);
+    expect(
+      (await messages.messages(bob.actor, conv.id, { limit: 10 })).items.map(
+        (m) => m.id,
+      ),
+    ).toContain(msg.id);
+    const mine = await ext.updatePreferences(
+      alice.actor,
+      conv.id,
+      s1.me.revision,
+      {
+        collapseBlocked: true,
+        linkPreviews: false,
+      },
+    );
+    expect(mine.me).toMatchObject({
+      collapseBlocked: true,
+      linkPreviews: false,
+    });
+    expect((await ext.settings(bob.actor, conv.id)).me).toMatchObject({
+      collapseBlocked: false,
+      linkPreviews: null,
+    });
+    const reportId = randomUUID();
+    const filed = await ext.report(alice.actor, conv.id, {
+      id: reportId,
+      reason: 'Unwanted content',
+    });
+    expect(filed).toMatchObject({ state: 'OPEN', reason: 'Unwanted content' });
+    expect(
+      await ext.report(alice.actor, conv.id, {
+        id: reportId,
+        reason: 'Unwanted content',
+      }),
+    ).toEqual(filed);
+    await expect(ext.reports(alice.actor, conv.id)).rejects.toMatchObject({
+      status: 403,
+    });
+    await expect(
+      ext.report(outsider.actor, conv.id, { id: randomUUID(), reason: null }),
+    ).rejects.toThrow();
+    expect(
+      (await ext.reports(owner.actor, conv.id)).items.map((r) => r.id),
+    ).toEqual([reportId]);
+    const resolved = await ext.resolveReport(
+      owner.actor,
+      conv.id,
+      reportId,
+      filed.revision,
+      { resolution: 'Handled' },
+    );
+    expect(resolved).toMatchObject({
+      state: 'RESOLVED',
+      resolution: 'Handled',
+    });
+    const other = await create('PRIVATE_GROUP', [bob]);
+    await accept(other.id, bob);
+    await send(other.id, owner, 'Other ' + token);
+    const hits = await ext.search(alice.actor, { q: token, limit: 25 });
+    expect(hits.items.map((h) => [h.conversationId, h.message.id])).toEqual([
+      [conv.id, msg.id],
+    ]);
+    expect(
+      (await ext.search(owner.actor, { q: token, limit: 25 })).items,
+    ).toHaveLength(2);
+    expect(
+      (
+        await ext.search(owner.actor, { q: token, limit: 25, has: 'link' })
+      ).items.map((h) => h.message.id),
+    ).toEqual([msg.id]);
+    expect(
+      (await ext.search(outsider.actor, { q: token, limit: 25 })).items,
+    ).toEqual([]);
+    const paged = await ext.search(owner.actor, { q: token, limit: 1 });
+    expect(paged.nextCursor).not.toBeNull();
+    const next = await ext.search(owner.actor, {
+      q: token,
+      limit: 1,
+      cursor: paged.nextCursor!,
+    });
+    expect(next.items[0]?.message.id).not.toBe(paged.items[0]?.message.id);
   });
 });

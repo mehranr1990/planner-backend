@@ -15,8 +15,8 @@ import {
 } from '../../../../packages/api-contracts/src/meetings-openapi.js';
 import { communicationLifecycleOperations } from '../../../../packages/api-contracts/src/communication-lifecycle-openapi.js';
 describe('P5-05 strict additive REST contracts', () => {
-  it('documents all 52 protected operations, binary transfers and explicit concurrency controls', () => {
-    expect(meetingOperations).toHaveLength(52);
+  it('documents all 53 protected operations, binary transfers and explicit concurrency controls', () => {
+    expect(meetingOperations).toHaveLength(53);
     const paths = meetingPaths();
     const actual: string[] = [];
     for (const controller of [

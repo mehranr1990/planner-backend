@@ -287,7 +287,7 @@ export class MessagingService {
       ? members.length === 2 && (retraction || (await this.dmContact(s)))
       : members.some((m) => m.role === 'ADMIN');
   }
-  private async view(s: Operation) {
+  async view(s: Operation) {
     await this.currentMember(s);
     const row = await s.tx.conversation.findUniqueOrThrow({
       where: { id: s.conv.id },
@@ -302,12 +302,21 @@ export class MessagingService {
       createdAt: row.createdAt.toISOString(),
     });
   }
-  private invitationView(conv: Conversation, row: ConversationInvitation) {
+  private async invitationView(
+    tx: Tx,
+    conv: Conversation,
+    row: ConversationInvitation,
+  ) {
     return c.ConversationInvitationSchema.parse({
       id: row.id,
       conversationId: row.conversationId,
       kind: conv.kind,
       inviterActorId: row.inviterActorId,
+      inviterDisplayName: await this.authority.displayName(
+        tx,
+        conv.spaceId,
+        row.inviterActorId,
+      ),
       state: row.state,
       revision: row.revision,
       expiresAt: row.expiresAt.toISOString(),
@@ -499,13 +508,18 @@ export class MessagingService {
       })) >= 200
     )
       throw new PayloadTooLargeException();
+    // OD-10: admins may open full history to newcomers; join-time history stays the default.
+    const setting = await s.tx.conversationSetting.findUnique({
+      where: { conversationId: s.conv.id },
+    });
     const data = {
       sourceAccessId: proof.accessId,
       sourceGeneration: proof.generation,
       restoreGeneration: proof.restoreGeneration,
       role,
       state: 'ACTIVE',
-      historyAfter: s.conv.lastSequence,
+      historyAfter:
+        setting?.newcomerHistory === 'FULL' ? 0n : s.conv.lastSequence,
       joinedAt: s.now,
     };
     const member = old
@@ -804,6 +818,55 @@ export class MessagingService {
   get(actor: RequestActor, id: string) {
     return this.operation(actor, id, 'messaging.read', (s) => this.view(s));
   }
+  rename(
+    actor: RequestActor,
+    id: string,
+    revision: number,
+    input: z.infer<typeof c.ConversationRenameSchema>,
+  ) {
+    const body = c.ConversationRenameSchema.parse(input);
+    return this.operation(
+      actor,
+      id,
+      'messaging.conversation.rename',
+      async (s) => {
+        await this.currentMember(s);
+        if (s.conv.kind === 'DM') throw new ForbiddenException();
+        await this.administer(s);
+        match(revision, s.conv.revision);
+        await s.begin();
+        s.conv = await s.tx.conversation.update({
+          where: { id },
+          data: { title: body.title, revision: { increment: 1 } },
+        });
+        await this.effect(s, 'messaging.conversation.rename', id);
+        return this.view(s);
+      },
+    );
+  }
+  accessMe(actor: RequestActor, id: string) {
+    return this.operation(actor, id, 'messaging.access.read', async (s) => {
+      const member = await this.currentMember(s);
+      const capabilities = ['message.read', 'membership.leave'];
+      const writable = await this.writable(s);
+      if (writable) capabilities.push('message.send');
+      if (s.conv.kind !== 'DM') {
+        try {
+          await this.administer(s);
+          capabilities.push('membership.manage', 'conversation.rename');
+        } catch (error) {
+          if (!hidden(error)) throw error;
+        }
+      }
+      return c.ScopeAccessMeSchema.parse({
+        accessId: member.id,
+        actorId: member.actorId,
+        role: member.role,
+        generation: member.generation,
+        capabilities,
+      });
+    });
+  }
   /** Explicit consent after restrictive restore replay. This never repairs a
    * departed/revoked source seat or bypasses a new source membership generation. */
   restoreAdmission(
@@ -868,7 +931,11 @@ export class MessagingService {
       true,
     );
   }
-  async list(actor: RequestActor, q: Page) {
+  async list(
+    actor: RequestActor,
+    q: Page,
+    project?: (id: string) => Promise<z.infer<typeof c.ConversationSchema>>,
+  ) {
     const stamp = hash('messaging-list-v1'),
       context = 'conversations';
     const after = this.kernel.cursorPosition(
@@ -889,7 +956,7 @@ export class MessagingService {
     const items: z.infer<typeof c.ConversationSchema>[] = [];
     for (const row of rows.slice(0, q.limit)) {
       try {
-        items.push(await this.get(actor, row.id));
+        items.push(await (project ? project(row.id) : this.get(actor, row.id)));
       } catch (error) {
         if (!hidden(error)) throw error;
       }
@@ -920,7 +987,19 @@ export class MessagingService {
         take: q.limit + 1,
       });
       return this.kernel.cursorPage(context, stamp, actor.userId, {
-        items: rows.slice(0, q.limit).map(memberView),
+        items: await Promise.all(
+          rows.slice(0, q.limit).map(async (row) => ({
+            ...memberView(row),
+            displayName:
+              row.state === 'ACTIVE'
+                ? await this.authority.displayName(
+                    s.tx,
+                    s.conv.spaceId,
+                    row.actorId,
+                  )
+                : null,
+          })),
+        ),
         nextCursor: rows.length > q.limit ? rows[q.limit - 1]!.id : null,
       });
     });
@@ -958,7 +1037,7 @@ export class MessagingService {
           });
           await this.effect(s, 'messaging.invitation.create', row.id);
         }
-        return this.invitationView(s.conv, row);
+        return this.invitationView(s.tx, s.conv, row);
       },
       [body.userId],
     );
@@ -1061,7 +1140,7 @@ export class MessagingService {
             'messaging.invitation.read',
             async (s, r) => {
               await this.eligibleInvitation(s, r);
-              return this.invitationView(s.conv, r);
+              return this.invitationView(s.tx, s.conv, r);
             },
           ),
         );
@@ -1074,6 +1153,47 @@ export class MessagingService {
       items,
       nextCursor: rows.length > q.limit ? rows[q.limit - 1]!.id : null,
     });
+  }
+  sentInvitations(actor: RequestActor, id: string, q: Page) {
+    return this.operation(
+      actor,
+      id,
+      'messaging.invitations.sent',
+      async (s) => {
+        await this.currentMember(s);
+        await this.administer(s);
+        const context = 'sent-conversation-invitations:' + id;
+        const stamp = fingerprint([
+          s.proof!.accessId,
+          s.proof!.generation,
+          String(s.proof!.authorizationVersion),
+        ]);
+        const after = this.kernel.cursorPosition(
+          context,
+          stamp,
+          actor.userId,
+          q.cursor,
+        );
+        const rows = await s.tx.conversationInvitation.findMany({
+          where: {
+            conversationId: id,
+            state: 'PENDING',
+            expiresAt: { gt: s.now },
+            ...(after ? { id: { gt: after } } : {}),
+          },
+          orderBy: { id: 'asc' },
+          take: q.limit + 1,
+        });
+        return this.kernel.cursorPage(context, stamp, actor.userId, {
+          items: await Promise.all(
+            rows
+              .slice(0, q.limit)
+              .map((row) => this.invitationView(s.tx, s.conv, row)),
+          ),
+          nextCursor: rows.length > q.limit ? rows[q.limit - 1]!.id : null,
+        });
+      },
+    );
   }
   decide(
     actor: RequestActor,
@@ -1089,10 +1209,10 @@ export class MessagingService {
         if (row.state === 'ACCEPTED' && accept) {
           s.proof = await this.proof(s);
           await this.currentMember(s);
-          return this.invitationView(s.conv, row);
+          return this.invitationView(s.tx, s.conv, row);
         }
         if (row.state === 'DECLINED' && !accept)
-          return this.invitationView(s.conv, row);
+          return this.invitationView(s.tx, s.conv, row);
         match(revision, row.revision);
         if (row.state !== 'PENDING') throw new ConflictException();
         if (accept) await this.eligibleInvitation(s, row);
@@ -1125,7 +1245,7 @@ export class MessagingService {
           accept ? 'messaging.participant' : undefined,
           row.recipientActorId,
         );
-        return this.invitationView(s.conv, next);
+        return this.invitationView(s.tx, s.conv, next);
       },
     );
   }
@@ -1145,7 +1265,8 @@ export class MessagingService {
           where: { id: invitationId, conversationId: id },
         });
         if (!row) throw new NotFoundException();
-        if (row.state === 'REVOKED') return this.invitationView(s.conv, row);
+        if (row.state === 'REVOKED')
+          return this.invitationView(s.tx, s.conv, row);
         match(revision, row.revision);
         if (row.state !== 'PENDING') throw new ConflictException();
         const next = await s.tx.conversationInvitation.update({
@@ -1157,7 +1278,7 @@ export class MessagingService {
           data: { revision: { increment: 1 } },
         });
         await this.effect(s, 'messaging.invitation.revoke', row.id);
-        return this.invitationView(s.conv, next);
+        return this.invitationView(s.tx, s.conv, next);
       },
     );
   }

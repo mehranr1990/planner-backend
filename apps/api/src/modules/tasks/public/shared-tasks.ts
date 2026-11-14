@@ -65,4 +65,22 @@ export abstract class SharedTasks {
     revision: number,
     input: z.infer<typeof c.ProjectTaskPatchSchema>,
   ): Promise<z.infer<typeof c.SharedTaskSchema>>;
+  /** Newest shared Task changes in one authorized scope (non-deleted Tasks only). */
+  abstract changes(
+    tx: Prisma.TransactionClient,
+    a: SharedAuthority,
+    space: string,
+    limit: number,
+  ): Promise<
+    {
+      id: string;
+      taskId: string;
+      title: string;
+      kind: string;
+      beforeStatus: z.infer<typeof c.SharedTaskSchema>['status'] | null;
+      afterStatus: z.infer<typeof c.SharedTaskSchema>['status'];
+      actorId: string | null;
+      createdAt: Date;
+    }[]
+  >;
 }

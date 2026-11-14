@@ -1,3 +1,4 @@
+import { CompanyGoalsService } from './company-goals.service.js';
 import { companyExport } from '../domain/company-export.js';
 import {
   Inject,
@@ -32,6 +33,7 @@ const bound = <T>(rows: T[]) => {
 export class CompanyReportsService {
   constructor(
     @Inject(CompanyStaffContext) readonly op: CompanyStaffContext,
+    @Inject(CompanyGoalsService) private readonly goals: CompanyGoalsService,
     @Inject(CompanyFinanceService)
     private readonly finance: CompanyFinanceService,
     @Inject(CompanyReimbursementsService)
@@ -326,6 +328,103 @@ export class CompanyReportsService {
           s.now,
         ),
       }),
+    );
+  }
+  /**
+   * C-M3 KPIs from existing authorized sources only: portfolio Project reports
+   * (task completion = DONE / (all - CANCELED)), explicit Company availability
+   * and Project estimates (capacity), effective approved expenses and active
+   * budgets in the fixed Company currency (usage = budget spent / budget limit).
+   * No Company goal source exists (OD-2), so goals are null; no scores.
+   */
+  kpis(actor: RequestActor, id: string, scopeId: string, q: Query) {
+    return this.across(
+      actor,
+      id,
+      scopeId,
+      true,
+      false,
+      async (s, a, anchors) => {
+        const operations = await this.operationsIn(s, q),
+          finance = await this.financeIn(s, q),
+          projects = await this.projects.portfolio(
+            s.tx,
+            a,
+            id,
+            anchors,
+            this.projectWindow(q),
+            s.now,
+          ),
+          company = await s.tx.company.findUniqueOrThrow({ where: { id } });
+        let total = 0,
+          done = 0,
+          overdue = 0,
+          completed = 0,
+          estimated = 0,
+          unknown = 0;
+        for (const p of projects) {
+          total += p.report.taskCount - p.report.statusCounts.CANCELED;
+          done += p.report.statusCounts.DONE;
+          overdue += p.report.overdueTaskCount;
+          completed += p.report.completedInWindow;
+          estimated += p.report.estimatedMinutes;
+          unknown += p.report.unknownEstimates;
+        }
+        const fixed = company.currency,
+          scale = company.scale ?? 0,
+          budgets = finance.budgets.filter(
+            (b) =>
+              b.currency === fixed &&
+              !b.archived &&
+              b.startDate < q.toDate &&
+              b.endDate > q.fromDate,
+          ),
+          limit = budgets.reduce((n, b) => n + units(b.limit, scale), 0n),
+          used = budgets.reduce((n, b) => n + units(b.spent, scale), 0n),
+          spent = finance.currencies.find((r) => r.currency === fixed);
+        const view = c.CompanyKpiReportSchema.parse({
+          ...this.header(s, q),
+          tasks: {
+            source: 'AUTHORIZED_PORTFOLIO_PROJECT_REPORTS',
+            projectCount: projects.length,
+            completion: {
+              numerator: done,
+              denominator: total,
+              basisPoints: total ? Math.floor((done * 10000) / total) : null,
+            },
+            overdueTaskCount: overdue,
+            completedInWindow: completed,
+          },
+          goals: await this.goals
+            .kpi(s)
+            .then((g) =>
+              g.goalCount
+                ? { source: 'COMPANY_GOAL_KEY_RESULTS' as const, ...g }
+                : null,
+            ),
+          capacity: {
+            source: 'EXPLICIT_COMPANY_AVAILABILITY_AND_PROJECT_ESTIMATES',
+            memberCount: operations.memberCount,
+            knownCapacityDays: operations.knownCapacityDays,
+            unknownCapacityDays: operations.unknownCapacityDays,
+            availableMinutes: operations.availableMinutes,
+            estimatedMinutes: estimated,
+            unknownEstimates: unknown,
+          },
+          expenses: {
+            source: 'EFFECTIVE_APPROVED_EXPENSES_AND_ACTIVE_BUDGETS',
+            currency: fixed,
+            spent: fixed ? (spent?.spent ?? amount(0n, scale)) : null,
+            budgetCount: budgets.length,
+            budgetSpent: fixed && budgets.length ? amount(used, scale) : null,
+            budgetLimit: fixed && budgets.length ? amount(limit, scale) : null,
+            usageBasisPoints:
+              fixed && limit > 0n ? Number((used * 10000n) / limit) : null,
+          },
+        });
+        await this.op.audit(s, scopeId, 'company.report.kpis');
+        return view;
+      },
     );
   }
   async auditIn(s: StaffContext) {
@@ -669,8 +768,13 @@ export class CompanyReportsService {
           throw error;
         }
         // Construction and inline publication share current Company/source fences; no external IO or retained artifact.
-        await this.op.audit(s, scopeId, 'company.export.publish');
+        const publication = await this.op.audit(
+          s,
+          scopeId,
+          'company.export.publish',
+        );
         return {
+          exportId: publication.id,
           body,
           mimeType:
             input.format === 'JSON'
@@ -684,5 +788,37 @@ export class CompanyReportsService {
         };
       },
     );
+  }
+  exports(
+    actor: RequestActor,
+    id: string,
+    scopeId: string,
+    q: z.infer<typeof c.CompanyPageQuerySchema>,
+  ) {
+    return this.read(actor, id, scopeId, false, async (s) => {
+      this.op.manage(s);
+      return this.op.page(
+        s,
+        'company.exports',
+        q,
+        () => this.op.access.exportPublications(s, scopeId),
+        10000,
+      );
+    });
+  }
+  exportStatus(
+    actor: RequestActor,
+    id: string,
+    scopeId: string,
+    exportId: string,
+  ) {
+    return this.read(actor, id, scopeId, false, async (s) => {
+      this.op.manage(s);
+      const row = (await this.op.access.exportPublications(s, scopeId)).find(
+        (r) => r.id === exportId,
+      );
+      if (!row) throw new NotFoundException();
+      return row;
+    });
   }
 }

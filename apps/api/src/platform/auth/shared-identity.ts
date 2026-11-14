@@ -32,6 +32,13 @@ export class SharedIdentity {
       select: { id: true, name: true, email: true, emailVerified: true },
     });
   }
+  /** Context-authorized callers receive a name only, never account/contact fields. */
+  display(tx: Prisma.TransactionClient, userId: string) {
+    return tx.user.findUnique({
+      where: { id: userId },
+      select: { name: true },
+    });
+  }
   async require(tx: Prisma.TransactionClient, actor: RequestActor) {
     if (!actor.sessionId) throw new ForbiddenException();
     const sessions = await tx.$queryRaw<{ id: string }[]>`

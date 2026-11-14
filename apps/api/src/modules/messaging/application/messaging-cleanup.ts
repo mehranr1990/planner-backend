@@ -21,6 +21,9 @@ export async function purgeMessaging(
   )
     return false;
   for (const table of [
+    'ConversationReport',
+    'ConversationMemberSetting',
+    'ConversationSetting',
     'MessageNotice',
     'MessageActivity',
     'MessagePersonalMutation',

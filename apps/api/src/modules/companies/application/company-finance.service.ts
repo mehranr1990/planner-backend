@@ -60,6 +60,16 @@ export class CompanyFinanceService {
     )
       throw new ForbiddenException();
   }
+  /** OD-9: every budget and expense version uses the configured Company currency. */
+  async fixedCurrency(s: FinanceContext, currency: string) {
+    const [row] = await s.tx.$queryRaw<
+      { currency: string | null }[]
+    >`SELECT currency FROM "Company" WHERE "spaceId"=${s.spaceId}::uuid FOR SHARE`;
+    if (!row?.currency)
+      throw new ConflictException({ code: 'COMPANY_CURRENCY_REQUIRED' });
+    if (row.currency !== currency)
+      throw new ConflictException({ code: 'COMPANY_CURRENCY_MISMATCH' });
+  }
   money(value: string, currency: string) {
     const scale = c.financeCurrencyScales[currency];
     if (scale === undefined) throw new BadRequestException();
@@ -396,6 +406,7 @@ export class CompanyFinanceService {
           input,
           async () => {
             const m = this.money(input.amount, input.currency);
+            await this.fixedCurrency(s, input.currency);
             await this.project(s, input.projectReferenceId);
             await this.growth(
               s,
@@ -464,28 +475,13 @@ export class CompanyFinanceService {
         const r = await this.budgetRow(s, target);
         if (r.scopeId !== scopeId) throw new NotFoundException();
         this.op.match(r.revision, revision);
-        if ('amount' in input) {
-          if (r.archived) throw new ConflictException();
-          const n =
-            this.money(input.amount, r.currency).n *
-            (input.direction === 'DECREASE' ? -1n : 1n);
-          const t = await this.totals(s, r);
-          if (
-            t.limit + n < t.spent + t.reserved ||
-            t.limit + n >= 10n ** BigInt(18 + r.scale)
-          )
-            throw new ConflictException({ code: 'BUDGET_LIMIT_EXCEEDED' });
-          await s.change();
-          await s.tx.companyBudgetAdjustment.create({
-            data: {
-              ...this.op.where(s),
-              id: randomUUID(),
-              budgetId: r.id,
-              amount: amount(n, r.scale),
-              createdByActorId: s.root.actorId,
-            },
+        // BU (owner-approved): limit changes go through budget change requests;
+        // the approved budget stays effective until a request is approved.
+        if ('amount' in input)
+          throw new ConflictException({
+            code: 'BUDGET_CHANGE_APPROVAL_REQUIRED',
           });
-        } else await s.change();
+        await s.change();
         const updated = await s.tx.companyBudget.update({
           where: { id: target },
           data: {
@@ -802,6 +798,7 @@ export class CompanyFinanceService {
   }
   private async facts(s: FinanceContext, input: Facts) {
     const m = this.money(input.amount, input.currency);
+    await this.fixedCurrency(s, input.currency);
     const cat = await s.tx.companyExpenseCategory.findFirst({
       where: { ...this.op.where(s), id: input.categoryId, archived: false },
     });
@@ -1155,6 +1152,7 @@ export class CompanyFinanceService {
                   payerAccessId: current.payerAccessId,
                   payerGeneration: current.payerGeneration,
                 };
+            if (!input) await this.fixedCurrency(s, current.currency);
             await this.growth(s, 'company.expense-version', latest.number);
             await s.change();
             const v = await s.tx.companyExpenseVersion.create({
@@ -1317,10 +1315,11 @@ export class CompanyFinanceService {
         ...this.op.changed(s),
       },
     });
+    const reviewEventId = randomUUID();
     await s.tx.companyExpenseReviewEvent.create({
       data: {
         ...this.op.where(s),
-        id: randomUUID(),
+        id: reviewEventId,
         versionId: v.id,
         action: input.decision,
         reviewerAccessId: v.reviewerAccessId,
@@ -1328,6 +1327,17 @@ export class CompanyFinanceService {
         createdByActorId: s.root.actorId,
       },
     });
+    // ER: erasable reason beside the immutable review event (required for REJECT).
+    if (input.reason)
+      await s.tx.companyDecisionReason.create({
+        data: {
+          ...this.op.where(s),
+          id: randomUUID(),
+          expenseEventId: reviewEventId,
+          authorActorId: s.root.actorId,
+          reason: input.reason,
+        },
+      });
     const result = await this.bump(
       s,
       r,

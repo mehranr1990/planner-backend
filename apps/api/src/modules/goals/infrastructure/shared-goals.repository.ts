@@ -4,6 +4,8 @@ import {
   Inject,
   NotFoundException,
   ConflictException,
+  BadRequestException,
+  PayloadTooLargeException,
 } from '@nestjs/common';
 import * as c from '@mehran/api-contracts';
 import type { z } from 'zod';
@@ -173,6 +175,70 @@ export class SharedGoalsRepository extends SharedGoals {
         },
       }),
     );
+  }
+  async period(
+    tx: Prisma.TransactionClient,
+    a: SharedAuthority,
+    space: string,
+    id: string,
+  ) {
+    a.require(tx, space, 'task.read', { kind: 'GOAL', id });
+    const row = await tx.goal.findFirst({
+      where: { id, spaceId: a.space(tx, space), scopeId: a.scope(tx, space) },
+    });
+    if (!row) throw new NotFoundException();
+    return {
+      startDate: row.startDate?.toISOString().slice(0, 10) ?? null,
+      targetDate: row.targetDate?.toISOString().slice(0, 10) ?? null,
+      timezone: row.timezone,
+      revision: row.revision,
+    };
+  }
+  async setPeriod(
+    tx: Prisma.TransactionClient,
+    a: SharedAuthority,
+    space: string,
+    id: string,
+    revision: number,
+    period: { startDate: string; targetDate: string },
+  ) {
+    a.require(tx, space, 'goal.manage', { kind: 'GOAL', id });
+    if (period.targetDate < period.startDate) throw new BadRequestException();
+    const before = await tx.goal.findFirst({
+      where: { id, spaceId: a.space(tx, space), scopeId: a.scope(tx, space) },
+    });
+    if (!before) throw new NotFoundException();
+    if (before.revision !== revision) throw new ConflictException();
+    return view(
+      await tx.goal.update({
+        where: { id },
+        data: {
+          startDate: new Date(period.startDate + 'T00:00:00Z'),
+          targetDate: new Date(period.targetDate + 'T00:00:00Z'),
+          revision: { increment: 1 },
+        },
+      }),
+    );
+  }
+  async linkedTaskIds(
+    tx: Prisma.TransactionClient,
+    a: SharedAuthority,
+    space: string,
+    id: string,
+  ) {
+    a.require(tx, space, 'task.read', { kind: 'GOAL', id });
+    const rows = await tx.goalTaskLink.findMany({
+      where: {
+        goalId: id,
+        spaceId: a.space(tx, space),
+        goal: { scopeId: a.scope(tx, space) },
+      },
+      select: { taskId: true },
+      orderBy: { taskId: 'asc' },
+      take: 10001,
+    });
+    if (rows.length > 10000) throw new PayloadTooLargeException();
+    return rows.map((r) => r.taskId);
   }
   async linkTask(
     tx: Prisma.TransactionClient,

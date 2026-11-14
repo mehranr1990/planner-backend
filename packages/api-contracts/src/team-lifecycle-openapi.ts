@@ -57,6 +57,13 @@ export const teamLifecycleOperations: Operation[] = [
     etag: true,
   },
   {
+    path: '/teams/{id}/ownership-handovers',
+    method: 'get',
+    output: c.TeamHandoverPageSchema,
+    query: c.TeamPageQuerySchema,
+    status200: true,
+  },
+  {
     path: '/teams/{id}/ownership-handovers/{handoverId}',
     method: 'get',
     output: c.OwnerHandoverSchema,

@@ -97,11 +97,17 @@ export class MeetingDocuments {
       selfFinalized: v.selfFinalized,
       createdAt: v.createdAt.toISOString(),
       finalizedAt: v.finalizedAt?.toISOString() ?? null,
-      decisions: decisions.map((x) => ({ id: x.id, text: x.text })),
+      decisions: decisions.map((x) => ({
+        id: x.id,
+        text: x.text,
+        proposedByMemberId: x.proposedByMemberId,
+      })),
       actions: actions.map((x) => ({
         id: x.id,
         title: x.title,
         description: x.description,
+        assigneeMemberId: x.assigneeMemberId,
+        dueDate: x.dueDate?.toISOString().slice(0, 10) ?? null,
       })),
       attachments: attachments.map((x) => x.attachmentId),
       contributors: privateRead ? contributors.map((x) => x.memberId) : [],
@@ -170,9 +176,14 @@ export class MeetingDocuments {
     return this.op.operation(actor, id, 'meeting.version.create', async (s) => {
       const me = await this.op.writer(s);
       await this.meetings.active(s);
-      const organizer = await this.op.canOrganize(s);
+      const organizer = await this.op.canOrganize(s),
+        named = [
+          ...body.decisions.map((v) => v.proposedByMemberId),
+          ...body.actions.map((v) => v.assigneeMemberId),
+        ].filter((v): v is string => !!v);
       if (
-        (body.reviewerMemberId || body.contributors.some((v) => v !== me.id)) &&
+        (body.reviewerMemberId ||
+          [...body.contributors, ...named].some((v) => v !== me.id)) &&
         !organizer
       )
         throw new ForbiddenException();
@@ -230,10 +241,21 @@ export class MeetingDocuments {
               },
             });
           }
+          const generations = new Map([[me.id, me.generation]]);
+          for (const memberId of new Set(named))
+            if (!generations.has(memberId))
+              generations.set(
+                memberId,
+                (await this.op.other(s, memberId)).member.generation,
+              );
           for (const [position, decision] of body.decisions.entries())
             await s.tx.meetingDecision.create({
               data: {
                 ...decision,
+                proposedByMemberId: decision.proposedByMemberId ?? null,
+                proposedByGeneration: decision.proposedByMemberId
+                  ? generations.get(decision.proposedByMemberId)!
+                  : null,
                 meetingId: id,
                 versionId: body.id,
                 position,
@@ -241,7 +263,19 @@ export class MeetingDocuments {
             });
           for (const [position, action] of body.actions.entries())
             await s.tx.meetingAction.create({
-              data: { ...action, meetingId: id, versionId: body.id, position },
+              data: {
+                ...action,
+                assigneeMemberId: action.assigneeMemberId ?? null,
+                assigneeGeneration: action.assigneeMemberId
+                  ? generations.get(action.assigneeMemberId)!
+                  : null,
+                dueDate: action.dueDate
+                  ? new Date(action.dueDate + 'T00:00:00.000Z')
+                  : null,
+                meetingId: id,
+                versionId: body.id,
+                position,
+              },
             });
           await this.files.attachMeetingVersion(s, body.id, body.attachments);
           return body.id;

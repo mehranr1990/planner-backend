@@ -11,6 +11,7 @@ export async function purgeMeetings(
   s.verify(tx);
   const meeting = [{ table: 'Meeting', foreignKey: 'meetingId' }],
     announcement = [{ table: 'Announcement', foreignKey: 'announcementId' }];
+  if (!(await sharedDeleteBatch(tx, s, ['AnnouncementReminder']))) return false;
   if (
     !(await sharedChildDeleteBatch(tx, s, 'AnnouncementAcknowledgement', [
       { table: 'AnnouncementVersion', foreignKey: 'versionId' },
@@ -73,6 +74,7 @@ export async function purgeMeetings(
     return false;
   if (!(await sharedDeleteBatch(tx, s, ['MeetingAttachment']))) return false;
   for (const table of [
+    'MeetingBusySetting',
     'MeetingAgendaEntry',
     'MeetingInvitation',
     'MeetingMutation',

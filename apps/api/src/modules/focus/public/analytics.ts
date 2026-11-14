@@ -14,4 +14,21 @@ export abstract class AnalyticsFocus {
     },
     now: Date,
   ): Promise<InsightReadModel>;
+  /** B4: recorded time entries (TRACKED and MANUAL) overlapping the instants. */
+  abstract entries(
+    tx: Prisma.TransactionClient,
+    scope: AuthorizedSpace,
+    from: Date,
+    to: Date,
+  ): Promise<{ kind: 'MANUAL' | 'TRACKED'; startAt: string; endAt: string }[]>;
+  /**
+   * B4 estimates: recorded minutes per task, the union of each task's current
+   * RECORDED time entries (TRACKED and MANUAL) so overlaps never count twice.
+   * Tasks without recorded time are omitted.
+   */
+  abstract taskMinutes(
+    tx: Prisma.TransactionClient,
+    scope: AuthorizedSpace,
+    taskIds: string[],
+  ): Promise<Map<string, number>>;
 }

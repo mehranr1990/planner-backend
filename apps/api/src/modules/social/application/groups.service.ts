@@ -4,12 +4,14 @@ import {
   ConflictException,
   NotFoundException,
   PayloadTooLargeException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import type { z } from 'zod';
 import * as c from '@mehran/api-contracts';
 import { DatabaseService } from '../../../platform/database/database.service.js';
 import type { RequestActor } from '../../../platform/auth/request-actor.js';
+import { SharedIdentity } from '../../../platform/auth/shared-identity.js';
 import {
   SharedKernel,
   CollaborationService,
@@ -32,6 +34,7 @@ export class SocialGroupsService {
     @Inject(CollaborationService) readonly collaboration: CollaborationService,
     @Inject(DmContacts) private readonly contacts: DmContacts,
     @Inject(SocialContext) private readonly context: SocialContext,
+    @Inject(SharedIdentity) private readonly identity: SharedIdentity,
   ) {}
   async hint(id: string) {
     this.kernel.assertEnabled();
@@ -276,7 +279,14 @@ export class SocialGroupsService {
       async (tx, a) => {
         const rows = await this.kernel.currentMemberships(tx, a, id),
           mapped = await Promise.all(
-            rows.map((r) => this.collaboration.memberView(tx, r)),
+            rows.map(async (r) => ({
+              ...(await this.collaboration.memberView(tx, r)),
+              displayName: await this.collaboration.displayName(
+                tx,
+                r.spaceId,
+                r.actorId,
+              ),
+            })),
           );
         return this.context.page(
           actor,
@@ -288,6 +298,74 @@ export class SocialGroupsService {
           q,
           mapped.map((r) => c.SocialMembershipSchema.parse(r)),
         );
+      },
+    );
+  }
+  async accessMe(actor: RequestActor, id: string) {
+    await this.hint(id);
+    const catalog =
+      c.SocialGroupAccessMeSchema.shape.capabilities.element.options;
+    return this.kernel.run(
+      actor,
+      { userIds: [], spaceIds: [id] },
+      [this.request(id)],
+      async (tx, a) => {
+        const access = a.require(tx, id, 'task.read');
+        const membership = await tx.contextAccess.findUniqueOrThrow({
+          where: { id: access.accessId },
+        });
+        const custody = await tx.sharedCustody.findUniqueOrThrow({
+          where: { spaceId: access.spaceId },
+        });
+        return c.SocialGroupAccessMeSchema.parse({
+          accessId: access.accessId,
+          actorId: access.actorId,
+          role: access.role,
+          state: membership.state,
+          generation: access.generation,
+          revision: membership.revision,
+          groupState: custody.state,
+          capabilities: catalog.filter((capability) =>
+            a.has(tx, id, capability),
+          ),
+        });
+      },
+      undefined,
+      catalog.map((capability) => this.request(id, capability)),
+      true,
+    );
+  }
+  async history(actor: RequestActor, id: string, q: Page) {
+    await this.hint(id);
+    return this.kernel.run(
+      actor,
+      { userIds: [], spaceIds: [id] },
+      [this.request(id)],
+      async (tx, a) => {
+        const access = a.require(tx, id, 'task.read');
+        const context = 'social.group.history:' + id;
+        const stamp = socialHash([
+          String(access.authorizationVersion),
+          access.accessId,
+          access.generation,
+        ]);
+        const after = this.kernel.cursorPosition(
+          context,
+          stamp,
+          actor.userId,
+          q.after,
+        );
+        const rows = await this.collaboration.socialGroupHistory(
+          tx,
+          a,
+          id,
+          after,
+          q.limit,
+        );
+        return this.kernel.cursorPage(context, stamp, actor.userId, {
+          items: rows.slice(0, q.limit),
+          nextCursor: rows.length > q.limit ? rows[q.limit - 1]!.id : null,
+        });
       },
     );
   }
@@ -413,41 +491,80 @@ export class SocialGroupsService {
   }
   async requests(actor: RequestActor, id: string, q: Page) {
     await this.hint(id);
-    return this.kernel.participate(actor, id, [], async (tx, _now, locked) => {
-      let admin = false;
-      try {
-        await this.kernel.participantAuthority(
-          tx,
-          actor,
-          actor.userId,
-          this.request(id, 'membership.member'),
-          locked,
-        );
-        admin = true;
-      } catch (e) {
-        if (
-          !(e instanceof NotFoundException) &&
-          !(e instanceof Error && 'status' in e && e.status === 403)
-        )
-          throw e;
-      }
-      const rows = await tx.socialJoinRequest.findMany({
-        where: {
-          groupId: id,
-          ...(admin ? {} : { requesterUserId: actor.userId }),
-        },
-        orderBy: { id: 'asc' },
-        take: 1001,
-      });
-      if (rows.length > 1000) throw new PayloadTooLargeException();
-      return this.context.page(
-        actor,
-        'social.group.requests:' + id,
-        socialHash(rows),
-        q,
-        rows.map((r) => c.SocialJoinRequestSchema.strip().parse(r)),
-      );
+    const hints = await this.db.client.socialJoinRequest.findMany({
+      where: { groupId: id },
+      select: { requesterUserId: true },
+      take: 1001,
     });
+    return this.kernel.participate(
+      actor,
+      id,
+      hints.map((r) => r.requesterUserId),
+      async (tx, _now, locked) => {
+        let admin = false;
+        try {
+          await this.kernel.participantAuthority(
+            tx,
+            actor,
+            actor.userId,
+            this.request(id, 'membership.member'),
+            locked,
+          );
+          admin = true;
+        } catch (e) {
+          if (
+            !(e instanceof NotFoundException) &&
+            !(e instanceof Error && 'status' in e && e.status === 403)
+          )
+            throw e;
+        }
+        const rows = await tx.socialJoinRequest.findMany({
+          where: {
+            groupId: id,
+            ...(admin ? {} : { requesterUserId: actor.userId }),
+          },
+          orderBy: { id: 'asc' },
+          take: 1001,
+        });
+        if (rows.length > 1000) throw new PayloadTooLargeException();
+        return this.context.page(
+          actor,
+          'social.group.requests:' + id,
+          socialHash(rows),
+          q,
+          await Promise.all(
+            rows.map(async (r) => {
+              if (!locked.includes(r.requesterUserId))
+                throw new ConflictException({
+                  code: 'APPLICANT_FENCE_CHANGED',
+                });
+              let displayName: string | null = null;
+              if (r.state !== 'PENDING')
+                return c.SocialJoinRequestSchema.strip().parse({
+                  ...r,
+                  requesterDisplayName: null,
+                });
+              try {
+                await this.context.owner(tx, r.requesterUserId);
+                displayName =
+                  (await this.identity.display(tx, r.requesterUserId))?.name ??
+                  null;
+              } catch (error) {
+                if (
+                  !(error instanceof NotFoundException) &&
+                  !(error instanceof ForbiddenException)
+                )
+                  throw error;
+              }
+              return c.SocialJoinRequestSchema.strip().parse({
+                ...r,
+                requesterDisplayName: displayName,
+              });
+            }),
+          ),
+        );
+      },
+    );
   }
   async decideJoin(
     actor: RequestActor,

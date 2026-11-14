@@ -69,8 +69,8 @@ describe('P5-01 bounded messaging contracts', () => {
   });
   it('publishes exactly the foundation operations without sockets, advanced messages or media', () => {
     const paths = messagingPaths();
-    expect(messagingOperations).toHaveLength(14);
-    expect(Object.values(paths).flatMap(Object.values)).toHaveLength(14);
+    expect(messagingOperations).toHaveLength(17);
+    expect(Object.values(paths).flatMap(Object.values)).toHaveLength(17);
     expect(JSON.stringify(paths)).not.toMatch(
       /websocket|socket\.io|typing|voice|attachments|reaction/i,
     );

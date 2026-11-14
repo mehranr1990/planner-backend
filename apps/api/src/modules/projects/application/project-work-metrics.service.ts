@@ -4,6 +4,7 @@ import {
   ConflictException,
   NotFoundException,
   PayloadTooLargeException,
+  ForbiddenException,
 } from '@nestjs/common';
 import * as c from '@mehran/api-contracts';
 import type { z } from 'zod';
@@ -544,6 +545,44 @@ export class ProjectWorkMetricsService {
   }
   getSnapshot(actor: RequestActor, pid: string, id: string) {
     return this.op.read(actor, pid, [], undefined, (s) => this.snapshot(s, id));
+  }
+  listSnapshots(
+    actor: RequestActor,
+    pid: string,
+    query: z.infer<typeof c.ProjectPageQuerySchema>,
+  ) {
+    return this.op.read(actor, pid, [], undefined, async (s) =>
+      c.ProjectReportSnapshotPageSchema.parse(
+        await this.op.page(s, 'report-snapshots', query, async (after) => {
+          const items = [];
+          let position = after;
+          for (;;) {
+            const rows = await s.tx.projectReportSnapshot.findMany({
+              where: {
+                ...projectWhere(s),
+                ...(position ? { id: { gt: position } } : {}),
+              },
+              orderBy: { id: 'asc' },
+              take: 100,
+            });
+            for (const row of rows) {
+              try {
+                items.push(await this.snapshot(s, row.id));
+              } catch (error) {
+                if (
+                  !(error instanceof NotFoundException) &&
+                  !(error instanceof ForbiddenException)
+                )
+                  throw error;
+              }
+              if (items.length > query.limit) return items;
+            }
+            if (rows.length < 100) return items;
+            position = rows.at(-1)!.id;
+          }
+        }),
+      ),
+    );
   }
   createSnapshot(
     actor: RequestActor,

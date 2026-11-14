@@ -444,6 +444,8 @@ enum TaskPriority {
 }
 
 model Task {
+  /// B4 estimates: explicit Personal Task category (design|admin|writing|errands).
+  category           String?             @db.VarChar(16)
  MeetingTaskLink_task MeetingTaskLink[] @relation("MeetingTaskLink_task_fk")
  TeamWorkItem TeamWorkItem[]
   reminders          Reminder[]
@@ -1856,6 +1858,9 @@ model AccessScope {
  CompanyEmployeeCase_context CompanyEmployeeCase[] @relation("CompanyEmployeeCase_context")
  CompanyResourceAllocation_context CompanyResourceAllocation[] @relation("CompanyResourceAllocation_context")
  CompanyResource_context CompanyResource[] @relation("CompanyResource_context")
+ CompanyResourceType_context CompanyResourceType[] @relation("CompanyResourceType_context")
+ CompanyResourceWorkflowVersion_context CompanyResourceWorkflowVersion[] @relation("CompanyResourceWorkflowVersion_context")
+ CompanyResourceRequest_context CompanyResourceRequest[] @relation("CompanyResourceRequest_context")
  CompanyAvailabilityDay_context CompanyAvailabilityDay[] @relation("CompanyAvailabilityDay_context")
  CompanyStaffProfile_context CompanyStaffProfile[] @relation("CompanyStaffProfile_context")
  CompanyInvitationScope ContextInvitation[] @relation("CompanyInvitationScope")
@@ -1934,6 +1939,7 @@ model ContextAccess {
  CompanyEmployeeCase_subjectMember CompanyEmployeeCase[] @relation("CompanyEmployeeCase_subjectMember")
  CompanyEmployeeCase_authorMember CompanyEmployeeCase[] @relation("CompanyEmployeeCase_authorMember")
  CompanyResourceAllocation_memberMember CompanyResourceAllocation[] @relation("CompanyResourceAllocation_memberMember")
+ CompanyResourceRequest_requesterMember CompanyResourceRequest[] @relation("CompanyResourceRequest_requesterMember")
  CompanyAvailabilityDay_memberMember CompanyAvailabilityDay[] @relation("CompanyAvailabilityDay_memberMember")
  CompanyStaffProfile_supervisor CompanyStaffProfile[] @relation("CompanyStaffProfile_supervisor")
  CompanyStaffProfile_memberMember CompanyStaffProfile[] @relation("CompanyStaffProfile_memberMember")
@@ -2049,6 +2055,7 @@ model ContextAccessInterval {
  CompanyEmployeeCase_subjectInterval CompanyEmployeeCase[] @relation("CompanyEmployeeCase_subjectInterval")
  CompanyEmployeeCase_authorInterval CompanyEmployeeCase[] @relation("CompanyEmployeeCase_authorInterval")
  CompanyResourceAllocation_memberInterval CompanyResourceAllocation[] @relation("CompanyResourceAllocation_memberInterval")
+ CompanyResourceRequest_requesterInterval CompanyResourceRequest[] @relation("CompanyResourceRequest_requesterInterval")
  CompanyAvailabilityDay_memberInterval CompanyAvailabilityDay[] @relation("CompanyAvailabilityDay_memberInterval")
  CompanyStaffProfile_supervisorInterval CompanyStaffProfile[] @relation("CompanyStaffProfile_supervisorInterval")
  CompanyStaffProfile_memberInterval CompanyStaffProfile[] @relation("CompanyStaffProfile_memberInterval")
@@ -2188,6 +2195,10 @@ model SharedActor {
  CompanyEmployeeCaseEntry_creator CompanyEmployeeCaseEntry[] @relation("CompanyEmployeeCaseEntry_creator")
  CompanyResourceAllocation_creator CompanyResourceAllocation[] @relation("CompanyResourceAllocation_creator")
  CompanyResource_creator CompanyResource[] @relation("CompanyResource_creator")
+ CompanyResourceType_creator CompanyResourceType[] @relation("CompanyResourceType_creator")
+ CompanyResourceWorkflowVersion_creator CompanyResourceWorkflowVersion[] @relation("CompanyResourceWorkflowVersion_creator")
+ CompanyResourceRequest_requesterActor CompanyResourceRequest[] @relation("CompanyResourceRequest_requesterActor")
+ CompanyResourceRequestEvent_actor CompanyResourceRequestEvent[] @relation("CompanyResourceRequestEvent_actor")
  Company Company[]
  CompanyDepartment CompanyDepartment[]
  CompanyUnit CompanyUnit[]
@@ -2556,6 +2567,11 @@ model Project {
   createdByActorId        String                    @db.Uuid
   title                   String                    @db.VarChar(300)
   description             String?                   @db.VarChar(10000)
+  key                     String?                   @db.VarChar(32)
+  color                   String?                   @db.VarChar(7)
+  startDate               DateTime?                 @db.Date
+  endDate                 DateTime?                 @db.Date
+  statusNote              String?                   @db.VarChar(2000)
   revision                Int                       @default(1)
   creationKey             String                    @db.Char(64)
   creationFingerprint     String                    @db.Char(64)
@@ -3658,6 +3674,13 @@ model TeamPlan {
  reviewSummary String? @db.VarChar(10000)
  reviewedByActorId String? @db.Uuid
  reviewedAt DateTime? @db.Timestamptz(3)
+ focus String[] @default([]) @db.VarChar(300)
+ focusByActorId String? @db.Uuid
+ focusAt DateTime? @db.Timestamptz(3)
+ goal String? @db.VarChar(300)
+ publishedAt DateTime? @db.Timestamptz(3)
+ publishedByActorId String? @db.Uuid
+ closedAt DateTime? @db.Timestamptz(3)
  Team Team @relation(fields:[spaceId,scopeId],references:[spaceId,scopeId],onDelete:NoAction,onUpdate:NoAction,map:"TeamPlan_spaceId_fkey")
  Creator SharedActor @relation("TeamPlanCreator",fields:[spaceId,createdByActorId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction)
  Reviewer SharedActor? @relation("TeamPlanReviewer",fields:[spaceId,reviewedByActorId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction)
@@ -3678,6 +3701,8 @@ model TeamWorkItem {
  position Int @default(0)
  revision Int @default(1)
  createdByActorId String @db.Uuid
+ carriedFromPlanId String? @db.Uuid
+ plannedAt DateTime? @db.Timestamptz(3)
  Team Team @relation(fields:[spaceId,scopeId],references:[spaceId,scopeId],onDelete:NoAction,onUpdate:NoAction,map:"TeamWorkItem_spaceId_fkey")
  TeamPlan TeamPlan? @relation(fields:[spaceId,scopeId,planId],references:[spaceId,scopeId,id],onDelete:NoAction,onUpdate:NoAction,map:"TeamWorkItem_spaceId_planId_fkey")
  SharedCustody SharedCustody @relation(fields:[sourceSpaceId],references:[spaceId],onDelete:NoAction,onUpdate:NoAction)
@@ -3703,6 +3728,140 @@ model TeamCapacityDay {
  ContextAccessInterval ContextAccessInterval @relation(fields:[accessId,generation],references:[accessId,generation],onDelete:NoAction,onUpdate:NoAction,map:"TeamCapacityDay_generation")
  @@unique([spaceId,accessId,generation,date,timezone])
  @@index([spaceId,timezone,date,id],map:"TeamCapacityDay_range")
+}
+
+/// Team completion (2026-11-13). Foreign keys and shape checks live in the reviewed SQL migration.
+model TeamSetting {
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ planningMode String @default("WEEKLY") @db.VarChar(10)
+ estimateUnit String? @db.VarChar(10)
+ weekStart Int? @db.SmallInt
+ checkinsEnabled Boolean?
+ statusEnabled Boolean?
+ color String? @db.VarChar(7)
+ shortName String? @db.VarChar(32)
+ defaultInviteRole String? @db.VarChar(10)
+ checkinCadence String? @db.VarChar(6)
+ checkinOpensDay Int? @db.SmallInt
+ checkinOpensTime String? @db.Char(5)
+ checkinClosesDay Int? @db.SmallInt
+ checkinClosesTime String? @db.Char(5)
+ checkinTimezone String? @db.VarChar(100)
+ checkinReminderMinutes Int?
+ revision Int @default(2)
+ updatedAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ @@unique([spaceId,scopeId])
+}
+model TeamPresence {
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ accessId String @db.Uuid
+ generation Int
+ status String? @db.VarChar(10)
+ note String @default("") @db.VarChar(200)
+ clearAfter String @default("NEVER") @db.VarChar(5)
+ until DateTime? @db.Timestamptz(3)
+ revision Int @default(2)
+ updatedAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ @@unique([spaceId,accessId,generation])
+}
+model TeamCheckinReply {
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ period DateTime @db.Date
+ accessId String @db.Uuid
+ generation Int
+ state String @db.VarChar(8)
+ did String? @db.VarChar(2000)
+ next String? @db.VarChar(2000)
+ blocked String? @db.VarChar(2000)
+ late Boolean @default(false)
+ sentAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ revision Int @default(2)
+ @@unique([spaceId,scopeId,period,accessId,generation])
+ @@unique([spaceId,id])
+ @@index([spaceId,scopeId,period,id],map:"TeamCheckinReply_period")
+}
+model TeamCheckinComment {
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ replyId String @db.Uuid
+ accessId String @db.Uuid
+ generation Int
+ body String @db.VarChar(2000)
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ @@index([spaceId,replyId,createdAt,id],map:"TeamCheckinComment_reply")
+}
+model TeamTaskState {
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ taskId String @db.Uuid
+ state String @db.VarChar(8)
+ taskStatus String @db.VarChar(12)
+ updatedByActorId String @db.Uuid
+ updatedAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ @@unique([spaceId,taskId])
+}
+model TeamThanks {
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ authorAccessId String @db.Uuid
+ authorGeneration Int
+ body String @db.VarChar(1000)
+ visibility String @db.VarChar(8)
+ linkKind String? @db.VarChar(5)
+ linkId String? @db.Uuid
+ projectId String? @db.Uuid
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ removedAt DateTime? @db.Timestamptz(3)
+ removedByActorId String? @db.Uuid
+ @@unique([spaceId,id])
+ @@index([spaceId,scopeId,createdAt,id],map:"TeamThanks_feed")
+}
+model TeamThanksRecipient {
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ thanksId String @db.Uuid
+ accessId String @db.Uuid
+ generation Int
+ hidden Boolean @default(false)
+ @@unique([thanksId,accessId,generation])
+ @@index([spaceId,accessId,generation,thanksId],map:"TeamThanksRecipient_member")
+}
+model TeamFeedbackRequest {
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ requesterAccessId String @db.Uuid
+ requesterGeneration Int
+ askedAccessId String @db.Uuid
+ askedGeneration Int
+ about String @db.VarChar(300)
+ question String @db.VarChar(2000)
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ answeredAt DateTime? @db.Timestamptz(3)
+ @@unique([spaceId,id])
+}
+model TeamFeedbackNote {
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ authorAccessId String @db.Uuid
+ authorGeneration Int
+ recipientAccessId String @db.Uuid
+ recipientGeneration Int
+ about String @db.VarChar(300)
+ body String @db.VarChar(4000)
+ requestId String? @db.Uuid @unique
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
 }
 
 model TeamCase {
@@ -3862,6 +4021,10 @@ model Company {
  CompanyEmployeeCase_company CompanyEmployeeCase[] @relation("CompanyEmployeeCase_company")
  CompanyResourceAllocation_company CompanyResourceAllocation[] @relation("CompanyResourceAllocation_company")
  CompanyResource_company CompanyResource[] @relation("CompanyResource_company")
+ CompanyResourceType_company CompanyResourceType[] @relation("CompanyResourceType_company")
+ CompanyResourceWorkflowVersion_company CompanyResourceWorkflowVersion[] @relation("CompanyResourceWorkflowVersion_company")
+ CompanyResourceRequest_company CompanyResourceRequest[] @relation("CompanyResourceRequest_company")
+ CompanyResourceRequestEvent_company CompanyResourceRequestEvent[] @relation("CompanyResourceRequestEvent_company")
  CompanyAvailabilityDay_company CompanyAvailabilityDay[] @relation("CompanyAvailabilityDay_company")
  CompanyStaffProfile_company CompanyStaffProfile[] @relation("CompanyStaffProfile_company")
  id String @id @db.Uuid
@@ -3870,6 +4033,10 @@ model Company {
  createdByActorId String @db.Uuid
  title String @db.VarChar(300)
  description String? @db.VarChar(10000)
+ currency String? @db.VarChar(3)
+ scale Int?
+ legalName String? @db.VarChar(300)
+ fiscalStartMonth Int? @db.SmallInt
  revision Int @default(1)
  createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
  updatedAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
@@ -3963,6 +4130,9 @@ model CompanyStaffProfile {
  supervisorGeneration Int?
  workStatus String @db.VarChar(8)
  workEmail String? @db.VarChar(320)
+ workPhone String? @db.VarChar(40)
+ workLocation String? @db.VarChar(200)
+ workHours String? @db.VarChar(200)
  redactedAt DateTime? @db.Timestamptz(3)
  revision Int @default(1)
  createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
@@ -4001,6 +4171,9 @@ model CompanyAvailabilityDay {
 
 model CompanyResource {
  allocations CompanyResourceAllocation[] @relation("CompanyResourceAllocation_resource")
+ requests CompanyResourceRequest[] @relation("CompanyResourceRequest_resource")
+ typeId String? @db.Uuid
+ type CompanyResourceType? @relation("CompanyResource_type",fields:[spaceId,scopeId,typeId],references:[spaceId,scopeId,id],onDelete:NoAction,onUpdate:NoAction,map:"CompanyResource_type")
  id String @id @db.Uuid
  spaceId String @db.Uuid
  scopeId String @db.Uuid
@@ -4019,6 +4192,7 @@ model CompanyResource {
 }
 
 model CompanyResourceAllocation {
+ requests CompanyResourceRequest[] @relation("CompanyResourceRequest_allocation")
  id String @id @db.Uuid
  spaceId String @db.Uuid
  scopeId String @db.Uuid
@@ -5419,6 +5593,8 @@ model MeetingMember {
 
 // P5-05 / ADR 0048: typed meeting and publication owner data.
 model MeetingAdmission {
+ MeetingDecision_proposedByMemberId MeetingDecision[] @relation("MeetingDecision_proposedByMemberId_fk")
+ MeetingAction_assigneeMemberId MeetingAction[] @relation("MeetingAction_assigneeMemberId_fk")
  MeetingAttachment_memberId MeetingAttachment[] @relation("MeetingAttachment_memberId_fk")
  MeetingTaskLink_memberId MeetingTaskLink[] @relation("MeetingTaskLink_memberId_fk")
  MeetingActionRelease_memberId MeetingActionRelease[] @relation("MeetingActionRelease_memberId_fk")
@@ -5534,11 +5710,14 @@ model MeetingDraftContributor {
 // P5-05 / ADR 0048: typed meeting and publication owner data.
 model MeetingDecision {
  version MeetingVersion @relation("MeetingDecision_version_fk",fields:[meetingId,versionId],references:[meetingId,id],onDelete:NoAction,onUpdate:NoAction,map:"MeetingDecision_version_fk")
+ proposedByMemberRelation MeetingAdmission? @relation("MeetingDecision_proposedByMemberId_fk",fields:[meetingId,proposedByMemberId,proposedByGeneration],references:[meetingId,memberId,generation],onDelete:NoAction,onUpdate:NoAction,map:"MeetingDecision_proposedByMemberId_fk")
  id String @id @db.Uuid
  meetingId String @db.Uuid
  versionId String @db.Uuid
  position Int
  text String
+ proposedByMemberId String? @db.Uuid
+ proposedByGeneration Int?
  @@unique([versionId,id])
  @@unique([versionId,position])
 }
@@ -5548,12 +5727,16 @@ model MeetingAction {
  MeetingTaskLink_action MeetingTaskLink[] @relation("MeetingTaskLink_action_fk")
  MeetingActionRelease_action MeetingActionRelease[] @relation("MeetingActionRelease_action_fk")
  version MeetingVersion @relation("MeetingAction_version_fk",fields:[meetingId,versionId],references:[meetingId,id],onDelete:NoAction,onUpdate:NoAction,map:"MeetingAction_version_fk")
+ assigneeMemberRelation MeetingAdmission? @relation("MeetingAction_assigneeMemberId_fk",fields:[meetingId,assigneeMemberId,assigneeGeneration],references:[meetingId,memberId,generation],onDelete:NoAction,onUpdate:NoAction,map:"MeetingAction_assigneeMemberId_fk")
  id String @id @db.Uuid
  meetingId String @db.Uuid
  versionId String @db.Uuid
  position Int
  title String @db.VarChar(300)
  description String?
+ assigneeMemberId String? @db.Uuid
+ assigneeGeneration Int?
+ dueDate DateTime? @db.Date
  @@unique([meetingId,id])
  @@unique([versionId,id])
  @@unique([versionId,position])
@@ -5890,4 +6073,577 @@ model DmContactMutation {
  owner DmContactState @relation(fields:[spaceId,ownerUserId],references:[spaceId,ownerUserId],onDelete:Cascade,onUpdate:NoAction,map:"DmContactMutation_owner_fk")
  block DmContactBlock? @relation(fields:[blockId],references:[id],onDelete:SetNull,onUpdate:NoAction,map:"DmContactMutation_block_fk")
  @@unique([spaceId,keyHash])
+}
+
+model CompanyResourceType {
+ resources CompanyResource[] @relation("CompanyResource_type")
+ workflows CompanyResourceWorkflowVersion[] @relation("CompanyResourceWorkflowVersion_type")
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ createdByActorId String @db.Uuid
+ title String @db.VarChar(300)
+ revision Int @default(1)
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ updatedAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ company Company @relation("CompanyResourceType_company",fields:[spaceId],references:[spaceId],onDelete:NoAction,onUpdate:NoAction,map:"CompanyResourceType_company")
+ context AccessScope @relation("CompanyResourceType_context",fields:[spaceId,scopeId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction,map:"CompanyResourceType_context")
+ creator SharedActor @relation("CompanyResourceType_creator",fields:[spaceId,createdByActorId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction,map:"CompanyResourceType_creator")
+ @@unique([spaceId,scopeId,id])
+}
+
+model CompanyResourceWorkflowVersion {
+ requests CompanyResourceRequest[] @relation("CompanyResourceRequest_workflow")
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ typeId String @db.Uuid
+ createdByActorId String @db.Uuid
+ state String @db.VarChar(9)
+ steps Json
+ publishedAt DateTime? @db.Timestamptz(3)
+ revision Int @default(1)
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ updatedAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ company Company @relation("CompanyResourceWorkflowVersion_company",fields:[spaceId],references:[spaceId],onDelete:NoAction,onUpdate:NoAction,map:"CompanyResourceWorkflowVersion_company")
+ context AccessScope @relation("CompanyResourceWorkflowVersion_context",fields:[spaceId,scopeId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction,map:"CompanyResourceWorkflowVersion_context")
+ creator SharedActor @relation("CompanyResourceWorkflowVersion_creator",fields:[spaceId,createdByActorId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction,map:"CompanyResourceWorkflowVersion_creator")
+ type CompanyResourceType @relation("CompanyResourceWorkflowVersion_type",fields:[spaceId,scopeId,typeId],references:[spaceId,scopeId,id],onDelete:NoAction,onUpdate:NoAction,map:"CompanyResourceWorkflowVersion_type")
+ @@unique([spaceId,scopeId,id])
+ // SQL owns the partial PUBLISHED uniqueness index and the immutability guard.
+}
+
+model CompanyResourceRequest {
+ events CompanyResourceRequestEvent[] @relation("CompanyResourceRequestEvent_request")
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ resourceId String @db.Uuid
+ workflowVersionId String @db.Uuid
+ requesterAccessId String @db.Uuid
+ requesterGeneration Int
+ requesterActorId String @db.Uuid
+ startAt DateTime @db.Timestamptz(3)
+ endAt DateTime @db.Timestamptz(3)
+ reason String? @db.VarChar(2000)
+ state String @db.VarChar(9)
+ step Int
+ allocationId String? @db.Uuid
+ decidedAt DateTime? @db.Timestamptz(3)
+ redactedAt DateTime? @db.Timestamptz(3)
+ revision Int @default(1)
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ updatedAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ company Company @relation("CompanyResourceRequest_company",fields:[spaceId],references:[spaceId],onDelete:NoAction,onUpdate:NoAction,map:"CompanyResourceRequest_company")
+ context AccessScope @relation("CompanyResourceRequest_context",fields:[spaceId,scopeId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction,map:"CompanyResourceRequest_context")
+ resource CompanyResource @relation("CompanyResourceRequest_resource",fields:[spaceId,scopeId,resourceId],references:[spaceId,scopeId,id],onDelete:NoAction,onUpdate:NoAction,map:"CompanyResourceRequest_resource")
+ workflow CompanyResourceWorkflowVersion @relation("CompanyResourceRequest_workflow",fields:[spaceId,scopeId,workflowVersionId],references:[spaceId,scopeId,id],onDelete:NoAction,onUpdate:NoAction,map:"CompanyResourceRequest_workflow")
+ requesterMember ContextAccess @relation("CompanyResourceRequest_requesterMember",fields:[spaceId,scopeId,requesterAccessId],references:[spaceId,scopeId,id],onDelete:NoAction,onUpdate:NoAction,map:"CompanyResourceRequest_requesterMember")
+ requesterInterval ContextAccessInterval @relation("CompanyResourceRequest_requesterInterval",fields:[requesterAccessId,requesterGeneration],references:[accessId,generation],onDelete:NoAction,onUpdate:NoAction,map:"CompanyResourceRequest_requesterInterval")
+ requesterActor SharedActor @relation("CompanyResourceRequest_requesterActor",fields:[spaceId,requesterActorId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction,map:"CompanyResourceRequest_requesterActor")
+ allocation CompanyResourceAllocation? @relation("CompanyResourceRequest_allocation",fields:[spaceId,scopeId,allocationId],references:[spaceId,scopeId,id],onDelete:NoAction,onUpdate:NoAction,map:"CompanyResourceRequest_allocation")
+ @@unique([spaceId,scopeId,id])
+ @@unique([allocationId],map:"CompanyResourceRequest_allocation_once")
+ @@index([spaceId,scopeId,id],map:"CompanyResourceRequest_page")
+}
+
+model CompanyResourceRequestEvent {
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ requestId String @db.Uuid
+ actorId String @db.Uuid
+ kind String @db.VarChar(8)
+ step Int?
+ reason String? @db.VarChar(2000)
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ company Company @relation("CompanyResourceRequestEvent_company",fields:[spaceId],references:[spaceId],onDelete:NoAction,onUpdate:NoAction,map:"CompanyResourceRequestEvent_company")
+ request CompanyResourceRequest @relation("CompanyResourceRequestEvent_request",fields:[spaceId,scopeId,requestId],references:[spaceId,scopeId,id],onDelete:NoAction,onUpdate:NoAction,map:"CompanyResourceRequestEvent_request")
+ actor SharedActor @relation("CompanyResourceRequestEvent_actor",fields:[spaceId,actorId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction,map:"CompanyResourceRequestEvent_actor")
+ @@unique([spaceId,scopeId,id])
+ @@index([spaceId,requestId,createdAt,id],map:"CompanyResourceRequestEvent_history")
+}
+
+/// Backend completion (2026-11-13). Foreign keys, partial uniqueness and shape checks live in the reviewed SQL migration.
+model TeamTaskAssignment {
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ taskId String @db.Uuid
+ assigneeAccessId String @db.Uuid
+ assigneeGeneration Int
+ issuerAccessId String @db.Uuid
+ issuerGeneration Int
+ state String @db.VarChar(8)
+ declineReason String? @db.VarChar(1000)
+ endReason String? @db.VarChar(10)
+ endedByActorId String? @db.Uuid
+ revision Int @default(1)
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ respondedAt DateTime? @db.Timestamptz(3)
+ endedAt DateTime? @db.Timestamptz(3)
+ @@unique([spaceId,id])
+ @@index([spaceId,scopeId,taskId,id],map:"TeamTaskAssignment_task_page")
+ @@index([assigneeAccessId,assigneeGeneration,state,id],map:"TeamTaskAssignment_assignee_page")
+}
+model TeamTaskAssignmentEvent {
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ assignmentId String @db.Uuid
+ action String @db.VarChar(10)
+ actorId String @db.Uuid
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ @@index([spaceId,assignmentId,createdAt,id],map:"TeamTaskAssignmentEvent_page")
+}
+model TeamTaskPoints {
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ taskId String @db.Uuid
+ points Int? @db.SmallInt
+ revision Int @default(2)
+ updatedByActorId String @db.Uuid
+ updatedAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ @@unique([spaceId,taskId])
+}
+model TeamTimeOff {
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ accessId String @db.Uuid
+ generation Int
+ startDate DateTime @db.Date
+ endDate DateTime @db.Date
+ minutesPerDay Int?
+ reason String? @db.VarChar(1000)
+ state String @db.VarChar(9)
+ decisionNote String? @db.VarChar(1000)
+ decidedByActorId String? @db.Uuid
+ decidedAt DateTime? @db.Timestamptz(3)
+ revision Int @default(1)
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ updatedAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ @@unique([spaceId,id])
+ @@index([spaceId,scopeId,startDate,id],map:"TeamTimeOff_page")
+}
+model TeamTimeOffEvent {
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ timeOffId String @db.Uuid
+ action String @db.VarChar(9)
+ actorId String @db.Uuid
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ @@index([spaceId,timeOffId,createdAt,id],map:"TeamTimeOffEvent_page")
+}
+model TeamKeyResult {
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ goalId String @db.Uuid
+ title String @db.VarChar(300)
+ unit String? @db.VarChar(30)
+ source String @db.VarChar(6)
+ startValue Decimal @db.Decimal(20, 4)
+ targetValue Decimal @db.Decimal(20, 4)
+ archivedAt DateTime? @db.Timestamptz(3)
+ revision Int @default(1)
+ createdByActorId String @db.Uuid
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ updatedAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ @@unique([spaceId,id])
+ @@index([spaceId,goalId,id],map:"TeamKeyResult_goal_page")
+}
+model TeamKeyResultCheckin {
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ keyResultId String @db.Uuid
+ value Decimal @db.Decimal(20, 4)
+ note String? @db.VarChar(500)
+ actorId String @db.Uuid
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ @@index([spaceId,keyResultId,createdAt,id],map:"TeamKeyResultCheckin_page")
+}
+model TeamMemberProfile {
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ accessId String @db.Uuid
+ generation Int
+ jobTitle String? @db.VarChar(100)
+ revision Int @default(2)
+ updatedAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ @@unique([spaceId,accessId,generation])
+}
+model TeamNotification {
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ recipientAccessId String @db.Uuid
+ recipientGeneration Int
+ kind String @db.VarChar(20)
+ subjectId String @db.Uuid
+ dedupeKey String @db.VarChar(120)
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ readAt DateTime? @db.Timestamptz(3)
+ @@unique([spaceId,recipientAccessId,recipientGeneration,dedupeKey])
+ @@index([recipientAccessId,recipientGeneration,id],map:"TeamNotification_inbox")
+}
+model CompanyDecisionReason {
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ expenseEventId String? @unique @db.Uuid
+ approvalEventId String? @unique @db.Uuid
+ authorActorId String @db.Uuid
+ reason String? @db.VarChar(1000)
+ redactedAt DateTime? @db.Timestamptz(3)
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+}
+model CompanyBudgetChangeRequest {
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ budgetId String @db.Uuid
+ budgetRevision Int
+ amount Decimal @db.Decimal(28, 4)
+ requesterAccessId String @db.Uuid
+ requesterGeneration Int
+ requesterActorId String @db.Uuid
+ reason String? @db.VarChar(1000)
+ state String @db.VarChar(9)
+ deciderActorId String? @db.Uuid
+ decidedAt DateTime? @db.Timestamptz(3)
+ decisionReason String? @db.VarChar(1000)
+ adjustmentId String? @db.Uuid
+ redactedAt DateTime? @db.Timestamptz(3)
+ revision Int @default(1)
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ updatedAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ @@unique([spaceId,scopeId,id])
+ @@index([spaceId,scopeId,id],map:"CompanyBudgetChangeRequest_page")
+}
+
+/// TM-11 Team file library (2026-11-13). Foreign keys and shape checks live in the reviewed SQL migration.
+model TeamFileFolder {
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ parentId String? @db.Uuid
+ title String @db.VarChar(200)
+ createdByActorId String @db.Uuid
+ revision Int @default(1)
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ updatedAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ @@unique([spaceId,scopeId,id])
+ @@index([spaceId,scopeId,id],map:"TeamFileFolder_page")
+}
+model TeamFile {
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ folderId String? @db.Uuid
+ title String @db.VarChar(300)
+ ownerAccessId String @db.Uuid
+ ownerGeneration Int
+ revision Int @default(1)
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ updatedAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ removedAt DateTime? @db.Timestamptz(3)
+ removedByActorId String? @db.Uuid
+ @@unique([spaceId,scopeId,id])
+ @@index([spaceId,scopeId,folderId,id],map:"TeamFile_page")
+}
+model TeamFileVersion {
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ fileId String @db.Uuid
+ number Int
+ uploaderAccessId String @db.Uuid
+ uploaderGeneration Int
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ @@unique([fileId,number])
+ @@index([spaceId,fileId,id],map:"TeamFileVersion_page")
+}
+
+/// Gap closure (2026-11-13). Foreign keys, partial uniqueness and shape checks live in the reviewed SQL migration.
+model ConversationSetting {
+ conversationId String @id @db.Uuid
+ linkPreviews Boolean?
+ newcomerHistory String? @db.VarChar(9)
+ membersCanPin Boolean?
+ revision Int @default(2)
+ updatedByMemberId String @db.Uuid
+ updatedAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+}
+model ConversationMemberSetting {
+ memberId String @db.Uuid
+ generation Int
+ conversationId String @db.Uuid
+ linkPreviews Boolean?
+ collapseBlocked Boolean @default(false)
+ revision Int @default(2)
+ updatedAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ @@id([memberId,generation])
+}
+model ConversationReport {
+ id String @id @db.Uuid
+ conversationId String @db.Uuid
+ memberId String @db.Uuid
+ generation Int
+ reason String? @db.VarChar(2000)
+ state String @default("OPEN") @db.VarChar(8)
+ resolution String? @db.VarChar(2000)
+ reviewerId String? @db.Uuid
+ revision Int @default(1)
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ resolvedAt DateTime? @db.Timestamptz(3)
+ @@index([conversationId,id],map:"ConversationReport_page")
+}
+model MeetingBusySetting {
+ meetingId String @id @db.Uuid
+ visibility String @db.VarChar(6)
+ revision Int @default(2)
+ updatedAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+}
+model AnnouncementReminder {
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ announcementId String @db.Uuid
+ versionId String @db.Uuid
+ accessId String @db.Uuid
+ generation Int
+ day DateTime @db.Date
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ readAt DateTime? @db.Timestamptz(3)
+ @@unique([versionId,accessId,generation,day])
+ @@index([accessId,generation,id],map:"AnnouncementReminder_inbox")
+}
+model CompanyGoal {
+ goalId String @id @db.Uuid
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ parentGoalId String? @db.Uuid
+ ownerAccessId String @db.Uuid
+ ownerGeneration Int
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ @@unique([spaceId,scopeId,goalId])
+}
+model CompanyKeyResult {
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ goalId String @db.Uuid
+ title String @db.VarChar(300)
+ unit String? @db.VarChar(30)
+ startValue Decimal @db.Decimal(20, 4)
+ targetValue Decimal @db.Decimal(20, 4)
+ archivedAt DateTime? @db.Timestamptz(3)
+ revision Int @default(1)
+ createdByActorId String @db.Uuid
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ updatedAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ @@unique([spaceId,id])
+ @@index([spaceId,goalId,id],map:"CompanyKeyResult_goal_page")
+}
+model CompanyKeyResultCheckin {
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ keyResultId String @db.Uuid
+ value Decimal @db.Decimal(20, 4)
+ note String? @db.VarChar(500)
+ actorId String @db.Uuid
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ @@index([spaceId,keyResultId,createdAt,id],map:"CompanyKeyResultCheckin_page")
+}
+model CompanyRoomProfile {
+ resourceId String @id @db.Uuid
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ seats Int?
+ floor String? @db.VarChar(60)
+ revision Int @default(2)
+ updatedAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+}
+model CompanyKnowledgeText {
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ documentId String @db.Uuid
+ number Int
+ body String
+ note String? @db.VarChar(300)
+ authorAccessId String @db.Uuid
+ authorGeneration Int
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ @@unique([documentId,number])
+}
+model CompanyKnowledgeSetting {
+ documentId String @id @db.Uuid
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ ackRequired Boolean @default(false)
+ publishedNumber Int?
+ remindedNumber Int?
+ revision Int @default(2)
+ updatedAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+}
+model CompanyKnowledgeAck {
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ documentId String @db.Uuid
+ number Int
+ accessId String @db.Uuid
+ generation Int
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ @@unique([documentId,number,accessId,generation])
+}
+model CompanyNotification {
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ recipientAccessId String @db.Uuid
+ recipientGeneration Int
+ kind String @db.VarChar(24)
+ subjectId String @db.Uuid
+ dedupeKey String @db.VarChar(120)
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ readAt DateTime? @db.Timestamptz(3)
+ @@unique([spaceId,recipientAccessId,recipientGeneration,dedupeKey])
+ @@index([recipientAccessId,recipientGeneration,id],map:"CompanyNotification_inbox")
+}
+model CompanyPaymentRun {
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ label String @db.VarChar(200)
+ state String @db.VarChar(9)
+ currency String @db.VarChar(3)
+ total Decimal @db.Decimal(28, 4)
+ reference String? @db.VarChar(300)
+ createdByActorId String @db.Uuid
+ closedByActorId String? @db.Uuid
+ closedAt DateTime? @db.Timestamptz(3)
+ revision Int @default(1)
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ updatedAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ @@unique([spaceId,scopeId,id])
+}
+model CompanyPaymentRunItem {
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ runId String @db.Uuid
+ reimbursementId String @db.Uuid
+ amount Decimal @db.Decimal(28, 4)
+ acknowledgementId String? @db.Uuid
+ active Boolean @default(true)
+ @@unique([runId,reimbursementId])
+}
+model CompanyEmployeeGrant {
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ granteeAccessId String @db.Uuid
+ granteeGeneration Int
+ kind String @db.VarChar(8)
+ expiresAt DateTime @db.Timestamptz(3)
+ revokedAt DateTime? @db.Timestamptz(3)
+ issuedByActorId String @db.Uuid
+ revokedByActorId String? @db.Uuid
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ @@index([spaceId,granteeAccessId,granteeGeneration,kind],map:"CompanyEmployeeGrant_active")
+}
+model CompanyEmployeeDocument {
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ subjectAccessId String @db.Uuid
+ kind String @db.VarChar(11)
+ title String @db.VarChar(300)
+ addedByActorId String @db.Uuid
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ removedAt DateTime? @db.Timestamptz(3)
+ @@index([spaceId,subjectAccessId,id],map:"CompanyEmployeeDocument_subject_page")
+}
+model CompanyEmployeeFileRequest {
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ subjectAccessId String @db.Uuid
+ requesterAccessId String @db.Uuid
+ requesterGeneration Int
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ @@unique([spaceId,subjectAccessId,requesterAccessId,requesterGeneration])
+}
+model CompanyEmployeeFileLog {
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ subjectAccessId String @db.Uuid
+ actorId String @db.Uuid
+ action String @db.VarChar(16)
+ targetId String? @db.Uuid
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ @@index([spaceId,subjectAccessId,id],map:"CompanyEmployeeFileLog_page")
+}
+model CompanyDepartmentTransfer {
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ fromScopeId String @db.Uuid
+ toScopeId String @db.Uuid
+ fromAccessId String @db.Uuid
+ fromGeneration Int
+ toAccessId String @db.Uuid
+ toGeneration Int
+ role String @db.VarChar(12)
+ actorId String @db.Uuid
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ @@index([spaceId,id],map:"CompanyDepartmentTransfer_page")
+}
+model CompanyContextMove {
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ fromDepartmentId String @db.Uuid
+ toDepartmentId String @db.Uuid
+ unitRevision Int
+ accessChanges Int
+ actorId String @db.Uuid
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ @@unique([scopeId,unitRevision],map:"CompanyContextMove_revision")
+ @@index([spaceId,id],map:"CompanyContextMove_page")
+}
+model CompanyRoomBookingTitle {
+ allocationId String @id @db.Uuid
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ title String? @db.VarChar(120)
+ shared Boolean @default(false)
+ revision Int @default(2)
+ updatedAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+}
+model BrainDumpPage {
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ day DateTime @db.Date
+ revision Int @default(1)
+ savedAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ @@unique([spaceId,day])
+ @@unique([spaceId,id])
+}
+model BrainDumpLine {
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ pageId String @db.Uuid
+ position Int
+ text String @db.VarChar(2000)
+ sortedTo String? @db.VarChar(7)
+ sortedDay DateTime? @db.Date
+ targetId String? @db.Uuid
+ struck Boolean @default(false)
+ updatedAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ @@unique([pageId,position])
 }

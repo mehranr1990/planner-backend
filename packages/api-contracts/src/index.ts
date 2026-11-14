@@ -63,6 +63,7 @@ export * from './sync.js';
 export * from './lifecycle.js';
 export * from './collaboration.js';
 export * from './projects.js';
+export * from './project-overview.js';
 export * from './work.js';
 export * from './project-tools.js';
 export * from './project-execution.js';
@@ -74,6 +75,7 @@ export * from './team-work.js';
 export * from './team-analytics.js';
 
 export * from './team-interactions.js';
+export * from './team-completion.js';
 
 export * from './team-lifecycle.js';
 
@@ -87,9 +89,15 @@ export * from './company-knowledge.js';
 export * from './company-lifecycle.js';
 
 export * from './company-associations.js';
+export * from './company-completion.js';
 export * from './messaging.js';
 export * from './advanced-messaging.js';
 export * from './messaging-media.js';
 export * from './meetings.js';
 export * from './communication-lifecycle.js';
 export * from './social.js';
+export * from './scope-access.js';
+export * from './backend-completion.js';
+export * from './team-files.js';
+export * from './gap-closure.js';
+export * from './final-closure.js';

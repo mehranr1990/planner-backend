@@ -1,3 +1,4 @@
+import { CompanyPaymentRunsService } from '../../src/modules/companies/application/company-payment-runs.service.js';
 import {
   CompanyFinancialApprovalsService,
   CompanyReimbursementsService,
@@ -257,7 +258,7 @@ describe('P4-04 exact Company finance and receipt privacy', () => {
     await sandbox?.close();
   });
   async function company() {
-    return companies.create(
+    const co = await companies.create(
       owner.actor,
       {
         id: randomUUID(),
@@ -266,6 +267,11 @@ describe('P4-04 exact Company finance and receipt privacy', () => {
       },
       randomUUID(),
     );
+    // OD-9: Company finance records require the fixed Company currency first.
+    await companies.setCurrency(owner.actor, co.id, co.revision, {
+      currency: 'USD',
+    });
+    return companies.read(owner.actor, co.id);
   }
   async function admit(
     id: string,
@@ -1103,7 +1109,13 @@ describe('P4-04 exact Company finance and receipt privacy', () => {
       );
     await flows.decision(owner.actor, f.co.id, f.co.id, a2.id, 1, {
       decision: 'REJECT',
+      reason: 'Duplicate claim',
     });
+    expect(
+      (
+        await flows.events(owner.actor, f.co.id, f.co.id, a2.id, { limit: 25 })
+      ).items.find((e) => e.action === 'REJECT'),
+    ).toMatchObject({ reason: 'Duplicate claim' });
     expect(
       (await reimburse.read(member.actor, f.co.id, f.co.id, r2.id)).reserved,
     ).toBe('0.00');
@@ -1532,5 +1544,83 @@ describe('P4-04 exact Company finance and receipt privacy', () => {
         { workflowVersionId: v.id },
       ),
     ).rejects.toHaveProperty('status', 404);
+  });
+
+  it('OD-7: payment runs batch approved reimbursements once, need a second manager and only propose acknowledgements', async () => {
+    const runs = app.get(CompanyPaymentRunsService);
+    const f = await setup(),
+      r = await requestApproved(f);
+    const eligible = await runs.eligible(owner.actor, f.co.id, f.co.id);
+    expect(
+      eligible.items.find((i) => i.reimbursementId === r.id),
+    ).toMatchObject({ amount: '100.00', currency: 'USD' });
+    await expect(
+      runs.eligible(member.actor, f.co.id, f.co.id),
+    ).rejects.toThrow();
+    const create = (label: string) =>
+      runs.create(
+        owner.actor,
+        f.co.id,
+        f.co.id,
+        { id: randomUUID(), label, reimbursementIds: [r.id] },
+        randomUUID(),
+      );
+    const first = await create('November');
+    expect(first).toMatchObject({
+      state: 'OPEN',
+      currency: 'USD',
+      total: '100.00',
+    });
+    await expect(create('Duplicate')).rejects.toBeInstanceOf(ConflictException);
+    const canceled = await runs.cancel(
+      owner.actor,
+      f.co.id,
+      f.co.id,
+      first.id,
+      first.revision,
+    );
+    expect(canceled.state).toBe('CANCELED');
+    const run = await create('November again');
+    await expect(
+      runs.confirm(owner.actor, f.co.id, f.co.id, run.id, run.revision, {
+        reference: 'BATCH-1',
+      }),
+    ).rejects.toMatchObject({ status: 403 });
+    const done = await runs.confirm(
+      admin.actor,
+      f.co.id,
+      f.co.id,
+      run.id,
+      run.revision,
+      { reference: 'BATCH-1' },
+    );
+    expect(done.state).toBe('CONFIRMED');
+    const ack = done.items[0]!.acknowledgementId;
+    expect(ack).not.toBeNull();
+    expect(
+      (await runs.eligible(owner.actor, f.co.id, f.co.id)).items.some(
+        (i) => i.reimbursementId === r.id,
+      ),
+    ).toBe(false);
+    await expect(
+      runs.cancel(owner.actor, f.co.id, f.co.id, run.id, done.revision),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(
+      (await reimburse.read(member.actor, f.co.id, f.co.id, r.id)).acknowledged,
+    ).toBe('0.00');
+    await reimburse.paymentDecision(member.actor, f.co.id, f.co.id, ack!, 1, {
+      decision: 'ACKNOWLEDGE',
+    });
+    expect(
+      (await reimburse.read(member.actor, f.co.id, f.co.id, r.id)).acknowledged,
+    ).toBe('100.00');
+    expect(
+      (await runs.list(owner.actor, f.co.id, f.co.id, { limit: 25 })).items
+        .map((x) => x.state)
+        .sort(),
+    ).toEqual(['CANCELED', 'CONFIRMED']);
+    expect(
+      await client.companyBudgetEffect.count({ where: { spaceId: f.co.id } }),
+    ).toBe(0);
   });
 });

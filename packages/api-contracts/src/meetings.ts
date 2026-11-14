@@ -52,7 +52,17 @@ export const MeetingCreateSchema = z.discriminatedUnion('kind', [
     retentionPolicyVersion: z.string().regex(/^[A-Za-z0-9._-]{1,80}$/),
   }),
   ...(['PROJECT', 'TEAM', 'COMPANY'] as const).map((kind) =>
-    z.strictObject({ ...create, kind: z.literal(kind), sourceId: id }),
+    z
+      .strictObject({
+        ...create,
+        kind: z.literal(kind),
+        sourceId: id,
+        /** Source-roster `actorId`s, resolved only after organizer authorization. */
+        participantActorIds: create.participants,
+      })
+      .refine(
+        (v) => v.participants.length + v.participantActorIds.length <= 199,
+      ),
   ),
 ]);
 export const MeetingPatchSchema = z
@@ -83,7 +93,11 @@ const page = <T extends z.ZodType>(item: T) =>
     hasMore: z.boolean(),
   });
 export const MeetingPageSchema = page(MeetingSchema);
-export const MeetingInviteInputSchema = z.strictObject({ id, userId: id });
+/** Invite by account `userId` or by a roster `actorId` of the meeting's space. */
+export const MeetingInviteInputSchema = z.union([
+  z.strictObject({ id, userId: id }),
+  z.strictObject({ id, actorId: id }),
+]);
 export const MeetingInvitationSchema = z.strictObject({
   id,
   meetingId: id,
@@ -106,6 +120,7 @@ export const MeetingRsvpSchema = z.strictObject({
   decision: z.enum(['ACCEPTED', 'TENTATIVE', 'DECLINED']),
 });
 export const MeetingMemberSchema = z.strictObject({
+  displayName: z.string().nullable().optional(),
   id,
   actorId: id,
   role: z.enum(['ORGANIZER', 'PARTICIPANT']),
@@ -115,6 +130,21 @@ export const MeetingMemberSchema = z.strictObject({
   revision,
 });
 export const MeetingMemberPageSchema = page(MeetingMemberSchema);
+export const MeetingAccessMeSchema = MeetingMemberSchema.omit({
+  id: true,
+}).extend({
+  meetingId: id,
+  memberId: id,
+  capabilities: z.array(
+    z.enum([
+      'meeting.read',
+      'membership.leave',
+      'agenda.propose',
+      'minutes.draft',
+      'meeting.manage',
+    ]),
+  ),
+});
 export const MeetingMemberRoleSchema = z.strictObject({
   role: z.enum(['ORGANIZER', 'PARTICIPANT']),
 });
@@ -138,6 +168,8 @@ export const MeetingAgendaPageSchema = page(MeetingAgendaSchema);
 export const MeetingDecisionInputSchema = z.strictObject({
   id,
   text: text(10000),
+  /** Current meeting member credited with the decision (informational). */
+  proposedByMemberId: id.optional(),
 });
 export const MeetingActionInputSchema = z.strictObject({
   id,
@@ -148,6 +180,19 @@ export const MeetingActionInputSchema = z.strictObject({
     .refine((v) => !v.includes('\0'))
     .nullable()
     .default(null),
+  /** Informational only: release/conversion rights are unchanged. */
+  assigneeMemberId: id.optional(),
+  dueDate: z.iso
+    .date()
+    .refine((v) => v >= '0001-01-01')
+    .optional(),
+});
+const MeetingDecisionSchema = MeetingDecisionInputSchema.extend({
+  proposedByMemberId: id.nullable(),
+});
+const MeetingActionSchema = MeetingActionInputSchema.extend({
+  assigneeMemberId: id.nullable(),
+  dueDate: z.iso.date().nullable(),
 });
 export const MeetingVersionCreateSchema = z
   .strictObject({
@@ -190,8 +235,8 @@ export const MeetingVersionSchema = z.strictObject({
   selfFinalized: z.boolean(),
   createdAt: z.iso.datetime(),
   finalizedAt: z.iso.datetime().nullable(),
-  decisions: z.array(MeetingDecisionInputSchema).max(50),
-  actions: z.array(MeetingActionInputSchema).max(100),
+  decisions: z.array(MeetingDecisionSchema).max(50),
+  actions: z.array(MeetingActionSchema).max(100),
   attachments: z.array(id).max(20),
   contributors: z.array(id).max(50),
   review: z
@@ -273,6 +318,8 @@ export const AnnouncementPublishSchema = z.discriminatedUnion('audience', [
 ]);
 export const AnnouncementPinSchema = z.strictObject({ pinned: z.boolean() });
 export const AnnouncementVersionSchema = z.strictObject({
+  /** Display name of the version author; null when no longer resolvable. */
+  authorDisplayName: z.string().nullable().optional(),
   id,
   announcementId: id,
   number: revision,

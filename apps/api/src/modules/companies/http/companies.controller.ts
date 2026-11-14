@@ -66,6 +66,23 @@ export class CompaniesController {
   constructor(
     @Inject(CompaniesService) private readonly service: CompaniesService,
   ) {}
+  @Get(':id/contexts/:scopeId/invitations') pendingInvitations(
+    @CurrentActor() actor: RequestActor,
+    @Param('id', uuid) id: string,
+    @Param('scopeId', uuid) scopeId: string,
+    @Query(new ZodValidationPipe(c.CompanyPageQuerySchema))
+    q: z.infer<typeof c.CompanyPageQuerySchema>,
+  ) {
+    return this.service.access.pendingSent(actor, id, scopeId, q);
+  }
+  @Get(':id/contexts/:scopeId/access/me') accessMe(
+    @CurrentActor() actor: RequestActor,
+    @Param('id', uuid) id: string,
+    @Param('scopeId', uuid) scopeId: string,
+    @Query(empty) _q: unknown,
+  ) {
+    return this.service.accessMe(actor, id, scopeId);
+  }
   @Post('') async create(
     @CurrentActor() actor: RequestActor,
     @Query(empty) _query: unknown,
@@ -391,6 +408,13 @@ export class CompanyInvitationsController {
   constructor(
     @Inject(CompaniesService) private readonly service: CompaniesService,
   ) {}
+  @Get() pending(
+    @CurrentActor() actor: RequestActor,
+    @Query(new ZodValidationPipe(c.CompanyPageQuerySchema))
+    q: z.infer<typeof c.CompanyPageQuerySchema>,
+  ) {
+    return this.service.access.pending(actor, q);
+  }
   @Post(':invitationId/accept')
   @HttpCode(200)
   async accept(
@@ -455,5 +479,24 @@ export class CompanyInvitationPreviewController {
     );
     void res;
     return value;
+  }
+}
+/** OD-4 in-app delivery of a fresh one-time proof to the verified recipient. */
+@Controller('company-invitations')
+@UseGuards(VerifiedSessionGuard, CompanyGuard)
+export class CompanyInvitationProofController {
+  constructor(
+    @Inject(CompaniesService) private readonly service: CompaniesService,
+  ) {}
+  @Post(':invitationId/proof')
+  @HttpCode(200)
+  issueProof(
+    @CurrentActor() actor: RequestActor,
+    @Param('invitationId', uuid) invitationId: string,
+    @Query(empty) _query: unknown,
+    @Body(emptyBody) _body: unknown,
+    @Headers('if-match') match: string | undefined,
+  ) {
+    return this.service.access.issueProof(actor, invitationId, rev(match));
   }
 }

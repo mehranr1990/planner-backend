@@ -422,6 +422,39 @@ export class ProjectPlansService {
         ),
     );
   }
+  inspectCsv(
+    actor: RequestActor,
+    pid: string,
+    input: z.infer<typeof c.ProjectCsvInspectionInputSchema>,
+  ) {
+    return this.op.read(actor, pid, ['work.manage'], undefined, async () => {
+      try {
+        const rows = csvRows(input.csv),
+          columns = rows[0] ?? [],
+          sampleRows = rows.slice(1, 6);
+        return c.ProjectCsvInspectionSchema.parse({
+          columns: columns.map((cell) => cell.slice(0, 2000)),
+          sampleRows: sampleRows.map((row) =>
+            row.map((cell) => cell.slice(0, 2000)),
+          ),
+          rowCount: Math.max(0, rows.length - 1),
+          samplesTruncated: [columns, ...sampleRows].some((row) =>
+            row.some((cell) => cell.length > 2000),
+          ),
+          errors: [],
+        });
+      } catch (error) {
+        if (!(error instanceof CsvImportError)) throw error;
+        return c.ProjectCsvInspectionSchema.parse({
+          columns: [],
+          sampleRows: [],
+          rowCount: 0,
+          samplesTruncated: false,
+          errors: [{ row: 0, column: '', code: error.code }],
+        });
+      }
+    });
+  }
   csv(
     actor: RequestActor,
     pid: string,

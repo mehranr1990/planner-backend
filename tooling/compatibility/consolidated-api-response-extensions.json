@@ -1,0 +1,342 @@
+{
+  "get /api/v1/teams/{id}/memberships response 200": {
+    "previous": "0a894cfcccdd4a34dd423056fb3f21a72575d233cffc566640eb58335a8d89b5",
+    "approved": "e1e75f81299c84521870575f114a9a2dbdd1c4a18320ccee6b2e939c0942e001"
+  },
+  "patch /api/v1/teams/{id}/memberships/{accessId} response 200": {
+    "previous": "b083640356259fdb723208abf361a310ca573bbc3578e4831b38477d9bf33e09",
+    "approved": "41850fd6ac90de20eca68da6097fdabe7fcd690f64b6ff90d6f28801e3b4f8d4"
+  },
+  "post /api/v1/team-invitations/{id}/accept response 201": {
+    "previous": "10af5b41134c9d9ea56c5e9081f7f9a952f373263443c52fd0ee9f678ee606cb",
+    "approved": "19b7d5ccf163c6acf198e3d9d6fd1b8418c0348e1e14a867ffb214c7e06e75dd"
+  },
+  "get /api/v1/conversations response 200": {
+    "previous": "641910c6e4d58225d11f0edbdf68bf82b56d6d2b99ef7c5bc973ca57acc2c803",
+    "approved": "dd6c78788447555eca4ba1c79adc9285a1cc5a68ae8a299941ff0b0c61468240"
+  },
+  "get /api/v1/conversations/{id}/members response 200": {
+    "previous": "9b1fc28daab075dd018e9a928e21ca3fadd97778b110dd8d325342264b554a7b",
+    "approved": "54fa4a80cfc8dc630781f95fcbab892624855d9e6b5684cb7705c5bb66684896"
+  },
+  "post /api/v1/conversations/{id}/invitations response 201": {
+    "previous": "182a0a663f3a2e7e5537c52ca386fc2e80a63ee6a106cc3b12b53c434d9cdf64",
+    "approved": "bf4a87f7e70458a1ef631ce19d551960a9be2f3e826e0c541301298443dab978"
+  },
+  "post /api/v1/conversations/{id}/invitations/{invitationId}/revoke response 201": {
+    "previous": "182a0a663f3a2e7e5537c52ca386fc2e80a63ee6a106cc3b12b53c434d9cdf64",
+    "approved": "bf4a87f7e70458a1ef631ce19d551960a9be2f3e826e0c541301298443dab978"
+  },
+  "get /api/v1/conversation-invitations response 200": {
+    "previous": "56ba24d777be3456f302fb4c2fa7ad4192acd1c3e8ffd2a9e888ce2076667884",
+    "approved": "030d56febf27341d8c78a652529e09745d84384b57a2f6831b6cbdddec99b457"
+  },
+  "post /api/v1/conversation-invitations/{invitationId}/accept response 201": {
+    "previous": "182a0a663f3a2e7e5537c52ca386fc2e80a63ee6a106cc3b12b53c434d9cdf64",
+    "approved": "bf4a87f7e70458a1ef631ce19d551960a9be2f3e826e0c541301298443dab978"
+  },
+  "post /api/v1/conversation-invitations/{invitationId}/decline response 201": {
+    "previous": "182a0a663f3a2e7e5537c52ca386fc2e80a63ee6a106cc3b12b53c434d9cdf64",
+    "approved": "bf4a87f7e70458a1ef631ce19d551960a9be2f3e826e0c541301298443dab978"
+  },
+  "patch /api/v1/conversations/{id}/members/{memberId} response 200": {
+    "previous": "d90ee40dcf6050a01074d9e9ca6c6b0d3e7c22da8d753152ab80e51c132f49d5",
+    "approved": "37e2e0e47ede13892ed1b65f23f9f6294ddf1d820ed8908858c049b4f059ea34"
+  },
+  "post /api/v1/conversations/{id}/members/{memberId}/remove response 201": {
+    "previous": "d90ee40dcf6050a01074d9e9ca6c6b0d3e7c22da8d753152ab80e51c132f49d5",
+    "approved": "37e2e0e47ede13892ed1b65f23f9f6294ddf1d820ed8908858c049b4f059ea34"
+  },
+  "post /api/v1/conversations/{id}/leave response 201": {
+    "previous": "d90ee40dcf6050a01074d9e9ca6c6b0d3e7c22da8d753152ab80e51c132f49d5",
+    "approved": "37e2e0e47ede13892ed1b65f23f9f6294ddf1d820ed8908858c049b4f059ea34"
+  },
+  "get /api/v1/meetings/{id}/members response 200": {
+    "previous": "c8388a9dd4ee1199d5d78514090d8680a25ac6c556b485051719bee746394434",
+    "approved": "e31af29973eb737bce1ffbc9cef6b473cbc20707ba3566e6cf8fb17aa34d446a"
+  },
+  "patch /api/v1/meetings/{id}/members/{memberId} response 200": {
+    "previous": "e6aa9160052a2a538fe86113ac09b8795423928afad688f4565190427b27911b",
+    "approved": "29e2b8eb49ee6f745f463b2f80cfc736395370bc19e8fa476c43d01c2b49a70f"
+  },
+  "post /api/v1/conversations/{id}/restore-admission response 201": {
+    "previous": "d90ee40dcf6050a01074d9e9ca6c6b0d3e7c22da8d753152ab80e51c132f49d5",
+    "approved": "37e2e0e47ede13892ed1b65f23f9f6294ddf1d820ed8908858c049b4f059ea34"
+  },
+  "post /api/v1/meetings/{id}/restore-admission response 201": {
+    "previous": "e6aa9160052a2a538fe86113ac09b8795423928afad688f4565190427b27911b",
+    "approved": "29e2b8eb49ee6f745f463b2f80cfc736395370bc19e8fa476c43d01c2b49a70f"
+  },
+  "get /api/v1/companies/{id}/contexts/{scopeId}/members response 200": {
+    "previous": "436fda4883a10a26f40474422b79f370dcf7651b5136d112d8732381b5e2aca2",
+    "approved": "d8df641c0bd39e8359671f91220c6a087eb47e6ea57ee27134f8e369d7f83cb7"
+  },
+  "patch /api/v1/companies/{id}/contexts/{scopeId}/members/{accessId} response 200": {
+    "previous": "724b5f65bd3d327a1e588badff6790ed2803890b19c7f1882ba6b8960dfddd6f",
+    "approved": "70e2850cb4f92c45d59b386c4e1f015dc83cec9e59caf0df496621b3c30c0575"
+  },
+  "post /api/v1/company-invitations/{invitationId}/accept response 200": {
+    "previous": "8a1e7756c9664f8811a9d692f71ca2525eaacbf29b37af38c8104a83dd701507",
+    "approved": "fa517bab1f28c1cb56a33d92c1d9ea18ac47c7e820fc842703cd3550a7bf34fb"
+  },
+  "post /api/v1/company-invitations/{invitationId}/decline response 200": {
+    "previous": "8a1e7756c9664f8811a9d692f71ca2525eaacbf29b37af38c8104a83dd701507",
+    "approved": "fa517bab1f28c1cb56a33d92c1d9ea18ac47c7e820fc842703cd3550a7bf34fb"
+  },
+  "post /api/v1/companies/{id}/contexts/{scopeId}/staff-profiles response 201": {
+    "previous": "534e1ba14d9ba47f68623665ff0a3bd239e220d6724ffe453f52d5699fc5100d",
+    "approved": "d071f0290d43c06bce0a510b30b05638c834b83737884aa733df217e8587af6e"
+  },
+  "get /api/v1/companies/{id}/contexts/{scopeId}/staff-profiles response 200": {
+    "previous": "b0667f2f53ed535ee7b43bd5ad877d4f411e53e31ca582ac5cf7f13629219402",
+    "approved": "403645b37865d3ea55df177cef3a2a31999c6de674fec2f1f311c258306e2a5f"
+  },
+  "get /api/v1/companies/{id}/contexts/{scopeId}/staff-profiles/{profileId} response 200": {
+    "previous": "534e1ba14d9ba47f68623665ff0a3bd239e220d6724ffe453f52d5699fc5100d",
+    "approved": "d071f0290d43c06bce0a510b30b05638c834b83737884aa733df217e8587af6e"
+  },
+  "patch /api/v1/companies/{id}/contexts/{scopeId}/staff-profiles/{profileId} response 200": {
+    "previous": "534e1ba14d9ba47f68623665ff0a3bd239e220d6724ffe453f52d5699fc5100d",
+    "approved": "d071f0290d43c06bce0a510b30b05638c834b83737884aa733df217e8587af6e"
+  },
+  "put /api/v1/companies/{id}/contexts/{scopeId}/staff-profiles/{profileId}/work-contact response 200": {
+    "previous": "534e1ba14d9ba47f68623665ff0a3bd239e220d6724ffe453f52d5699fc5100d",
+    "approved": "d071f0290d43c06bce0a510b30b05638c834b83737884aa733df217e8587af6e"
+  },
+  "post /api/v1/companies/{id}/contexts/{scopeId}/staff-profiles/{profileId}/erase response 200": {
+    "previous": "534e1ba14d9ba47f68623665ff0a3bd239e220d6724ffe453f52d5699fc5100d",
+    "approved": "d071f0290d43c06bce0a510b30b05638c834b83737884aa733df217e8587af6e"
+  },
+  "post /api/v1/companies/{id}/contexts/{scopeId}/availability response 201": {
+    "previous": "1f96ef6630f30e480526318676d0a6ebcbec177eb137308c535ae7321c5daca8",
+    "approved": "465d6d187fffb75bd7a049453aa917ac696a117d6495bdfc68908245e965be58"
+  },
+  "get /api/v1/companies/{id}/contexts/{scopeId}/availability response 200": {
+    "previous": "630994f201ae08d1c994899133df2bd3eaabceac4c7313e0f9cc5bab4ef9e0c4",
+    "approved": "a87e54957b0d9ec504eedc91839a5a72989352b1500e5d395ee8dc83221cf2c6"
+  },
+  "patch /api/v1/companies/{id}/contexts/{scopeId}/availability/{availabilityId} response 200": {
+    "previous": "1f96ef6630f30e480526318676d0a6ebcbec177eb137308c535ae7321c5daca8",
+    "approved": "465d6d187fffb75bd7a049453aa917ac696a117d6495bdfc68908245e965be58"
+  },
+  "post /api/v1/companies/{id}/contexts/{scopeId}/resources/{resourceId}/allocations response 201": {
+    "previous": "ea4c722007edfcbbdfef82e496da195e29bd4ed928a78d3ccad7dbf0a3077dbb",
+    "approved": "7d18f2db91eb4ac9ddb366ea00244fe081e17cd936ebf5284fa96739a0100e7b"
+  },
+  "get /api/v1/companies/{id}/contexts/{scopeId}/resources/{resourceId}/allocations response 200": {
+    "previous": "cdcbd6de13bb35e2ee71651268153d60887e6af19eb63c53c0fd1d486b466720",
+    "approved": "f07c7f22b855fcc4071a48fa61f1452489787de9c8d9c9b44b269b3d5e06eea3"
+  },
+  "get /api/v1/companies/{id}/contexts/{scopeId}/allocations/{allocationId} response 200": {
+    "previous": "ea4c722007edfcbbdfef82e496da195e29bd4ed928a78d3ccad7dbf0a3077dbb",
+    "approved": "7d18f2db91eb4ac9ddb366ea00244fe081e17cd936ebf5284fa96739a0100e7b"
+  },
+  "post /api/v1/companies/{id}/contexts/{scopeId}/allocations/{allocationId}/cancel response 200": {
+    "previous": "ea4c722007edfcbbdfef82e496da195e29bd4ed928a78d3ccad7dbf0a3077dbb",
+    "approved": "7d18f2db91eb4ac9ddb366ea00244fe081e17cd936ebf5284fa96739a0100e7b"
+  },
+  "post /api/v1/companies/{id}/contexts/{scopeId}/allocations/{allocationId}/return response 200": {
+    "previous": "ea4c722007edfcbbdfef82e496da195e29bd4ed928a78d3ccad7dbf0a3077dbb",
+    "approved": "7d18f2db91eb4ac9ddb366ea00244fe081e17cd936ebf5284fa96739a0100e7b"
+  },
+  "post /api/v1/companies/{id}/contexts/{scopeId}/employee-cases response 201": {
+    "previous": "998f4af81396586350f9f52ed59cbd59efff6d44a37318feb7c885f60e30a4f9",
+    "approved": "1a8d7b3c3e62e367bf6980ea3c7bc8d80729094f57d91d2168e13a672010ba2d"
+  },
+  "get /api/v1/companies/{id}/contexts/{scopeId}/employee-cases response 200": {
+    "previous": "a6ca50eab56bd1ec9b88af5892b8b0ded30ab6ecadb1ae45288990fb31132418",
+    "approved": "956a5605b9d118115dbc9e5b212d6f2a616dc858bb4e92c2fe7bdaeb36dc9d5c"
+  },
+  "get /api/v1/companies/{id}/contexts/{scopeId}/employee-cases/{caseId} response 200": {
+    "previous": "998f4af81396586350f9f52ed59cbd59efff6d44a37318feb7c885f60e30a4f9",
+    "approved": "1a8d7b3c3e62e367bf6980ea3c7bc8d80729094f57d91d2168e13a672010ba2d"
+  },
+  "post /api/v1/companies/{id}/contexts/{scopeId}/employee-cases/{caseId}/entries response 201": {
+    "previous": "950568b57ddd07762b3d687607aab1b3187004e086479f75c3316cff4541af50",
+    "approved": "e3b56b0389a46727d53bffd4664dbfb4ba72fd1458eaaf45aa0bdd587da5b555"
+  },
+  "get /api/v1/companies/{id}/contexts/{scopeId}/employee-cases/{caseId}/entries response 200": {
+    "previous": "3e9831a64b4b799f49f0cc9f29ae783207ec2a026be31981c6947d2469023397",
+    "approved": "c78c4aab2945263cdbf8959856f958a6b027edf2d60914872c89084eba0eaa2e"
+  },
+  "post /api/v1/companies/{id}/contexts/{scopeId}/employee-cases/{caseId}/erase response 200": {
+    "previous": "998f4af81396586350f9f52ed59cbd59efff6d44a37318feb7c885f60e30a4f9",
+    "approved": "1a8d7b3c3e62e367bf6980ea3c7bc8d80729094f57d91d2168e13a672010ba2d"
+  },
+  "post /api/v1/companies/{id}/contexts/{scopeId}/expenses response 201": {
+    "previous": "a463cbf1dd831d2e541caf527b367effa5002c3eac69dd4ad80090b280e96f12",
+    "approved": "5eab15b2d9d51e0155ddd963f087e6876552aed7b0532b14f691ce786f198838"
+  },
+  "get /api/v1/companies/{id}/contexts/{scopeId}/expenses response 200": {
+    "previous": "82250377a4b180b1f9dcb25b7d43d05561b41ac1a5d0c91c47c6444f05779023",
+    "approved": "36253939bfa7db0d133cf1d79141e43e36ed46cdcfd5fcd173edb857cc04059d"
+  },
+  "get /api/v1/companies/{id}/contexts/{scopeId}/expenses/{target} response 200": {
+    "previous": "a463cbf1dd831d2e541caf527b367effa5002c3eac69dd4ad80090b280e96f12",
+    "approved": "5eab15b2d9d51e0155ddd963f087e6876552aed7b0532b14f691ce786f198838"
+  },
+  "patch /api/v1/companies/{id}/contexts/{scopeId}/expenses/{target} response 200": {
+    "previous": "a463cbf1dd831d2e541caf527b367effa5002c3eac69dd4ad80090b280e96f12",
+    "approved": "5eab15b2d9d51e0155ddd963f087e6876552aed7b0532b14f691ce786f198838"
+  },
+  "post /api/v1/companies/{id}/contexts/{scopeId}/expenses/{target}/submit response 200": {
+    "previous": "a463cbf1dd831d2e541caf527b367effa5002c3eac69dd4ad80090b280e96f12",
+    "approved": "5eab15b2d9d51e0155ddd963f087e6876552aed7b0532b14f691ce786f198838"
+  },
+  "put /api/v1/companies/{id}/contexts/{scopeId}/expenses/{target}/reviewer response 200": {
+    "previous": "a463cbf1dd831d2e541caf527b367effa5002c3eac69dd4ad80090b280e96f12",
+    "approved": "5eab15b2d9d51e0155ddd963f087e6876552aed7b0532b14f691ce786f198838"
+  },
+  "post /api/v1/companies/{id}/contexts/{scopeId}/expenses/{target}/decision response 200": {
+    "previous": "a463cbf1dd831d2e541caf527b367effa5002c3eac69dd4ad80090b280e96f12",
+    "approved": "5eab15b2d9d51e0155ddd963f087e6876552aed7b0532b14f691ce786f198838"
+  },
+  "post /api/v1/companies/{id}/contexts/{scopeId}/expenses/{target}/cancel response 200": {
+    "previous": "a463cbf1dd831d2e541caf527b367effa5002c3eac69dd4ad80090b280e96f12",
+    "approved": "5eab15b2d9d51e0155ddd963f087e6876552aed7b0532b14f691ce786f198838"
+  },
+  "post /api/v1/companies/{id}/contexts/{scopeId}/expenses/{target}/corrections response 201": {
+    "previous": "a463cbf1dd831d2e541caf527b367effa5002c3eac69dd4ad80090b280e96f12",
+    "approved": "5eab15b2d9d51e0155ddd963f087e6876552aed7b0532b14f691ce786f198838"
+  },
+  "post /api/v1/companies/{id}/contexts/{scopeId}/expenses/{target}/reversals response 201": {
+    "previous": "a463cbf1dd831d2e541caf527b367effa5002c3eac69dd4ad80090b280e96f12",
+    "approved": "5eab15b2d9d51e0155ddd963f087e6876552aed7b0532b14f691ce786f198838"
+  },
+  "get /api/v1/companies/{id}/contexts/{scopeId}/expenses/{target}/revisions response 200": {
+    "previous": "e4a33f293701126ca647b0e8420603eefa5c42ca6b0aa808dbe6484d94bb1fa2",
+    "approved": "dda39e66935f80b401f3099b7b12c9bac413da197bf9cb39a0e84c85cd1cf854"
+  },
+  "post /api/v1/companies/{id}/contexts/{scopeId}/finance/approval-workflows/{target}/versions response 201": {
+    "previous": "8b2118edeaaacaec1c960ed6823751d9a722eb2fc3e21b1b80b420ca3a088c99",
+    "approved": "0cb59863f2d8ee06f840ecf0e6d291649ce3be29da4e7ecfa56ee73afd56f899"
+  },
+  "get /api/v1/companies/{id}/contexts/{scopeId}/finance/approval-workflows/{target}/versions response 200": {
+    "previous": "27f4dfc91a0b5fc963e3a839677f3fe55ff9591846a91976d2f95d1c7513dd45",
+    "approved": "dcede6b24008847dd45f5a1ddbce073bbdb117aa5522c045634c7f1c59362b85"
+  },
+  "get /api/v1/companies/{id}/contexts/{scopeId}/finance/approval-workflow-versions/{target} response 200": {
+    "previous": "8b2118edeaaacaec1c960ed6823751d9a722eb2fc3e21b1b80b420ca3a088c99",
+    "approved": "0cb59863f2d8ee06f840ecf0e6d291649ce3be29da4e7ecfa56ee73afd56f899"
+  },
+  "patch /api/v1/companies/{id}/contexts/{scopeId}/finance/approval-workflow-versions/{target} response 200": {
+    "previous": "8b2118edeaaacaec1c960ed6823751d9a722eb2fc3e21b1b80b420ca3a088c99",
+    "approved": "0cb59863f2d8ee06f840ecf0e6d291649ce3be29da4e7ecfa56ee73afd56f899"
+  },
+  "post /api/v1/companies/{id}/contexts/{scopeId}/finance/approval-workflow-versions/{target}/publish response 200": {
+    "previous": "8b2118edeaaacaec1c960ed6823751d9a722eb2fc3e21b1b80b420ca3a088c99",
+    "approved": "0cb59863f2d8ee06f840ecf0e6d291649ce3be29da4e7ecfa56ee73afd56f899"
+  },
+  "post /api/v1/companies/{id}/contexts/{scopeId}/finance/approval-workflow-versions/{target}/archive response 200": {
+    "previous": "8b2118edeaaacaec1c960ed6823751d9a722eb2fc3e21b1b80b420ca3a088c99",
+    "approved": "0cb59863f2d8ee06f840ecf0e6d291649ce3be29da4e7ecfa56ee73afd56f899"
+  },
+  "post /api/v1/companies/{id}/contexts/{scopeId}/expenses/{target}/workflow-submit response 200": {
+    "previous": "3475f7424355cc7f7da80d3d463f124fd9c1d2e677377a1b1b8c783dbfdc1b1b",
+    "approved": "92791ef3a5c4669a775b65fada75d1fc7563860e807a1b8a7885f0d8bc4f6e40"
+  },
+  "post /api/v1/companies/{id}/contexts/{scopeId}/reimbursements/{target}/submit response 200": {
+    "previous": "3475f7424355cc7f7da80d3d463f124fd9c1d2e677377a1b1b8c783dbfdc1b1b",
+    "approved": "92791ef3a5c4669a775b65fada75d1fc7563860e807a1b8a7885f0d8bc4f6e40"
+  },
+  "get /api/v1/companies/{id}/contexts/{scopeId}/finance/approvals response 200": {
+    "previous": "10b20b84f57d9499c8cfa6985deea21b90b694d79661978bc3a12994ff6f93e9",
+    "approved": "460dffe87d3852a05e7c30f067bf802191d31d78a197eac2801455f869f60549"
+  },
+  "get /api/v1/companies/{id}/contexts/{scopeId}/finance/approvals/{target} response 200": {
+    "previous": "3475f7424355cc7f7da80d3d463f124fd9c1d2e677377a1b1b8c783dbfdc1b1b",
+    "approved": "92791ef3a5c4669a775b65fada75d1fc7563860e807a1b8a7885f0d8bc4f6e40"
+  },
+  "get /api/v1/companies/{id}/contexts/{scopeId}/finance/approvals/{target}/history response 200": {
+    "previous": "0cc9862636f70563db82d4316ff4ed0324bcba6933caebe9b21b741ce8637a3a",
+    "approved": "5463987c62c62408640b7f5605b841ceac7eb2e388047c04d7edd9d62b3ec5a2"
+  },
+  "post /api/v1/companies/{id}/contexts/{scopeId}/finance/approvals/{target}/decision response 200": {
+    "previous": "3475f7424355cc7f7da80d3d463f124fd9c1d2e677377a1b1b8c783dbfdc1b1b",
+    "approved": "92791ef3a5c4669a775b65fada75d1fc7563860e807a1b8a7885f0d8bc4f6e40"
+  },
+  "post /api/v1/companies/{id}/contexts/{scopeId}/finance/approvals/{target}/escalate response 200": {
+    "previous": "3475f7424355cc7f7da80d3d463f124fd9c1d2e677377a1b1b8c783dbfdc1b1b",
+    "approved": "92791ef3a5c4669a775b65fada75d1fc7563860e807a1b8a7885f0d8bc4f6e40"
+  },
+  "post /api/v1/companies/{id}/contexts/{scopeId}/finance/approvals/{target}/restart response 200": {
+    "previous": "3475f7424355cc7f7da80d3d463f124fd9c1d2e677377a1b1b8c783dbfdc1b1b",
+    "approved": "92791ef3a5c4669a775b65fada75d1fc7563860e807a1b8a7885f0d8bc4f6e40"
+  },
+  "post /api/v1/companies/{id}/contexts/{scopeId}/reimbursements response 201": {
+    "previous": "f696ec916c042cf64ad69c2485f7725ee8469e963d323341d640736c8c5fb553",
+    "approved": "c3a6b3c59c654e30ce20565bf8d6897b35288f46c161c3ca37b8c6313acafe77"
+  },
+  "get /api/v1/companies/{id}/contexts/{scopeId}/reimbursements response 200": {
+    "previous": "ab4b0cdf73d15560e1a7952b7e86542816f654c8d6b12dc7f53a60566fb4f59b",
+    "approved": "22d93aa5241315243ab8bbeaf1dad3dca665631c6c6a8d14571356fba6e4f44f"
+  },
+  "get /api/v1/companies/{id}/contexts/{scopeId}/reimbursements/{target} response 200": {
+    "previous": "f696ec916c042cf64ad69c2485f7725ee8469e963d323341d640736c8c5fb553",
+    "approved": "c3a6b3c59c654e30ce20565bf8d6897b35288f46c161c3ca37b8c6313acafe77"
+  },
+  "patch /api/v1/companies/{id}/contexts/{scopeId}/reimbursements/{target} response 200": {
+    "previous": "f696ec916c042cf64ad69c2485f7725ee8469e963d323341d640736c8c5fb553",
+    "approved": "c3a6b3c59c654e30ce20565bf8d6897b35288f46c161c3ca37b8c6313acafe77"
+  },
+  "post /api/v1/companies/{id}/contexts/{scopeId}/reimbursements/{target}/cancel response 200": {
+    "previous": "f696ec916c042cf64ad69c2485f7725ee8469e963d323341d640736c8c5fb553",
+    "approved": "c3a6b3c59c654e30ce20565bf8d6897b35288f46c161c3ca37b8c6313acafe77"
+  },
+  "post /api/v1/companies/{id}/contexts/{scopeId}/reimbursements/{target}/close response 200": {
+    "previous": "f696ec916c042cf64ad69c2485f7725ee8469e963d323341d640736c8c5fb553",
+    "approved": "c3a6b3c59c654e30ce20565bf8d6897b35288f46c161c3ca37b8c6313acafe77"
+  },
+  "get /api/v1/companies/{id}/contexts/{scopeId}/reimbursements/{target}/history response 200": {
+    "previous": "2b360c8013591819171498fd6711138230b624556360af5825f86db8d5e22568",
+    "approved": "690fca5cdf376ef5e86df0c97cdc353d064f26bd5ff6e03e2cc76e943f8b2870"
+  },
+  "get /api/v1/companies/{id}/contexts/{scopeId}/expenses/{target}/reimbursement-balances response 200": {
+    "previous": "1ad389a2012ce2b2b7d943e07413dfe7dc6446b70db5643b311f5abb11a568d1",
+    "approved": "a12e592ed1bdd3c0e0ea1524104a7c097abc86a45c6ff6ea9b254209d0bddcd7"
+  },
+  "post /api/v1/companies/{id}/contexts/{scopeId}/reimbursements/{target}/payment-acknowledgements response 201": {
+    "previous": "06e991d2188e4fb66fee23009a9aea6cf18b4e5208588da96602f97e20ce4246",
+    "approved": "baf40d93b6e2cf18f16e996bd65151f12e0620f784dd5c2954d7fe89dd512d71"
+  },
+  "get /api/v1/companies/{id}/contexts/{scopeId}/reimbursements/{target}/payment-acknowledgements response 200": {
+    "previous": "0d3ce4c1a569e191ea99b13108bc36fcbc2cf2fee0c0e760f1e3b73303d1b5da",
+    "approved": "a3d74d19c05f562798c3ecd91fefdcb5d32ccda8985f56a6afa8ed33327cbf93"
+  },
+  "get /api/v1/companies/{id}/contexts/{scopeId}/payment-acknowledgements/{target} response 200": {
+    "previous": "06e991d2188e4fb66fee23009a9aea6cf18b4e5208588da96602f97e20ce4246",
+    "approved": "baf40d93b6e2cf18f16e996bd65151f12e0620f784dd5c2954d7fe89dd512d71"
+  },
+  "post /api/v1/companies/{id}/contexts/{scopeId}/payment-acknowledgements/{target}/decision response 200": {
+    "previous": "06e991d2188e4fb66fee23009a9aea6cf18b4e5208588da96602f97e20ce4246",
+    "approved": "baf40d93b6e2cf18f16e996bd65151f12e0620f784dd5c2954d7fe89dd512d71"
+  },
+  "post /api/v1/companies/{id}/contexts/{scopeId}/payment-acknowledgements/{target}/cancel response 200": {
+    "previous": "06e991d2188e4fb66fee23009a9aea6cf18b4e5208588da96602f97e20ce4246",
+    "approved": "baf40d93b6e2cf18f16e996bd65151f12e0620f784dd5c2954d7fe89dd512d71"
+  },
+  "post /api/v1/companies/{id}/contexts/{scopeId}/payment-acknowledgements/{target}/corrections response 201": {
+    "previous": "bddb7ccb04c14a0e53111d1f027789d2d3e7430f2767416ca928c3c0352e94f0",
+    "approved": "6c2fc7fc257b0a46756804e88de76fa63b95f43ef4ca40d204de267a2b4411d0"
+  },
+  "get /api/v1/companies/{id}/contexts/{scopeId}/payment-acknowledgements/{target}/corrections response 200": {
+    "previous": "91dfad2b937388f115f1aa1293948a59c82812777d0b8f17b1ffb220edd42474",
+    "approved": "b354ee929d867cdf62e9310400c62e74dd8470c60b37f3f49373ccb4ddcf1db9"
+  },
+  "post /api/v1/companies/{id}/contexts/{scopeId}/acknowledgement-corrections/{target}/decision response 200": {
+    "previous": "bddb7ccb04c14a0e53111d1f027789d2d3e7430f2767416ca928c3c0352e94f0",
+    "approved": "6c2fc7fc257b0a46756804e88de76fa63b95f43ef4ca40d204de267a2b4411d0"
+  },
+  "post /api/v1/companies/{id}/contexts/{scopeId}/acknowledgement-corrections/{target}/cancel response 200": {
+    "previous": "bddb7ccb04c14a0e53111d1f027789d2d3e7430f2767416ca928c3c0352e94f0",
+    "approved": "6c2fc7fc257b0a46756804e88de76fa63b95f43ef4ca40d204de267a2b4411d0"
+  },
+  "get /api/v1/companies/{id}/contexts/{scopeId}/audit response 200": {
+    "previous": "7a2efb281aa4e4e31af2eba88d55129e8724a2b273f3f19ae548381bd4527f64",
+    "approved": "91bc2ed1514d6e52a3bf069fa845d5cc86ca42844ea74db60feec27886c8f386"
+  },
+  "post /api/v1/companies/{id}/contexts/{scopeId}/exports response 200": {
+    "previous": "2afceb8a13b973e69a73cb69a1a21c669198c5c538f7853522f51c05a2bb7e2a",
+    "approved": "03d4975c54b4809cfb01c8c0760d6ed75c0097469acc0dc157e9e5b02871d589"
+  }
+}

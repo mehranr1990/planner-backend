@@ -1,0 +1,22 @@
+{
+  "post /api/v1/companies/{id}/contexts/{scopeId}/resources response 201": {
+    "previous": "4267277cb94258998c3ef40fc8a4a35420dea4659dd077fd2858e821ef9aba40",
+    "approved": "5a735c788aed700a0f489160751ab946833e47b2af82b3a8cbf6d482c1a05b8e"
+  },
+  "get /api/v1/companies/{id}/contexts/{scopeId}/resources response 200": {
+    "previous": "5ef4f98d950655ed6b5a6ddbebcc4a6e79d9bc820e0291dff7cb7e457efb2103",
+    "approved": "a1d9d68cb2a6bc07075dcb15d1b5699ac91e1d90b51525549a0ec10b2ada0283"
+  },
+  "get /api/v1/companies/{id}/contexts/{scopeId}/resources/{resourceId} response 200": {
+    "previous": "4267277cb94258998c3ef40fc8a4a35420dea4659dd077fd2858e821ef9aba40",
+    "approved": "5a735c788aed700a0f489160751ab946833e47b2af82b3a8cbf6d482c1a05b8e"
+  },
+  "patch /api/v1/companies/{id}/contexts/{scopeId}/resources/{resourceId} response 200": {
+    "previous": "4267277cb94258998c3ef40fc8a4a35420dea4659dd077fd2858e821ef9aba40",
+    "approved": "5a735c788aed700a0f489160751ab946833e47b2af82b3a8cbf6d482c1a05b8e"
+  },
+  "post /api/v1/companies/{id}/contexts/{scopeId}/resources/{resourceId}/retire response 200": {
+    "previous": "4267277cb94258998c3ef40fc8a4a35420dea4659dd077fd2858e821ef9aba40",
+    "approved": "5a735c788aed700a0f489160751ab946833e47b2af82b3a8cbf6d482c1a05b8e"
+  }
+}

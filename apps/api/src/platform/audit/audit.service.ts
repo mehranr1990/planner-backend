@@ -100,8 +100,8 @@ const AuditSchema = z.strictObject({
   correlationId: z.string().uuid(),
   resourceId: z.string().uuid().nullable().default(null),
   productivityFields: z
-    .array(z.enum(['estimatedMinutes', 'important', 'urgent']))
-    .max(3)
+    .array(z.enum(['estimatedMinutes', 'important', 'urgent', 'category']))
+    .max(4)
     .default([]),
   changedFields: z
     .array(

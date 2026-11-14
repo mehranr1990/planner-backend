@@ -263,6 +263,14 @@ export function socialPaths(): Record<string, Record<string, unknown>> {
   add('/social-groups/{id}', 'get', c.SocialGroupSchema, undefined, {
     etag: true,
   });
+  add('/social-groups/{id}/access/me', 'get', c.SocialGroupAccessMeSchema);
+  add(
+    '/social-groups/{id}/history',
+    'get',
+    c.SocialGroupHistoryPageSchema,
+    undefined,
+    { page: true },
+  );
   add(
     '/social-groups/{id}',
     'patch',

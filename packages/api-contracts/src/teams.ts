@@ -4,6 +4,7 @@ import {
   InvitationSchema,
   SharedMembershipSchema,
   MembershipChangeSchema,
+  OwnerHandoverSchema,
 } from './collaboration.js';
 import {
   ProjectCreateSchema,
@@ -12,6 +13,11 @@ import {
   ProjectSchema,
   DomainCustodyAssociationSchema,
 } from './projects.js';
+/** Owner-only Team ownership handover history (T-M2). */
+export const TeamHandoverPageSchema = z.strictObject({
+  items: z.array(OwnerHandoverSchema).max(100),
+  nextCursor: z.string().nullable(),
+});
 export const TeamMemberRoleSchema = z.enum([
   'ADMIN',
   'LEAD',
@@ -24,6 +30,10 @@ export const TeamInvitationCreateSchema = InvitationCreateSchema.extend({
 export const TeamInvitationSchema = InvitationSchema.extend({
   memberRole: TeamMemberRoleSchema,
 });
+export const TeamInvitationPageSchema = z.strictObject({
+  items: z.array(TeamInvitationSchema).max(100),
+  nextCursor: z.string().nullable(),
+});
 export const TeamInvitationDeliverySchema = z.strictObject({
   invitation: TeamInvitationSchema,
   proof: z
@@ -32,6 +42,7 @@ export const TeamInvitationDeliverySchema = z.strictObject({
     .nullable(),
 });
 export const TeamMembershipSchema = SharedMembershipSchema.extend({
+  displayName: z.string().nullable().optional(),
   memberRole: TeamMemberRoleSchema.nullable(),
   role: z.enum(['OWNER', 'ADMIN', 'LEAD', 'MEMBER', 'VIEWER']).nullable(),
 });

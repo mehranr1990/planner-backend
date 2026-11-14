@@ -63,4 +63,69 @@ export abstract class SharedTaskWork {
     from: Date,
     to: Date,
   ): Promise<{ startedAt: Date; endedAt: Date; voidedAt: Date | null }[]>;
+  /** Non-voided work logs with their Task and member admission (actual observations only). */
+  abstract taskEffort(
+    tx: Prisma.TransactionClient,
+    a: SharedAuthority,
+    spaceId: string,
+    ids: string[],
+    from: Date,
+    to: Date,
+  ): Promise<
+    {
+      taskId: string;
+      accessId: string;
+      generation: number;
+      startedAt: Date;
+      endedAt: Date;
+    }[]
+  >;
+  /** Earliest recorded change into IN_PROGRESS per Task (absent when never recorded). */
+  abstract firstStarted(
+    tx: Prisma.TransactionClient,
+    a: SharedAuthority,
+    spaceId: string,
+    ids: string[],
+  ): Promise<Map<string, Date>>;
+  /** Tasks with at least one active predecessor that is neither DONE nor CANCELED. */
+  abstract blocked(
+    tx: Prisma.TransactionClient,
+    a: SharedAuthority,
+    spaceId: string,
+    ids: string[],
+  ): Promise<Set<string>>;
+  /** Checklist items of a shared Task (same engine as Personal checklists). */
+  abstract checklist(
+    tx: Prisma.TransactionClient,
+    a: SharedAuthority,
+    spaceId: string,
+    taskId: string,
+  ): Promise<
+    { id: string; title: string; completed: boolean; position: number }[]
+  >;
+  /** One checklist change under the Task revision; advances the Task revision. */
+  abstract changeChecklist(
+    tx: Prisma.TransactionClient,
+    a: SharedAuthority,
+    ctx: TaskToolContext,
+    taskId: string,
+    revision: number,
+    change:
+      | { kind: 'ADD'; id: string; title: string }
+      | {
+          kind: 'UPDATE';
+          id: string;
+          title?: string | undefined;
+          completed?: boolean | undefined;
+        }
+      | { kind: 'DELETE'; id: string }
+      | { kind: 'REORDER'; ids: string[] },
+  ): Promise<number>;
+  /** B4: the caller's own non-voided shared work logs; actorIds must be the caller's actors. */
+  abstract actorEffort(
+    tx: Prisma.TransactionClient,
+    actorIds: string[],
+    from: Date,
+    to: Date,
+  ): Promise<{ scopeId: string; startedAt: Date; endedAt: Date }[]>;
 }

@@ -93,4 +93,45 @@ export class AnalyticsFocusRepository extends AnalyticsFocus {
       },
     };
   }
+  async entries(
+    tx: Prisma.TransactionClient,
+    scope: AuthorizedSpace,
+    from: Date,
+    to: Date,
+  ) {
+    const store = new Store(tx, scope, this.tasks, this.stats, this.account);
+    return (await store.range(from, to)).entries.map((e) => ({
+      kind: e.kind,
+      startAt: e.startAt,
+      endAt: e.endAt,
+    }));
+  }
+  async taskMinutes(
+    tx: Prisma.TransactionClient,
+    scope: AuthorizedSpace,
+    taskIds: string[],
+  ) {
+    const out = new Map<string, number>();
+    if (!taskIds.length) return out;
+    const rows = await tx.timeEntry.findMany({
+      where: {
+        spaceId: scope.spaceId,
+        current: true,
+        state: 'RECORDED',
+        taskId: { in: taskIds },
+      },
+      select: { taskId: true, startAt: true, endAt: true },
+    });
+    const byTask = new Map<string, Interval[]>();
+    for (const r of rows)
+      byTask.set(r.taskId!, [
+        ...(byTask.get(r.taskId!) ?? []),
+        { start: r.startAt.getTime(), end: r.endAt.getTime() },
+      ]);
+    for (const [id, intervals] of byTask) {
+      const minutes = Math.round(unionMilliseconds(intervals) / 60000);
+      if (minutes > 0) out.set(id, minutes);
+    }
+    return out;
+  }
 }

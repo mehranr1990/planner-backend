@@ -1,3 +1,6 @@
+import { JournalModule } from '../journal/public/index.js';
+import { InsightPatternsService } from './application/insight-patterns.service.js';
+import { InsightPatternsController } from './http/insight-patterns.controller.js';
 import { Module } from '@nestjs/common';
 import type { DynamicModule } from '@nestjs/common';
 import { DatabaseModule } from '../../platform/database/database.module.js';
@@ -18,10 +21,12 @@ export class InsightsModule {
         AccountModule,
         SpacesModule,
         HabitsModule,
+        JournalModule,
         ...sources,
       ],
-      providers: [InsightsService],
-      controllers: [InsightsController],
+      providers: [InsightsService, InsightPatternsService],
+      // Static 'patterns' must register before the ':family' route.
+      controllers: [InsightPatternsController, InsightsController],
     };
   }
 }

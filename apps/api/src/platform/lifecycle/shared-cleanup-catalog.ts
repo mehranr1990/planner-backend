@@ -1,10 +1,22 @@
 import { createHash } from 'node:crypto';
 import { ConflictException } from '@nestjs/common';
 import type { Prisma } from '../../generated/prisma/client.js';
-// Reviewed through P6-01: Social owns all eleven new relations and Group cleanup.
-// Future FK changes still fail closed until their owner cleanup is reviewed.
+// Reviewed through the 2026-11-13 backend completion (878 FKs): Team completion
+// (35, TeamCleanupService), Meeting minutes attribution (2; meeting-cleanup
+// deletes actions/decisions before admissions), Company completion (19,
+// CompanyCleanupService) and backend completion (45: 32 Team rows deleted by
+// TeamCleanupService before members/actors, Task/Goal links cascade; 13 Company
+// reason/request rows deleted before their events, budgets and adjustments)
+// and the TM-11 Team file library (13: versions, files, then leaf folders are
+// deleted in TEAM_CONTENT before StoredFile rows are purged in STORAGE) and the
+// gap closure (55: Messaging/Meetings rows deleted by their cleanups, Company rows
+// in COMPANY_CONTENT before their sources, Brain Dump via the Personal Space cascade)
+// and the final closure (5: CompanyContextMove rows deleted in COMPANY_CONTENT
+// before units, departments and actors, CompanyRoomBookingTitle before
+// allocations; 951 FKs).
+// Future FK changes still fail closed until reviewed.
 export const SHARED_CLEANUP_FK_SHA256 =
-  '3554e0a2b9c5afe6be29e29efd0d8c5ff9bf2575c3ad1200775d353ab7d2239e';
+  '5a2f9c1bf386bcc6448a84c4259db02b51077d8b522863fdfd93a5406a7912ec';
 export async function assertSharedCleanupCatalog(tx: Prisma.TransactionClient) {
   const rows = await tx.$queryRaw<
     { table: string; name: string; target: string; definition: string }[]

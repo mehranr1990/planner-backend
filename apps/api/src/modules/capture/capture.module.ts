@@ -1,3 +1,5 @@
+import { BrainDumpService } from './application/brain-dump.service.js';
+import { BrainDumpController } from './http/brain-dump.controller.js';
 import { CaptureData } from './public/personal-data.js';
 import { CaptureDataRepository } from './infrastructure/personal-data.repository.js';
 import { CaptureSync } from './public/sync-access.js';
@@ -45,11 +47,16 @@ export class CaptureModule {
         { provide: CaptureData, useClass: CaptureDataRepository },
         { provide: CaptureSync, useClass: CaptureSyncRepository },
         CaptureService,
+        BrainDumpService,
         CaptureRepository,
         { provide: FinanceCaptures, useClass: FinanceCapturesRepository },
         { provide: CAPTURE_REPOSITORY, useExisting: CaptureRepository },
       ],
-      controllers: [CaptureController, PersonalSearchController],
+      controllers: [
+        CaptureController,
+        PersonalSearchController,
+        BrainDumpController,
+      ],
       exports: [CaptureData, CaptureSync, FinanceCaptures],
     };
   }

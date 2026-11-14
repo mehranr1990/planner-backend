@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Patch,
+  Put,
   Inject,
   UseGuards,
   Body,
@@ -60,6 +61,40 @@ export class TaskProductivityController {
       id,
       revision,
       body,
+    );
+    res.setHeader('ETag', revisionTag(value.revision));
+    return value;
+  }
+  /** B4: explicit Personal Task category for estimate accuracy (Task revision If-Match). */
+  @Get(':id/category') async category(
+    @CurrentActor() actor: RequestActor,
+    @Param('id', new ZodValidationPipe(c.TaskIdSchema)) id: string,
+    @Query(new ZodValidationPipe(c.EmptyQuerySchema)) _q: unknown,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const value = await this.service.category(
+      await this.spaces.authorizePersonal(actor),
+      id,
+    );
+    res.setHeader('ETag', revisionTag(value.revision));
+    return value;
+  }
+  @Put(':id/category') async setCategory(
+    @CurrentActor() actor: RequestActor,
+    @Param('id', new ZodValidationPipe(c.TaskIdSchema)) id: string,
+    @Query(new ZodValidationPipe(c.EmptyQuerySchema)) _q: unknown,
+    @Body(new ZodValidationPipe(c.TaskCategoryPutSchema))
+    body: { category: c.TaskCategory | null },
+    @Headers('if-match') tag: string | undefined,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const revision = expectedRevision(tag);
+    if (revision === undefined) throw new BadRequestException();
+    const value = await this.service.setCategory(
+      await this.spaces.authorizePersonal(actor),
+      id,
+      revision,
+      body.category,
     );
     res.setHeader('ETag', revisionTag(value.revision));
     return value;

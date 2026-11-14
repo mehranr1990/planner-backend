@@ -63,4 +63,31 @@ export abstract class SharedGoals {
     revision: number,
     sourceRevision: number,
   ): Promise<void>;
+  /** Explicit Goal period (inclusive dates) used by reproducible pace formulas. */
+  abstract period(
+    tx: Prisma.TransactionClient,
+    a: SharedAuthority,
+    space: string,
+    id: string,
+  ): Promise<{
+    startDate: string | null;
+    targetDate: string | null;
+    timezone: string;
+    revision: number;
+  }>;
+  abstract setPeriod(
+    tx: Prisma.TransactionClient,
+    a: SharedAuthority,
+    space: string,
+    id: string,
+    revision: number,
+    period: { startDate: string; targetDate: string },
+  ): Promise<z.infer<typeof c.SharedGoalSchema>>;
+  /** Shared Task IDs linked to the Goal in the same scope. */
+  abstract linkedTaskIds(
+    tx: Prisma.TransactionClient,
+    a: SharedAuthority,
+    space: string,
+    id: string,
+  ): Promise<string[]>;
 }

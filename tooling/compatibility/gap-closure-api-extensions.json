@@ -1,0 +1,6 @@
+{
+  "get /api/v1/companies/{id}/contexts/{scopeId}/reports/kpis response 200": {
+    "previous": "1c3a4284ed773b8c99a5a25ce278bb3e33607485bffab411fe44f12719f9254f",
+    "approved": "9bd4cf6122c5ad37d58c47ff809821db73da507c6b9c8828536f9d9d57faaa8b"
+  }
+}

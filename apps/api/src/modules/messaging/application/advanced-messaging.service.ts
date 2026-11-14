@@ -758,6 +758,14 @@ export class AdvancedMessagingService {
             await this.change(s, e, 'REACTION');
           } else if (a.action === 'pin') {
             requireVersion(expected, e.revision);
+            // OD-10: when admins disable member pinning, only conversation managers pin.
+            const setting = await s.tx.conversationSetting.findUnique({
+              where: { conversationId: id },
+            });
+            if (setting?.membersCanPin === false)
+              await this.base.administer(s).catch(() => {
+                throw new ForbiddenException({ code: 'PIN_RESTRICTED' });
+              });
             await s.tx.messagePin.upsert({
               where: { messageId: e.id },
               create: {
@@ -914,6 +922,70 @@ export class AdvancedMessagingService {
         });
       },
     );
+  }
+  /** OD-11: newest visible matches in one conversation, through the timeline projection. */
+  searchWindow(
+    actor: RequestActor,
+    id: string,
+    f: {
+      text: string;
+      limit: number;
+      before: Date | null;
+      after: Date | null;
+      until: Date | null;
+      link: boolean;
+      fromMemberId: string | null;
+    },
+  ) {
+    return this.run(actor, id, 'messaging.search.read', async (s, m) => {
+      const rows = await s.tx.messageEntry.findMany({
+        where: {
+          conversationId: id,
+          kind: { in: ['TEXT', 'FORWARD'] },
+          sequence: { gt: m.historyAfter },
+          ...(f.fromMemberId ? { memberId: f.fromMemberId } : {}),
+          ...(f.before || f.after || f.until
+            ? {
+                createdAt: {
+                  ...(f.after ? { gte: f.after } : {}),
+                  ...(f.before || f.until
+                    ? {
+                        lt:
+                          f.before && f.until
+                            ? f.before < f.until
+                              ? f.before
+                              : f.until
+                            : (f.before ?? f.until)!,
+                      }
+                    : {}),
+                },
+              }
+            : {}),
+        },
+        orderBy: { sequence: 'desc' },
+        take: 1000,
+      });
+      const needle = f.text.toLocaleLowerCase('und'),
+        hits = [];
+      for (const e of rows) {
+        const view = await this.projection(s, m, e);
+        const text = view.state === 'VISIBLE' ? view.content?.text : undefined;
+        if (
+          !text ||
+          !text.toLocaleLowerCase('und').includes(needle) ||
+          (f.link && !/https?:\/\//i.test(text))
+        )
+          continue;
+        hits.push({
+          conversationId: id,
+          conversationTitle: s.conv.title,
+          kind: s.conv.kind,
+          message: view,
+        });
+        if (hits.length >= f.limit) break;
+      }
+      return hits;
+    });
   }
   changes(actor: RequestActor, id: string, q: Page) {
     return this.run(

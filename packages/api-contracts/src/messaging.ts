@@ -43,6 +43,7 @@ export const ConversationPageQuerySchema = z.strictObject({
   limit: z.coerce.number().int().min(1).max(100).default(50),
 });
 export const ConversationEmptySchema = z.strictObject({});
+export const ConversationRenameSchema = z.strictObject({ title: label });
 export const ConversationInvitationInputSchema = z.strictObject({
   id,
   userId: id,
@@ -69,6 +70,7 @@ export const ConversationSchema = z.strictObject({
   createdAt: z.iso.datetime(),
 });
 export const ConversationMemberSchema = z.strictObject({
+  displayName: z.string().nullable().optional(),
   id,
   conversationId: id,
   actorId: id,
@@ -80,6 +82,7 @@ export const ConversationMemberSchema = z.strictObject({
   joinedAt: z.iso.datetime(),
 });
 export const ConversationInvitationSchema = z.strictObject({
+  inviterDisplayName: z.string().nullable().optional(),
   id,
   conversationId: id,
   kind: ConversationKindSchema,
@@ -103,6 +106,22 @@ const page = <T extends z.ZodType>(item: T) =>
     nextCursor: z.string().nullable(),
   });
 export const ConversationPageSchema = page(ConversationSchema);
+export const ConversationSummarySchema = ConversationSchema.extend({
+  lastMessage: z
+    .strictObject({
+      id,
+      memberId: id,
+      kind: z.enum(['TEXT', 'MEDIA', 'FORWARD']),
+      text: z.string().nullable(),
+      createdAt: z.iso.datetime(),
+    })
+    .nullable(),
+  unreadCount: z.number().int().nonnegative(),
+  muted: z.boolean(),
+  lastActivityAt: z.iso.datetime(),
+  updatedAt: z.iso.datetime(),
+});
+export const ConversationSummaryPageSchema = page(ConversationSummarySchema);
 export const ConversationMemberPageSchema = page(ConversationMemberSchema);
 export const ConversationInvitationPageSchema = page(
   ConversationInvitationSchema,

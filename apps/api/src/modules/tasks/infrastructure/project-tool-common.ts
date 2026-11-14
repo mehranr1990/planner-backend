@@ -13,6 +13,7 @@ import type {
   SharedRequest,
 } from '../../spaces/public/index.js';
 import type { TaskToolContext } from '../public/project-tools.js';
+import { DependencyRuleError } from '../domain/dependencies.js';
 export const scope = (ctx: TaskToolContext) => ({
   spaceId: ctx.spaceId,
   scopeId: ctx.scopeId,
@@ -28,6 +29,14 @@ export function rule<T>(fn: () => T): T {
   try {
     return fn();
   } catch (e) {
+    if (
+      e instanceof DependencyRuleError &&
+      ['DEPENDENCY_CYCLE', 'DEPENDENCY_DUPLICATE'].includes(e.code)
+    )
+      throw new BadRequestException({
+        code: 'VALIDATION_ERROR',
+        details: [{ path: 'dependencies', code: e.code }],
+      });
     throw new BadRequestException({
       code: e instanceof Error ? e.message : 'INVALID_TOOL_INPUT',
     });

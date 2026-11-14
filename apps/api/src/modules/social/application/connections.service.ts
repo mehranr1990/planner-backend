@@ -341,7 +341,18 @@ export class ConnectionsService {
               throw error;
             }
           }
-          visible.push(this.connectionView(row));
+          const identified = ['PENDING', 'ACCEPTED'].includes(row.state);
+          visible.push({
+            ...this.connectionView(row),
+            requesterDisplayName: identified
+              ? ((await this.identity.display(tx, row.requesterUserId))?.name ??
+                null)
+              : null,
+            recipientDisplayName: identified
+              ? ((await this.identity.display(tx, row.recipientUserId))?.name ??
+                null)
+              : null,
+          });
         }
         return this.context.page(
           actor,

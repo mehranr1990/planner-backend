@@ -4,7 +4,7 @@ import { METHOD_METADATA, PATH_METADATA } from '@nestjs/common/constants.js';
 import { RequestMethod } from '@nestjs/common';
 import { CompanyKnowledgeController } from '../../src/modules/companies/http/company-knowledge.controller.js';
 import { companyKnowledgePaths } from '../../../../packages/api-contracts/src/company-knowledge-openapi.js';
-it('matches all 20 Company staff handlers to published schemas and required auth headers', () => {
+it('matches all 22 Company knowledge/report handlers to published schemas and required auth headers', () => {
   const actual: string[] = [];
   for (const name of Object.getOwnPropertyNames(
     CompanyKnowledgeController.prototype,
@@ -34,7 +34,7 @@ it('matches all 20 Company staff handlers to published schemas and required auth
       .flatMap(([p, ops]) => Object.keys(ops).map((m) => m + ' ' + p))
       .sort(),
   );
-  expect(actual).toHaveLength(20);
+  expect(actual).toHaveLength(22);
   for (const ops of Object.values(paths))
     for (const [method, raw] of Object.entries(ops)) {
       const op = raw as {

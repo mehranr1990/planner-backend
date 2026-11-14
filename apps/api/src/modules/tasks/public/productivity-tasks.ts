@@ -18,4 +18,17 @@ export abstract class ProductivityTasks {
     tx: Prisma.TransactionClient,
     scope: AuthorizedSpace,
   ): Promise<ProductivityTaskSummary>;
+  /** B4 estimates: Personal tasks completed in [from, to), with their own category and estimate. */
+  abstract completedEstimates(
+    tx: Prisma.TransactionClient,
+    scope: AuthorizedSpace,
+    from: Date,
+    to: Date,
+  ): Promise<
+    {
+      taskId: string;
+      category: string | null;
+      estimatedMinutes: number | null;
+    }[]
+  >;
 }

@@ -62,8 +62,33 @@ export class TeamCleanupService {
   }
   private async content(tx: Prisma.TransactionClient, s: SharedCleanupScope) {
     if (!(await this.projects.cleanup(tx, s))) return false;
+    if (!(await sharedDeleteBatch(tx, s, ['TeamFileVersion', 'TeamFile'])))
+      return false;
+    // Self-referencing folders are removed from their leaves only.
+    if (
+      await tx.$executeRaw`DELETE FROM "TeamFileFolder" WHERE id IN (SELECT p.id FROM "TeamFileFolder" p WHERE p."spaceId"=${s.spaceId}::uuid AND p."scopeId"=${s.scopeId ?? s.spaceId}::uuid AND NOT EXISTS(SELECT 1 FROM "TeamFileFolder" c WHERE c."parentId"=p.id) ORDER BY p.id LIMIT 200)`
+    )
+      return false;
     return sharedDeleteBatch(tx, s, [
       'TeamCompanyAssociation',
+      'TeamNotification',
+      'TeamMemberProfile',
+      'TeamKeyResultCheckin',
+      'TeamKeyResult',
+      'TeamTimeOffEvent',
+      'TeamTimeOff',
+      'TeamTaskAssignmentEvent',
+      'TeamTaskAssignment',
+      'TeamTaskPoints',
+      'TeamFeedbackNote',
+      'TeamFeedbackRequest',
+      'TeamThanksRecipient',
+      'TeamThanks',
+      'TeamCheckinComment',
+      'TeamCheckinReply',
+      'TeamPresence',
+      'TeamTaskState',
+      'TeamSetting',
       'TeamMeetingInvitation',
       'TeamMeeting',
       'TeamDisclosureRecipient',

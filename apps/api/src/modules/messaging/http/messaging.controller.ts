@@ -77,13 +77,6 @@ export class MessagingController {
   ) {
     return result(res, await this.service.create(actor, body, key));
   }
-  @Get()
-  list(
-    @CurrentActor() actor: RequestActor,
-    @Query(page) q: z.infer<typeof c.ConversationPageQuerySchema>,
-  ) {
-    return this.service.list(actor, q);
-  }
   @Get(':id')
   async get(
     @CurrentActor() actor: RequestActor,
@@ -100,6 +93,27 @@ export class MessagingController {
     @Query(page) q: z.infer<typeof c.ConversationPageQuerySchema>,
   ) {
     return this.service.members(actor, conversationId, q);
+  }
+  @Get(':id/access/me') accessMe(
+    @CurrentActor() actor: RequestActor,
+    @Param('id', id) conversationId: string,
+    @Query(query) _q: unknown,
+  ) {
+    return this.service.accessMe(actor, conversationId);
+  }
+  @Patch(':id') async rename(
+    @CurrentActor() actor: RequestActor,
+    @Param('id', id) conversationId: string,
+    @Query(query) _q: unknown,
+    @Headers('if-match') version: string | undefined,
+    @Body(new ZodValidationPipe(c.ConversationRenameSchema))
+    body: z.infer<typeof c.ConversationRenameSchema>,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    return result(
+      res,
+      await this.service.rename(actor, conversationId, revision(version), body),
+    );
   }
   @Post(':id/restore-admission')
   async restoreAdmission(
@@ -142,6 +156,13 @@ export class MessagingController {
         key,
       ),
     );
+  }
+  @Get(':id/invitations') pendingInvitations(
+    @CurrentActor() actor: RequestActor,
+    @Param('id', id) conversationId: string,
+    @Query(page) q: z.infer<typeof c.ConversationPageQuerySchema>,
+  ) {
+    return this.service.sentInvitations(actor, conversationId, q);
   }
   @Post(':id/invitations/:invitationId/revoke')
   async revoke(

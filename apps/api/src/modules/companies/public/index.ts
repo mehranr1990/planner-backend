@@ -18,3 +18,4 @@ export { CompanyLifecycleService } from '../application/company-lifecycle.servic
 export { CompanyCleanupService } from '../application/company-cleanup.service.js';
 
 export { CompanyAssociationsService } from '../application/company-associations.service.js';
+export { CompanyResourceRequestsService } from '../application/company-resource-requests.service.js';

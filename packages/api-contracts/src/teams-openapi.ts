@@ -1,6 +1,10 @@
 import { z } from 'zod';
 import * as c from './teams.js';
 import * as shared from './collaboration.js';
+import {
+  ScopeAccessMeSchema,
+  PendingInvitationPageSchema,
+} from './scope-access.js';
 import { embeddedJsonSchema, pointerSegment } from './embedded-json-schema.js';
 export function teamPaths(): Record<string, Record<string, unknown>> {
   const paths: Record<string, Record<string, unknown>> = {};
@@ -152,6 +156,9 @@ export function teamPaths(): Record<string, Record<string, unknown>> {
   });
   add('/teams', 'get', c.TeamPageSchema, undefined, { page: true });
   add('/teams/{id}', 'get', c.TeamSchema);
+  add('/teams/{id}/access/me', 'get', ScopeAccessMeSchema, undefined, {
+    etag: false,
+  });
   add('/teams/{id}', 'patch', c.TeamSchema, c.TeamPatchSchema, {
     revision: true,
   });
@@ -173,6 +180,14 @@ export function teamPaths(): Record<string, Record<string, unknown>> {
     { idempotency: true },
   );
   add('/teams/{id}/invitations/{offerId}', 'get', c.TeamInvitationSchema);
+  add('/teams/{id}/invitations', 'get', c.TeamInvitationPageSchema, undefined, {
+    page: true,
+    etag: false,
+  });
+  add('/team-invitations', 'get', PendingInvitationPageSchema, undefined, {
+    page: true,
+    etag: false,
+  });
   add(
     '/teams/{id}/invitations/{offerId}/revoke',
     'post',

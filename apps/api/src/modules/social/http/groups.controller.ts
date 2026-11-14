@@ -84,6 +84,20 @@ export class SocialGroupsController {
   ) {
     return this.service.members(a, id, q);
   }
+  @Get(':id/access/me') accessMe(
+    @CurrentActor() actor: RequestActor,
+    @Param('id', socialId) id: string,
+    @Query(socialEmpty) _q: unknown,
+  ) {
+    return this.service.accessMe(actor, id);
+  }
+  @Get(':id/history') history(
+    @CurrentActor() actor: RequestActor,
+    @Param('id', socialId) id: string,
+    @Query(socialPage) q: z.infer<typeof c.SocialPageQuerySchema>,
+  ) {
+    return this.service.history(actor, id, q);
+  }
   @Patch(':id/memberships/:accessId') async change(
     @CurrentActor() a: RequestActor,
     @Param('id', socialId) id: string,

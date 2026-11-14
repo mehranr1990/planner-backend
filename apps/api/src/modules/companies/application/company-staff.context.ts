@@ -42,14 +42,17 @@ export class CompanyStaffContext {
       async (ctx) => {
         await this.companies.staffVisibility(ctx, scopeId, ordinary);
         const me = await this.access.seat(ctx, scopeId);
-        return work({
-          ...ctx,
-          scopeId,
-          me,
-          change: async () => {
-            throw new Error('Read cannot mutate');
-          },
-        });
+        return this.access.displayProjection(
+          ctx,
+          await work({
+            ...ctx,
+            scopeId,
+            me,
+            change: async () => {
+              throw new Error('Read cannot mutate');
+            },
+          }),
+        );
       },
       users,
     );
@@ -104,7 +107,7 @@ export class CompanyStaffContext {
             audit,
             feature as Parameters<CompanyAccess['effect']>[4],
           );
-        return result;
+        return this.access.displayProjection(ctx, result);
       },
       users,
     );
@@ -146,7 +149,7 @@ export class CompanyStaffContext {
   ) {
     const authority = new SharedAuthority(s.tx, [s.root]);
     try {
-      await this.access.kernel.recordAccess(
+      return await this.access.kernel.recordAccess(
         s.tx,
         authority,
         s.actor,

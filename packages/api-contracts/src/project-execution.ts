@@ -186,6 +186,16 @@ export const ProjectCsvErrorSchema = z.strictObject({
     'FORMULA',
   ]),
 });
+export const ProjectCsvInspectionInputSchema = ProjectCsvPreviewSchema.pick({
+  csv: true,
+});
+export const ProjectCsvInspectionSchema = z.strictObject({
+  columns: z.array(z.string().max(2000)).max(16),
+  sampleRows: z.array(z.array(z.string().max(2000)).max(16)).max(5),
+  rowCount: z.number().int().min(0).max(100),
+  samplesTruncated: z.boolean(),
+  errors: z.array(ProjectCsvErrorSchema).max(100),
+});
 export const ProjectCsvResultSchema = z.strictObject({
   valid: z.boolean(),
   errors: z.array(ProjectCsvErrorSchema).max(100),
@@ -347,6 +357,10 @@ export const ProjectReportSnapshotSchema = z.strictObject({
   createdByActorId: id,
   createdAt: z.iso.datetime(),
   report: ProjectReportSchema,
+});
+export const ProjectReportSnapshotPageSchema = z.strictObject({
+  items: z.array(ProjectReportSnapshotSchema).max(100),
+  nextCursor: ProjectPageQuerySchema.shape.after.unwrap().nullable(),
 });
 const cursor = ProjectPageQuerySchema.shape.after.unwrap().nullable();
 const page = <T extends z.ZodType>(item: T) =>
