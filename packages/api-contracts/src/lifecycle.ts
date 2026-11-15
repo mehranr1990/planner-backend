@@ -42,6 +42,14 @@ export const DeletionCancelSchema = z.strictObject({
   password: Password,
 });
 export const DeletionStatusQuerySchema = z.strictObject({ jobId: Id });
+export const DeletionPolicySchema = z.strictObject({
+  policyVersion: z.string().regex(/^[A-Za-z0-9._-]{1,80}$/),
+  retentionAcknowledgementRequired: z.literal(true),
+  gracePeriodDays: z.literal(7),
+  backupExpiryMaximumDays: z.literal(30),
+  cancellationRequiresPassword: z.literal(true),
+  cancellationRequiresRecoveryCapability: z.literal(true),
+});
 export const DeletionJobSchema = z.strictObject({
   id: Id,
   revision: z.number().int().positive(),
@@ -66,4 +74,7 @@ export const DeletionChallengeSchema = z.strictObject({
   confirmationProof: z.string().max(128),
   recoveryCapability: z.string().max(128),
   confirmationExpiresAt: z.iso.datetime(),
+});
+export const CurrentDeletionSchema = z.strictObject({
+  job: DeletionJobSchema.nullable(),
 });

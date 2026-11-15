@@ -103,6 +103,32 @@ export class LifecycleController {
     res.setHeader('Cache-Control', 'no-store');
     await pipeline(value.stream, res);
   }
+  @Get('deletion-policy')
+  @UseGuards(VerifiedSessionGuard)
+  async deletionPolicy(
+    @CurrentActor() actor: RequestActor,
+    @Query(new ZodValidationPipe(c.EmptyQuerySchema)) _q: unknown,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    res.setHeader('Cache-Control', 'no-store');
+    return this.lifecycle.deletionPolicy(
+      await this.spaces.authorizePersonal(actor),
+    );
+  }
+  @Get('deletion-request/current')
+  @UseGuards(VerifiedSessionGuard)
+  async currentDeletion(
+    @CurrentActor() actor: RequestActor,
+    @Query(new ZodValidationPipe(c.EmptyQuerySchema)) _q: unknown,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    res.setHeader('Cache-Control', 'no-store');
+    return {
+      job: await this.lifecycle.currentDeletion(
+        await this.spaces.authorizePersonal(actor),
+      ),
+    };
+  }
   @Post('deletion-request')
   @UseGuards(VerifiedSessionGuard)
   async deletion(

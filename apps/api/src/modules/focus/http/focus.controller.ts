@@ -111,6 +111,27 @@ export class FocusController {
     );
   }
 
+  @Post(':id/recovery') @HttpCode(200) async recovery(
+    @CurrentActor() actor: RequestActor,
+    @Param('id', ids) id: string,
+    @Body(new ZodValidationPipe(c.FocusRecoveryCommandSchema))
+    body: z.infer<typeof c.FocusRecoveryCommandSchema>,
+    @Query(empty) _q: unknown,
+    @Headers('if-match') tag: string | undefined,
+    @Headers('idempotency-key') key: string | undefined,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    return versioned(
+      res,
+      await this.service.recoverableAction(
+        await this.spaces.authorizePersonal(actor),
+        id,
+        revision(tag),
+        key,
+        body,
+      ),
+    );
+  }
   @Post(':id/start') @HttpCode(200) async start(
     @CurrentActor() actor: RequestActor,
     @Param('id', ids) id: string,

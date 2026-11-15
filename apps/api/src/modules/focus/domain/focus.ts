@@ -10,6 +10,12 @@ export type State = 'IDLE' | 'RUNNING' | 'PAUSED' | 'FINISHED' | 'ABANDONED';
 export type Action =
   'CREATE' | 'EDIT' | 'START' | 'PAUSE' | 'RESUME' | 'FINISH' | 'STOP';
 export type Timer = {
+  recovery?:
+    | {
+        confirmedAt: string;
+        extensions: Array<{ phase: number; minutes: number }>;
+      }
+    | undefined;
   mode: 'STOPWATCH' | 'POMODORO';
   pomodoro: Pomodoro | null;
   state: State;
@@ -22,16 +28,31 @@ export type PhaseInterval = Interval & {
   kind: 'WORK' | 'SHORT_BREAK' | 'LONG_BREAK';
   interval: number;
 };
-export function plan(p: Pomodoro): PhaseInterval[] {
+export function plan(
+  p: Pomodoro,
+  extensions: Array<{ phase: number; minutes: number }> = [],
+): PhaseInterval[] {
   const rows: PhaseInterval[] = [];
   let at = 0;
   for (let i = 1; i <= p.workIntervals; i++) {
-    let end = at + p.workMinutes * 60000;
+    let end =
+      at +
+      (p.workMinutes +
+        extensions
+          .filter((e) => e.phase === rows.length)
+          .reduce((n, e) => n + e.minutes, 0)) *
+        60000;
     rows.push({ start: at, end, kind: 'WORK', interval: i });
     at = end;
     if (i < p.workIntervals) {
       const long = i % p.longBreakEvery === 0;
-      end = at + (long ? p.longBreakMinutes : p.shortBreakMinutes) * 60000;
+      end =
+        at +
+        ((long ? p.longBreakMinutes : p.shortBreakMinutes) +
+          extensions
+            .filter((e) => e.phase === rows.length)
+            .reduce((n, e) => n + e.minutes, 0)) *
+          60000;
       rows.push({
         start: at,
         end,
@@ -50,9 +71,17 @@ export function measured(row: Timer, now: Date) {
   const projected =
     row.elapsedMs +
     (row.state === 'RUNNING'
-      ? Math.max(0, instant - Date.parse(row.runningSince!))
+      ? Math.max(
+          0,
+          (row.recovery
+            ? Math.min(instant, Date.parse(row.recovery.confirmedAt))
+            : instant) - Date.parse(row.runningSince!),
+        )
       : 0);
-  const schedule = row.mode === 'POMODORO' ? plan(row.pomodoro!) : null;
+  const schedule =
+    row.mode === 'POMODORO'
+      ? plan(row.pomodoro!, row.recovery?.extensions)
+      : null;
   const total = schedule?.at(-1)?.end ?? null;
   const activeMs = total === null ? projected : Math.min(total, projected);
   const workMs = schedule
@@ -112,7 +141,7 @@ export function transition(
     case 'FINISH':
       if (
         !['RUNNING', 'PAUSED'].includes(row.state) ||
-        (row.mode === 'POMODORO' && value.remainingMs !== 0)
+        (row.mode === 'POMODORO' && !row.recovery && value.remainingMs !== 0)
       )
         throw new TimerError('NOT_FINISHABLE');
       state = 'FINISHED';
@@ -137,10 +166,13 @@ export function workSpans(rows: Timer[], now: Date): Interval[] {
     const r = rows[i]!;
     if (r.state !== 'RUNNING') continue;
     const end = rows[i + 1] ? new Date(rows[i + 1]!.recordedAt) : now;
-    const until = measured(r, end).activeMs;
+    const until =
+      r.recovery && rows[i + 1]
+        ? rows[i + 1]!.elapsedMs
+        : measured(r, end).activeMs;
     const schedule =
       r.mode === 'POMODORO'
-        ? plan(r.pomodoro!)
+        ? plan(r.pomodoro!, r.recovery?.extensions)
         : [{ start: 0, end: until, kind: 'WORK', interval: 0 }];
     for (const phase of schedule.filter((p) => p.kind === 'WORK')) {
       const startOffset = Math.max(r.elapsedMs, phase.start),
@@ -154,5 +186,12 @@ export function workSpans(rows: Timer[], now: Date): Interval[] {
       }
     }
   }
-  return result;
+  if (!rows.some((row) => row.recovery)) return result;
+  const merged: Interval[] = [];
+  for (const span of result) {
+    const last = merged.at(-1);
+    if (last && last.end === span.start) last.end = span.end;
+    else merged.push({ ...span });
+  }
+  return merged;
 }

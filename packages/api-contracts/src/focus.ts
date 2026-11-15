@@ -36,6 +36,7 @@ export const FocusCreateSchema = z
     mode: z.enum(['STOPWATCH', 'POMODORO']).default('STOPWATCH'),
     pomodoro: PomodoroSchema.optional(),
     timezone: CalendarZoneSchema.optional(),
+    recoverable: z.boolean().optional(),
     ...link,
   })
   .refine(validLink)
@@ -85,8 +86,27 @@ export const FocusRevisionSchema = z.strictObject({
   createdAt: z.iso.datetime(),
   clockAdjusted: z.boolean(),
   current: z.boolean(),
+  recovery: z
+    .strictObject({
+      confirmedAt: z.iso.datetime(),
+      receivedAt: z.iso.datetime(),
+      clientEventAt: z.iso.datetime().nullable(),
+      extensions: z
+        .array(
+          z.strictObject({
+            phase: z.number().int().min(0).max(30),
+            minutes: z.number().int().min(1).max(180),
+          }),
+        )
+        .max(100),
+      discarded: z.boolean(),
+    })
+    .optional(),
 });
 export const FocusViewSchema = FocusRevisionSchema.extend({
+  recoveryState: z
+    .enum(['READY', 'HEALTHY', 'INTERRUPTED', 'TERMINAL'])
+    .optional(),
   serverNow: z.iso.datetime(),
   activeMs: Ms,
   workMs: Ms,
@@ -125,6 +145,25 @@ export const FocusQuerySchema = CursorQuerySchema.extend({
   taskId: TaskIdSchema.optional(),
 });
 export const FocusTransitionSchema = z.strictObject({});
+export const FocusRecoveryCommandSchema = z
+  .strictObject({
+    action: z.enum([
+      'START',
+      'HEARTBEAT',
+      'PAUSE',
+      'RESUME',
+      'FINISH',
+      'STOP',
+      'DISCARD',
+      'EXTEND',
+      'RECOVER',
+    ]),
+    eventAt: ManualInstant.optional(),
+    minutes: z.number().int().min(1).max(180).optional(),
+  })
+  .refine((v) =>
+    v.action === 'EXTEND' ? v.minutes !== undefined : v.minutes === undefined,
+  );
 export const TimeCreateSchema = z
   .strictObject({
     startAt: ManualInstant,

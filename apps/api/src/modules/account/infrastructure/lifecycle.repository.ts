@@ -187,6 +187,29 @@ export class LifecycleRepository
           : null,
     });
   }
+  async deletionPolicy(scope: AuthorizedSpace) {
+    await this.db.client.$transaction((tx) => scope.fence(tx));
+    const policyVersion = this.config.PERSONAL_ERASURE_POLICY_VERSION;
+    this.policy(policyVersion ?? '', true);
+    return c.DeletionPolicySchema.parse({
+      policyVersion,
+      retentionAcknowledgementRequired: true,
+      gracePeriodDays: 7,
+      backupExpiryMaximumDays: 30,
+      cancellationRequiresPassword: true,
+      cancellationRequiresRecoveryCapability: true,
+    });
+  }
+  async currentDeletion(scope: AuthorizedSpace) {
+    return this.db.client.$transaction(async (tx) => {
+      await scope.fence(tx);
+      const job = await tx.accountDeletionJob.findFirst({
+        where: { ownerUserId: scope.actor.userId, spaceId: scope.spaceId },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      });
+      return job ? this.deletionView(job) : null;
+    });
+  }
   private policy(version: string, ack: boolean) {
     if (
       !ack ||

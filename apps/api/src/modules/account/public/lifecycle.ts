@@ -4,6 +4,12 @@ import type { z } from 'zod';
 import type { IncomingHttpHeaders } from 'node:http';
 import type { Readable } from 'node:stream';
 export abstract class PersonalLifecycle {
+  abstract deletionPolicy(
+    scope: AuthorizedSpace,
+  ): Promise<z.infer<typeof c.DeletionPolicySchema>>;
+  abstract currentDeletion(
+    scope: AuthorizedSpace,
+  ): Promise<z.infer<typeof c.DeletionJobSchema> | null>;
   abstract requestExport(
     scope: AuthorizedSpace,
     key: string | undefined,

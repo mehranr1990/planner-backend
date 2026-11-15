@@ -86,6 +86,7 @@ model AuthVerification {
 
 // Application-owned account foundation; business models are added only in their approved batches.
 model UserSettings {
+  workingHours Json?
   rewardsEnabled             Boolean   @default(false)
   rewardsEnabledSince        DateTime? @db.Timestamptz(3)
   rewardsDisplayAchievements Boolean   @default(true)
@@ -959,9 +960,27 @@ model Routine {
   createdAt       DateTime       @default(now()) @db.Timestamptz(3)
   updatedAt       DateTime       @updatedAt @db.Timestamptz(3)
   habits          RoutineHabit[]
+  schedule        Json?
+  executions      RoutineExecution[]
+  reminders       Reminder[]
 
   @@unique([spaceId, id])
   @@index([spaceId, createdAt, id])
+}
+
+model RoutineExecution {
+  id String @id @default(uuid()) @db.Uuid
+  spaceId String @db.Uuid
+  routineId String @db.Uuid
+  routine Routine @relation(fields: [spaceId, routineId], references: [spaceId, id], onDelete: Cascade)
+  localDate DateTime @db.Date
+  scheduledAt DateTime @db.Timestamptz(3)
+  timezone String @db.VarChar(100)
+  state String @db.VarChar(10)
+  revision Int @default(1)
+  startedAt DateTime? @db.Timestamptz(3)
+  completedAt DateTime? @db.Timestamptz(3)
+  @@unique([spaceId, routineId, localDate])
 }
 
 model RoutineHabit {
@@ -1174,6 +1193,7 @@ model FocusSession {
   longBreakEvery    Int?
   workIntervals     Int?
   entries           TimeEntry[]
+  recovery          Json?
 
   @@unique([spaceId, id])
   @@unique([spaceId, logicalId, id])
@@ -1634,6 +1654,9 @@ model SavingsGoal {
 }
 
 model Reminder {
+  routineId String? @db.Uuid
+  routine Routine? @relation(fields: [spaceId, routineId], references: [spaceId,id], onDelete: Cascade, onUpdate: NoAction)
+  @@index([spaceId,routineId])
   id              String   @id @default(uuid()) @db.Uuid
   spaceId         String   @db.Uuid
   ownerUserId     String   @db.Uuid

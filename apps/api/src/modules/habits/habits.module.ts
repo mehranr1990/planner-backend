@@ -25,7 +25,13 @@ import {
 } from './infrastructure/habits.repository.js';
 import { GoalHabits } from './public/goal-habits.js';
 @Module({
-  imports: [DatabaseModule, AuditModule, SpacesModule, AccountModule],
+  imports: [
+    DatabaseModule,
+    AuditModule,
+    SpacesModule,
+    AccountModule,
+    RoutineRemindersModule,
+  ],
   providers: [
     { provide: HabitsData, useClass: HabitsDataRepository },
     { provide: HabitsSync, useClass: HabitsSyncRepository },
@@ -47,3 +53,4 @@ import { GoalHabits } from './public/goal-habits.js';
   ],
 })
 export class HabitsModule {}
+import { RoutineRemindersModule } from '../notifications/public/routine-reminders-module.js';

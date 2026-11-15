@@ -32,7 +32,12 @@ export function plain(value: unknown): unknown {
   return JSON.parse(JSON.stringify(value));
 }
 export function reminderView(row: Reminder) {
-  const { cursorDate: _cursor, sourceStamp: _stamp, ...rest } = row;
+  const {
+    cursorDate: _cursor,
+    sourceStamp: _stamp,
+    routineId: _routine,
+    ...rest
+  } = row;
   return plain(rest);
 }
 export function deliveryView(row: NotificationDelivery) {

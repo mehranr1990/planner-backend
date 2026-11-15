@@ -581,6 +581,7 @@ describe('P1-12 private export and staged account erasure', () => {
       await tx.userSettings.create({
         data: {
           ...snapshot.settings,
+          workingHours: snapshot.settings.workingHours ?? Prisma.DbNull,
           planningAvailability:
             snapshot.settings.planningAvailability ?? Prisma.DbNull,
         },

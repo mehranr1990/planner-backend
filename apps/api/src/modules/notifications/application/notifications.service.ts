@@ -37,6 +37,8 @@ export class NotificationsService {
     const value = await this.guarded(scope, () =>
       this.port.query(scope, resource, id, query),
     );
+    if (resource === 'unread-count')
+      return c.NotificationUnreadCountSchema.parse(value);
     if (resource === 'preferences')
       return c.NotificationPreferenceSchema.parse(value);
     if (resource === 'deliveries')

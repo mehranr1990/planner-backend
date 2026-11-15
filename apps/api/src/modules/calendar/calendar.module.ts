@@ -24,12 +24,14 @@ export class CalendarModule {
         { provide: SharedScheduling, useClass: SharedSchedulingRepository },
         { provide: CalendarData, useClass: CalendarDataRepository },
         CalendarService,
+        { provide: PersonalCapacityCalendar, useExisting: CalendarService },
         { provide: CALENDAR_REPOSITORY, useClass: CalendarRepository },
       ],
       controllers: [CalendarController],
       exports: [
         CalendarCustodyGraph,
         CalendarData,
+        PersonalCapacityCalendar,
         SharedScheduling,
         SharedCalendar,
       ],
@@ -38,3 +40,4 @@ export class CalendarModule {
 }
 import { SharedCalendar } from './public/shared-calendar.js';
 import { SharedCalendarRepository } from './infrastructure/shared-calendar.repository.js';
+import { PersonalCapacityCalendar } from './public/personal-capacity.js';

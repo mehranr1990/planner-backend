@@ -1,4 +1,6 @@
 import { appendSyncChanges } from '../../../platform/sync/change-feed.js';
+import * as c from '@mehran/api-contracts';
+import { RoutineReminders } from '../../notifications/public/routine-reminders.js';
 import { CaptureHabits } from '../public/capture-habits.js';
 import { HabitsService } from '../application/habits.service.js';
 import type { HabitEntryCreate } from '@mehran/api-contracts';
@@ -10,8 +12,8 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { randomUUID, createHash } from 'node:crypto';
+import { Prisma } from '../../../generated/prisma/client.js';
 import type {
-  Prisma,
   Habit as HabitRow,
   HabitSchedule as ScheduleRow,
   HabitEntry as EntryRow,
@@ -93,6 +95,7 @@ export class Store implements HabitsTransaction {
     private readonly tx: Prisma.TransactionClient,
     private readonly scope: AuthorizedSpace,
     private readonly account: PlanningPreferences,
+    private readonly reminders?: RoutineReminders,
   ) {}
   private where<T extends object>(q: T) {
     return scopedWhere(this.scope, q);
@@ -313,12 +316,13 @@ export class Store implements HabitsTransaction {
     return entryView(row);
   }
   private async routineView(row: RoutineRow): Promise<Routine> {
+    const { schedule: _schedule, ...legacy } = row;
     const links = await this.tx.routineHabit.findMany({
       where: this.where({ routineId: row.id }),
       orderBy: { position: 'asc' },
     });
     return {
-      ...row,
+      ...legacy,
       status: row.status as Routine['status'],
       createdAt: row.createdAt.toISOString(),
       updatedAt: row.updatedAt.toISOString(),
@@ -358,6 +362,108 @@ export class Store implements HabitsTransaction {
         })),
       });
   }
+  async routineSchedule(id: string) {
+    const r = await this.tx.routine.findFirstOrThrow({
+      where: this.where({ id }),
+    });
+    return r.schedule === null
+      ? null
+      : c.RoutineScheduleSchema.parse(r.schedule);
+  }
+  async setRoutineSchedule(
+    id: string,
+    revision: number,
+    schedule: c.RoutineSchedule | null,
+  ) {
+    const before = await this.routine(id);
+    const result = await this.tx.routine.updateMany({
+      where: this.where({ id, revision }),
+      data: { schedule: schedule ?? Prisma.DbNull, revision: { increment: 1 } },
+    });
+    if (result.count !== 1) throw new ConflictException();
+    await this.reminders!.sync(
+      this.tx,
+      this.scope,
+      id,
+      before.title,
+      before.status === 'ACTIVE' ? schedule : null,
+    );
+  }
+  async executions(id: string, from: string, to: string) {
+    const rows = await this.tx.routineExecution.findMany({
+      where: this.where({
+        routineId: id,
+        localDate: { gte: date(from), lt: date(to) },
+      }),
+      orderBy: { localDate: 'asc' },
+      take: 367,
+    });
+    return rows.map((r) =>
+      c.RoutineExecutionSchema.parse({
+        id: id + ':' + r.localDate.toISOString().slice(0, 10),
+        routineId: id,
+        localDate: r.localDate.toISOString().slice(0, 10),
+        scheduledAt: r.scheduledAt.toISOString(),
+        timezone: r.timezone,
+        state: r.state,
+        revision: r.revision,
+        startedAt: r.startedAt?.toISOString() ?? null,
+        completedAt: r.completedAt?.toISOString() ?? null,
+        linkedHabitCount: 0,
+        completedHabitCount: 0,
+        completionPercentage: null,
+      }),
+    );
+  }
+  async execute(
+    id: string,
+    localDate: string,
+    scheduledAt: string,
+    timezone: string,
+    action: 'START' | 'COMPLETE' | 'SKIP',
+    revision: number,
+  ) {
+    const where = this.where({ routineId: id, localDate: date(localDate) });
+    const before = await this.tx.routineExecution.findFirst({ where });
+    if (
+      (before?.revision ?? (await this.routine(id)).revision) !== revision ||
+      (before && before.state !== 'RUNNING') ||
+      (action === 'START' && before)
+    )
+      throw new ConflictException();
+    const now = (
+      await this.tx.$queryRaw<
+        Array<{ now: Date }>
+      >`SELECT clock_timestamp() AS now`
+    )[0]!.now;
+    if (new Date(scheduledAt) > now) throw new BadRequestException();
+    const state =
+      action === 'START'
+        ? 'RUNNING'
+        : action === 'COMPLETE'
+          ? 'COMPLETED'
+          : 'SKIPPED';
+    const data = { state, completedAt: state === 'COMPLETED' ? now : null };
+    if (before)
+      await this.tx.routineExecution.update({
+        where: { id: before.id },
+        data: { ...data, revision: { increment: 1 } },
+      });
+    else
+      await this.tx.routineExecution.create({
+        data: {
+          spaceId: this.scope.spaceId,
+          routineId: id,
+          localDate: date(localDate),
+          revision: revision + 1,
+          scheduledAt: new Date(scheduledAt),
+          timezone,
+          ...data,
+          startedAt: action === 'START' ? now : null,
+        },
+      });
+    await this.audit('ROUTINE_UPDATE', id);
+  }
   async createRoutine(title: string, habitIds: string[]) {
     const row = await this.tx.routine.create({
       data: { ...this.owner(), title },
@@ -377,6 +483,13 @@ export class Store implements HabitsTransaction {
     });
     if (r.count !== 1) throw new ConflictException();
     await this.links(before.id, habitIds);
+    await this.reminders!.sync(
+      this.tx,
+      this.scope,
+      before.id,
+      title,
+      status === 'ACTIVE' ? await this.routineSchedule(before.id) : null,
+    );
     return this.routine(before.id);
   }
   async audit(action: Parameters<HabitsTransaction['audit']>[0], id: string) {
@@ -411,11 +524,12 @@ export class HabitsRepository implements HabitsPort {
   constructor(
     @Inject(DatabaseService) private readonly database: DatabaseService,
     @Inject(PlanningPreferences) private readonly account: PlanningPreferences,
+    @Inject(RoutineReminders) private readonly reminders: RoutineReminders,
   ) {}
   private async store(tx: Prisma.TransactionClient, scope: AuthorizedSpace) {
     await scope.fence(tx);
     await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`habits:${scope.spaceId}`},0))::text`;
-    return new Store(tx, scope, this.account);
+    return new Store(tx, scope, this.account, this.reminders);
   }
   run<T>(scope: AuthorizedSpace, work: (tx: HabitsTransaction) => Promise<T>) {
     return this.database.client.$transaction(
@@ -439,7 +553,10 @@ export class HabitsRepository implements HabitsPort {
       async (tx) => {
         const result = await work(await this.store(tx, scope));
         return {
-          resultId: result.id,
+          resultId:
+            'routineId' in result && typeof result.routineId === 'string'
+              ? result.routineId
+              : result.id,
           statusCode: 201,
           result: JSON.parse(JSON.stringify(result)) as NonNullable<
             MutationReceipt['result']

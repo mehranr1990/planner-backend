@@ -383,6 +383,144 @@ export class HabitsService {
       return this.routineView(tx, r);
     });
   }
+  routineSchedule(scope: AuthorizedSpace, id: string) {
+    return this.repo.run(scope, async (tx) => ({
+      revision: (await tx.routine(id)).revision,
+      schedule: await tx.routineSchedule(id),
+    }));
+  }
+  setRoutineSchedule(
+    scope: AuthorizedSpace,
+    id: string,
+    revision: number,
+    schedule: c.RoutineSchedule | null,
+  ) {
+    return this.repo.run(scope, async (tx) => {
+      this.revision(await tx.routine(id), revision);
+      if (schedule && schedule.timezone !== (await tx.preferences()).timezone)
+        invalid('ACCOUNT_TIMEZONE_REQUIRED');
+      await tx.setRoutineSchedule(id, revision, schedule);
+      await tx.audit('ROUTINE_UPDATE', id);
+      return { revision: revision + 1, schedule };
+    });
+  }
+  private async occurrenceViews(
+    tx: HabitsTransaction,
+    id: string,
+    from: string,
+    to: string,
+  ) {
+    const routine = await tx.routine(id),
+      schedule = await tx.routineSchedule(id);
+    const saved = new Map(
+      (await tx.executions(id, from, to)).map((r) => [r.localDate, r]),
+    );
+    const versions = await Promise.all(
+      routine.habitIds.map((h) => tx.schedules(h)),
+    );
+    const entries = await tx.entriesRange(routine.habitIds, from, to);
+    const result: c.RoutineExecution[] = [];
+    for (let date = from; date < to; date = addDays(date)) {
+      let row = saved.get(date);
+      if (
+        !row &&
+        schedule &&
+        routine.status === 'ACTIVE' &&
+        routineDue(schedule, date)
+      ) {
+        const instant = wallInstant(
+          date + 'T' + schedule.startTime,
+          schedule.timezone,
+        );
+        row = {
+          id: id + ':' + date,
+          routineId: id,
+          localDate: date,
+          timezone: schedule.timezone,
+          scheduledAt: instant?.toISOString() ?? null,
+          state: instant ? 'PENDING' : 'DST_GAP',
+          revision: routine.revision,
+          startedAt: null,
+          completedAt: null,
+          linkedHabitCount: 0,
+          completedHabitCount: 0,
+          completionPercentage: null,
+        };
+      }
+      if (!row) continue;
+      let completed = 0;
+      for (const [i, habitId] of routine.habitIds.entries()) {
+        const value = stats(
+          habitId,
+          versions[i]!,
+          entries.filter((e) => e.habitId === habitId),
+          date,
+          addDays(date),
+          date,
+        );
+        completed += value.completionRate.numerator;
+      }
+      result.push({
+        ...row,
+        linkedHabitCount: routine.habitIds.length,
+        completedHabitCount: completed,
+        completionPercentage: routine.habitIds.length
+          ? (completed * 100) / routine.habitIds.length
+          : null,
+      });
+    }
+    return result;
+  }
+  routineOccurrences(
+    scope: AuthorizedSpace,
+    id: string,
+    query: { from: string; to: string; limit?: string; afterDate?: string },
+  ) {
+    return this.repo.run(scope, async (tx) => {
+      const all = (
+        await this.occurrenceViews(tx, id, query.from, query.to)
+      ).filter((r) => !query.afterDate || r.localDate > query.afterDate);
+      const limit = Number(query.limit ?? 25),
+        items = all.slice(0, limit);
+      return {
+        items,
+        nextDate: all.length > limit ? items.at(-1)!.localDate : null,
+      };
+    });
+  }
+  executeRoutine(
+    scope: AuthorizedSpace,
+    id: string,
+    date: string,
+    revision: number,
+    action: 'START' | 'COMPLETE' | 'SKIP',
+    key: string | undefined,
+  ) {
+    if (!key) throw new BadRequestException();
+    return this.repo.once(
+      scope,
+      'routine.execute',
+      key,
+      { id, date, revision, action },
+      async (tx) => {
+        const routine = await tx.routine(id);
+        if (routine.status !== 'ACTIVE') throw new ConflictException();
+        const before = (
+          await this.occurrenceViews(tx, id, date, addDays(date))
+        )[0];
+        if (!before?.scheduledAt) throw new ConflictException();
+        await tx.execute(
+          id,
+          date,
+          before.scheduledAt,
+          before.timezone,
+          action,
+          revision,
+        );
+        return (await this.occurrenceViews(tx, id, date, addDays(date)))[0]!;
+      },
+    );
+  }
   water(scope: AuthorizedSpace, query: c.WaterSummaryQuery) {
     return this.repo.run(scope, async (tx) => {
       const habits = await tx.waterHabits(query.habitId),
@@ -419,3 +557,5 @@ export class HabitsService {
     });
   }
 }
+import { wallInstant } from '../../calendar/public/index.js';
+import { routineDue } from '../domain/routines.js';

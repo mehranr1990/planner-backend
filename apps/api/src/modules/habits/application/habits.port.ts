@@ -1,5 +1,6 @@
 import type { AuthorizedSpace } from '../../../platform/authorization/authorized-space.js';
 import type { Habit, Schedule, Entry, Routine } from '../domain/habits.js';
+import type { RoutineSchedule, RoutineExecution } from '@mehran/api-contracts';
 export const HABITS_REPOSITORY = Symbol('HABITS_REPOSITORY');
 export type PageQuery = {
   limit?: string | undefined;
@@ -22,6 +23,21 @@ export type ScheduleWrite = Pick<
   'effectiveFrom' | 'timezone' | 'target' | 'status' | 'schedule'
 >;
 export interface HabitsTransaction {
+  routineSchedule(id: string): Promise<RoutineSchedule | null>;
+  setRoutineSchedule(
+    id: string,
+    revision: number,
+    schedule: RoutineSchedule | null,
+  ): Promise<void>;
+  executions(id: string, from: string, to: string): Promise<RoutineExecution[]>;
+  execute(
+    id: string,
+    date: string,
+    scheduledAt: string,
+    timezone: string,
+    action: 'START' | 'COMPLETE' | 'SKIP',
+    revision: number,
+  ): Promise<void>;
   preferences(): Promise<{ timezone: string }>;
   habit(id: string): Promise<Habit>;
   habits(query: PageQuery): Promise<Page<Habit>>;

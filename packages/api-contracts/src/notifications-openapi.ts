@@ -117,6 +117,13 @@ export function notificationPaths(): Record<string, Record<string, unknown>> {
     undefined,
     true,
   );
+  add(
+    '/notifications/unread-count',
+    'get',
+    n.NotificationUnreadCountSchema,
+    undefined,
+    n.NotificationUnreadCountQuerySchema,
+  );
   add('/reminders/{id}', 'get', n.ReminderSchema);
   add('/reminders/{id}', 'patch', n.ReminderSchema, n.ReminderPatchSchema);
   add('/reminders/{id}', 'delete', n.ReminderSchema);

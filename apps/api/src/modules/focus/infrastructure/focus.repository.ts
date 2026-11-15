@@ -65,6 +65,7 @@ function sessionView(r: SessionRow): c.FocusRevision {
     createdAt: r.createdAt.toISOString(),
     clockAdjusted: r.clockAdjusted,
     current: r.current,
+    ...(r.recovery ? { recovery: r.recovery } : {}),
   });
 }
 function entryView(r: EntryRow): c.TimeEntry {
@@ -207,11 +208,12 @@ export class Store implements FocusTransaction {
       ).count !== 1
     )
       throw new ConflictException();
-    const { pomodoro, recordedAt, runningSince, ...rest } = data;
+    const { pomodoro, recordedAt, runningSince, recovery, ...rest } = data;
     return sessionView(
       await this.tx.focusSession.create({
         data: {
           ...rest,
+          ...(recovery ? { recovery } : {}),
           id,
           logicalId,
           spaceId: this.scope.spaceId,

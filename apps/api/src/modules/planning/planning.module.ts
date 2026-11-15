@@ -25,16 +25,24 @@ export class PlanningModule {
         SpacesModule,
         AccountModule,
         tasks,
+        CalendarModule.register(tasks),
       ],
       providers: [
         { provide: PlanningData, useClass: PlanningDataRepository },
         { provide: PlanningSync, useClass: PlanningSyncRepository },
         { provide: AnalyticsPlanning, useClass: AnalyticsPlanningRepository },
         PlanningService,
+        WorkingHoursService,
+        { provide: WorkingHoursPort, useClass: WorkingHoursRepository },
         { provide: PLANNING_REPOSITORY, useClass: PlanningRepository },
       ],
       exports: [PlanningData, PlanningSync, AnalyticsPlanning],
-      controllers: [PlanningController],
+      controllers: [PlanningController, WorkingHoursController],
     };
   }
 }
+import { WorkingHoursController } from './http/working-hours.controller.js';
+import { WorkingHoursService } from './application/working-hours.service.js';
+import { WorkingHoursPort } from './application/working-hours.port.js';
+import { WorkingHoursRepository } from './infrastructure/working-hours.repository.js';
+import { CalendarModule } from '../calendar/public/index.js';

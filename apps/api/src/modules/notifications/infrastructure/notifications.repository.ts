@@ -132,6 +132,20 @@ export class NotificationsRepository extends NotificationsPort {
     query: Record<string, unknown>,
   ) {
     return this.run(scope, async (s) => {
+      if (resource === 'unread-count') {
+        if (typeof query.reminderId === 'string')
+          await s.reminder(query.reminderId);
+        return {
+          count: await s.tx.notification.count({
+            where: {
+              ...s.where({ inbox: true, readAt: null, dismissedAt: null }),
+              ...(typeof query.reminderId === 'string'
+                ? { reminderId: query.reminderId }
+                : {}),
+            },
+          }),
+        };
+      }
       if (resource === 'preferences')
         return this.preferenceView(await s.preferences());
       if (id && resource === 'reminders')

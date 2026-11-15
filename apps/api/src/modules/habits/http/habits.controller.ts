@@ -236,6 +236,74 @@ export class RoutinesController {
     @Inject(HabitsService) private readonly service: HabitsService,
     @Inject(SpacesService) private readonly spaces: SpacesService,
   ) {}
+  @Get(':id/schedule') async schedule(
+    @CurrentActor() actor: RequestActor,
+    @Param('id', idPipe) id: string,
+    @Query(empty) _q: unknown,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    return versioned(
+      res,
+      await this.service.routineSchedule(
+        await this.spaces.authorizePersonal(actor),
+        id,
+      ),
+    );
+  }
+  @Patch(':id/schedule') async setSchedule(
+    @CurrentActor() actor: RequestActor,
+    @Param('id', idPipe) id: string,
+    @Body(new ZodValidationPipe(c.RoutineScheduleUpdateSchema))
+    body: { schedule: c.RoutineSchedule | null },
+    @Query(empty) _q: unknown,
+    @Headers('if-match') tag: string | undefined,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    return versioned(
+      res,
+      await this.service.setRoutineSchedule(
+        await this.spaces.authorizePersonal(actor),
+        id,
+        required(tag),
+        body.schedule,
+      ),
+    );
+  }
+  @Get(':id/occurrences') async occurrences(
+    @CurrentActor() actor: RequestActor,
+    @Param('id', idPipe) id: string,
+    @Query(new ZodValidationPipe(c.RoutineOccurrenceQuerySchema))
+    query: { from: string; to: string; limit?: string; afterDate?: string },
+  ) {
+    return this.service.routineOccurrences(
+      await this.spaces.authorizePersonal(actor),
+      id,
+      query,
+    );
+  }
+  @Post(':id/occurrences/:date/execute') async execute(
+    @CurrentActor() actor: RequestActor,
+    @Param('id', idPipe) id: string,
+    @Param('date', new ZodValidationPipe(c.PlanningDateSchema)) date: string,
+    @Body(new ZodValidationPipe(c.RoutineExecuteSchema))
+    body: { action: 'START' | 'COMPLETE' | 'SKIP' },
+    @Query(empty) _q: unknown,
+    @Headers('if-match') tag: string | undefined,
+    @Headers('idempotency-key') key: string | undefined,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    return versioned(
+      res,
+      await this.service.executeRoutine(
+        await this.spaces.authorizePersonal(actor),
+        id,
+        date,
+        required(tag),
+        body.action,
+        key,
+      ),
+    );
+  }
   @Post() async create(
     @CurrentActor() actor: RequestActor,
     @Body(new ZodValidationPipe(c.RoutineCreateSchema)) body: c.RoutineCreate,

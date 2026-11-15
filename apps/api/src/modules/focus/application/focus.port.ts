@@ -24,6 +24,7 @@ export type SessionWrite = Pick<
   | 'runningSince'
   | 'recordedAt'
   | 'clockAdjusted'
+  | 'recovery'
 >;
 export type TimeWrite = Pick<
   c.TimeEntry,

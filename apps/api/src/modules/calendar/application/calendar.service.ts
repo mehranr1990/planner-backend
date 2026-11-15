@@ -561,6 +561,29 @@ export class CalendarService<Scope extends CalendarIdentity = AuthorizedSpace> {
       state: cursor,
     };
   }
+  busy(scope: Scope, from: string, to: string, timezone: string) {
+    return this.repo.run(scope, async (tx) => {
+      let state: CursorState | undefined;
+      const all: Array<{ start: number; end: number }> = [];
+      for (let count = 0; count < 40; count++) {
+        const page = await this.page(
+          tx,
+          scope,
+          { from, to, timezone, limit: '100' },
+          state,
+        );
+        for (const row of page.items)
+          if (row.status === 'ACTIVE') {
+            const value = interval(row.schedule, timezone);
+            if (value) all.push(value);
+          }
+        if (all.length > 1000) fail('RANGE_TOO_DENSE');
+        if (!page.state) return all;
+        state = page.state;
+      }
+      return fail('RANGE_TOO_DENSE');
+    });
+  }
   view(scope: Scope, query: c.CalendarRangeQuery) {
     return this.repo.run(scope, async (tx) => {
       const page = await this.page(tx, scope, query);

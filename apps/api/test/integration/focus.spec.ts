@@ -12,6 +12,7 @@ import request from 'supertest';
 import { randomUUID } from 'node:crypto';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import * as c from '@mehran/api-contracts';
+import { Prisma } from '../../src/generated/prisma/client.js';
 import { testApplication } from '../support/application.js';
 import { isolatedTestDatabaseUrl } from '../../../../tooling/testing/test-database.js';
 import { DatabaseService } from '../../src/platform/database/database.service.js';
@@ -684,6 +685,7 @@ describe('P1-07 focus timers, time accounting and ownership', () => {
     await db.client.focusSession.create({
       data: {
         ...row,
+        recovery: row.recovery ?? Prisma.DbNull,
         id,
         previousId: row.id,
         revision: 999,

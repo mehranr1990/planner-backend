@@ -83,6 +83,16 @@ Object.assign(
 );
 
 type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
+// ADR 0052: optional recoverable Focus request/response metadata; legacy baselines remain fixed.
+Object.assign(
+  responseExtensions,
+  JSON.parse(
+    fs.readFileSync(
+      new URL('./personal-completion-api-extensions.json', import.meta.url),
+      'utf8',
+    ),
+  ) as Record<string, { previous: string; approved: string }>,
+);
 function stable(value: Json): string {
   if (Array.isArray(value)) return '[' + value.map(stable).join(',') + ']';
   if (value && typeof value === 'object')

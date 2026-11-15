@@ -289,3 +289,9 @@ export type NotificationPreference = z.infer<
 >;
 export type PushSubscription = z.infer<typeof PushSubscriptionSchema>;
 export type NotificationChannel = z.infer<typeof NotificationChannelSchema>;
+export const NotificationUnreadCountSchema = z.strictObject({
+  count: z.number().int().nonnegative(),
+});
+export const NotificationUnreadCountQuerySchema = z.strictObject({
+  reminderId: TaskIdSchema.optional(),
+});

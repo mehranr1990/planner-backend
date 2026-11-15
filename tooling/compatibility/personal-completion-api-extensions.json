@@ -1,0 +1,46 @@
+{
+  "post /api/v1/focus/sessions request": {
+    "previous": "45977d1bb6079bbfe7a79ea2baf4aa3db60117401cbd2b23213f0ef6a36b88b5",
+    "approved": "efba72630ac1e33424e77da3b0d88f9f84885d8e9281fb74551a5afbb7c7b4ab"
+  },
+  "post /api/v1/focus/sessions response 201": {
+    "previous": "6e5629914e244cffc0ebfb9af4a0f34dbaa1bef9e93ceda076ad72dd3502cc57",
+    "approved": "78e589e0c7d640dfccdc17f178e510616e70a2f4d6747a497aeb3dfea095acf8"
+  },
+  "get /api/v1/focus/sessions response 200": {
+    "previous": "9bfb1d9606337b11f6bcb7662b9a6ca4689495980d113b144f10d7c612610d63",
+    "approved": "35d00d786acfedd1b83fc0a54fda645ce9e21a8b5c93a8c866e5806aa22b2f5c"
+  },
+  "get /api/v1/focus/sessions/{id} response 200": {
+    "previous": "6e5629914e244cffc0ebfb9af4a0f34dbaa1bef9e93ceda076ad72dd3502cc57",
+    "approved": "78e589e0c7d640dfccdc17f178e510616e70a2f4d6747a497aeb3dfea095acf8"
+  },
+  "patch /api/v1/focus/sessions/{id} response 200": {
+    "previous": "6e5629914e244cffc0ebfb9af4a0f34dbaa1bef9e93ceda076ad72dd3502cc57",
+    "approved": "78e589e0c7d640dfccdc17f178e510616e70a2f4d6747a497aeb3dfea095acf8"
+  },
+  "get /api/v1/focus/sessions/{id}/history response 200": {
+    "previous": "c85030c2a1db06f5ba4e7d928ebe7b1301f9d9df94efaf52a6972bb79f790192",
+    "approved": "bd09aa4116692a1e6a5a95beb944bbc1e8ca00b3de967546098606b8a80e969f"
+  },
+  "post /api/v1/focus/sessions/{id}/start response 200": {
+    "previous": "6e5629914e244cffc0ebfb9af4a0f34dbaa1bef9e93ceda076ad72dd3502cc57",
+    "approved": "78e589e0c7d640dfccdc17f178e510616e70a2f4d6747a497aeb3dfea095acf8"
+  },
+  "post /api/v1/focus/sessions/{id}/pause response 200": {
+    "previous": "6e5629914e244cffc0ebfb9af4a0f34dbaa1bef9e93ceda076ad72dd3502cc57",
+    "approved": "78e589e0c7d640dfccdc17f178e510616e70a2f4d6747a497aeb3dfea095acf8"
+  },
+  "post /api/v1/focus/sessions/{id}/resume response 200": {
+    "previous": "6e5629914e244cffc0ebfb9af4a0f34dbaa1bef9e93ceda076ad72dd3502cc57",
+    "approved": "78e589e0c7d640dfccdc17f178e510616e70a2f4d6747a497aeb3dfea095acf8"
+  },
+  "post /api/v1/focus/sessions/{id}/finish response 200": {
+    "previous": "6e5629914e244cffc0ebfb9af4a0f34dbaa1bef9e93ceda076ad72dd3502cc57",
+    "approved": "78e589e0c7d640dfccdc17f178e510616e70a2f4d6747a497aeb3dfea095acf8"
+  },
+  "post /api/v1/focus/sessions/{id}/stop response 200": {
+    "previous": "6e5629914e244cffc0ebfb9af4a0f34dbaa1bef9e93ceda076ad72dd3502cc57",
+    "approved": "78e589e0c7d640dfccdc17f178e510616e70a2f4d6747a497aeb3dfea095acf8"
+  }
+}

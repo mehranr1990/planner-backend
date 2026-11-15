@@ -278,6 +278,11 @@ describe('scoped persistence and API conventions', () => {
       '202611130052_gap_closure',
       '202611130053_company_goal_source',
       '202611140054_final_closure',
+      '202611150055_personal_unread_count',
+      '202611150056_routine_execution',
+      '202611150057_focus_recovery',
+      '202611150058_working_hours',
+      '202611150059_routine_reminders',
     ]);
     for (const sql of [
       '',

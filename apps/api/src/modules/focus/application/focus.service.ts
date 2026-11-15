@@ -20,6 +20,7 @@ import {
   transition,
   workSpans,
   TimerError,
+  plan,
 } from '../domain/focus.js';
 import { clip, unionMilliseconds } from '../domain/intervals.js';
 import type { Interval } from '../domain/intervals.js';
@@ -31,6 +32,7 @@ const invalid = (code: string): never => {
   });
 };
 const sessionWrite = (v: c.FocusRevision): SessionWrite => ({
+  ...(v.recovery ? { recovery: v.recovery } : {}),
   title: v.title,
   mode: v.mode,
   pomodoro: v.pomodoro,
@@ -110,6 +112,17 @@ export class FocusService {
       ...measured(row, now),
       serverNow: now.toISOString(),
       taskDisposition: disposition,
+      ...(row.recovery
+        ? {
+            recoveryState: ['FINISHED', 'ABANDONED'].includes(row.state)
+              ? 'TERMINAL'
+              : row.state !== 'RUNNING'
+                ? 'READY'
+                : now.getTime() - Date.parse(row.recovery.receivedAt) > 60000
+                  ? 'INTERRUPTED'
+                  : 'HEALTHY',
+          }
+        : {}),
     });
   }
   create(
@@ -140,6 +153,17 @@ export class FocusService {
           runningSince: null,
           recordedAt: now.toISOString(),
           clockAdjusted: false,
+          ...(input.recoverable
+            ? {
+                recovery: {
+                  confirmedAt: now.toISOString(),
+                  receivedAt: now.toISOString(),
+                  clientEventAt: null,
+                  extensions: [],
+                  discarded: false,
+                },
+              }
+            : {}),
         });
         await tx.audit('FOCUS_CREATE', row.id);
         return this.view(tx, row, now);
@@ -215,6 +239,8 @@ export class FocusService {
       async (tx) => {
         const before = await tx.session(id);
         this.revision(before, revision);
+        if (before.recovery)
+          throw new ConflictException({ code: 'USE_RECOVERABLE_COMMAND' });
         const terminal = action === 'FINISH' || action === 'STOP';
         if (before.revision >= 1000 || (!terminal && before.revision >= 999))
           invalid('REVISION_LIMIT');
@@ -252,6 +278,144 @@ export class FocusService {
               recordedAt: row.recordedAt,
             });
           }
+        }
+        await tx.audit('FOCUS_CHANGE', id);
+        return this.view(tx, row, now);
+      },
+    );
+  }
+  recoverableAction(
+    scope: AuthorizedSpace,
+    id: string,
+    revision: number,
+    key: string | undefined,
+    input: z.infer<typeof c.FocusRecoveryCommandSchema>,
+  ) {
+    return this.repo.once(
+      scope,
+      'focus.recoverable',
+      this.key(key),
+      { id, revision, ...input },
+      async (tx) => {
+        const before = await tx.session(id);
+        this.revision(before, revision);
+        if (
+          !before.recovery ||
+          ['FINISHED', 'ABANDONED'].includes(before.state)
+        )
+          throw new ConflictException();
+        const terminal = ['FINISH', 'STOP', 'DISCARD'].includes(input.action);
+        if (before.revision >= 1000 || (!terminal && before.revision >= 999))
+          invalid('REVISION_LIMIT');
+        const now = await tx.clock(),
+          effective = input.eventAt ? new Date(input.eventAt) : now;
+        if (
+          effective.getTime() < Date.parse(before.recordedAt) ||
+          effective > now
+        )
+          invalid('INVALID_EVENT_TIME');
+        if (
+          ['START', 'RESUME', 'HEARTBEAT', 'EXTEND'].includes(input.action) &&
+          now.getTime() - effective.getTime() > 60000
+        )
+          invalid('STALE_EVENT_TIME');
+        if (
+          before.state === 'RUNNING' &&
+          effective.getTime() < Date.parse(before.recovery.confirmedAt)
+        )
+          invalid('INVALID_EVENT_TIME');
+        const stale =
+          before.state === 'RUNNING' &&
+          now.getTime() - Date.parse(before.recovery.receivedAt) > 60000;
+        if (stale && ['HEARTBEAT', 'EXTEND'].includes(input.action))
+          throw new ConflictException({ code: 'FOCUS_RECOVERY_REQUIRED' });
+        if (input.action === 'START' && (await tx.reserved()))
+          throw new ConflictException();
+        const evidence = {
+          ...before.recovery,
+          extensions: [...before.recovery.extensions],
+          receivedAt: now.toISOString(),
+          clientEventAt: input.eventAt ?? null,
+        };
+        // An interrupted interval can only close at its last acknowledged point.
+        const confirmed =
+          before.state === 'RUNNING' && !stale && input.action !== 'RECOVER'
+            ? effective.toISOString()
+            : before.recovery.confirmedAt;
+        const source = {
+          ...before,
+          recovery: { ...evidence, confirmedAt: confirmed },
+        };
+        let data: SessionWrite;
+        const action = input.action;
+        try {
+          if (action === 'HEARTBEAT' || action === 'EXTEND') {
+            if (before.state !== 'RUNNING') throw new TimerError('NOT_RUNNING');
+            const value = measured(source, effective);
+            if (action === 'EXTEND') {
+              if (
+                before.mode !== 'POMODORO' ||
+                evidence.extensions.length >= 100
+              )
+                throw new TimerError('NOT_EXTENDABLE');
+              const phases = plan(before.pomodoro!, evidence.extensions),
+                phase = phases.findIndex((p) => p.end > value.activeMs);
+              if (phase < 0) throw new TimerError('PHASE_COMPLETE');
+              evidence.extensions.push({ phase, minutes: input.minutes! });
+            }
+            evidence.confirmedAt = confirmed;
+            data = {
+              ...sessionWrite(source),
+              action: 'EDIT',
+              elapsedMs: value.activeMs,
+              runningSince: confirmed,
+              recordedAt: effective.toISOString(),
+              recovery: evidence,
+            };
+          } else {
+            const actual =
+              action === 'RECOVER'
+                ? 'PAUSE'
+                : action === 'DISCARD'
+                  ? 'STOP'
+                  : action;
+            const change = transition(source, actual, effective);
+            evidence.confirmedAt =
+              actual === 'START' || actual === 'RESUME'
+                ? effective.toISOString()
+                : confirmed;
+            evidence.discarded = action === 'DISCARD';
+            data = {
+              ...sessionWrite(before),
+              ...change,
+              action: actual,
+              recovery: evidence,
+            };
+          }
+        } catch (error) {
+          if (error instanceof TimerError) throw new ConflictException();
+          throw error;
+        }
+        const row = await tx.appendSession(data, before);
+        if (terminal && action !== 'DISCARD') {
+          const spans = workSpans(
+            await tx.versions(id),
+            new Date(row.recordedAt),
+          );
+          for (const [segmentOrdinal, span] of spans.entries())
+            await tx.appendEntry({
+              kind: 'TRACKED',
+              state: 'RECORDED',
+              sessionId: id,
+              segmentOrdinal,
+              taskId: row.taskId,
+              selectedTaskRevision: row.selectedTaskRevision,
+              startAt: new Date(span.start).toISOString(),
+              endAt: new Date(span.end).toISOString(),
+              note: null,
+              timezone: row.timezone,
+              recordedAt: row.recordedAt,
+            });
         }
         await tx.audit('FOCUS_CHANGE', id);
         return this.view(tx, row, now);

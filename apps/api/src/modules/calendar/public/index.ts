@@ -6,3 +6,4 @@ export { dayBoundary, wallInstant, localKey } from '../domain/calendar.js';
 export type { SharedCalendarCommand } from './shared-calendar.js';
 
 export { CalendarCustodyGraph } from '../application/calendar-custody-graph.js';
+export { PersonalCapacityCalendar } from './personal-capacity.js';

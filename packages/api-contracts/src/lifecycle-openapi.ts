@@ -130,6 +130,8 @@ export function lifecyclePaths(): Record<string, Record<string, unknown>> {
     false,
     true,
   );
+  add('/me/deletion-policy', 'get', c.DeletionPolicySchema);
+  add('/me/deletion-request/current', 'get', c.CurrentDeletionSchema);
   add('/me/exports/{id}', 'get', c.ExportJobSchema);
   add(
     '/me/exports/{id}/download',

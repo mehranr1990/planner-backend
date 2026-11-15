@@ -1,5 +1,9 @@
 # Frontend integration checklist
 
+2026-11-15 Personal extension: follow [Personal gap closure](PERSONAL_GAP_CLOSURE.md)
+for the eleven new operations and recoverable Focus recording rules. The current
+canonical OpenAPI contains 1,056 operations; baseline evidence below is historical.
+
 Backend baseline: `6a9ccdb81e8c3b4842f1d7ea63c3531a6abbd2bb`. This is a handoff,
 not a claim that a frontend or the following frontend tests have been implemented.
 The backend's accepted evidence is 13/13 quality stages, 765 tests/76 files,

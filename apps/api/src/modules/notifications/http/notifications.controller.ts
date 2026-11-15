@@ -199,6 +199,15 @@ export class NotificationsController {
   ) {
     return this.read(a, 'notifications', undefined, q, r);
   }
+  @Get('notifications/unread-count') unreadCount(
+    @CurrentActor() a: RequestActor,
+    @Query(new ZodValidationPipe(c.NotificationUnreadCountQuerySchema))
+    q: Record<string, unknown>,
+    @Res({ passthrough: true }) r: Response,
+  ) {
+    r.setHeader('Cache-Control', 'no-store');
+    return this.read(a, 'unread-count', undefined, q, r);
+  }
   @Get('notifications/:id') notification(
     @CurrentActor() a: RequestActor,
     @Param('id', idPipe) id: string,

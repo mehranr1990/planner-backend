@@ -246,6 +246,7 @@ export function createOpenApiDocument() {
       ...planningPaths(),
       ...calendarPaths(),
       ...habitPaths(),
+      ...personalCompletionPaths(),
       ...goalPaths(),
       ...focusPaths(),
       ...writingPaths(),
@@ -322,3 +323,4 @@ import { companyFinancePaths } from './company-finance-openapi.js';
 import { companySettlementPaths } from './company-settlements-openapi.js';
 import { messagingPaths, advancedMessagingPaths } from './messaging-openapi.js';
 import { messagingMediaPaths } from './messaging-media-openapi.js';
+import { personalCompletionPaths } from './personal-completion-openapi.js';

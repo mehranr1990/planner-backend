@@ -1,5 +1,6 @@
 import type { AuthorizedSpace } from '../../../platform/authorization/authorized-space.js';
 export type NotificationResource =
+  | 'unread-count'
   | 'reminders'
   | 'notifications'
   | 'deliveries'
