@@ -1,3 +1,4 @@
+import { TeamSprintEvidence } from './team-sprint-evidence.js';
 import {
   Inject,
   Injectable,
@@ -36,6 +37,7 @@ const req = (
 @Injectable()
 export class TeamInteractionContext {
   constructor(
+    @Inject(TeamSprintEvidence) private readonly evidence: TeamSprintEvidence,
     @Inject(SharedKernel) readonly kernel: SharedKernel,
     @Inject(TeamsService) private readonly teams: TeamsService,
     @Inject(CollaborationService)
@@ -46,6 +48,7 @@ export class TeamInteractionContext {
     id: string,
     work: (s: Interaction) => Promise<T>,
     members: Member[] = [],
+    optional: SharedRequest[] = [],
   ) {
     await this.teams.hint(id);
     const hints = await Promise.all(
@@ -54,7 +57,7 @@ export class TeamInteractionContext {
     const users = [...new Set(hints.filter((u): u is string => u !== null))];
     return this.kernel.run(
       actor,
-      { userIds: users, spaceIds: [id] },
+      { userIds: users, spaceIds: [id, ...optional.map((r) => r.spaceId)] },
       [{ ...req(id), allowArchived: true }],
       async (tx, a) =>
         work({
@@ -70,6 +73,9 @@ export class TeamInteractionContext {
             throw new Error('Read context cannot mutate');
           },
         }),
+      undefined,
+      optional,
+      true,
     );
   }
   async write<T>(
@@ -136,6 +142,9 @@ export class TeamInteractionContext {
               auditId,
               feature
                 ? { actorId: access.actorId, feature, delta: 1 }
+                : undefined,
+              action.startsWith('team.task.') || action.startsWith('team.plan.')
+                ? await this.evidence.details(tx, a, id, resourceId)
                 : undefined,
             );
           return result;

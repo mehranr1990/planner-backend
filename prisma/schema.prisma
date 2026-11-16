@@ -2299,6 +2299,7 @@ model SharedActor {
 
 // SQL enforces additional branch, lifecycle and immutable-history constraints.
 model SharedAuditEvent {
+ details Json?
  scopeId String? @db.Uuid
  originCustodyId String? @db.Uuid
   id                String             @id @db.Uuid
@@ -3787,6 +3788,12 @@ model Team {
 }
 
 model TeamProjectReference {
+ requestId String? @unique(map:"TeamProjectReference_requestId_key") @db.Uuid
+ requestAction String? @db.VarChar(6)
+ requestState String? @db.VarChar(8)
+ requestCreatedAt DateTime? @db.Timestamptz(3)
+ requestReviewedAt DateTime? @db.Timestamptz(3)
+ associationRequest Json?
   teamId    String  @db.Uuid
   projectId String  @db.Uuid
   spaceId   String  @db.Uuid
@@ -3801,6 +3808,9 @@ model TeamProjectReference {
 }
 
 model TeamPlan {
+ capacityPoints Int?
+ sprintBaseline Json?
+ sprintClosedEvidence Json?
  scopeId String @db.Uuid @default(dbgenerated("NULL::uuid"))
  id String @id @db.Uuid
  spaceId String @db.Uuid
@@ -4104,6 +4114,7 @@ model TeamMeeting {
 }
 
 model TeamMeetingInvitation {
+ recurrenceKey String? @db.VarChar(19)
  id String @db.Uuid @id
  spaceId String @db.Uuid
  scopeId String @db.Uuid
@@ -6408,6 +6419,8 @@ model TeamKeyResultCheckin {
  @@index([spaceId,keyResultId,createdAt,id],map:"TeamKeyResultCheckin_page")
 }
 model TeamMemberProfile {
+ capacityTemplate Json?
+ capacityRevision Int @default(1)
  id String @id @db.Uuid
  spaceId String @db.Uuid
  scopeId String @db.Uuid

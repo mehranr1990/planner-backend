@@ -1,3 +1,5 @@
+import { capacityMinutes } from '../domain/capacity-template.js';
+import { addDays } from '../domain/collaboration.js';
 import {
   Inject,
   Injectable,
@@ -428,6 +430,43 @@ export class TeamAnalyticsService {
             { accessId: r.accessId, generation: r.generation },
             r.date.toISOString().slice(0, 10),
           ).capacityMinutes = r.availableMinutes;
+        const profiles = await tx.teamMemberProfile.findMany({
+          where: { ...ownedScope(tx, a, id), OR: [...memberByUser.values()] },
+        });
+        for (const member of memberByUser.values()) {
+          const profile = profiles.find(
+            (p) =>
+              p.accessId === member.accessId &&
+              p.generation === member.generation,
+          );
+          const template = c.TeamWeeklyCapacityStoredSchema.safeParse(
+            profile?.capacityTemplate,
+          );
+          for (
+            let date = q.fromDate;
+            date < q.toDate;
+            date = addDays(date, 1)
+          ) {
+            const dated = capacities.find(
+              (c) =>
+                c.accessId === member.accessId &&
+                c.generation === member.generation &&
+                c.date.toISOString().slice(0, 10) === date,
+            );
+            if (
+              dated ||
+              (template.success &&
+                template.data.timezone === q.timezone &&
+                date >= template.data.effectiveFrom)
+            )
+              get(member, date).capacityMinutes = capacityMinutes(
+                date,
+                q.timezone,
+                dated?.availableMinutes,
+                template.success ? template.data : null,
+              );
+          }
+        }
         for (const p of projects) {
           const metrics = new Map(p.tasks.map((t) => [t.taskId, t]));
           for (const alloc of p.allocations) {

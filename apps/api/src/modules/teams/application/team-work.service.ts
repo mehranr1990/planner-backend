@@ -1,3 +1,4 @@
+import { TeamSprintEvidence } from './team-sprint-evidence.js';
 import {
   Inject,
   Injectable,
@@ -47,6 +48,7 @@ const target = (r: TeamWorkItem): Target => ({
 @Injectable()
 export class TeamWorkService {
   constructor(
+    @Inject(TeamSprintEvidence) private readonly evidence: TeamSprintEvidence,
     @Inject(SharedKernel) private readonly kernel: SharedKernel,
     @Inject(TeamsService) private readonly teams: TeamsService,
     @Inject(SharedTasks) private readonly tasks: SharedTasks,
@@ -92,7 +94,15 @@ export class TeamWorkService {
     action: string,
     resourceId: string,
     feature?: SharedFeatureKey,
+    itemSourceScopeId?: string,
   ) {
+    if (action.startsWith('team.item.') && !itemSourceScopeId)
+      itemSourceScopeId = (
+        await tx.teamWorkItem.findFirst({
+          where: { id: resourceId, spaceId: a.space(tx, id), scopeId: id },
+          select: { sourceScopeId: true },
+        })
+      )?.sourceScopeId;
     const access = a.require(tx, id, cap);
     await this.kernel.offerEffect(
       tx,
@@ -103,6 +113,10 @@ export class TeamWorkService {
       resourceId,
       randomUUID(),
       feature ? { actorId: access.actorId, feature, delta: 1 } : undefined,
+      {
+        ...(await this.evidence.details(tx, a, id, resourceId)),
+        ...(itemSourceScopeId ? { sourceScopeId: itemSourceScopeId } : {}),
+      },
     );
   }
   private once(
@@ -645,9 +659,15 @@ export class TeamWorkService {
               await tx.$queryRaw<{ now: Date }[]>`SELECT clock_timestamp() now`
             )[0]!.now
           : null;
+      const snapshot =
+        before.kind === 'SPRINT' && (opening || closing)
+          ? await this.evidence.snapshot(tx, a, id, planId)
+          : null;
       const row = await tx.teamPlan.update({
         where: { id: planId },
         data: {
+          ...(snapshot && opening ? { sprintBaseline: snapshot } : {}),
+          ...(snapshot && closing ? { sprintClosedEvidence: snapshot } : {}),
           ...(body.title !== undefined ? { title: body.title } : {}),
           ...(body.state ? { state: body.state } : {}),
           ...(opening
@@ -912,6 +932,8 @@ export class TeamWorkService {
         'work.manage',
         'team.item.remove',
         itemId,
+        undefined,
+        row.sourceScopeId,
       );
       return { id: itemId, removed: true as const };
     });

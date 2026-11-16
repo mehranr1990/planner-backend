@@ -37,7 +37,7 @@ export const TeamAssignmentSchema = z.strictObject({
   state: TeamAssignmentStateSchema,
   /** Visible to the assignee, the issuer and Team work managers only. */
   declineReason: z.string().nullable(),
-  endReason: z.enum(['REMOVED', 'REASSIGNED']).nullable(),
+  endReason: z.enum(['REMOVED', 'REASSIGNED', 'WITHDRAWN']).nullable(),
   revision,
   createdAt: datetime,
   respondedAt: datetime.nullable(),
@@ -87,6 +87,7 @@ export const TeamAssignmentEventSchema = z.strictObject({
     'REMOVED',
     'REASSIGNED',
     'REMINDED',
+    'REVERTED',
   ]),
   /** Current Team admission of the acting actor; null when no longer resolvable. */
   by: member.nullable(),
@@ -265,7 +266,7 @@ export const TeamTimeOffDecisionSchema = z.strictObject({
 });
 export const TeamTimeOffEventSchema = z.strictObject({
   id,
-  action: z.enum(['SUBMITTED', 'APPROVED', 'REJECTED', 'CANCELED']),
+  action: z.enum(['SUBMITTED', 'APPROVED', 'REJECTED', 'CANCELED', 'EDITED']),
   by: member.nullable(),
   createdAt: datetime,
 });

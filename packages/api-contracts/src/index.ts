@@ -104,3 +104,5 @@ export * from './final-closure.js';
 export * from './routine-execution.js';
 export * from './working-hours.js';
 export * from './project-gap-closure.js';
+
+export * from './team-gap-closure.js';

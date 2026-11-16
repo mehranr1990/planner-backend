@@ -654,8 +654,9 @@ export class CollaborationService {
     actor: RequestActor,
     spaceId: string,
     q: z.infer<typeof c.ProjectSentInvitationQuerySchema>,
+    kind: 'PROJECT' | 'TEAM' = 'PROJECT',
   ) {
-    await this.requireContextKind(spaceId, 'PROJECT');
+    await this.requireContextKind(spaceId, kind);
     return this.kernel.participate(
       actor,
       spaceId,
@@ -668,7 +669,7 @@ export class CollaborationService {
             { spaceId, scopeId: spaceId, capability: 'membership.member' },
             locked,
           ),
-          context = 'project-sent:' + spaceId + ':' + q.state,
+          context = kind.toLowerCase() + '-sent:' + spaceId + ':' + q.state,
           stamp = String(access.authorizationVersion),
           after = this.kernel.cursorPosition(
             context,
@@ -722,7 +723,10 @@ export class CollaborationService {
             ? await this.identity.current(tx, row.recipientUserId)
             : null;
           items.push(
-            c.ProjectSentInvitationSchema.parse({
+            (kind === 'PROJECT'
+              ? c.ProjectSentInvitationSchema
+              : c.TeamSentInvitationSchema
+            ).parse({
               ...invitationView(row),
               state:
                 row.state === 'PENDING' && row.expiresAt <= now
@@ -731,7 +735,7 @@ export class CollaborationService {
               recipientEmail: recipient?.email ?? row.recipientEmail,
               createdAt: row.createdAt.toISOString(),
               sentAt: (row.resentAt ?? row.createdAt).toISOString(),
-              declineNote: row.declineNote,
+              ...(kind === 'PROJECT' ? { declineNote: row.declineNote } : {}),
             }),
           );
         }
@@ -748,8 +752,9 @@ export class CollaborationService {
     id: string,
     revision: number,
     raw: string | undefined,
+    kind: 'PROJECT' | 'TEAM' = 'PROJECT',
   ) {
-    await this.requireContextKind(spaceId, 'PROJECT');
+    await this.requireContextKind(spaceId, kind);
     const creationKey = keyHash(raw),
       hint = await this.db.client.contextInvitation.findUnique({
         where: { id },
@@ -792,7 +797,7 @@ export class CollaborationService {
             a,
             request,
             {
-              operation: 'project.invitation.resend',
+              operation: kind.toLowerCase() + '.invitation.resend',
               key: creationKey,
               fingerprint: hash(JSON.stringify({ id, revision })),
             },

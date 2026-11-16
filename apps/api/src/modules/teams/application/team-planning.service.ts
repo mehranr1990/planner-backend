@@ -1,3 +1,4 @@
+import { TeamSprintEvidence } from './team-sprint-evidence.js';
 import {
   Inject,
   Injectable,
@@ -32,6 +33,7 @@ const day = (d: Date) => d.toISOString().slice(0, 10);
 @Injectable()
 export class TeamPlanningService {
   constructor(
+    @Inject(TeamSprintEvidence) private readonly evidence: TeamSprintEvidence,
     @Inject(SharedKernel) private readonly kernel: SharedKernel,
     @Inject(TeamsService) private readonly teams: TeamsService,
     @Inject(SharedTasks) private readonly tasks: SharedTasks,
@@ -72,6 +74,8 @@ export class TeamPlanningService {
       action,
       resourceId,
       randomUUID(),
+      undefined,
+      await this.evidence.details(tx, a, id, resourceId),
     );
   }
   private scope(tx: Tx, a: SharedAuthority, id: string) {
@@ -363,7 +367,7 @@ export class TeamPlanningService {
           return at !== null && local(new Date(at)) === d;
         }).length,
         remainingMinutes:
-          d > today
+          d !== today
             ? null
             : plannedMinutes -
               done

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { CalendarEventCreateSchema } from './calendar.js';
+import { CalendarEventCreateSchema, CalendarLocalSchema } from './calendar.js';
 import { TeamCalendarEventSchema } from './team-work.js';
 const id = z.uuid(),
   revision = z.number().int().positive().max(2147483646),
@@ -92,7 +92,7 @@ export const TeamDisclosureSummarySchema = z.strictObject({
 });
 export const TeamMeetingCreateSchema = z.strictObject({
   id,
-  event: CalendarEventCreateSchema.omit({ recurrence: true }),
+  event: CalendarEventCreateSchema,
   agenda: z
     .string()
     .max(10000)
@@ -112,6 +112,7 @@ export const TeamMeetingSchema = z.strictObject({
 export const TeamMeetingInvitationCreateSchema = z.strictObject({
   id,
   member: TeamMemberReferenceSchema,
+  recurrenceKey: CalendarLocalSchema.nullable().optional(),
   expiresAt: z.iso.datetime(),
 });
 export const TeamMeetingInvitationSchema =
@@ -121,6 +122,7 @@ export const TeamMeetingInvitationSchema =
       'PENDING',
       'ACCEPTED',
       'DECLINED',
+      'MAYBE',
       'REVOKED',
       'EXPIRED',
       'UNAVAILABLE',
@@ -128,7 +130,7 @@ export const TeamMeetingInvitationSchema =
     revision,
   });
 export const TeamMeetingInvitationResponseSchema = z.strictObject({
-  decision: z.enum(['ACCEPTED', 'DECLINED']),
+  decision: z.enum(['ACCEPTED', 'DECLINED', 'MAYBE']),
 });
 const page = <T extends z.ZodType>(item: T) =>
   z.strictObject({

@@ -1,3 +1,16 @@
+import type { TeamProjectReference } from '../../../generated/prisma/client.js';
+import * as c from '@mehran/api-contracts';
+const associationRequestView = (row: TeamProjectReference | null) =>
+  row?.requestId
+    ? c.TeamAssociationRequestSchema.parse({
+        id: row.requestId,
+        action: row.requestAction,
+        state: row.requestState,
+        requestedAt: row.requestCreatedAt?.toISOString(),
+        reviewedAt: row.requestReviewedAt?.toISOString() ?? null,
+      })
+    : null;
+import type { z } from 'zod';
 import {
   Inject,
   Injectable,
@@ -175,6 +188,13 @@ export class TeamProjects {
   ) {
     return (tx ?? this.db.client).teamProjectReference.findMany({
       where: { teamId, active: true, projectId: { in: visibleIds } },
+      select: {
+        teamId: true,
+        projectId: true,
+        spaceId: true,
+        revision: true,
+        active: true,
+      },
       orderBy: { projectId: 'asc' },
     });
   }
@@ -246,6 +266,233 @@ export class TeamProjects {
       });
     }
     return result;
+  }
+  associationCandidates(
+    teamId: string,
+    ids: string[],
+    tx: Prisma.TransactionClient = this.db.client,
+  ) {
+    return tx.teamProjectReference.findMany({
+      where: {
+        teamId,
+        projectId: { in: ids },
+        requestState: 'PENDING',
+      },
+      select: { projectId: true, spaceId: true, revision: true },
+      orderBy: { projectId: 'asc' },
+      take: 101,
+    });
+  }
+  async associationHistory(
+    tx: Prisma.TransactionClient,
+    a: SharedAuthority,
+    teamId: string,
+    projectId: string,
+    after: string | undefined,
+    limit: number,
+  ) {
+    await this.associationView(tx, a, teamId, projectId);
+    const rows = await tx.sharedAuditEvent.findMany({
+      where: {
+        spaceId: a.space(tx, teamId),
+        scopeId: teamId,
+        resourceId: projectId,
+        action: { startsWith: 'team.project.association.' },
+        ...(after ? { id: { gt: after } } : {}),
+      },
+      orderBy: { id: 'asc' },
+      take: limit + 1,
+    });
+    return rows.map((r) =>
+      c.TeamAssociationHistoryPageSchema.shape.items.element.parse({
+        request:
+          c.TeamAssociationRequestSchema.safeParse(
+            (r.details as { associationRequest?: unknown } | null)
+              ?.associationRequest,
+          ).data ?? null,
+        id: r.id,
+        actorId: r.actorId,
+        at: r.occurredAt.toISOString(),
+        action: r.action,
+        resourceId: r.resourceId,
+        changedFields: [],
+        detailsBasis: 'RECORDED_METADATA_ONLY',
+      }),
+    );
+  }
+  async associationView(
+    tx: Prisma.TransactionClient,
+    a: SharedAuthority,
+    teamId: string,
+    projectId: string,
+  ) {
+    a.require(tx, teamId, 'task.read');
+    const p = await tx.project.findUnique({ where: { id: projectId } });
+    if (!p) throw new NotFoundException();
+    a.require(tx, p.spaceId, 'task.read', undefined, projectId);
+    const row = await tx.teamProjectReference.findUnique({
+      where: { teamId_projectId: { teamId, projectId } },
+    });
+    return c.TeamAssociationSchema.parse({
+      teamId,
+      projectId,
+      revision: row?.revision ?? 1,
+      active: row?.active ?? false,
+      request: associationRequestView(row),
+      implications: {
+        grantsProjectMembership: false,
+        changesCustody: false,
+        changesRetention: false,
+      },
+    });
+  }
+  async requestAssociation(
+    tx: Prisma.TransactionClient,
+    a: SharedAuthority,
+    actor: RequestActor,
+    teamId: string,
+    projectId: string,
+    revision: number | undefined,
+    body: z.infer<typeof c.TeamAssociationInputSchema>,
+  ) {
+    const access = a.require(tx, teamId, 'settings.manage');
+    const p = await tx.project.findUniqueOrThrow({ where: { id: projectId } });
+    a.require(tx, p.spaceId, 'task.read', undefined, projectId);
+    const row = await tx.teamProjectReference.findUnique({
+      where: { teamId_projectId: { teamId, projectId } },
+    });
+    if (
+      (row ? row.revision !== revision : revision !== 1) ||
+      row?.requestState === 'PENDING' ||
+      row?.requestId === body.id ||
+      (body.action === 'LINK' && row?.active) ||
+      (body.action === 'UNLINK' && !row?.active)
+    )
+      throw new ConflictException();
+    const at = (
+      await tx.$queryRaw<{ now: Date }[]>`SELECT clock_timestamp() now`
+    )[0]!.now;
+    const associationRequest = {
+      ...body,
+      state: 'PENDING',
+      requestedAt: at.toISOString(),
+      reviewedAt: null,
+    };
+    if (row)
+      await tx.teamProjectReference.update({
+        where: { teamId_projectId: { teamId, projectId } },
+        data: {
+          requestId: associationRequest.id,
+          requestAction: associationRequest.action,
+          requestState: associationRequest.state,
+          requestCreatedAt: new Date(associationRequest.requestedAt),
+          requestReviewedAt: associationRequest.reviewedAt
+            ? new Date(associationRequest.reviewedAt)
+            : null,
+          revision: { increment: 1 },
+        },
+      });
+    else {
+      await this.kernel.featureGrowth(tx, teamId, 'team.project-reference');
+      await tx.teamProjectReference.create({
+        data: {
+          teamId,
+          projectId,
+          spaceId: p.spaceId,
+          active: false,
+          revision: 2,
+          requestId: associationRequest.id,
+          requestAction: associationRequest.action,
+          requestState: associationRequest.state,
+          requestCreatedAt: at,
+        },
+      });
+    }
+    await this.kernel.offerEffect(
+      tx,
+      actor,
+      teamId,
+      access.actorId,
+      'team.project.association.request',
+      projectId,
+      randomUUID(),
+      !row
+        ? {
+            actorId: access.actorId,
+            feature: 'team.project-reference',
+            delta: 1,
+          }
+        : undefined,
+      { associationRequest },
+    );
+  }
+  async reviewAssociation(
+    tx: Prisma.TransactionClient,
+    a: SharedAuthority,
+    actor: RequestActor,
+    teamId: string,
+    projectId: string,
+    revision: number,
+    decision: 'APPROVE' | 'REJECT' | 'CANCEL',
+  ) {
+    const access = a.require(tx, teamId, 'settings.manage');
+    const row = await tx.teamProjectReference.findUnique({
+      where: { teamId_projectId: { teamId, projectId } },
+    });
+    if (!row) throw new NotFoundException();
+    const parsed = c.TeamAssociationRequestSchema.safeParse(
+      associationRequestView(row),
+    );
+    if (
+      !parsed.success ||
+      parsed.data.state !== 'PENDING' ||
+      row.revision !== revision
+    )
+      throw new ConflictException();
+    if (decision !== 'CANCEL')
+      a.require(tx, row.spaceId, 'settings.manage', undefined, projectId);
+    if (decision === 'APPROVE')
+      await this.reference(
+        tx,
+        a,
+        actor,
+        teamId,
+        projectId,
+        revision,
+        parsed.data.action === 'LINK',
+      );
+    const at = (
+      await tx.$queryRaw<{ now: Date }[]>`SELECT clock_timestamp() now`
+    )[0]!.now;
+    const associationRequest = {
+      ...parsed.data,
+      state:
+        decision === 'APPROVE'
+          ? 'APPROVED'
+          : decision === 'REJECT'
+            ? 'REJECTED'
+            : 'CANCELED',
+      reviewedAt: at.toISOString(),
+    };
+    await tx.teamProjectReference.update({
+      where: { teamId_projectId: { teamId, projectId } },
+      data: {
+        requestState: associationRequest.state,
+        requestReviewedAt: at,
+        revision: { increment: 1 },
+      },
+    });
+    await this.kernel.offerEffect(
+      tx,
+      actor,
+      teamId,
+      access.actorId,
+      'team.project.association.' + decision.toLowerCase(),
+      projectId,
+      randomUUID(),
+      undefined,
+      { associationRequest },
+    );
   }
   async reference(
     tx: Prisma.TransactionClient,

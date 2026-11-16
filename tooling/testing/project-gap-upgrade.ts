@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import assert from 'node:assert/strict';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import type { Client } from 'pg';
 import { reviewMigrations } from './migration-safety.ts';
 import { SHARED_CLEANUP_FK_SHA256 } from '../../apps/api/src/platform/lifecycle/shared-cleanup-catalog.ts';
@@ -58,6 +58,32 @@ export async function verifyProjectGapUpgrade(input: {
     ).rows;
   const constraints = await catalog();
   for (const name of names.slice(boundary)) {
+    let requestFixture:
+      { teamId: string; projectId: string; active: boolean } | undefined;
+    let requestId: string | undefined;
+    if (name === '202611160072_typed_team_association_requests') {
+      requestFixture = (
+        await client.query(
+          'SELECT "teamId","projectId",active FROM "TeamProjectReference" ORDER BY "teamId","projectId" LIMIT 1',
+        )
+      ).rows[0];
+      assert.ok(requestFixture, 'Populated Team reference predecessor fixture');
+      requestId = randomUUID();
+      await client.query(
+        'UPDATE "TeamProjectReference" SET "associationRequest"=$3 WHERE "teamId"=$1 AND "projectId"=$2',
+        [
+          requestFixture.teamId,
+          requestFixture.projectId,
+          {
+            id: requestId,
+            action: requestFixture.active ? 'UNLINK' : 'LINK',
+            state: 'PENDING',
+            requestedAt: '2030-01-01T00:00:00.000Z',
+            reviewedAt: null,
+          },
+        ],
+      );
+    }
     const sql = fs.readFileSync(
         'prisma/migrations/' + name + '/migration.sql',
         'utf8',
@@ -73,6 +99,23 @@ export async function verifyProjectGapUpgrade(input: {
     input.copy(name);
     input.deploy();
     assert.deepEqual(await snapshot(), before);
+    if (requestFixture) {
+      const row = (
+        await client.query(
+          'SELECT "associationRequest","requestId","requestState","requestAction","requestCreatedAt","requestReviewedAt" FROM "TeamProjectReference" WHERE "teamId"=$1 AND "projectId"=$2',
+          [requestFixture.teamId, requestFixture.projectId],
+        )
+      ).rows[0];
+      assert.equal(row.requestId, requestId);
+      assert.equal(row.requestId, row.associationRequest.id);
+      assert.equal(row.requestState, 'PENDING');
+      assert.equal(row.requestAction, row.associationRequest.action);
+      assert.equal(
+        row.requestCreatedAt.toISOString(),
+        row.associationRequest.requestedAt,
+      );
+      assert.equal(row.requestReviewedAt, null);
+    }
   }
   input.deploy();
   assert.deepEqual(await snapshot(), before);
@@ -101,7 +144,31 @@ export async function verifyProjectGapUpgrade(input: {
           "'REASSIGNED'::character varying, 'WITHDRAWN'::character varying, 'REMINDER'::character varying]",
         ),
       );
-    } else assert.equal(current.definition, old.definition);
+    } else {
+      const additions: Record<string, [string, string]> = {
+        'TeamMeetingInvitation.TeamMeetingInvitation_state_check': [
+          "'REVOKED'::character varying]",
+          "'MAYBE'::character varying, 'REVOKED'::character varying]",
+        ],
+        'TeamTimeOffEvent.TeamTimeOffEvent_action_check': [
+          "'CANCELED'::character varying]",
+          "'CANCELED'::character varying, 'EDITED'::character varying]",
+        ],
+        'TeamTaskAssignment.TeamTaskAssignment_endReason_check': [
+          "'REASSIGNED'::character varying]",
+          "'REASSIGNED'::character varying, 'WITHDRAWN'::character varying]",
+        ],
+        'TeamTaskAssignmentEvent.TeamTaskAssignmentEvent_action_check': [
+          "'REMINDED'::character varying]",
+          "'REMINDED'::character varying, 'REVERTED'::character varying]",
+        ],
+      };
+      const change = additions[old.table + '.' + old.name];
+      assert.equal(
+        current.definition,
+        change ? old.definition.replace(...change) : old.definition,
+      );
+    }
   }
   const codes = (
     await client.query(

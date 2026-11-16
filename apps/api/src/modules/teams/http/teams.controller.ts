@@ -154,7 +154,7 @@ export class TeamsController {
     const v = c.TeamInvitationDeliverySchema.parse(
       await this.service.collaboration.createInvitation(a, teamId, b, key),
     );
-    return result(res, v, v.invitation.revision);
+    return result(res, { ...v, proof: null }, v.invitation.revision);
   }
   @Get(':id/invitations') async pendingInvitations(
     @CurrentActor() a: RequestActor,

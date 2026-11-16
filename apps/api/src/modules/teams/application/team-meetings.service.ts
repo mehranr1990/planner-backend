@@ -186,6 +186,7 @@ export class TeamMeetingsService {
     return c.TeamMeetingInvitationSchema.parse({
       id: row.id,
       meetingId: row.meetingId,
+      recurrenceKey: row.recurrenceKey,
       member: {
         accessId: row.recipientAccessId,
         generation: row.recipientGeneration,
@@ -221,6 +222,22 @@ export class TeamMeetingsService {
           async () => {
             const meeting = await this.row(s, meetingId, true);
             this.op.match(meeting.revision, revision);
+            await this.occurrence(s, meeting, body.recurrenceKey ?? null);
+            if (
+              await s.tx.teamMeetingInvitation.findFirst({
+                where: {
+                  ...this.op.scope(s),
+                  meetingId,
+                  recipientAccessId: body.member.accessId,
+                  recipientGeneration: body.member.generation,
+                  recurrenceKey: body.recurrenceKey ?? null,
+                  state: { not: 'REVOKED' },
+                },
+              })
+            )
+              throw new ConflictException({
+                code: 'INVITATION_ALREADY_EXISTS',
+              });
             const expiry = Date.parse(body.expiresAt);
             if (expiry <= +s.now || expiry > +s.now + 7 * 86400000)
               throw new ConflictException({
@@ -245,6 +262,7 @@ export class TeamMeetingsService {
                 id: body.id,
                 ...this.op.scope(s),
                 meetingId,
+                recurrenceKey: body.recurrenceKey ?? null,
                 recipientAccessId: body.member.accessId,
                 recipientGeneration: body.member.generation,
                 inviterAccessId: me.accessId,
@@ -297,13 +315,111 @@ export class TeamMeetingsService {
       );
     });
   }
+  private async occurrence(
+    s: Interaction,
+    meeting: z.infer<typeof c.TeamMeetingSchema>,
+    key: string | null,
+  ) {
+    if (!key) return;
+    const date = key.slice(0, 10),
+      to = new Date(Date.parse(date) + 86400000).toISOString().slice(0, 10);
+    let cursor: string | undefined;
+    for (let i = 0; i < 100; i++) {
+      const result = c.CalendarViewSchema.parse(
+        await this.calendar.run(s.tx, s.a, s.actor, s.id, {
+          kind: 'VIEW',
+          query: {
+            from: date,
+            to,
+            timezone: meeting.event.schedule.timezone,
+            limit: '100',
+            ...(cursor ? { cursor } : {}),
+          },
+        }),
+      );
+      if (
+        result.items.some(
+          (o) =>
+            (o.resourceId === meeting.event.id ||
+              o.seriesId === meeting.event.id) &&
+            o.recurrenceKey === key &&
+            o.status === 'ACTIVE',
+        )
+      )
+        return;
+      if (!result.nextCursor) break;
+      cursor = result.nextCursor;
+    }
+    throw new ConflictException({ code: 'OCCURRENCE_UNAVAILABLE' });
+  }
+  summary(
+    actor: RequestActor,
+    id: string,
+    meetingId: string,
+    q: z.infer<typeof c.TeamRsvpQuerySchema>,
+  ) {
+    return this.op.read(actor, id, async (s) => {
+      const meeting = await this.row(s, meetingId);
+      const me = this.op.access(s);
+      if (
+        !(await this.op.eligible(
+          s,
+          { accessId: me.accessId, generation: me.generation },
+          'WORK',
+        ))
+      )
+        throw new ForbiddenException();
+      await this.occurrence(s, meeting, q.recurrenceKey ?? null);
+      const rows = await s.tx.teamMeetingInvitation.findMany({
+        where: {
+          ...this.op.scope(s),
+          meetingId,
+          state: { not: 'REVOKED' },
+          OR: [
+            { recurrenceKey: null },
+            ...(q.recurrenceKey ? [{ recurrenceKey: q.recurrenceKey }] : []),
+          ],
+        },
+        orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+        take: 1001,
+      });
+      if (rows.length > 1000) throw new PayloadTooLargeException();
+      const latest = new Map<string, TeamMeetingInvitation>();
+      for (const row of rows) {
+        const key = row.recipientAccessId + ':' + row.recipientGeneration,
+          old = latest.get(key);
+        if (
+          !old ||
+          row.recurrenceKey === q.recurrenceKey ||
+          old.recurrenceKey === null
+        )
+          latest.set(key, row);
+      }
+      const result = {
+        meetingId,
+        recurrenceKey: q.recurrenceKey ?? null,
+        accepted: 0,
+        declined: 0,
+        maybe: 0,
+        pending: 0,
+      };
+      for (const row of latest.values()) {
+        const view = await this.inviteView(s, row);
+        if (view.state === 'ACCEPTED') result.accepted++;
+        else if (view.state === 'DECLINED') result.declined++;
+        else if (view.state === 'MAYBE') result.maybe++;
+        else if (view.state === 'PENDING') result.pending++;
+      }
+      return c.TeamRsvpSummarySchema.parse(result);
+    });
+  }
   async respond(
     actor: RequestActor,
     id: string,
     meetingId: string,
     invitationId: string,
     revision: number,
-    decision: 'ACCEPTED' | 'DECLINED' | 'REVOKED',
+    decision: 'ACCEPTED' | 'DECLINED' | 'MAYBE' | 'REVOKED',
   ) {
     this.op.kernel.assertEnabled();
     const hint = await this.db.client.teamMeetingInvitation.findFirst({
@@ -335,7 +451,7 @@ export class TeamMeetingsService {
         this.op.match(row.revision, revision);
         if (
           row.state === 'REVOKED' ||
-          (decision !== 'REVOKED' && row.state !== 'PENDING')
+          !['PENDING', 'ACCEPTED', 'DECLINED', 'MAYBE'].includes(row.state)
         )
           throw new ConflictException();
         if (decision !== 'REVOKED') {
@@ -359,7 +475,8 @@ export class TeamMeetingsService {
             },
             ['work.manage'],
           );
-          await this.row(s, meetingId, true);
+          const meeting = await this.row(s, meetingId, true);
+          await this.occurrence(s, meeting, row.recurrenceKey);
         }
         await s.begin();
         return this.inviteView(

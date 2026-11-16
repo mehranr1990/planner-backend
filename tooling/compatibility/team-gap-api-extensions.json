@@ -1,0 +1,110 @@
+{
+  "post /api/v1/calendar/events/{id}/series request": {
+    "previous": [
+      "eca73b4ac23ff660aa9db7ecc97a88cc49de6cf02e8b88ffe67a6b5d75a07735"
+    ],
+    "approved": "108896360d4a27e181f705290f51acf34ada7e4962d73ce6f2db0a46dabaf506"
+  },
+  "post /api/v1/teams/{id}/calendar/events/{eventId}/series request": {
+    "previous": [
+      "eca73b4ac23ff660aa9db7ecc97a88cc49de6cf02e8b88ffe67a6b5d75a07735"
+    ],
+    "approved": "108896360d4a27e181f705290f51acf34ada7e4962d73ce6f2db0a46dabaf506"
+  },
+  "post /api/v1/teams/{id}/meetings request": {
+    "previous": [
+      "f4e905b633906e52b74f7ab1ebb412f9eacdb7d88b6ec33613e79f84cd4f4b7f"
+    ],
+    "approved": "b99c993cc7acba250ecd0482cc4876a1abebba03f7f88cac60a0d545660cd409"
+  },
+  "get /api/v1/teams/{id}/meetings/{meetingId}/invitations response 200": {
+    "previous": [
+      "6e5cde394b09e6df4e7c9a6faf64a09c0200878a82dcafa9819e0effeaa94c9b"
+    ],
+    "approved": "fe030ee1b9ac4e9cab9b4e7d12bb9092f4fc81e43094a5747e49cd915c95dba1"
+  },
+  "post /api/v1/teams/{id}/meetings/{meetingId}/invitations request": {
+    "previous": [
+      "1edd789f1d54eb22e715ff123fbce88fcdb31c7f952cc8e8d5d44d09e528188f"
+    ],
+    "approved": "075a313f600bcdc8b8912e355b9e68a97b3cd1b1b74229794e2aea429caf7c0a"
+  },
+  "post /api/v1/teams/{id}/meetings/{meetingId}/invitations response 201": {
+    "previous": [
+      "1693c2a61bc7a49a5db3a0a0d4b56f5c21bed8ba6386a320dd459a999a09222f"
+    ],
+    "approved": "8974f65c2f5e7eb3e7ee545989ed376a67957bb2fb1f7f51861b2feb1e4e9ec6"
+  },
+  "post /api/v1/teams/{id}/meetings/{meetingId}/invitations/{invitationId}/respond request": {
+    "previous": [
+      "50d023d2d4cfcbfbc3d04066f59bb060e8397abdb60dc8953647ec03945be97d"
+    ],
+    "approved": "22264c4c4780d1bc20bb3ef25c94dff4d428d3b8caaf61594d22604bf76b49f6"
+  },
+  "post /api/v1/teams/{id}/meetings/{meetingId}/invitations/{invitationId}/respond response 201": {
+    "previous": [
+      "1693c2a61bc7a49a5db3a0a0d4b56f5c21bed8ba6386a320dd459a999a09222f"
+    ],
+    "approved": "8974f65c2f5e7eb3e7ee545989ed376a67957bb2fb1f7f51861b2feb1e4e9ec6"
+  },
+  "post /api/v1/teams/{id}/meetings/{meetingId}/invitations/{invitationId}/revoke response 201": {
+    "previous": [
+      "1693c2a61bc7a49a5db3a0a0d4b56f5c21bed8ba6386a320dd459a999a09222f"
+    ],
+    "approved": "8974f65c2f5e7eb3e7ee545989ed376a67957bb2fb1f7f51861b2feb1e4e9ec6"
+  },
+  "get /api/v1/teams/{id}/assignments response 200": {
+    "previous": [
+      "ae727535e5aabaa6b670229e9ff9848dd69075245cbbe31e0170534f1a5bd3b9"
+    ],
+    "approved": "e0a27ea640c5fcbbd04e8c723eadfcfc64395a0fca1246990265915519dffb5a"
+  },
+  "post /api/v1/teams/{id}/tasks/{sourceId}/assignments response 201": {
+    "previous": [
+      "3184ab2325320347ae85c6aef9857cda4871e72ed6d4ff9274f975c65310333c"
+    ],
+    "approved": "f3cc8caadec049e5c0a1a4d3797422dced41c6291756828e2da3151d7d5f0cab"
+  },
+  "post /api/v1/teams/{id}/assignments/{assignmentId}/accept response 200": {
+    "previous": [
+      "3184ab2325320347ae85c6aef9857cda4871e72ed6d4ff9274f975c65310333c"
+    ],
+    "approved": "f3cc8caadec049e5c0a1a4d3797422dced41c6291756828e2da3151d7d5f0cab"
+  },
+  "post /api/v1/teams/{id}/assignments/{assignmentId}/remove response 200": {
+    "previous": [
+      "3184ab2325320347ae85c6aef9857cda4871e72ed6d4ff9274f975c65310333c"
+    ],
+    "approved": "f3cc8caadec049e5c0a1a4d3797422dced41c6291756828e2da3151d7d5f0cab"
+  },
+  "post /api/v1/teams/{id}/assignments/{assignmentId}/decline response 200": {
+    "previous": [
+      "3184ab2325320347ae85c6aef9857cda4871e72ed6d4ff9274f975c65310333c"
+    ],
+    "approved": "f3cc8caadec049e5c0a1a4d3797422dced41c6291756828e2da3151d7d5f0cab"
+  },
+  "post /api/v1/teams/{id}/assignments/{assignmentId}/reassign response 200": {
+    "previous": [
+      "35a7c874fc6a5a6f85d4a48fe2b53c3b6f75400aed736ef6b88931924f8d8964"
+    ],
+    "approved": "643b258314d3094002d6c589bb7730f1a757d325a312aa6dd21210f36c9f17ed"
+  },
+  "get /api/v1/teams/{id}/assignments/{assignmentId}/history response 200": {
+    "previous": [
+      "a638150dd77c9ee643266fbb752d1786ef021151ee691ba54820e1fd71951432"
+    ],
+    "approved": "5c5a283b34c00fe015d5b481dc971a95383747d75b8719bef80fd75e0726afcc"
+  },
+  "get /api/v1/teams/{id}/my-work response 200": {
+    "previous": [
+      "3f27804baf8b4a08c288232b492e54ca216530a4ad63b16a72d99c9d6abf6004"
+    ],
+    "approved": "5a67d78995a76a6eed8e35825e8d537e387618a2eed7bf198d52c029b1070e01"
+  },
+  "get /api/v1/teams/{id}/time-off/{timeOffId}/history response 200": {
+    "previous": [
+      "e70e7f027984a7ddb283960f1f7a8d4f5f4044b1c223cdd9480ad9ce368cb98e"
+    ],
+    "approved": "06bf59148f83478fc7bad8bc52cff9f0a14be6d04dc30fc054d226a84c4628b9"
+  }
+}

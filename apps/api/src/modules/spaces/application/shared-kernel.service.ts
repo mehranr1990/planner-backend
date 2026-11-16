@@ -1624,6 +1624,7 @@ export class SharedKernel {
     resourceId: string,
     auditId: string,
     usage?: { actorId: string; feature: string; delta: number },
+    details?: Prisma.InputJsonValue,
   ) {
     const scopeId = spaceId;
     spaceId = await this.custodySpaceInTransaction(tx, spaceId);
@@ -1647,6 +1648,7 @@ export class SharedKernel {
       resourceId,
       auditId,
       usage,
+      details,
     );
   }
   /** Short bounded maintenance effects share custody fencing; callers implement only restrictive transitions. */
@@ -2706,6 +2708,7 @@ export class SharedKernel {
     resourceId: string,
     id: string = randomUUID(),
     usage?: { actorId: string; feature: string; delta: number },
+    details?: Prisma.InputJsonValue,
   ) {
     if (
       [
@@ -2748,6 +2751,7 @@ export class SharedKernel {
         action,
         resourceId,
         requestId: actor.requestId,
+        ...(details ? { details } : {}),
       },
     });
     await tx.sharedOutboxEvent.create({

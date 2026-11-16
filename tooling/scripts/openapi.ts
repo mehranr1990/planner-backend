@@ -50,6 +50,7 @@ for (const batch of [
   'team-files',
   'gap-closure',
   'final-closure',
+  'team-gap',
 ])
   assertApiCompatible(
     createOpenApiDocument(),

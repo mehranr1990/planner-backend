@@ -223,7 +223,7 @@ export const TeamPlanSummarySchema = z.strictObject({
       date: PlanningDateSchema,
       scheduled: count,
       completed: count,
-      /** Known estimate minutes not yet done at the end of this date; null for future dates. */
+      /** Current remaining known minutes on the calculation date; historical/future values are unknown. */
       remainingMinutes: count.nullable(),
     }),
   ),

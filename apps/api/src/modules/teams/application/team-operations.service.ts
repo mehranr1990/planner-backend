@@ -190,9 +190,10 @@ export class TeamOperationsService {
     id: string,
     taskId: string,
     assignee: Member,
+    issuer?: Member,
   ) {
-    const me = this.me(s),
-      self = same(assignee, me);
+    const me = issuer ?? this.me(s),
+      self = !issuer && same(assignee, me);
     if (
       await s.tx.teamTaskAssignment.findFirst({
         where: {
@@ -364,6 +365,98 @@ export class TeamOperationsService {
               : 'REMOVED',
         );
         return this.assignmentView(updated, me, manager);
+      },
+    );
+  }
+  async revert(
+    actor: RequestActor,
+    id: string,
+    assignmentId: string,
+    revision: number,
+    input: z.infer<typeof c.TeamAssignmentRevertSchema>,
+    key: string | undefined,
+  ) {
+    const body = c.TeamAssignmentRevertSchema.parse(input);
+    const issuer = await this.op.read(actor, id, async (s) => {
+      const r = await this.assignmentRow(s, assignmentId);
+      if (!same(ref(r.assigneeAccessId, r.assigneeGeneration), this.me(s)))
+        throw new NotFoundException();
+      return ref(r.issuerAccessId, r.issuerGeneration);
+    });
+    return this.op.write(
+      actor,
+      id,
+      'task.read',
+      [issuer],
+      'team.assignment.revert',
+      assignmentId,
+      async (s) => {
+        const old = await this.assignmentRow(s, assignmentId),
+          me = this.me(s);
+        if (!same(ref(old.assigneeAccessId, old.assigneeGeneration), me))
+          throw new NotFoundException();
+        await this.op.member(
+          s,
+          issuer,
+          same(issuer, me) ? ['task.update'] : ['work.manage'],
+        );
+        await this.tasks.read(s.tx, s.a, id, old.taskId);
+        await this.op.once(
+          s,
+          'team.assignment.revert',
+          key,
+          { assignmentId, revision, body },
+          async () => {
+            this.op.match(old.revision, revision);
+            const task = await this.tasks.read(s.tx, s.a, id, old.taskId);
+            if (
+              old.state !== 'ACCEPTED' ||
+              !['OPEN', 'IN_PROGRESS'].includes(task.status)
+            )
+              throw new ConflictException({
+                code: 'ASSIGNMENT_WITHDRAWAL_UNAVAILABLE',
+              });
+            await s.begin();
+            await s.tx.teamTaskAssignment.update({
+              where: { id: old.id, revision },
+              data: {
+                state: 'REMOVED',
+                endedAt: s.now,
+                endReason: 'WITHDRAWN',
+                endedByActorId: this.op.access(s).actorId,
+                revision: { increment: 1 },
+              },
+            });
+            await this.event(s, old.id, 'REVERTED');
+            const current = await this.insertAssignment(
+              s,
+              body.id,
+              old.taskId,
+              me,
+              issuer,
+            );
+            await this.notify(
+              s,
+              [issuer],
+              'ASSIGNMENT',
+              current.id,
+              'assignment-reverted:' + old.id,
+            );
+            return current;
+          },
+        );
+        return c.TeamAssignmentReassignResultSchema.parse({
+          previous: this.assignmentView(
+            await this.assignmentRow(s, old.id),
+            me,
+            await this.manager(s),
+          ),
+          current: this.assignmentView(
+            await this.assignmentRow(s, body.id),
+            me,
+            await this.manager(s),
+          ),
+        });
       },
     );
   }
@@ -914,6 +1007,69 @@ export class TeamOperationsService {
         if (!same(ref(row.accessId, row.generation), me))
           throw new ConflictException();
         return this.timeOffView(row, me, await this.manager(s), s.now);
+      },
+    );
+  }
+  editTimeOff(
+    actor: RequestActor,
+    id: string,
+    timeOffId: string,
+    revision: number,
+    input: z.infer<typeof c.TeamTimeOffCreateSchema>,
+  ) {
+    const body = c.TeamTimeOffCreateSchema.parse(input);
+    if (
+      body.id !== timeOffId ||
+      (date(body.endDate).getTime() - date(body.startDate).getTime()) /
+        86400000 >
+        366
+    )
+      throw new BadRequestException();
+    return this.op.write(
+      actor,
+      id,
+      'task.create',
+      [],
+      'team.timeoff.edit',
+      timeOffId,
+      async (s) => {
+        const row = await this.timeOffRow(s, timeOffId),
+          me = this.me(s);
+        if (!same(ref(row.accessId, row.generation), me))
+          throw new NotFoundException();
+        this.op.match(row.revision, revision);
+        if (row.state !== 'PENDING')
+          throw new ConflictException({
+            code: 'TIME_OFF_REQUIRES_NEW_REQUEST',
+          });
+        if (
+          await s.tx.teamTimeOff.findFirst({
+            where: {
+              ...this.op.scope(s),
+              id: { not: row.id },
+              accessId: me.accessId,
+              generation: me.generation,
+              state: { in: ['PENDING', 'APPROVED'] },
+              startDate: { lte: date(body.endDate) },
+              endDate: { gte: date(body.startDate) },
+            },
+          })
+        )
+          throw new ConflictException({ code: 'TIME_OFF_OVERLAP' });
+        await s.begin();
+        const updated = await s.tx.teamTimeOff.update({
+          where: { id: row.id, revision },
+          data: {
+            startDate: date(body.startDate),
+            endDate: date(body.endDate),
+            minutesPerDay: body.minutesPerDay,
+            reason: body.reason,
+            revision: { increment: 1 },
+            updatedAt: s.now,
+          },
+        });
+        await this.timeOffEvent(s, row.id, 'EDITED');
+        return this.timeOffView(updated, me, await this.manager(s), s.now);
       },
     );
   }

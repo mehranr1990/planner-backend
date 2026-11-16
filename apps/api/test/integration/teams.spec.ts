@@ -960,9 +960,17 @@ describe('P3-01 independent Teams and explicit Project visibility', () => {
         recipient: { userId: member.actor.userId },
       })
       .expect(201);
+    expect(offered.body.proof).toBeNull();
+    const recipientProof = await api
+      .post('/api/v1/team-invitations/' + offered.body.invitation.id + '/proof')
+      .set('Cookie', member.cookie)
+      .set('Origin', origin)
+      .set('If-Match', '"1"')
+      .send({})
+      .expect(200);
     await api
       .get('/api/v1/team-invitations/preview')
-      .set('X-Invitation-Proof', offered.body.proof)
+      .set('X-Invitation-Proof', recipientProof.body.proof)
       .expect(200);
     const accepted = await api
       .post(
@@ -970,8 +978,8 @@ describe('P3-01 independent Teams and explicit Project visibility', () => {
       )
       .set('Cookie', member.cookie)
       .set('Origin', origin)
-      .set('If-Match', '"1"')
-      .set('X-Invitation-Proof', offered.body.proof)
+      .set('If-Match', '"2"')
+      .set('X-Invitation-Proof', recipientProof.body.proof)
       .send({})
       .expect(201);
     expect(

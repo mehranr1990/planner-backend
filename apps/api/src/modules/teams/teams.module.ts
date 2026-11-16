@@ -1,3 +1,9 @@
+import { TeamAssociationsService } from './application/team-associations.service.js';
+import { TeamSourceViewsService } from './application/team-source-views.service.js';
+import { TeamSprintReportsService } from './application/team-sprint-reports.service.js';
+import { TeamSprintEvidence } from './application/team-sprint-evidence.js';
+import { TeamGapService } from './application/team-gap.service.js';
+import { TeamGapController } from './http/team-gap.controller.js';
 import { TeamCustodyGraph } from './application/teams-custody-graph.js';
 import { TeamCompanyAssociations } from './application/team-company-associations.js';
 import { TeamWorkService } from './application/team-work.service.js';
@@ -47,6 +53,11 @@ export class TeamsModule {
         storage,
       ],
       providers: [
+        TeamAssociationsService,
+        TeamSourceViewsService,
+        TeamSprintReportsService,
+        TeamSprintEvidence,
+        TeamGapService,
         TeamCustodyGraph,
         TeamCompanyAssociations,
         TeamsService,
@@ -66,6 +77,7 @@ export class TeamsModule {
         TeamWorkToolsService,
       ],
       controllers: [
+        TeamGapController,
         TeamsController,
         TeamInvitationController,
         TeamInvitationProofController,

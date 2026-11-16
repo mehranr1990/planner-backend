@@ -119,6 +119,10 @@ export type CalendarRangeQuery = z.infer<typeof CalendarRangeQuerySchema>;
 
 export const CalendarSeriesEditSchema = z.discriminatedUnion('scope', [
   z.strictObject({
+    scope: z.literal('CANCEL_FUTURE'),
+    recurrenceKey: CalendarLocalSchema,
+  }),
+  z.strictObject({
     scope: z.literal('THIS_OCCURRENCE'),
     recurrenceKey: CalendarLocalSchema,
     exceptionRevision: z.number().int().min(0),

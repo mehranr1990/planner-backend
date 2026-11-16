@@ -412,6 +412,16 @@ export class CalendarService<Scope extends CalendarIdentity = AuthorizedSpace> {
           successor: null,
         };
       }
+      if (input.scope === 'CANCEL_FUTURE') {
+        if (event.splitBefore && input.recurrenceKey >= event.splitBefore)
+          throw new ConflictException();
+        await this.occurrence(tx, event, input.recurrenceKey, now);
+        const updated = await tx.updateEvent(event, {
+          splitBefore: input.recurrenceKey,
+        });
+        await tx.changed('EVENT', id);
+        return { event: output(updated), exception: null, successor: null };
+      }
       if (event.splitBefore) throw new ConflictException();
       this.definition(input.event);
       if (!input.event.recurrence) fail('RECURRENCE_REQUIRED');
@@ -482,7 +492,7 @@ export class CalendarService<Scope extends CalendarIdentity = AuthorizedSpace> {
         successor: null,
       };
     };
-    if (input.scope === 'THIS_AND_FUTURE') {
+    if (input.scope === 'THIS_AND_FUTURE' || input.scope === 'CANCEL_FUTURE') {
       if (!key) throw new BadRequestException();
       return this.repo.once(
         scope,

@@ -16,6 +16,11 @@ import type {
 import { SharedTaskWork } from '../../tasks/public/index.js';
 import { TeamProjects } from '../../projects/public/index.js';
 import { TeamsService } from './teams.service.js';
+import {
+  capacityMinutes,
+  observedMinutes,
+} from '../domain/capacity-template.js';
+import { dayBoundary } from '../../calendar/public/index.js';
 import { addDays } from '../domain/collaboration.js';
 type Tx = Prisma.TransactionClient;
 type Page = z.infer<typeof c.ProjectPageQuerySchema>;
@@ -93,171 +98,201 @@ export class TeamInsightsService {
     } catch {
       throw new BadRequestException({ code: 'INVALID_TIMEZONE' });
     }
-    return this.run(actor, id, async (tx, a) => {
-      const me = a.require(tx, id, 'task.read'),
-        scope = this.scope(tx, a, id);
-      const members = (await this.kernel.currentMemberships(tx, a, id))
-        .filter((m) => m.state === 'ACTIVE')
-        .filter(
-          (m) =>
-            me.role !== 'VIEWER' ||
-            (m.id === me.accessId && m.generation === me.generation),
+    return this.run(actor, id, (tx, a) =>
+      this.capacityInTransaction(tx, a, id, q),
+    );
+  }
+  async capacityInTransaction(
+    tx: Tx,
+    a: SharedAuthority,
+    id: string,
+    query: z.infer<typeof c.TeamCapacitySummaryQuerySchema>,
+  ) {
+    const q = c.TeamCapacitySummaryQuerySchema.parse(query);
+    if (
+      q.to < q.from ||
+      (date(q.to).getTime() - date(q.from).getTime()) / 86400000 > 30
+    )
+      throw new BadRequestException({ code: 'RANGE_TOO_LARGE' });
+    try {
+      localDay(new Date(), q.timezone);
+    } catch {
+      throw new BadRequestException({ code: 'INVALID_TIMEZONE' });
+    }
+    const me = a.require(tx, id, 'task.read'),
+      scope = this.scope(tx, a, id);
+    const candidates = (await this.kernel.currentMemberships(tx, a, id))
+      .filter((m) => m.state === 'ACTIVE')
+      .filter(
+        (m) =>
+          me.role !== 'VIEWER' ||
+          (m.id === me.accessId && m.generation === me.generation),
+      );
+    if (candidates.length > 500) throw new PayloadTooLargeException();
+    const members = [];
+    for (const m of candidates)
+      if (await this.kernel.visibleWorkMember(tx, a, id, m.id, m.generation))
+        members.push(m);
+    const dates: string[] = [];
+    for (let d = q.from; d <= q.to; d = addDays(d, 1)) dates.push(d);
+    const who = members.map((m) => ({
+      accessId: m.id,
+      generation: m.generation,
+    }));
+    const capacities = who.length
+      ? await tx.teamCapacityDay.findMany({
+          where: {
+            ...scope,
+            timezone: q.timezone,
+            date: { gte: date(q.from), lte: date(q.to) },
+            OR: who,
+          },
+        })
+      : [];
+    const profiles = who.length
+      ? await tx.teamMemberProfile.findMany({ where: { ...scope, OR: who } })
+      : [];
+    const timeOff = who.length
+      ? await tx.teamTimeOff.findMany({
+          where: {
+            ...scope,
+            state: 'APPROVED',
+            startDate: { lte: date(q.to) },
+            endDate: { gte: date(q.from) },
+            OR: who,
+          },
+        })
+      : [];
+    const assignments = who.length
+      ? await tx.teamTaskAssignment.findMany({
+          where: {
+            ...scope,
+            state: 'ACCEPTED',
+            OR: who.map((m) => ({
+              assigneeAccessId: m.accessId,
+              assigneeGeneration: m.generation,
+            })),
+          },
+          take: 10001,
+        })
+      : [];
+    if (assignments.length > 10000) throw new PayloadTooLargeException();
+    const taskIds = [...new Set(assignments.map((r) => r.taskId))];
+    const visible = new Set(
+      (await this.work.scopeMetrics(tx, a, id)).map((t) => t.taskId),
+    );
+    const metrics = new Map(
+      (
+        await this.work.metrics(
+          tx,
+          a,
+          id,
+          taskIds.filter((t) => visible.has(t)),
+        )
+      ).map((t) => [t.taskId, t]),
+    );
+    const from = new Date(date(q.from).getTime() - 86400000),
+      to = new Date(date(q.to).getTime() + 2 * 86400000);
+    const logs = await this.work.taskEffort(tx, a, id, [...visible], from, to);
+    const empty = () => ({
+      availableMinutes: 0,
+      unknownDays: 0,
+      timeOffMinutes: 0,
+      netAvailableMinutes: 0,
+      reservedMinutes: 0,
+      actualMinutes: 0,
+      bookedBasisPoints: null as number | null,
+    });
+    const finish = (t: ReturnType<typeof empty>) => ({
+      ...t,
+      bookedBasisPoints:
+        t.unknownDays || !t.netAvailableMinutes
+          ? null
+          : Math.round((t.reservedMinutes * 10000) / t.netAvailableMinutes),
+    });
+    const team = empty();
+    const rows = members.map((m) => {
+      const key = (r: { accessId: string; generation: number }) =>
+        r.accessId === m.id && r.generation === m.generation;
+      const totals = empty();
+      const days = dates.map((d) => {
+        const cap = capacities.find(
+          (r) => key(r) && r.date.toISOString().slice(0, 10) === d,
         );
-      if (members.length > 500) throw new PayloadTooLargeException();
-      const dates: string[] = [];
-      for (let d = q.from; d <= q.to; d = addDays(d, 1)) dates.push(d);
-      const who = members.map((m) => ({
-        accessId: m.id,
-        generation: m.generation,
-      }));
-      const capacities = who.length
-        ? await tx.teamCapacityDay.findMany({
-            where: {
-              ...scope,
-              timezone: q.timezone,
-              date: { gte: date(q.from), lte: date(q.to) },
-              OR: who,
-            },
-          })
-        : [];
-      const timeOff = who.length
-        ? await tx.teamTimeOff.findMany({
-            where: {
-              ...scope,
-              state: 'APPROVED',
-              startDate: { lte: date(q.to) },
-              endDate: { gte: date(q.from) },
-              OR: who,
-            },
-          })
-        : [];
-      const assignments = who.length
-        ? await tx.teamTaskAssignment.findMany({
-            where: {
-              ...scope,
-              state: 'ACCEPTED',
-              OR: who.map((m) => ({
-                assigneeAccessId: m.accessId,
-                assigneeGeneration: m.generation,
-              })),
-            },
-            take: 10001,
-          })
-        : [];
-      if (assignments.length > 10000) throw new PayloadTooLargeException();
-      const taskIds = [...new Set(assignments.map((r) => r.taskId))];
-      const visible = new Set(
-        (await this.work.scopeMetrics(tx, a, id)).map((t) => t.taskId),
-      );
-      const metrics = new Map(
-        (
-          await this.work.metrics(
-            tx,
-            a,
-            id,
-            taskIds.filter((t) => visible.has(t)),
+        const profile = profiles.find(key);
+        const parsed = c.TeamWeeklyCapacityStoredSchema.safeParse(
+          profile?.capacityTemplate,
+        );
+        const available = capacityMinutes(
+          d,
+          q.timezone,
+          cap?.availableMinutes,
+          parsed.success ? parsed.data : null,
+        );
+        const off = timeOff
+          .filter(
+            (r) =>
+              key(r) &&
+              r.startDate.toISOString().slice(0, 10) <= d &&
+              r.endDate.toISOString().slice(0, 10) >= d,
           )
-        ).map((t) => [t.taskId, t]),
-      );
-      const from = new Date(date(q.from).getTime() - 86400000),
-        to = new Date(date(q.to).getTime() + 2 * 86400000);
-      const logs = await this.work.taskEffort(
-        tx,
-        a,
-        id,
-        [...visible],
-        from,
-        to,
-      );
-      const empty = () => ({
-        availableMinutes: 0,
-        unknownDays: 0,
-        timeOffMinutes: 0,
-        netAvailableMinutes: 0,
-        reservedMinutes: 0,
-        actualMinutes: 0,
-        bookedBasisPoints: null as number | null,
-      });
-      const finish = (t: ReturnType<typeof empty>) => ({
-        ...t,
-        bookedBasisPoints:
-          t.unknownDays || !t.netAvailableMinutes
-            ? null
-            : Math.round((t.reservedMinutes * 10000) / t.netAvailableMinutes),
-      });
-      const team = empty();
-      const rows = members.map((m) => {
-        const key = (r: { accessId: string; generation: number }) =>
-          r.accessId === m.id && r.generation === m.generation;
-        const totals = empty();
-        const days = dates.map((d) => {
-          const cap = capacities.find(
-            (r) => key(r) && r.date.toISOString().slice(0, 10) === d,
+          .reduce(
+            (n, r) =>
+              n + (r.minutesPerDay ?? (available === null ? 0 : available)),
+            0,
           );
-          const available = cap?.availableMinutes ?? null;
-          const off = timeOff
-            .filter(
-              (r) =>
-                key(r) &&
-                r.startDate.toISOString().slice(0, 10) <= d &&
-                r.endDate.toISOString().slice(0, 10) >= d,
-            )
-            .reduce(
-              (n, r) =>
-                n + (r.minutesPerDay ?? (available === null ? 0 : available)),
-              0,
-            );
-          const timeOffMinutes =
-            available === null ? off : Math.min(available, off);
-          const reserved = assignments
-            .filter(
-              (r) =>
-                r.assigneeAccessId === m.id &&
-                r.assigneeGeneration === m.generation,
-            )
-            .map((r) => metrics.get(r.taskId))
-            .filter(
-              (t) =>
-                t &&
-                ['OPEN', 'IN_PROGRESS'].includes(t.status) &&
-                t.scheduledDate === d,
-            )
-            .reduce((n, t) => n + (t!.estimatedMinutes ?? 0), 0);
-          const actual = logs
-            .filter((l) => key(l) && localDay(l.startedAt, q.timezone) === d)
-            .reduce((n, l) => n + minutes(l.startedAt, l.endedAt), 0);
-          const net =
-            available === null ? null : Math.max(0, available - timeOffMinutes);
-          for (const t of [totals, team]) {
-            if (available === null) t.unknownDays++;
-            else t.availableMinutes += available;
-            t.timeOffMinutes += timeOffMinutes;
-            t.netAvailableMinutes += net ?? 0;
-            t.reservedMinutes += reserved;
-            t.actualMinutes += actual;
-          }
-          return {
-            date: d,
-            availableMinutes: available,
-            timeOffMinutes,
-            netAvailableMinutes: net,
-            reservedMinutes: reserved,
-            actualMinutes: actual,
-          };
-        });
+        const timeOffMinutes =
+          available === null ? off : Math.min(available, off);
+        const reserved = assignments
+          .filter(
+            (r) =>
+              r.assigneeAccessId === m.id &&
+              r.assigneeGeneration === m.generation,
+          )
+          .map((r) => metrics.get(r.taskId))
+          .filter(
+            (t) =>
+              t &&
+              ['OPEN', 'IN_PROGRESS'].includes(t.status) &&
+              t.scheduledDate === d,
+          )
+          .reduce((n, t) => n + (t!.estimatedMinutes ?? 0), 0);
+        const actual = observedMinutes(
+          logs.filter(key),
+          dayBoundary(d, q.timezone),
+          dayBoundary(addDays(d, 1), q.timezone),
+        );
+        const net =
+          available === null ? null : Math.max(0, available - timeOffMinutes);
+        for (const t of [totals, team]) {
+          if (available === null) t.unknownDays++;
+          else t.availableMinutes += available;
+          t.timeOffMinutes += timeOffMinutes;
+          t.netAvailableMinutes += net ?? 0;
+          t.reservedMinutes += reserved;
+          t.actualMinutes += actual;
+        }
         return {
-          member: { accessId: m.id, generation: m.generation },
-          days,
-          totals: finish(totals),
+          date: d,
+          availableMinutes: available,
+          timeOffMinutes,
+          netAvailableMinutes: net,
+          reservedMinutes: reserved,
+          actualMinutes: actual,
         };
       });
-      return c.TeamCapacitySummarySchema.parse({
-        from: q.from,
-        to: q.to,
-        timezone: q.timezone,
-        members: rows,
-        totals: finish(team),
-      });
+      return {
+        member: { accessId: m.id, generation: m.generation },
+        days,
+        totals: finish(totals),
+      };
+    });
+    return c.TeamCapacitySummarySchema.parse({
+      from: q.from,
+      to: q.to,
+      timezone: q.timezone,
+      members: rows,
+      totals: finish(team),
     });
   }
 

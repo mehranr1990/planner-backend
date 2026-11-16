@@ -1,3 +1,4 @@
+import { teamGapPaths } from './team-gap-closure-openapi.js';
 import { meetingPaths } from './meetings-openapi.js';
 import { socialPaths } from './social-openapi.js';
 import { communicationLifecyclePaths } from './communication-lifecycle-openapi.js';
@@ -308,7 +309,10 @@ export function createOpenApiDocument() {
     },
   };
   const paths = document.paths as Record<string, Record<string, unknown>>;
-  for (const [path, operations] of Object.entries(projectGapPaths()))
+  for (const [path, operations] of Object.entries({
+    ...projectGapPaths(),
+    ...teamGapPaths(),
+  }))
     paths[path] = { ...paths[path], ...operations };
   return document;
 }

@@ -1,3 +1,17 @@
+import {
+  TeamForecastSchema,
+  TeamVisibleTasksSchema,
+  TeamSourceCalendarSchema,
+  TeamSprintHistoryPageSchema,
+} from '@mehran/api-contracts';
+import { SharedCalendar } from '../../src/modules/calendar/public/index.js';
+import { SharedKernel } from '../../src/modules/spaces/public/index.js';
+import { TeamGapService } from '../../src/modules/teams/application/team-gap.service.js';
+import { TeamMeetingsService } from '../../src/modules/teams/application/team-meetings.service.js';
+import { TeamSprintReportsService } from '../../src/modules/teams/application/team-sprint-reports.service.js';
+import { TeamAssociationsService } from '../../src/modules/teams/application/team-associations.service.js';
+import { TeamSourceViewsService } from '../../src/modules/teams/application/team-source-views.service.js';
+import { ProjectsService } from '../../src/modules/projects/public/index.js';
 import { TeamWorkToolsService } from '../../src/modules/teams/application/team-work-tools.service.js';
 import { TeamFilesService } from '../../src/modules/teams/application/team-files.service.js';
 import { TeamOperationsService } from '../../src/modules/teams/application/team-operations.service.js';
@@ -1606,5 +1620,871 @@ describe('Team completion: settings, presence, check-ins, recognition, feedback 
         (i) => i.taskId === second.id,
       ),
     ).toMatchObject({ blockedBy: [], ready: true });
+  });
+  it('P3 gaps: weekly capacity stays unknown, respects exceptions, and pending time-off edits retain private history', async () => {
+    const { t, m } = await crew(),
+      g = app.get(TeamGapService),
+      ops = app.get(TeamOperationsService),
+      analytics = app.get(TeamAnalyticsService);
+    expect(await g.weekly(owner.actor, t.id, m.accessId)).toMatchObject({
+      template: null,
+      revision: 1,
+    });
+    const body = {
+      timezone: 'America/New_York',
+      effectiveFrom: '2030-01-01',
+      weekdays: [0, 300, 240, null, 360, 180, 0],
+    };
+    await expect(
+      g.setWeekly(member.actor, t.id, m.accessId, 1, body),
+    ).rejects.toMatchObject({ status: 403 });
+    await g.setWeekly(owner.actor, t.id, m.accessId, 1, body);
+    await expect(
+      g.setWeekly(owner.actor, t.id, m.accessId, 1, body),
+    ).rejects.toMatchObject({ status: 409 });
+    await expect(
+      g.weekly(viewer.actor, t.id, m.accessId),
+    ).rejects.toMatchObject({ status: 404 });
+    const q = {
+      from: '2030-01-07',
+      to: '2030-01-09',
+      timezone: 'America/New_York',
+    };
+    const before = await g.availability(member.actor, t.id, q);
+    expect(
+      before.capacity.members
+        .find((r) => r.member.accessId === m.accessId)
+        ?.days.map((d) => d.availableMinutes),
+    ).toEqual([300, 240, null]);
+    expect(before.personalAvailability).toBe('UNKNOWN');
+    try {
+      await client.user.update({
+        where: { id: member.actor.userId },
+        data: { emailVerified: false },
+      });
+      await expect(
+        g.weekly(owner.actor, t.id, m.accessId),
+      ).rejects.toMatchObject({ status: 404 });
+      expect(
+        (await g.availability(owner.actor, t.id, q)).capacity.members.some(
+          (r) => r.member.accessId === m.accessId,
+        ),
+      ).toBe(false);
+    } finally {
+      await client.user.update({
+        where: { id: member.actor.userId },
+        data: { emailVerified: true },
+      });
+    }
+
+    await analytics.capacity(
+      owner.actor,
+      t.id,
+      {
+        id: randomUUID(),
+        member: m,
+        date: '2030-01-07',
+        timezone: q.timezone,
+        availableMinutes: 0,
+      },
+      undefined,
+      randomUUID(),
+    );
+    expect(
+      (await g.availability(member.actor, t.id, q)).capacity.members.find(
+        (r) => r.member.accessId === m.accessId,
+      )?.days[0]?.availableMinutes,
+    ).toBe(0);
+    const leave = await ops.requestTimeOff(
+      member.actor,
+      t.id,
+      {
+        id: randomUUID(),
+        startDate: q.from,
+        endDate: q.from,
+        minutesPerDay: null,
+        reason: 'PRIVATE LEAVE',
+      },
+      randomUUID(),
+    );
+    const edited = await ops.editTimeOff(
+      member.actor,
+      t.id,
+      leave.id,
+      leave.revision,
+      {
+        id: leave.id,
+        startDate: '2030-01-08',
+        endDate: '2030-01-08',
+        minutesPerDay: null,
+        reason: 'PRIVATE EDIT',
+      },
+    );
+    expect(edited).toMatchObject({
+      revision: 2,
+      state: 'PENDING',
+      startDate: '2030-01-08',
+    });
+    await expect(
+      ops.editTimeOff(member.actor, t.id, leave.id, 1, {
+        id: leave.id,
+        startDate: q.from,
+        endDate: q.from,
+        minutesPerDay: null,
+        reason: null,
+      }),
+    ).rejects.toMatchObject({ status: 409 });
+    const approved = await ops.decideTimeOff(owner.actor, t.id, leave.id, 2, {
+      decision: 'APPROVE',
+      note: null,
+    });
+    await expect(
+      ops.editTimeOff(member.actor, t.id, leave.id, approved.revision, {
+        id: leave.id,
+        startDate: q.from,
+        endDate: q.from,
+        minutesPerDay: null,
+        reason: null,
+      }),
+    ).rejects.toMatchObject({ status: 409 });
+    expect(
+      (
+        await ops.timeOffHistory(member.actor, t.id, leave.id, { limit: 100 })
+      ).items.map((i) => i.action),
+    ).toContain('EDITED');
+    expect(
+      JSON.stringify(await g.activity(owner.actor, t.id, { limit: 100 })),
+    ).not.toContain('PRIVATE');
+    expect(
+      await app.get(TeamFilesService).configuration(viewer.actor, t.id),
+    ).toMatchObject({
+      maxBytes: expect.any(Number),
+      allowedTypes: expect.arrayContaining(['application/pdf']),
+    });
+  });
+  it('P3 gaps: invitation management reuses proof rotation and never returns recipient proofs', async () => {
+    const t = await team(),
+      offer = await invite(t.id),
+      key = randomUUID();
+    const rows = await service.projectSent(
+      owner.actor,
+      t.id,
+      { limit: 100, state: 'PENDING' },
+      'TEAM',
+    );
+    expect(rows.items[0]).toMatchObject({
+      recipientEmail: member.email,
+      createdAt: expect.any(String),
+      sentAt: expect.any(String),
+    });
+    expect(JSON.stringify(rows)).not.toContain(offer.proof);
+    await expect(
+      service.projectSent(
+        member.actor,
+        t.id,
+        { limit: 25, state: 'PENDING' },
+        'TEAM',
+      ),
+    ).rejects.toMatchObject({ status: 404 });
+    const sent = await service.resendProjectInvitation(
+      owner.actor,
+      t.id,
+      offer.invitation.id,
+      1,
+      key,
+      'TEAM',
+    );
+    expect(sent.revision).toBe(2);
+    expect(
+      await service.resendProjectInvitation(
+        owner.actor,
+        t.id,
+        offer.invitation.id,
+        1,
+        key,
+        'TEAM',
+      ),
+    ).toEqual(sent);
+    await expect(
+      service.decideInvitation(
+        member.actor,
+        offer.invitation.id,
+        offer.proof!,
+        1,
+        true,
+        'TEAM',
+      ),
+    ).rejects.toBeDefined();
+    await service.revokeInvitation(owner.actor, t.id, offer.invitation.id, 2);
+    await expect(
+      service.resendProjectInvitation(
+        owner.actor,
+        t.id,
+        offer.invitation.id,
+        3,
+        randomUUID(),
+        'TEAM',
+      ),
+    ).rejects.toMatchObject({ status: 409 });
+  });
+  it('P3 gaps: recurring MAYBE responses are recipient-only, revision protected and occurrence-specific', async () => {
+    const { t, m } = await crew(),
+      meetings = app.get(TeamMeetingsService);
+    const meeting = await meetings.create(
+      owner.actor,
+      t.id,
+      {
+        id: randomUUID(),
+        agenda: 'Agenda',
+        event: {
+          title: 'Recurring RSVP',
+          schedule: {
+            kind: 'TIMED',
+            timezone: 'UTC',
+            localStart: '2030-01-07T09:00',
+            localEnd: '2030-01-07T10:00',
+          },
+          recurrence: {
+            version: 1,
+            startDate: '2030-01-07',
+            endDate: '2030-01-09',
+            localTime: '09:00',
+            timezone: 'UTC',
+            rule: { kind: 'DAILY', interval: 1 },
+            exclusionDates: [],
+          },
+        },
+      },
+      randomUUID(),
+    );
+    const expiresAt = new Date(Date.now() + 86400000).toISOString();
+    const series = await meetings.invite(
+      owner.actor,
+      t.id,
+      meeting.id,
+      1,
+      { id: randomUUID(), member: m, expiresAt },
+      randomUUID(),
+    );
+    await expect(
+      meetings.respond(owner.actor, t.id, meeting.id, series.id, 1, 'MAYBE'),
+    ).rejects.toMatchObject({ status: 403 });
+    const maybe = await meetings.respond(
+      member.actor,
+      t.id,
+      meeting.id,
+      series.id,
+      1,
+      'MAYBE',
+    );
+    expect(maybe.state).toBe('MAYBE');
+    await expect(
+      meetings.respond(
+        member.actor,
+        t.id,
+        meeting.id,
+        series.id,
+        1,
+        'ACCEPTED',
+      ),
+    ).rejects.toMatchObject({ status: 409 });
+    await meetings.respond(
+      member.actor,
+      t.id,
+      meeting.id,
+      series.id,
+      2,
+      'ACCEPTED',
+    );
+    const occurrence = await meetings.invite(
+      owner.actor,
+      t.id,
+      meeting.id,
+      1,
+      {
+        id: randomUUID(),
+        member: m,
+        expiresAt,
+        recurrenceKey: '2030-01-08T09:00',
+      },
+      randomUUID(),
+    );
+    await meetings.respond(
+      member.actor,
+      t.id,
+      meeting.id,
+      occurrence.id,
+      1,
+      'MAYBE',
+    );
+    expect(
+      await meetings.summary(owner.actor, t.id, meeting.id, {}),
+    ).toMatchObject({ accepted: 1, maybe: 0 });
+    expect(
+      await meetings.summary(owner.actor, t.id, meeting.id, {
+        recurrenceKey: '2030-01-08T09:00',
+      }),
+    ).toMatchObject({ accepted: 0, maybe: 1 });
+    await expect(
+      meetings.summary(member.actor, t.id, meeting.id, {}),
+    ).rejects.toMatchObject({ status: 403 });
+    await work.calendarCommand(
+      owner.actor,
+      t.id,
+      {
+        kind: 'SERIES',
+        id: meeting.event.id,
+        revision: 1,
+        key: randomUUID(),
+        input: { scope: 'CANCEL_FUTURE', recurrenceKey: '2030-01-08T09:00' },
+      },
+      randomUUID(),
+    );
+    await expect(
+      meetings.respond(
+        member.actor,
+        t.id,
+        meeting.id,
+        occurrence.id,
+        2,
+        'ACCEPTED',
+      ),
+    ).rejects.toMatchObject({ status: 409 });
+    const remaining = (await work.calendarCommand(owner.actor, t.id, {
+      kind: 'VIEW',
+      query: {
+        from: '2030-01-07',
+        to: '2030-01-10',
+        timezone: 'UTC',
+        limit: '100',
+      },
+    })) as { items: { recurrenceKey: string }[] };
+    expect(
+      remaining.items.filter((i) => i.recurrenceKey === '2030-01-07T09:00'),
+    ).toHaveLength(1);
+    expect(
+      remaining.items.some((i) => i.recurrenceKey >= '2030-01-08T09:00'),
+    ).toBe(false);
+  });
+  it('P3 gaps: Sprint observations preserve scope/point history and do not fabricate legacy burndown', async () => {
+    const { t } = await crew(),
+      g = app.get(TeamGapService),
+      reports = app.get(TeamSprintReportsService),
+      ops = app.get(TeamOperationsService);
+    const sprint = await plan(t.id, 'SPRINT', '2030-01-05', '2030-01-19');
+    const task = await work.createTask(
+      owner.actor,
+      t.id,
+      { id: randomUUID(), title: 'Evidence', priority: 'NONE' },
+      randomUUID(),
+    );
+    await ops.setPoints(owner.actor, t.id, task.id, 1, { points: 5 });
+    await work.createItem(
+      owner.actor,
+      t.id,
+      {
+        id: randomUUID(),
+        target: { kind: 'TASK', spaceId: t.id, id: task.id },
+        sourceRevision: task.revision,
+        planId: sprint.id,
+        position: 0,
+      },
+      randomUUID(),
+    );
+    expect(await reports.burndown(owner.actor, t.id, sprint.id)).toMatchObject({
+      basis: 'INSUFFICIENT_HISTORY',
+      originalCommittedTasks: null,
+    });
+    expect(await g.sprintCapacity(owner.actor, t.id, sprint.id)).toMatchObject({
+      capacityPoints: null,
+      committedPoints: 5,
+      remainingPoints: null,
+    });
+    const configured = await g.setSprintCapacity(
+      owner.actor,
+      t.id,
+      sprint.id,
+      1,
+      { capacityPoints: 8 },
+    );
+    const active = await work.patchPlan(
+      owner.actor,
+      t.id,
+      sprint.id,
+      configured.revision,
+      { state: 'ACTIVE' },
+    );
+    await planning.setBoardState(member.actor, t.id, task.id, 1, {
+      state: 'DONE',
+    });
+    await work.patchPlan(owner.actor, t.id, sprint.id, active.revision, {
+      state: 'CLOSED',
+    });
+    expect(
+      (
+        await reports.history(member.actor, t.id, sprint.id, { limit: 100 })
+      ).items.map((i) => i.action),
+    ).toContain('team.task.board-state');
+    expect(
+      (await reports.velocity(viewer.actor, t.id, { limit: 12 })).items[0],
+    ).toMatchObject({ completedPoints: 5, completedTasks: 1, state: 'KNOWN' });
+    await expect(
+      g.setSprintCapacity(member.actor, t.id, sprint.id, active.revision, {
+        capacityPoints: 100,
+      }),
+    ).rejects.toMatchObject({ status: 403 });
+    expect(
+      (await reports.burndown(owner.actor, t.id, sprint.id)).days.every(
+        (d) => d.remainingPoints === null,
+      ),
+    ).toBe(true); // All dates are future.
+    expect(await reports.burndown(owner.actor, t.id, sprint.id)).toMatchObject({
+      originalCommittedPoints: 5,
+      currentPoints: 5,
+    });
+  });
+  it('P3 gaps: association review preserves independent Project permissions and source projections', async () => {
+    const { t } = await crew(),
+      projects = app.get(ProjectsService),
+      associations = app.get(TeamAssociationsService),
+      sources = app.get(TeamSourceViewsService);
+    const project = await projects.create(
+      owner.actor,
+      {
+        id: randomUUID(),
+        title: 'PRIVATE PROJECT',
+        retentionPolicyVersion: version,
+      },
+      randomUUID(),
+    );
+    const source = await projects.createTask(
+      owner.actor,
+      project.id,
+      { id: randomUUID(), title: 'PRIVATE PROJECT TASK', priority: 'NONE' },
+      randomUUID(),
+    );
+    const requested = await associations.command(
+      owner.actor,
+      t.id,
+      project.id,
+      1,
+      { id: randomUUID(), action: 'LINK' },
+      randomUUID(),
+    );
+    expect(requested).toMatchObject({
+      active: false,
+      request: { state: 'PENDING' },
+    });
+    await join(t.id, reviewer, 'ADMIN');
+    await join(project.id, reviewer, 'MEMBER');
+    await expect(
+      associations.command(
+        reviewer.actor,
+        t.id,
+        project.id,
+        requested.revision,
+        { decision: 'APPROVE' },
+      ),
+    ).rejects.toMatchObject({ status: 403 });
+    await expect(
+      associations.command(member.actor, t.id, project.id, requested.revision, {
+        decision: 'APPROVE',
+      }),
+    ).rejects.toBeDefined();
+    const approved = await associations.command(
+      owner.actor,
+      t.id,
+      project.id,
+      requested.revision,
+      { decision: 'APPROVE' },
+    );
+    expect(approved).toMatchObject({
+      active: true,
+      request: { state: 'APPROVED' },
+      implications: { grantsProjectMembership: false },
+    });
+    const withdraw = await associations.command(
+      owner.actor,
+      t.id,
+      project.id,
+      approved.revision,
+      { id: randomUUID(), action: 'UNLINK' },
+      randomUUID(),
+    );
+    const canceled = await associations.command(
+      reviewer.actor,
+      t.id,
+      project.id,
+      withdraw.revision,
+      { decision: 'CANCEL' },
+    );
+    expect(canceled).toMatchObject({
+      active: true,
+      request: { state: 'CANCELED' },
+    });
+    const retry = await associations.command(
+      owner.actor,
+      t.id,
+      project.id,
+      canceled.revision,
+      { id: randomUUID(), action: 'UNLINK' },
+      randomUUID(),
+    );
+    const rejected = await associations.command(
+      owner.actor,
+      t.id,
+      project.id,
+      retry.revision,
+      { decision: 'REJECT' },
+    );
+    expect(rejected).toMatchObject({
+      active: true,
+      request: { state: 'REJECTED' },
+    });
+    expect(
+      (
+        await associations.history(owner.actor, t.id, project.id, {
+          limit: 100,
+        })
+      ).items.map((i) => i.action),
+    ).toEqual(
+      expect.arrayContaining([
+        'team.project.association.request',
+        'team.project.association.approve',
+        'team.project.association.cancel',
+        'team.project.association.reject',
+      ]),
+    );
+    const sprint = await plan(t.id, 'SPRINT', '2030-01-05', '2030-01-19');
+    await work.patchPlan(owner.actor, t.id, sprint.id, sprint.revision, {
+      state: 'ACTIVE',
+    });
+    const privateItem = await work.createItem(
+      owner.actor,
+      t.id,
+      {
+        id: randomUUID(),
+        target: { kind: 'TASK', spaceId: project.spaceId, id: source.id },
+        sourceRevision: source.revision,
+        planId: sprint.id,
+        position: 0,
+      },
+      randomUUID(),
+    );
+    const reports = app.get(TeamSprintReportsService),
+      gaps = app.get(TeamGapService);
+    const ownerHistory = TeamSprintHistoryPageSchema.parse(
+      await reports.history(owner.actor, t.id, sprint.id, { limit: 100 }),
+    );
+    expect(
+      ownerHistory.items.some((r) => r.resourceId === privateItem.id),
+    ).toBe(true);
+    expect(
+      TeamSprintHistoryPageSchema.parse(
+        await reports.history(member.actor, t.id, sprint.id, { limit: 100 }),
+      ).items.some((r) => r.resourceId === privateItem.id),
+    ).toBe(false);
+    expect(
+      (
+        await gaps.activity(member.actor, t.id, {
+          limit: 100,
+          resourceId: privateItem.id,
+        })
+      ).items,
+    ).toEqual([]);
+    await work.removeItem(
+      owner.actor,
+      t.id,
+      privateItem.id,
+      privateItem.revision,
+    );
+    expect(
+      (
+        await gaps.activity(member.actor, t.id, {
+          limit: 100,
+          resourceId: privateItem.id,
+        })
+      ).items,
+    ).toEqual([]);
+    const kernel = app.get(SharedKernel),
+      calendar = app.get(SharedCalendar);
+    await kernel.run(
+      owner.actor,
+      { userIds: [], spaceIds: [project.id] },
+      [
+        { spaceId: project.id, scopeId: project.id, capability: 'task.read' },
+        { spaceId: project.id, scopeId: project.id, capability: 'work.manage' },
+      ],
+      (tx, a) =>
+        calendar.run(tx, a, owner.actor, project.id, {
+          kind: 'CREATE',
+          key: randomUUID(),
+          input: {
+            title: 'PRIVATE PROJECT EVENT',
+            schedule: {
+              kind: 'TIMED',
+              timezone: 'UTC',
+              localStart: '2030-01-07T09:00',
+              localEnd: '2030-01-07T10:00',
+            },
+          },
+        }),
+    );
+    const window = {
+      from: '2030-01-07',
+      to: '2030-01-08',
+      timezone: 'UTC',
+      source: 'ALL' as const,
+      limit: '100',
+    };
+    expect(
+      JSON.stringify(
+        await sources.sources(owner.actor, t.id, window, 'CALENDAR'),
+      ),
+    ).toContain('PRIVATE PROJECT EVENT');
+    expect(
+      JSON.stringify(
+        await sources.sources(member.actor, t.id, window, 'CALENDAR'),
+      ),
+    ).not.toContain('PRIVATE PROJECT EVENT');
+    expect(
+      await sources.sources(owner.actor, t.id, window, 'OCCUPANCY'),
+    ).toMatchObject({
+      visibleEvents: 1,
+      occupiedMinutes: 60,
+      unknownIntervals: 0,
+    });
+    await work.createTask(
+      owner.actor,
+      t.id,
+      { id: randomUUID(), title: 'Team pagination', priority: 'NONE' },
+      randomUUID(),
+    );
+    const taskPage = TeamVisibleTasksSchema.parse(
+      await sources.sources(
+        owner.actor,
+        t.id,
+        { limit: 1, source: 'ALL' },
+        'TASK',
+      ),
+    );
+    expect(taskPage.nextCursor).not.toBeNull();
+    const taskPage2 = TeamVisibleTasksSchema.parse(
+      await sources.sources(
+        owner.actor,
+        t.id,
+        { limit: 1, source: 'ALL', after: taskPage.nextCursor! },
+        'TASK',
+      ),
+    );
+    expect(taskPage2.items[0]!.task.id).not.toBe(taskPage.items[0]!.task.id);
+    await work.calendarCommand(
+      owner.actor,
+      t.id,
+      {
+        kind: 'CREATE',
+        key: randomUUID(),
+        input: {
+          title: 'Team pagination event',
+          schedule: {
+            kind: 'TIMED',
+            timezone: 'UTC',
+            localStart: '2030-01-07T11:00',
+            localEnd: '2030-01-07T12:00',
+          },
+        },
+      },
+      randomUUID(),
+    );
+    const eventPage = TeamSourceCalendarSchema.parse(
+      await sources.sources(
+        owner.actor,
+        t.id,
+        { ...window, limit: '1' },
+        'CALENDAR',
+      ),
+    );
+    expect(eventPage.nextCursor).not.toBeNull();
+    const eventPage2 = TeamSourceCalendarSchema.parse(
+      await sources.sources(
+        owner.actor,
+        t.id,
+        { ...window, limit: '1', cursor: eventPage.nextCursor! },
+        'CALENDAR',
+      ),
+    );
+    expect(eventPage2.items[0]!.occurrence.identity).not.toBe(
+      eventPage.items[0]!.occurrence.identity,
+    );
+    const historyPage = await reports.history(member.actor, t.id, sprint.id, {
+      limit: 1,
+    });
+    expect(historyPage.nextCursor).not.toBeNull();
+    expect(
+      (
+        await reports.history(member.actor, t.id, sprint.id, {
+          limit: 1,
+          after: historyPage.nextCursor!,
+        })
+      ).items[0]?.id,
+    ).not.toBe(historyPage.items[0]?.id);
+    const mine = (await sources.sources(
+      owner.actor,
+      t.id,
+      { limit: 100, source: 'ALL' },
+      'TASK',
+    )) as { items: { task: { id: string } }[] };
+    expect(mine.items.map((i) => i.task.id)).toContain(source.id);
+    expect(
+      JSON.stringify(
+        await sources.sources(
+          member.actor,
+          t.id,
+          { limit: 100, source: 'ALL' },
+          'TASK',
+        ),
+      ),
+    ).not.toContain('PRIVATE PROJECT');
+    await expect(
+      service.projectSent(member.actor, project.id, {
+        limit: 25,
+        state: 'PENDING',
+      }),
+    ).rejects.toMatchObject({ status: 404 });
+  });
+  it('P3 gaps: Team assignment withdrawal preserves acceptance evidence and reoffers pending work', async () => {
+    const { t, m } = await crew(),
+      ops = app.get(TeamOperationsService);
+    const task = await work.createTask(
+      owner.actor,
+      t.id,
+      { id: randomUUID(), title: 'Withdrawal', priority: 'NONE' },
+      randomUUID(),
+    );
+    const offer = await ops.assign(
+      owner.actor,
+      t.id,
+      task.id,
+      { id: randomUUID(), assignee: m },
+      randomUUID(),
+    );
+    const accepted = await ops.respond(
+      member.actor,
+      t.id,
+      offer.id,
+      offer.revision,
+      'accept',
+    );
+    const body = { id: randomUUID() },
+      key = randomUUID();
+    const withdrawn = await ops.revert(
+      member.actor,
+      t.id,
+      offer.id,
+      accepted.revision,
+      body,
+      key,
+    );
+    expect(withdrawn.previous).toMatchObject({
+      state: 'REMOVED',
+      endReason: 'WITHDRAWN',
+      respondedAt: accepted.respondedAt,
+    });
+    expect(withdrawn.current).toMatchObject({ state: 'PENDING', assignee: m });
+    expect(
+      await ops.revert(
+        member.actor,
+        t.id,
+        offer.id,
+        accepted.revision,
+        body,
+        key,
+      ),
+    ).toEqual(withdrawn);
+    expect(
+      (
+        await ops.assignmentHistory(member.actor, t.id, offer.id, {
+          limit: 100,
+        })
+      ).items.map((i) => i.action),
+    ).toEqual(expect.arrayContaining(['ACCEPTED', 'REVERTED']));
+    await expect(
+      ops.revert(
+        owner.actor,
+        t.id,
+        offer.id,
+        accepted.revision,
+        { id: randomUUID() },
+        randomUUID(),
+      ),
+    ).rejects.toMatchObject({ status: 404 });
+  });
+
+  it('P3 gaps: forecast missing estimates and cross-Team summaries never import colleague or Personal schedules', async () => {
+    const { t, m } = await crew(),
+      g = app.get(TeamGapService),
+      sources = app.get(TeamSourceViewsService),
+      ops = app.get(TeamOperationsService);
+    const task = await work.createTask(
+      owner.actor,
+      t.id,
+      { id: randomUUID(), title: 'Unestimated future', priority: 'NONE' },
+      randomUUID(),
+    );
+    const assignment = await ops.assign(
+      owner.actor,
+      t.id,
+      task.id,
+      { id: randomUUID(), assignee: m },
+      randomUUID(),
+    );
+    await ops.respond(
+      member.actor,
+      t.id,
+      assignment.id,
+      assignment.revision,
+      'accept',
+    );
+    await work.schedule(owner.actor, t.id, task.id, {
+      revision: task.revision,
+      value: { plannedStartAt: null, dueAt: null, scheduledDate: '2030-01-07' },
+    });
+    await g.setWeekly(owner.actor, t.id, m.accessId, 1, {
+      timezone: 'UTC',
+      effectiveFrom: '2030-01-01',
+      weekdays: [0, 300, 240, 360, 300, 240, 0],
+    });
+    const q = { from: '2030-01-07', to: '2030-01-08', timezone: 'UTC' };
+    const forecast = TeamForecastSchema.parse(
+      await g.availability(member.actor, t.id, q, true),
+    );
+    expect(
+      forecast.periods.find(
+        (p) => p.member.accessId === m.accessId && p.date === q.from,
+      ),
+    ).toMatchObject({ state: 'UNKNOWN', remainingMinutes: null });
+    const aggregate = await sources.crossWorkload(member.actor, q);
+    expect(aggregate.distinctTasks).toBeGreaterThanOrEqual(1);
+    expect(aggregate.unknownEstimates).toBeGreaterThanOrEqual(1);
+    for (const item of aggregate.items) {
+      const access = await teams.accessMe(member.actor, item.teamId);
+      expect(
+        item.capacity.members.every(
+          (r) => r.member.accessId === access.accessId,
+        ),
+      ).toBe(true);
+    }
+    expect(JSON.stringify(aggregate)).not.toContain('reason');
+    const activity = await g.activity(owner.actor, t.id, { limit: 1 });
+    expect(activity.items.length).toBe(1);
+    if (activity.nextCursor)
+      expect(
+        (
+          await g.activity(owner.actor, t.id, {
+            limit: 1,
+            after: activity.nextCursor,
+          })
+        ).items[0]?.id,
+      ).not.toBe(activity.items[0]?.id);
   });
 });

@@ -1,5 +1,11 @@
 # Team Backend completion (T-M1 to T-M4): report
 
+> **P3-GAP-CLOSURE, 2026-11-16:** This historical report is superseded for the
+> current approved scope by [Teams gap closure](p3-gap-closure-report.md), its
+> [requirements register](BACKEND_REQUIREMENTS.md) and
+> [Claude handoff](frontend-handoff/TEAMS_GAP_CLOSURE.md). Earlier decisions and
+> verification below remain a historical record, not current blockers.
+
 > **Update 2026-11-13 (backend completion):** The FK-catalog re-pin, transfer-catalog entries and most items listed as blocked here were completed. The contract is now 960 operations. The current status, remaining items and operator setup are in [`backend-pre-frontend-integration-report.md`](backend-pre-frontend-integration-report.md).
 
 Date: 2026-11-13. Status: **PARTIAL.** The code is complete and tested. Two things block release:

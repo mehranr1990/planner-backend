@@ -12,6 +12,16 @@ const responseExtensions = JSON.parse(
 ) as Record<string, { previous: string; approved: string }>;
 // P2-GAP-CLOSURE: reviewed exact extensions of Project contracts and unified
 // Task projections. Historical baselines remain immutable, including older hashes.
+const teamExtensions = JSON.parse(
+  fs.readFileSync(
+    new URL('./team-gap-api-extensions.json', import.meta.url),
+    'utf8',
+  ),
+) as Record<string, { previous: string[]; approved: string }>;
+export function approvedTeamHash(contract: string, previous: string) {
+  const change = teamExtensions[contract];
+  return change?.previous.includes(previous) ? change.approved : previous;
+}
 const projectExtensions = JSON.parse(
   fs.readFileSync(
     new URL('./project-gap-api-extensions.json', import.meta.url),
@@ -23,7 +33,10 @@ export function approvedProjectHash(
   previous: string,
 ): string {
   const change = projectExtensions[contract];
-  return change?.previous.includes(previous) ? change.approved : previous;
+  return approvedTeamHash(
+    contract,
+    change?.previous.includes(previous) ? change.approved : previous,
+  );
 }
 Object.assign(
   responseExtensions,
@@ -235,9 +248,11 @@ export function assertApiCompatible(
   for (const [contract, hash] of Object.entries(baseline)) {
     const extension = responseExtensions[contract];
     if (
-      current[contract] !== approvedProjectHash(contract, hash) &&
+      current[contract] !==
+        approvedTeamHash(contract, approvedProjectHash(contract, hash)) &&
       !(
-        extension?.previous === hash && extension.approved === current[contract]
+        extension?.previous === hash &&
+        approvedTeamHash(contract, extension.approved) === current[contract]
       )
     )
       throw new Error(

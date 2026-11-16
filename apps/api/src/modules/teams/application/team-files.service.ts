@@ -44,6 +44,14 @@ export class TeamFilesService {
     @Inject(SharedFiles) private readonly files: SharedFiles,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {}
+  configuration(actor: RequestActor, id: string) {
+    return this.op.read(actor, id, async () =>
+      c.ProjectFileConfigSchema.parse({
+        maxBytes: Math.min(this.config.FILE_MAX_BYTES, 104857600),
+        allowedTypes: c.FileMimeSchema.options,
+      }),
+    );
+  }
   private me(s: Interaction): Member {
     const a = this.op.access(s);
     return ref(a.accessId, a.generation);
