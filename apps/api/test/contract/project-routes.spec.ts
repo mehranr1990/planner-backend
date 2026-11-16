@@ -1,3 +1,4 @@
+import { projectGapOperations } from '../../../../packages/api-contracts/src/project-gap-closure-openapi.js';
 import 'reflect-metadata';
 import { it, expect } from 'vitest';
 import {
@@ -50,8 +51,12 @@ it('matches every exported Project operation to an actual compiled controller ha
   const expected = Object.entries(projectPaths()).flatMap(([path, ops]) =>
     Object.keys(ops).map((method) => method + ' ' + path),
   );
+  const additions = projectGapOperations
+    .map((o) => o.method + ' /api/v1' + o.path)
+    .filter((key) => actual.includes(key));
+  expected.push(...additions);
   expect(actual.sort()).toEqual(expected.sort());
-  expect(actual).toHaveLength(44);
+  expect(actual).toHaveLength(44 + additions.length);
 });
 it('leaves future Team/Company association intents non-executable', () => {
   expect(executableProjectAssociation({ kind: 'INDEPENDENT' })).toBe(true);

@@ -283,6 +283,17 @@ describe('scoped persistence and API conventions', () => {
       '202611150057_focus_recovery',
       '202611150058_working_hours',
       '202611150059_routine_reminders',
+      '202611150060_project_order_phase_dates',
+      '202611150061_project_activity_details',
+      '202611150062_project_assignment_notices',
+      '202611150063_workflow_drafts',
+      '202611150064_project_invitation_details',
+      '202611150065_project_register_details',
+      '202611150066_project_register_comments',
+      '202611150067_initial_project_templates',
+      '202611150068_project_file_library',
+      '202611160069_project_key_uniqueness',
+      '202611160070_project_key_identity_erasure',
     ]);
     for (const sql of [
       '',

@@ -179,10 +179,10 @@ export class TeamWorkService {
   async createTask(
     actor: RequestActor,
     id: string,
-    input: z.infer<typeof c.ProjectTaskCreateSchema>,
+    input: z.infer<typeof c.TeamTaskCreateSchema>,
     key: string | undefined,
   ) {
-    const body = c.ProjectTaskCreateSchema.parse(input);
+    const body = c.TeamTaskCreateSchema.parse(input);
     return this.run(actor, id, 'task.create', async (tx, a) => {
       await this.once(
         tx,
@@ -227,10 +227,10 @@ export class TeamWorkService {
     id: string,
     sourceId: string,
     revision: number,
-    input: z.infer<typeof c.ProjectTaskPatchSchema>,
+    input: z.infer<typeof c.TeamTaskPatchSchema>,
     key: string | undefined,
   ) {
-    const body = c.ProjectTaskPatchSchema.parse(input),
+    const body = c.TeamTaskPatchSchema.parse(input),
       cap =
         body.status === 'DONE' || body.status === 'OPEN'
           ? 'task.complete'

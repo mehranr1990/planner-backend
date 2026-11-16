@@ -1,0 +1,350 @@
+{
+  "post /api/v1/invitations/{id}/decline request": {
+    "previous": [
+      "49bc7ce612c1f38e135773147b15cf32938a7cdb8f140beb1f10bbe249b89007"
+    ],
+    "approved": "439204c87b6d379d10ddabe86b97433e6c54186aca26e1ba25529a7ebcc9b4ff"
+  },
+  "post /api/v1/projects request": {
+    "previous": [
+      "e1251d4c323c96cb001f142c94ebacec624e78845c4a9592e6a44140c4acdbf8"
+    ],
+    "approved": "589b4000facd469da3af711f6d959290e6d5948e3c6995bd80a01cba81569367"
+  },
+  "get /api/v1/projects/{id}/components/{kind} response 200": {
+    "previous": [
+      "6e806ff9ccea3ed68ccd3bb22d7168e0cee326626a2a67e17f6dffe9803fb7e0"
+    ],
+    "approved": "2a11a29faf497ca0b140dcce044637de47145c2cf50c8a9e8790f5200fb0d464"
+  },
+  "post /api/v1/projects/{id}/components/{kind} request": {
+    "previous": [
+      "a782a08beb0602c659b12aa6c9c282b4adb0b64f0af7c7e492a52484a6b1cdb0"
+    ],
+    "approved": "a38fbcc6096737d46d9e88133057f19d4fe160d9ec49039d9946551f65a2fd27"
+  },
+  "post /api/v1/projects/{id}/components/{kind} response 201": {
+    "previous": [
+      "5379ad4bdad8554a32402554b918532185d8e32107df383251f62cac50780064"
+    ],
+    "approved": "2383690e8414f91bd6d85ed91ebc9e88e436369950f22e7491a842833ae77f5b"
+  },
+  "patch /api/v1/projects/{id}/components/{kind}/{componentId} request": {
+    "previous": [
+      "1b3b3615b2406a671f4445851648f017de03f2e96526605967bf8598e86c44d5"
+    ],
+    "approved": "9809c8dce9f40076f72499fa3ba56a18928df7a1d80f36cd6f4d5010cdb6f3be"
+  },
+  "patch /api/v1/projects/{id}/components/{kind}/{componentId} response 200": {
+    "previous": [
+      "5379ad4bdad8554a32402554b918532185d8e32107df383251f62cac50780064"
+    ],
+    "approved": "2383690e8414f91bd6d85ed91ebc9e88e436369950f22e7491a842833ae77f5b"
+  },
+  "get /api/v1/projects/{id}/tasks response 200": {
+    "previous": [
+      "c8531dab9c88fa6f0d6dcbc3ae527e78466ecd9d343330aefae8a53d33d4248a"
+    ],
+    "approved": "4beb2aa34727f06ea38c6cb4b9287961dc3aeb7eda7d1da7f926a6c1241ad5b2"
+  },
+  "post /api/v1/projects/{id}/tasks request": {
+    "previous": [
+      "f44b1a4ec79e4c992d854638302f2f16be49ec1ea0c03c4e76c43cedd508cf62"
+    ],
+    "approved": "d6ef834dd3621d64e204ba24e1bd84ae54974b96269c6c3cd36c372b01288a9b"
+  },
+  "post /api/v1/projects/{id}/tasks response 201": {
+    "previous": [
+      "e34f31a1480cbd09016b190d852d65ddb1aecea18cc89314d63ea8711a389490"
+    ],
+    "approved": "9df36d0bc221a38e893cf034986a4301cca3a1e524ba7662abf7c255d281bcfb"
+  },
+  "get /api/v1/projects/{id}/tasks/{taskId} response 200": {
+    "previous": [
+      "e34f31a1480cbd09016b190d852d65ddb1aecea18cc89314d63ea8711a389490"
+    ],
+    "approved": "9df36d0bc221a38e893cf034986a4301cca3a1e524ba7662abf7c255d281bcfb"
+  },
+  "patch /api/v1/projects/{id}/tasks/{taskId} request": {
+    "previous": [
+      "9d4248c2bcd1a64ff918ab348131ddee81190632e2ce1a01c92229ad3665bee2"
+    ],
+    "approved": "1da87fd667c8b6ee48ae8936f9b78b1cab11350ee9eb85066996084a5ba08acf"
+  },
+  "patch /api/v1/projects/{id}/tasks/{taskId} response 200": {
+    "previous": [
+      "e34f31a1480cbd09016b190d852d65ddb1aecea18cc89314d63ea8711a389490"
+    ],
+    "approved": "9df36d0bc221a38e893cf034986a4301cca3a1e524ba7662abf7c255d281bcfb"
+  },
+  "get /api/v1/teams/{id}/tasks response 200": {
+    "previous": [
+      "c8531dab9c88fa6f0d6dcbc3ae527e78466ecd9d343330aefae8a53d33d4248a"
+    ],
+    "approved": "4beb2aa34727f06ea38c6cb4b9287961dc3aeb7eda7d1da7f926a6c1241ad5b2"
+  },
+  "post /api/v1/teams/{id}/tasks response 201": {
+    "previous": [
+      "e34f31a1480cbd09016b190d852d65ddb1aecea18cc89314d63ea8711a389490"
+    ],
+    "approved": "9df36d0bc221a38e893cf034986a4301cca3a1e524ba7662abf7c255d281bcfb"
+  },
+  "get /api/v1/teams/{id}/tasks/{sourceId} response 200": {
+    "previous": [
+      "e34f31a1480cbd09016b190d852d65ddb1aecea18cc89314d63ea8711a389490"
+    ],
+    "approved": "9df36d0bc221a38e893cf034986a4301cca3a1e524ba7662abf7c255d281bcfb"
+  },
+  "patch /api/v1/teams/{id}/tasks/{sourceId} response 200": {
+    "previous": [
+      "e34f31a1480cbd09016b190d852d65ddb1aecea18cc89314d63ea8711a389490"
+    ],
+    "approved": "9df36d0bc221a38e893cf034986a4301cca3a1e524ba7662abf7c255d281bcfb"
+  },
+  "get /api/v1/teams/{id}/work-items response 200": {
+    "previous": [
+      "a2413bc0923c2eb0da1ca4c14dbbb46c51ac507b9972229cb82fa89fe3c8f5e0"
+    ],
+    "approved": "cb180d72234cef7c6fb639cfa7a047541e066500829c7052852edc04a830cd88"
+  },
+  "post /api/v1/teams/{id}/work-items response 201": {
+    "previous": [
+      "ccd14386a5e9b1f46c93339a660bf3dd41322f8fc224e70c820397d58bc8417b"
+    ],
+    "approved": "eda371c78993709ef795f2b74f402f0500deda1509b4f0b9b9fe0ce4b1b2ab16"
+  },
+  "patch /api/v1/teams/{id}/work-items/{itemId} response 200": {
+    "previous": [
+      "ccd14386a5e9b1f46c93339a660bf3dd41322f8fc224e70c820397d58bc8417b"
+    ],
+    "approved": "eda371c78993709ef795f2b74f402f0500deda1509b4f0b9b9fe0ce4b1b2ab16"
+  },
+  "get /api/v1/teams/{id}/task-planning response 200": {
+    "previous": [
+      "b3ae5bc847f7a1139b719fce3f311be3ac50f16ca4930ad7a248269ba393fa81"
+    ],
+    "approved": "23831a1258a8826dcf1b2b8bebfefdf01d76b2b994ac5041ee32c59b8fa83f9d"
+  },
+  "put /api/v1/teams/{id}/tasks/{sourceId}/board-state response 200": {
+    "previous": [
+      "c52d6a816fc7e9edaf72c26ad7c48f5889b0db86fbf73e291da39f2225d2728e"
+    ],
+    "approved": "818aaea2be0a987635ba723bb7a294fe729445b36950751952ca1a7188fb85a8"
+  },
+  "put /api/v1/teams/{id}/tasks/{sourceId}/estimate response 200": {
+    "previous": [
+      "c52d6a816fc7e9edaf72c26ad7c48f5889b0db86fbf73e291da39f2225d2728e"
+    ],
+    "approved": "818aaea2be0a987635ba723bb7a294fe729445b36950751952ca1a7188fb85a8"
+  },
+  "get /api/v1/me/work/tasks response 200": {
+    "previous": [
+      "3e814311ad99540bacfd623ca2f9214860063d76b65443fd636e4d45e24146fc"
+    ],
+    "approved": "ad450a74bd247aaf8c07eb773b9bb479e5f62b224c1d8922f820d4f3335ab9bc"
+  },
+  "get /api/v1/me/work/notifications response 200": {
+    "previous": [
+      "a56a7889149525bc521f00b6f52e2d9feae4bc526ba04d66b89d8cf240894a08"
+    ],
+    "approved": "f1d028ab1d8b808d957fe166f8f38911901d2e77a4a3728297a6022db6b1924d"
+  },
+  "post /api/v1/me/work/notifications/{id}/read response 201": {
+    "previous": [
+      "42f3189ac0b4ad548821240a71e4e5798bb7daef44d14aad6cfb9c52673f7330"
+    ],
+    "approved": "9553dc8d6fed7d5881750d18e98c01c0827124468e31f3058fbb3f5c97053fe4"
+  },
+  "get /api/v1/me/calendar/time-blocks/{blockId}/shared-task response 200": {
+    "previous": [
+      "017f48c74112cba86bcb23d9c3e6aa470f577b481d842bf07fb7adc45f48aedd"
+    ],
+    "approved": "592a521cc919152fa48742a1f83a9d10dee252f2e0009a2001e759f7a80ac9b5"
+  },
+  "put /api/v1/me/calendar/time-blocks/{blockId}/shared-task response 200": {
+    "previous": [
+      "017f48c74112cba86bcb23d9c3e6aa470f577b481d842bf07fb7adc45f48aedd"
+    ],
+    "approved": "592a521cc919152fa48742a1f83a9d10dee252f2e0009a2001e759f7a80ac9b5"
+  },
+  "delete /api/v1/me/calendar/time-blocks/{blockId}/shared-task response 200": {
+    "previous": [
+      "017f48c74112cba86bcb23d9c3e6aa470f577b481d842bf07fb7adc45f48aedd"
+    ],
+    "approved": "592a521cc919152fa48742a1f83a9d10dee252f2e0009a2001e759f7a80ac9b5"
+  },
+  "post /api/v1/projects/{projectId}/tasks/{taskId}/workflow/transitions response 200": {
+    "previous": [
+      "563286bded9def96207c5ef6a85cab92c6f924b003de03282d2a562eda0fe87e"
+    ],
+    "approved": "36cac131c394092f7c43634f5f6dfe8ef7a6a47eb0a4d5a2e8dba4bd331751ef"
+  },
+  "post /api/v1/projects/{projectId}/tasks/{taskId}/workflow/approvals/{approvalId}/approve response 200": {
+    "previous": [
+      "563286bded9def96207c5ef6a85cab92c6f924b003de03282d2a562eda0fe87e"
+    ],
+    "approved": "36cac131c394092f7c43634f5f6dfe8ef7a6a47eb0a4d5a2e8dba4bd331751ef"
+  },
+  "post /api/v1/projects/{projectId}/tasks/{taskId}/workflow/approvals/{approvalId}/reject response 200": {
+    "previous": [
+      "563286bded9def96207c5ef6a85cab92c6f924b003de03282d2a562eda0fe87e"
+    ],
+    "approved": "36cac131c394092f7c43634f5f6dfe8ef7a6a47eb0a4d5a2e8dba4bd331751ef"
+  },
+  "post /api/v1/projects/{projectId}/task-search response 200": {
+    "previous": [
+      "a28502d75004733c3e95c61070db5cf8ddc5f22f249f7eed4f95156e05f2f1a5"
+    ],
+    "approved": "f4beee0adb17473d4e069c8c712985d5d088cffef73fe288f7e3ac1cec9b4bb3"
+  },
+  "get /api/v1/projects/{projectId}/register-items response 200": {
+    "previous": [
+      "c0a10d494aa7efed690cc374eee198726a33efd0e3e5b3f531d1dd1794ac2c66"
+    ],
+    "approved": "2a50f7ce6da7a155ab66c26a5a9c13eaa13d38a7911b3c2de918da21d31f64c5"
+  },
+  "post /api/v1/projects/{projectId}/register-items request": {
+    "previous": [
+      "471849d2c40886eb6f58b956bbbd31cb119ed181ea24955598dae882d0bcc9e3"
+    ],
+    "approved": "0a3a18732d319d98efb3aff55de7b36474640d8dfaa21713a8f05b323b996322"
+  },
+  "post /api/v1/projects/{projectId}/register-items response 200": {
+    "previous": [
+      "faf2dcc4ddf7db21b85547cce766fade098721eb88381404cb1e172d779b5009"
+    ],
+    "approved": "c158e21c4f10e764d1e4c9890e58e087af0490fb14e23bf24d576cc34153fac4"
+  },
+  "get /api/v1/projects/{projectId}/register-items/{itemId} response 200": {
+    "previous": [
+      "faf2dcc4ddf7db21b85547cce766fade098721eb88381404cb1e172d779b5009"
+    ],
+    "approved": "c158e21c4f10e764d1e4c9890e58e087af0490fb14e23bf24d576cc34153fac4"
+  },
+  "put /api/v1/projects/{projectId}/register-items/{itemId} request": {
+    "previous": [
+      "860c1704c7a94db0f0a0eed1cd6282fdbb0e196ca879453f2a7f3a1434db3ef5"
+    ],
+    "approved": "3b0a85cea275c6899494bc734d4ead927c1b17dd49c129428fe8a43dfec0e69e"
+  },
+  "put /api/v1/projects/{projectId}/register-items/{itemId} response 200": {
+    "previous": [
+      "faf2dcc4ddf7db21b85547cce766fade098721eb88381404cb1e172d779b5009"
+    ],
+    "approved": "c158e21c4f10e764d1e4c9890e58e087af0490fb14e23bf24d576cc34153fac4"
+  },
+  "delete /api/v1/projects/{projectId}/register-items/{itemId} response 200": {
+    "previous": [
+      "faf2dcc4ddf7db21b85547cce766fade098721eb88381404cb1e172d779b5009"
+    ],
+    "approved": "c158e21c4f10e764d1e4c9890e58e087af0490fb14e23bf24d576cc34153fac4"
+  },
+  "post /api/v1/projects/{projectId}/exports response 200": {
+    "previous": [
+      "129894048b7c4b497eadb6e03057de079bc085a2f6072af19705c99c38db5db5"
+    ],
+    "approved": "bbefcd438db5137d2033002b632b7e088c9f26366c512630f09d3b94cba1b78d"
+  },
+  "get /api/v1/projects/{projectId}/content/{targetKind}/{targetId}/comments/{commentId}/history parameters": {
+    "previous": [
+      "d673a21c22264d8b4041c6f690a3e2f3cea79be1ef35c1a622f3b4a4f77d96ed"
+    ],
+    "approved": "3b4461984b11ff9dbf73c756ad6b0b2c388e6766fb2b9e4bf61d02f2bb08e729"
+  },
+  "post /api/v1/projects/{projectId}/comments request": {
+    "previous": [
+      "e4e20e545c4ca055d5474ef010aae4f70dd4d6b2338824ce804836f90764d4c7"
+    ],
+    "approved": "258bb1b2e9560e33cb1320847ecf1b22391aa2bf6e549e2f8d265b69e364866f"
+  },
+  "post /api/v1/projects/{projectId}/comments response 200": {
+    "previous": [
+      "ab3aa0ecfeeaefa2281d51a52026eefda92e0d417abe4176aa06984c4810354b"
+    ],
+    "approved": "a59a9e5d849bdb66956fdac79281c3f676a906a2649f027cf1cd0a6fb740f8f1"
+  },
+  "get /api/v1/projects/{projectId}/content/{targetKind}/{targetId}/comments parameters": {
+    "previous": [
+      "73b68a496f1cfb75286d7f9b41843a77f1d8573bca6dd86e0826705462615e81"
+    ],
+    "approved": "61749513695d512ddd935498da10a50806c750184250f041012a7e283e8cefae"
+  },
+  "get /api/v1/projects/{projectId}/content/{targetKind}/{targetId}/comments response 200": {
+    "previous": [
+      "5bbead0fc6c155a587c5a22d8da371a163a40313cc539373b53052ae51088d4b"
+    ],
+    "approved": "ad80ec61c76fc5c207ed9b227d83a199864925483e742961fc4dbce83407825c"
+  },
+  "put /api/v1/projects/{projectId}/content/{targetKind}/{targetId}/comments/{commentId} parameters": {
+    "previous": [
+      "e42aa31f424ff1f2d8cdecd76c562714c0f7a0bd26a70c82854f604509c86a98"
+    ],
+    "approved": "95c1c255b0ff4dbfb5d3d7be64d3071be7a83734098f6dabecaec8d94c44a799"
+  },
+  "put /api/v1/projects/{projectId}/content/{targetKind}/{targetId}/comments/{commentId} response 200": {
+    "previous": [
+      "ab3aa0ecfeeaefa2281d51a52026eefda92e0d417abe4176aa06984c4810354b"
+    ],
+    "approved": "a59a9e5d849bdb66956fdac79281c3f676a906a2649f027cf1cd0a6fb740f8f1"
+  },
+  "delete /api/v1/projects/{projectId}/content/{targetKind}/{targetId}/comments/{commentId} parameters": {
+    "previous": [
+      "e42aa31f424ff1f2d8cdecd76c562714c0f7a0bd26a70c82854f604509c86a98"
+    ],
+    "approved": "95c1c255b0ff4dbfb5d3d7be64d3071be7a83734098f6dabecaec8d94c44a799"
+  },
+  "delete /api/v1/projects/{projectId}/content/{targetKind}/{targetId}/comments/{commentId} response 200": {
+    "previous": [
+      "ab3aa0ecfeeaefa2281d51a52026eefda92e0d417abe4176aa06984c4810354b"
+    ],
+    "approved": "a59a9e5d849bdb66956fdac79281c3f676a906a2649f027cf1cd0a6fb740f8f1"
+  },
+  "get /api/v1/projects/{projectId}/content/{targetKind}/{targetId}/activity response 200": {
+    "previous": [
+      "8fc240bb4c73456e77298ad47229f97d8da07e26ff291f1bd982088baa1596d4"
+    ],
+    "approved": "f32514fc1b978a3328a081b7ee1f3fadfbf2d0802639af2f1476f687028f7e9e"
+  },
+  "post /api/v1/projects/{projectId}/files request": {
+    "previous": [
+      "d18a0ffb6bd460fe8bfa5a14d3cb8445b5b40cf6450953e6e33e3b62d0039ede"
+    ],
+    "approved": "5078fbc6db2941bcc2bdad4b8d1f0641789ba106ee2c8c68f9ce50a592403b68"
+  },
+  "post /api/v1/projects/{projectId}/files response 200": {
+    "previous": [
+      "86983632255a5e2a2a4ef25e744db0d81598d4c167f2aa2189e80d4253abe5c0"
+    ],
+    "approved": "0bcd2cb041b86036c83516a626591d20c42bae2261e80b17d07a7df659c0679e"
+  },
+  "get /api/v1/projects/{projectId}/content/{targetKind}/{targetId}/files response 200": {
+    "previous": [
+      "64fd361cbe77a512cdb922d035bd660d823083baa31f6ad0504c3a2751375ab7"
+    ],
+    "approved": "e8801600c3051689571e976e0d1a0d576ca03f4a631f242173453f7843e6ae6c"
+  },
+  "get /api/v1/projects/{projectId}/content/{targetKind}/{targetId}/files/{fileId} response 200": {
+    "previous": [
+      "86983632255a5e2a2a4ef25e744db0d81598d4c167f2aa2189e80d4253abe5c0"
+    ],
+    "approved": "0bcd2cb041b86036c83516a626591d20c42bae2261e80b17d07a7df659c0679e"
+  },
+  "delete /api/v1/projects/{projectId}/content/{targetKind}/{targetId}/files/{fileId} response 200": {
+    "previous": [
+      "86983632255a5e2a2a4ef25e744db0d81598d4c167f2aa2189e80d4253abe5c0"
+    ],
+    "approved": "0bcd2cb041b86036c83516a626591d20c42bae2261e80b17d07a7df659c0679e"
+  },
+  "post /api/v1/projects/{projectId}/content/{targetKind}/{targetId}/files/{fileId}/complete response 200": {
+    "previous": [
+      "86983632255a5e2a2a4ef25e744db0d81598d4c167f2aa2189e80d4253abe5c0"
+    ],
+    "approved": "0bcd2cb041b86036c83516a626591d20c42bae2261e80b17d07a7df659c0679e"
+  },
+  "get /api/v1/projects/{projectId}/views response 200": {
+    "previous": [
+      "bb84a2bea3b64fdb6ac0ef7d02fb695c4387300f6cb05fc78cd480ef41d96ecf"
+    ],
+    "approved": "355143b62d1a7f894f2a5e203adf7a17e6d0028cea40a70158a54c3cae9cebd2"
+  }
+}

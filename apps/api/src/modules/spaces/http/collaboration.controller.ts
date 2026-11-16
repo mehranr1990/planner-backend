@@ -135,7 +135,8 @@ export class InvitationRecipientController {
     @Param('id', id) invitationId: string,
     @Headers('x-invitation-proof') proof: string | undefined,
     @Headers('if-match') match: string | undefined,
-    @Body(empty) _b: unknown,
+    @Body(new ZodValidationPipe(c.ProjectInvitationDeclineSchema.optional()))
+    body: z.infer<typeof c.ProjectInvitationDeclineSchema> | undefined,
     @Query(query) _q: unknown,
     @Res({ passthrough: true }) res: Response,
   ) {
@@ -146,6 +147,9 @@ export class InvitationRecipientController {
         proof,
         revision(match),
         false,
+        'PROJECT',
+        undefined,
+        body?.note,
       ),
     );
     return result(res, value, value.revision);
@@ -158,6 +162,35 @@ export class SpaceCollaborationController {
     @Inject(CollaborationService)
     private readonly service: CollaborationService,
   ) {}
+  @Get('invitations') sent(
+    @CurrentActor() actor: RequestActor,
+    @Param('spaceId', id) spaceId: string,
+    @Query(new ZodValidationPipe(c.ProjectSentInvitationQuerySchema))
+    q: z.infer<typeof c.ProjectSentInvitationQuerySchema>,
+  ) {
+    return this.service.projectSent(actor, spaceId, q);
+  }
+  @Post('invitations/:id/resend')
+  @HttpCode(200)
+  async resend(
+    @CurrentActor() actor: RequestActor,
+    @Param('spaceId', id) spaceId: string,
+    @Param('id', id) invitationId: string,
+    @Headers('if-match') match: string | undefined,
+    @Headers('idempotency-key') key: string | undefined,
+    @Body(empty) _b: unknown,
+    @Query(query) _q: unknown,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const v = await this.service.resendProjectInvitation(
+      actor,
+      spaceId,
+      invitationId,
+      revision(match),
+      key,
+    );
+    return result(res, v, v.revision);
+  }
   @Post('invitations')
   async invite(
     @CurrentActor() actor: RequestActor,
@@ -174,7 +207,7 @@ export class SpaceCollaborationController {
       body,
       key,
     );
-    return result(res, value, value.invitation.revision);
+    return result(res, { ...value, proof: null }, value.invitation.revision);
   }
   @Get('invitations/:id')
   async invitation(

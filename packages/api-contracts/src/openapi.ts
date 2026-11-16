@@ -27,6 +27,7 @@ import { taskToolPaths } from './task-tools-openapi.js';
 import { planningPaths } from './planning-openapi.js';
 import { calendarPaths } from './calendar-openapi.js';
 import { habitPaths } from './habits-openapi.js';
+import { projectGapPaths } from './project-gap-closure-openapi.js';
 import { z } from 'zod';
 import { filePaths } from './files-openapi.js';
 import {
@@ -236,7 +237,7 @@ export function createOpenApiDocument() {
       },
     },
   };
-  return {
+  const document = {
     openapi: '3.1.0',
     info: { title: 'Mehran Planner API', version: '0.0.1' },
     paths: {
@@ -306,6 +307,10 @@ export function createOpenApiDocument() {
       },
     },
   };
+  const paths = document.paths as Record<string, Record<string, unknown>>;
+  for (const [path, operations] of Object.entries(projectGapPaths()))
+    paths[path] = { ...paths[path], ...operations };
+  return document;
 }
 
 import { teamInteractionsPaths } from './team-interactions-openapi.js';

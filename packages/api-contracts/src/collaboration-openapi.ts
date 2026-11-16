@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import * as c from './collaboration.js';
+import { ProjectInvitationDeclineSchema } from './project-gap-closure.js';
 import { embeddedJsonSchema, pointerSegment } from './embedded-json-schema.js';
 export function collaborationPaths(): Record<string, Record<string, unknown>> {
   const paths: Record<string, Record<string, unknown>> = {};
@@ -13,6 +14,7 @@ export function collaborationPaths(): Record<string, Record<string, unknown>> {
       idempotency?: boolean;
       revision?: boolean;
       anonymous?: boolean;
+      optionalBody?: boolean;
     } = {},
   ) => {
     const pointer = `#/paths/${pointerSegment('/api/v1' + path)}/${method}`,
@@ -109,7 +111,8 @@ export function collaborationPaths(): Record<string, Record<string, unknown>> {
       ...(input
         ? {
             requestBody: {
-              required: input !== c.CollaborationEmptySchema,
+              required:
+                input !== c.CollaborationEmptySchema && !options.optionalBody,
               content: {
                 'application/json': {
                   schema: json(
@@ -146,8 +149,8 @@ export function collaborationPaths(): Record<string, Record<string, unknown>> {
     '/invitations/{id}/decline',
     'post',
     c.InvitationSchema,
-    c.CollaborationEmptySchema,
-    { proof: true, revision: true },
+    ProjectInvitationDeclineSchema,
+    { proof: true, revision: true, optionalBody: true },
   );
   add(
     '/spaces/{spaceId}/invitations/{id}/revoke',

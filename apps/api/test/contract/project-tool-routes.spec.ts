@@ -1,3 +1,4 @@
+import { projectGapOperations } from '../../../../packages/api-contracts/src/project-gap-closure-openapi.js';
 import 'reflect-metadata';
 import { it, expect } from 'vitest';
 import { METHOD_METADATA, PATH_METADATA } from '@nestjs/common/constants.js';
@@ -31,6 +32,10 @@ it('matches every P2-05 OpenAPI operation to a real guarded Nest handler', () =>
   const expected = Object.entries(projectToolPaths()).flatMap(([p, ops]) =>
     Object.keys(ops).map((m) => m + ' ' + p),
   );
+  const additions = projectGapOperations
+    .map((o) => o.method + ' /api/v1' + o.path)
+    .filter((key) => actual.includes(key));
+  expected.push(...additions);
   expect(actual.sort()).toEqual(expected.sort());
-  expect(actual).toHaveLength(26);
+  expect(actual).toHaveLength(26 + additions.length);
 });

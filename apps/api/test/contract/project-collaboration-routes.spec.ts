@@ -1,3 +1,4 @@
+import { projectGapOperations } from '../../../../packages/api-contracts/src/project-gap-closure-openapi.js';
 import 'reflect-metadata';
 import { it, expect } from 'vitest';
 import { METHOD_METADATA, PATH_METADATA } from '@nestjs/common/constants.js';
@@ -36,8 +37,12 @@ it('matches every P2-07 guarded route and documents binary, CSV and proof contra
   const expected = Object.entries(paths).flatMap(([route, ops]) =>
     Object.keys(ops).map((method) => method + ' ' + route),
   );
+  const additions = projectGapOperations
+    .map((o) => o.method + ' /api/v1' + o.path)
+    .filter((key) => actual.includes(key));
+  expected.push(...additions);
   expect(actual.sort()).toEqual(expected.sort());
-  expect(actual).toHaveLength(30);
+  expect(actual).toHaveLength(30 + additions.length);
   const serialized = JSON.stringify(paths);
   for (const required of [
     'application/octet-stream',

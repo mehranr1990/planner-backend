@@ -33,6 +33,8 @@ export default defineConfig({
         test: {
           name: 'compatibility',
           include: ['tooling/compatibility/**/*.spec.ts'],
+          // Full-document hashing of the 1,092-operation API under concurrent workers.
+          testTimeout: 15000,
         },
       },
       {

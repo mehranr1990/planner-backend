@@ -1165,10 +1165,23 @@ describe('P4-03 exact Company finance and receipt privacy', () => {
     for (
       let n = 0;
       n < 100 &&
-      (await client.project.findUnique({ where: { id: project.id } }));
+      (
+        await client.sharedLifecycleJob.findUniqueOrThrow({
+          where: { id: job.id },
+        })
+      ).state !== 'DELETED';
       n++
     )
       await cleanup.consume();
+    expect(
+      await client.sharedLifecycleJob.findUniqueOrThrow({
+        where: { id: job.id },
+        select: { state: true, progress: true },
+      }),
+    ).toMatchObject({
+      state: 'DELETED',
+      progress: expect.objectContaining({ stage: 'DELETED' }),
+    });
     expect(
       await client.project.findUnique({ where: { id: project.id } }),
     ).toBeNull();

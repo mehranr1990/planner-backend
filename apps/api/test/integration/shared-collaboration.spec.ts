@@ -836,9 +836,21 @@ describe('P2-02 verified invitations and accepted custody succession', () => {
       .expect(201);
     expect(offered.headers['cache-control']).toBe('no-store');
     expect(offered.headers.etag).toBe('"1"');
+    expect(offered.body.proof).toBeNull();
+    await post(owner, `/invitations/${offered.body.invitation.id}/proof`)
+      .set('If-Match', '"1"')
+      .send({})
+      .expect(404);
+    const recipient = await post(
+      member,
+      `/invitations/${offered.body.invitation.id}/proof`,
+    )
+      .set('If-Match', '"1"')
+      .send({})
+      .expect(200);
     const preview = await request(app.getHttpServer())
       .get('/api/v1/invitations/preview')
-      .set('X-Invitation-Proof', offered.body.proof as string)
+      .set('X-Invitation-Proof', recipient.body.proof as string)
       .expect(200);
     expect(Object.keys(preview.body).sort()).toEqual([
       'contextLabel',
@@ -847,12 +859,12 @@ describe('P2-02 verified invitations and accepted custody succession', () => {
     ]);
     await request(app.getHttpServer())
       .get('/api/v1/invitations/preview')
-      .query({ proof: offered.body.proof })
+      .query({ proof: recipient.body.proof })
       .expect(400);
     const accept = () =>
       post(member, `/invitations/${offered.body.invitation.id}/accept`)
-        .set('X-Invitation-Proof', offered.body.proof as string)
-        .set('If-Match', '"1"');
+        .set('X-Invitation-Proof', recipient.body.proof as string)
+        .set('If-Match', '"' + recipient.body.revision + '"');
     await accept().send({ memberRole: 'ADMIN' }).expect(400);
     const accepted = await accept().send({}).expect(201);
     expect(accepted.body.membership.role).toBe('MEMBER');
@@ -868,7 +880,7 @@ describe('P2-02 verified invitations and accepted custody succession', () => {
       .post(`/api/v1/invitations/${offered.body.invitation.id}/accept`)
       .set('Origin', 'https://invalid.example')
       .set('Cookie', member.cookie)
-      .set('X-Invitation-Proof', offered.body.proof as string)
+      .set('X-Invitation-Proof', recipient.body.proof as string)
       .set('If-Match', '"1"')
       .send({})
       .expect(403);

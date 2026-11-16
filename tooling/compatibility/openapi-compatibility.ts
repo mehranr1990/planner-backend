@@ -10,6 +10,21 @@ const responseExtensions = JSON.parse(
     'utf8',
   ),
 ) as Record<string, { previous: string; approved: string }>;
+// P2-GAP-CLOSURE: reviewed exact extensions of Project contracts and unified
+// Task projections. Historical baselines remain immutable, including older hashes.
+const projectExtensions = JSON.parse(
+  fs.readFileSync(
+    new URL('./project-gap-api-extensions.json', import.meta.url),
+    'utf8',
+  ),
+) as Record<string, { previous: string[]; approved: string }>;
+export function approvedProjectHash(
+  contract: string,
+  previous: string,
+): string {
+  const change = projectExtensions[contract];
+  return change?.previous.includes(previous) ? change.approved : previous;
+}
 Object.assign(
   responseExtensions,
   JSON.parse(
@@ -220,7 +235,7 @@ export function assertApiCompatible(
   for (const [contract, hash] of Object.entries(baseline)) {
     const extension = responseExtensions[contract];
     if (
-      current[contract] !== hash &&
+      current[contract] !== approvedProjectHash(contract, hash) &&
       !(
         extension?.previous === hash && extension.approved === current[contract]
       )

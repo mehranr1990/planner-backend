@@ -42,6 +42,18 @@ export class SharedWorkNotificationsRepository extends SharedWorkNotifications {
     },
   ) {
     const proof = a.require(tx, input.spaceId, 'task.read');
+    if (input.kind === 'REMINDER') {
+      const actor = await tx.sharedActor.findUnique({
+        where: { id: input.recipientActorId },
+        select: { userId: true },
+      });
+      if (!actor?.userId) return;
+      const preference = await tx.notificationPreference.findFirst({
+        where: { ownerUserId: actor.userId },
+        select: { inApp: true },
+      });
+      if (preference?.inApp === false) return;
+    }
     const alias = await tx.domainScopeActorAlias.findFirst({
       where: {
         spaceId: proof.spaceId,

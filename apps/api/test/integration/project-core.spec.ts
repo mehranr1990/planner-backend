@@ -377,6 +377,188 @@ describe('P2-03 independent Projects and authorized shared sources', () => {
     if (!('grant' in accepted)) throw new Error('Expected accepted grant');
     return { offer, accepted };
   }
+  it('P2 gap preserves linked history on repeat-safe task deletion and rejects foreign and stale deletes', async () => {
+    const p = await project(),
+      t = await task(p.id),
+      k = randomUUID();
+    await expect(
+      projects.removeTask(outsider.actor, p.id, t.id, 1, randomUUID()),
+    ).rejects.toThrow();
+    await expect(
+      projects.removeTask(owner.actor, p.id, t.id, 2, randomUUID()),
+    ).rejects.toThrow();
+    await projects.removeTask(owner.actor, p.id, t.id, 1, k);
+    await projects.removeTask(owner.actor, p.id, t.id, 1, k);
+    await expect(
+      projects.source(owner.actor, p.id, 'TASK', t.id),
+    ).rejects.toThrow();
+    expect(await client.task.findUnique({ where: { id: t.id } })).toMatchObject(
+      { revision: 2, deletedAt: expect.any(Date) },
+    );
+    expect(
+      await client.taskChange.count({
+        where: { taskId: t.id, kind: 'DELETED' },
+      }),
+    ).toBe(1);
+    expect(await client.projectTask.count({ where: { taskId: t.id } })).toBe(1);
+  });
+  it('P2 gap enforces real shared task hierarchy, cycle prevention and non-destructive parent deletion', async () => {
+    const p = await project(),
+      other = await project(),
+      parent = await task(p.id),
+      foreign = await task(other.id);
+    const child = await projects.createTask(
+      owner.actor,
+      p.id,
+      {
+        id: randomUUID(),
+        title: 'Child',
+        priority: 'NONE',
+        parentTaskId: parent.id,
+      },
+      randomUUID(),
+    );
+    expect(
+      (
+        await projects.children(owner.actor, p.id, parent.id, { limit: 10 })
+      ).items.map((t) => t.id),
+    ).toEqual([child.id]);
+    await expect(
+      projects.patchTask(
+        owner.actor,
+        p.id,
+        parent.id,
+        1,
+        { parentTaskId: child.id },
+        randomUUID(),
+      ),
+    ).rejects.toThrow();
+    await expect(
+      projects.patchTask(
+        owner.actor,
+        p.id,
+        child.id,
+        1,
+        { parentTaskId: foreign.id },
+        randomUUID(),
+      ),
+    ).rejects.toThrow();
+    await expect(
+      projects.removeTask(owner.actor, p.id, parent.id, 1, randomUUID()),
+    ).rejects.toThrow();
+    const detached = await projects.patchTask(
+      owner.actor,
+      p.id,
+      child.id,
+      1,
+      { parentTaskId: null },
+      randomUUID(),
+    );
+    expect(detached.parentTaskId).toBeNull();
+    await projects.removeTask(owner.actor, p.id, parent.id, 1, randomUUID());
+    expect(
+      (await projects.source(owner.actor, p.id, 'TASK', child.id)).id,
+    ).toBe(child.id);
+  });
+  it('P2 gap persists phase dates and task ordering with revision conflicts', async () => {
+    const p = await project(),
+      t = await task(p.id);
+    const phase = await projects.createComponent(
+      owner.actor,
+      p.id,
+      'phases',
+      {
+        id: randomUUID(),
+        title: 'Phase',
+        position: 0,
+        startDate: '2026-11-01',
+        endDate: '2026-11-30',
+      },
+      randomUUID(),
+    );
+    expect(phase).toMatchObject({
+      startDate: '2026-11-01',
+      endDate: '2026-11-30',
+    });
+    await expect(
+      projects.patchComponent(owner.actor, p.id, 'phases', phase.id, 1, {
+        endDate: '2026-10-31',
+      }),
+    ).rejects.toThrow();
+    await projects.patchTask(
+      owner.actor,
+      p.id,
+      t.id,
+      1,
+      { position: 7 },
+      randomUUID(),
+    );
+    expect(
+      await client.projectTask.findUnique({ where: { taskId: t.id } }),
+    ).toMatchObject({ position: 7 });
+    await expect(
+      projects.patchTask(
+        owner.actor,
+        p.id,
+        t.id,
+        1,
+        { position: 9 },
+        randomUUID(),
+      ),
+    ).rejects.toThrow();
+    expect(
+      await client.projectTask.findUnique({ where: { taskId: t.id } }),
+    ).toMatchObject({ position: 7 });
+  });
+  it('P2 gap serializes concurrent reorders and opposing hierarchy changes', async () => {
+    const p = await project(),
+      a = await task(p.id),
+      b = await task(p.id);
+    const reorder = await Promise.allSettled([
+      projects.patchTask(
+        owner.actor,
+        p.id,
+        a.id,
+        1,
+        { position: 20 },
+        randomUUID(),
+      ),
+      projects.patchTask(
+        owner.actor,
+        p.id,
+        a.id,
+        1,
+        { position: 30 },
+        randomUUID(),
+      ),
+    ]);
+    expect(reorder.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    expect(reorder.filter((r) => r.status === 'rejected')).toHaveLength(1);
+    const hierarchy = await Promise.allSettled([
+      projects.patchTask(
+        owner.actor,
+        p.id,
+        a.id,
+        2,
+        { parentTaskId: b.id },
+        randomUUID(),
+      ),
+      projects.patchTask(
+        owner.actor,
+        p.id,
+        b.id,
+        1,
+        { parentTaskId: a.id },
+        randomUUID(),
+      ),
+    ]);
+    expect(hierarchy.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    expect(hierarchy.filter((r) => r.status === 'rejected')).toHaveLength(1);
+    const rows = await client.task.findMany({
+      where: { id: { in: [a.id, b.id] } },
+    });
+    expect(rows.filter((r) => r.parentTaskId !== null)).toHaveLength(1);
+  });
   it('coverage matrix R1 returns current self authority without exposing account identity or grant scope escalation', async () => {
     const overview = app.get(ProjectOverviewService),
       p = await project();
@@ -413,6 +595,411 @@ describe('P2-03 independent Projects and authorized shared sources', () => {
       .expect(200);
   });
 
+  it('P2 gap lists delegated invitations, hides proofs on HTTP creation, resends and stores a private decline note', async () => {
+    const p = await project();
+    const create = await request(app.getHttpServer())
+      .post('/api/v1/spaces/' + p.id + '/invitations')
+      .set('Cookie', owner.cookie)
+      .set('Origin', origin)
+      .set('Idempotency-Key', randomUUID())
+      .send({
+        kind: 'MEMBERSHIP',
+        memberRole: 'MEMBER',
+        recipient: { email: member.email },
+      })
+      .expect(201);
+    expect(create.body.proof).toBeNull();
+    const sent = await service.projectSent(owner.actor, p.id, {
+      state: 'PENDING',
+      limit: 10,
+    });
+    expect(
+      sent.items.find((i) => i.id === create.body.invitation.id),
+    ).toMatchObject({
+      recipientEmail: member.email,
+      state: 'PENDING',
+      declineNote: null,
+    });
+    expect(JSON.stringify(sent)).not.toMatch(
+      /proofHash|recipientUserId|"proof"/,
+    );
+    await expect(
+      service.projectSent(outsider.actor, p.id, {
+        state: 'PENDING',
+        limit: 10,
+      }),
+    ).rejects.toThrow();
+    const first = await service.issueRecipientProof(
+        member.actor,
+        'PROJECT',
+        create.body.invitation.id,
+        1,
+      ),
+      key = randomUUID();
+    const resent = await service.resendProjectInvitation(
+      owner.actor,
+      p.id,
+      first.invitationId,
+      first.revision,
+      key,
+    );
+    expect(
+      await service.resendProjectInvitation(
+        owner.actor,
+        p.id,
+        first.invitationId,
+        first.revision,
+        key,
+      ),
+    ).toEqual(resent);
+    await expect(service.preview(first.proof)).rejects.toThrow();
+    const fresh = await service.issueRecipientProof(
+      member.actor,
+      'PROJECT',
+      first.invitationId,
+      resent.revision,
+    );
+    await service.decideInvitation(
+      member.actor,
+      first.invitationId,
+      fresh.proof,
+      fresh.revision,
+      false,
+      'PROJECT',
+      undefined,
+      'Schedule conflict',
+    );
+    const declined = await service.projectSent(owner.actor, p.id, {
+      state: 'DECLINED',
+      limit: 10,
+    });
+    expect(declined.items[0]).toMatchObject({
+      declineNote: 'Schedule conflict',
+      recipientEmail: null,
+    });
+    await expect(
+      service.resendProjectInvitation(
+        owner.actor,
+        p.id,
+        first.invitationId,
+        declined.items[0]!.revision,
+        randomUUID(),
+      ),
+    ).rejects.toThrow();
+  });
+  it('P2 gap creates Blank, Kanban and Scrum setup atomically and replays without duplicate structures', async () => {
+    for (const template of ['BLANK', 'KANBAN', 'SCRUM'] as const) {
+      const input = {
+          id: randomUUID(),
+          title: template,
+          key: 'LOCAL-' + template,
+          startDate: '2026-11-01',
+          endDate: '2026-12-01',
+          retentionPolicyVersion: version,
+          template,
+        },
+        key = randomUUID();
+      const p = await projects.create(owner.actor, input, key);
+      expect((await projects.create(owner.actor, input, key)).id).toBe(p.id);
+      expect(
+        await client.project.findUnique({ where: { id: p.id } }),
+      ).toMatchObject({
+        key: 'LOCAL-' + template,
+        initialTemplate: template,
+        initialTemplateVersion: 1,
+      });
+      expect(
+        await client.projectSection.count({ where: { projectId: p.id } }),
+      ).toBe(template === 'SCRUM' ? 2 : 0);
+      expect(
+        await client.taskWorkflow.count({ where: { scopeId: p.id } }),
+      ).toBe(template === 'BLANK' ? 0 : 1);
+    }
+    const id = randomUUID();
+    await expect(
+      projects.create(
+        owner.actor,
+        {
+          id,
+          title: 'Invalid',
+          startDate: '2026-12-01',
+          endDate: '2026-11-01',
+          retentionPolicyVersion: version,
+        },
+        randomUUID(),
+      ),
+    ).rejects.toThrow();
+    expect(await client.space.findUnique({ where: { id } })).toBeNull();
+  });
+  it('P2 gap enforces normalized account keys in the database, across concurrent creation and handover', async () => {
+    const input = (key: string) => ({
+      id: randomUUID(),
+      title: 'Keyed',
+      key,
+      retentionPolicyVersion: version,
+    });
+    const name = 'K-' + randomUUID().slice(0, 8),
+      a = input(name),
+      b = input(' ' + name.toLowerCase() + ' ');
+    const result = await Promise.allSettled([
+      projects.create(owner.actor, a, randomUUID()),
+      projects.create(owner.actor, b, randomUUID()),
+    ]);
+    expect(result.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    expect(result.filter((r) => r.status === 'rejected')).toHaveLength(1);
+    const created = result.find((r) => r.status === 'fulfilled');
+    if (!created || created.status !== 'fulfilled')
+      throw new Error('Missing Project');
+    const p = created.value;
+    expect(
+      await client.space.count({ where: { id: { in: [a.id, b.id] } } }),
+    ).toBe(1);
+    const other = await projects.create(
+      member.actor,
+      input(name),
+      randomUUID(),
+    );
+    expect(other.id).not.toBe(p.id);
+    await expect(
+      client.project.update({
+        where: { id: other.id },
+        data: { keyOwnerUserId: owner.actor.userId },
+      }),
+    ).resolves.toMatchObject({ keyOwnerUserId: member.actor.userId });
+    const access = await join(p.id, member);
+    const before = await client.sharedCustody.findUniqueOrThrow({
+      where: { spaceId: p.id },
+    });
+    await expect(
+      client.sharedCustody.update({
+        where: { spaceId: p.id },
+        data: { primaryOwnerAccessId: access.id },
+      }),
+    ).rejects.toThrow();
+    expect(
+      (
+        await client.sharedCustody.findUniqueOrThrow({
+          where: { spaceId: p.id },
+        })
+      ).primaryOwnerAccessId,
+    ).toBe(before.primaryOwnerAccessId);
+    await app
+      .get(ProjectOverviewService)
+      .patchMetadata(member.actor, other.id, 1, { key: null });
+    await client.sharedCustody.update({
+      where: { spaceId: p.id },
+      data: { primaryOwnerAccessId: access.id },
+    });
+    expect(
+      await client.project.findUnique({ where: { id: p.id } }),
+    ).toMatchObject({ keyOwnerUserId: member.actor.userId });
+  });
+  it('P2 gap reports observed health and timestamped field changes without private descriptions', async () => {
+    const p = await project(),
+      t = await task(p.id);
+    await projects.patchTask(
+      owner.actor,
+      p.id,
+      t.id,
+      1,
+      { status: 'IN_PROGRESS', description: 'Private description' },
+      randomUUID(),
+    );
+    const health = await request(app.getHttpServer())
+      .get('/api/v1/projects/' + p.id + '/health')
+      .set('Cookie', owner.cookie)
+      .expect(200);
+    expect(health.body.state).toBe('UNKNOWN');
+    const feed = await request(app.getHttpServer())
+      .get('/api/v1/projects/' + p.id + '/activity')
+      .set('Cookie', owner.cookie)
+      .expect(200);
+    expect(
+      feed.body.items.find((i: { kind: string }) => i.kind === 'TASK_STATUS'),
+    ).toMatchObject({
+      target: { id: t.id, title: t.title },
+      changes: [{ field: 'status', from: 'OPEN', to: 'IN_PROGRESS' }],
+    });
+    expect(JSON.stringify(feed.body)).not.toContain('Private description');
+    await request(app.getHttpServer())
+      .get('/api/v1/projects/' + p.id + '/activity')
+      .expect(401);
+  });
+  it('P2 gap returns actual cycle evidence, zero-data unknowns and safe post-delete reports', async () => {
+    const p = await project(),
+      t = await task(p.id),
+      from = new Date(Date.now() - 86400000).toISOString(),
+      to = new Date(Date.now() + 86400000).toISOString();
+    const analytics = () =>
+      request(app.getHttpServer())
+        .get('/api/v1/projects/' + p.id + '/analytics')
+        .query({ fromAt: from, toAt: to })
+        .set('Cookie', owner.cookie);
+    await projects.patchTask(
+      owner.actor,
+      p.id,
+      t.id,
+      1,
+      { status: 'IN_PROGRESS' },
+      randomUUID(),
+    );
+    await projects.patchTask(
+      owner.actor,
+      p.id,
+      t.id,
+      2,
+      { status: 'DONE' },
+      randomUUID(),
+    );
+    const report = await analytics().expect(200);
+    expect(report.body).toMatchObject({
+      taskCount: 1,
+      completedTasks: 1,
+      cycleTime: { knownCompletedTasks: 1, unknownCompletedTasks: 0 },
+      onTime: { completedWithDueDate: 0, percent: null },
+      recordedSeconds: 0,
+    });
+    const view = await request(app.getHttpServer())
+      .get('/api/v1/projects/' + p.id + '/views?kind=LIST')
+      .set('Cookie', owner.cookie)
+      .expect(200);
+    expect(view.body.items[0].task).toMatchObject({
+      createdAt: expect.any(String),
+      firstStartedAt: expect.any(String),
+    });
+    await projects.removeTask(owner.actor, p.id, t.id, 3, randomUUID());
+    expect((await analytics().expect(200)).body.taskCount).toBe(0);
+    const current = await app
+      .get(ProjectWorkMetricsService)
+      .currentReport(owner.actor, p.id, { fromAt: from, toAt: to });
+    expect(current.taskCount).toBe(0);
+  });
+  it('P2 gap binds ordered pagination to the current ordering snapshot and rejects conflicting phase links', async () => {
+    const p = await project(),
+      a = await task(p.id),
+      b = await task(p.id);
+    await projects.patchTask(
+      owner.actor,
+      p.id,
+      a.id,
+      1,
+      { position: 10 },
+      randomUUID(),
+    );
+    await projects.patchTask(
+      owner.actor,
+      p.id,
+      b.id,
+      1,
+      { position: 20 },
+      randomUUID(),
+    );
+    const url = '/api/v1/projects/' + p.id + '/tasks/order';
+    const first = await request(app.getHttpServer())
+      .get(url)
+      .query({ limit: 1 })
+      .set('Cookie', owner.cookie)
+      .expect(200);
+    expect(first.body.items[0].id).toBe(a.id);
+    await projects.patchTask(
+      owner.actor,
+      p.id,
+      b.id,
+      2,
+      { position: 0 },
+      randomUUID(),
+    );
+    await request(app.getHttpServer())
+      .get(url)
+      .query({ limit: 1, after: first.body.nextCursor })
+      .set('Cookie', owner.cookie)
+      .expect(400);
+    expect(
+      (
+        await request(app.getHttpServer())
+          .get(url)
+          .set('Cookie', owner.cookie)
+          .expect(200)
+      ).body.items[0].id,
+    ).toBe(b.id);
+    const phase = await projects.createComponent(
+        owner.actor,
+        p.id,
+        'phases',
+        { id: randomUUID(), title: 'A', position: 0 },
+        randomUUID(),
+      ),
+      other = await projects.createComponent(
+        owner.actor,
+        p.id,
+        'phases',
+        { id: randomUUID(), title: 'B', position: 1 },
+        randomUUID(),
+      );
+    const section = await projects.createComponent(
+        owner.actor,
+        p.id,
+        'sections',
+        {
+          id: randomUUID(),
+          title: 'A section',
+          position: 0,
+          phaseId: phase.id,
+        },
+        randomUUID(),
+      ),
+      milestone = await projects.createComponent(
+        owner.actor,
+        p.id,
+        'milestones',
+        {
+          id: randomUUID(),
+          title: 'B milestone',
+          position: 0,
+          phaseId: other.id,
+        },
+        randomUUID(),
+      );
+    await expect(
+      projects.associate(owner.actor, p.id, 'TASK', a.id, 2, {
+        sectionId: section.id,
+        milestoneId: milestone.id,
+      }),
+    ).rejects.toThrow();
+    await projects.patchComponent(
+      owner.actor,
+      p.id,
+      'milestones',
+      milestone.id,
+      1,
+      { phaseId: phase.id },
+    );
+    await projects.associate(owner.actor, p.id, 'TASK', a.id, 2, {
+      sectionId: section.id,
+      milestoneId: milestone.id,
+    });
+    await expect(
+      projects.patchComponent(
+        owner.actor,
+        p.id,
+        'milestones',
+        milestone.id,
+        2,
+        { phaseId: other.id },
+      ),
+    ).rejects.toThrow();
+    const structure = await request(app.getHttpServer())
+      .get('/api/v1/projects/' + p.id + '/structure/progress')
+      .set('Cookie', owner.cookie)
+      .expect(200);
+    expect(
+      structure.body.items.find((i: { id: string }) => i.id === other.id)
+        .progressPercent,
+    ).toBeNull();
+    expect(
+      structure.body.items.find((i: { id: string }) => i.id === milestone.id),
+    ).toMatchObject({ totalTasks: 1, openTasks: 1, progressPercent: 0 });
+  });
   it('coverage matrix R3 stores declared planning dates and notes without changing source task schedules', async () => {
     const overview = app.get(ProjectOverviewService),
       p = await project(),
@@ -669,7 +1256,15 @@ describe('P2-03 independent Projects and authorized shared sources', () => {
       client.project.update({ where: { id: p.id }, data: { key: 'bad key' } }),
     ).rejects.toThrow();
     const other = await project();
-    await overview.patchMetadata(owner.actor, other.id, 1, { key: 'PLAN' }); // display labels are not globally unique
+    await expect(
+      overview.patchMetadata(owner.actor, other.id, 1, { key: 'plan' }),
+    ).rejects.toHaveProperty('status', 409);
+    expect(await overview.metadata(owner.actor, other.id)).toMatchObject({
+      key: null,
+      revision: 1,
+    });
+    const foreign = await project(member);
+    await overview.patchMetadata(member.actor, foreign.id, 1, { key: 'PLAN' }); // Independent account namespace, not global uniqueness.
     const response = await request(app.getHttpServer())
       .get('/api/v1/projects/' + p.id + '/metadata')
       .set('Cookie', owner.cookie)
@@ -1834,6 +2429,44 @@ describe('P2-03 independent Projects and authorized shared sources', () => {
       _sum: { delta: true },
     });
     expect(usage._sum.delta).toBe(1);
+  });
+  it('P2 gap clears account key identity during lawful current-owner erasure while retaining Project history', async () => {
+    const creator = await person(),
+      p = await projects.create(
+        creator.actor,
+        {
+          id: randomUUID(),
+          title: 'Retained keyed Project',
+          key: 'ERASE-' + randomUUID().slice(0, 8),
+          retentionPolicyVersion: version,
+        },
+        randomUUID(),
+      ),
+      t = await task(p.id, creator);
+    const personal = await spaces.authorizePersonal(creator.actor);
+    await client.$transaction((tx) => spaces.setClosed(tx, personal, true));
+    expect(
+      await kernel.prepareIdentityErasure(creator.actor.userId, new Date()),
+    ).toBe(false);
+    expect(
+      await kernel.prepareIdentityErasure(creator.actor.userId, new Date()),
+    ).toBe(true);
+    expect(
+      await client.project.findUnique({ where: { id: p.id } }),
+    ).toMatchObject({ keyOwnerUserId: null, keyOwnerTeamId: null });
+    await client.$transaction(async (tx) => {
+      await spaces.erase(tx, personal);
+      await auth.eraseIdentityInside(tx, creator.actor.userId);
+    });
+    expect(
+      await client.user.findUnique({ where: { id: creator.actor.userId } }),
+    ).toBeNull();
+    expect(
+      await client.project.findUnique({ where: { id: p.id } }),
+    ).toMatchObject({ title: 'Retained keyed Project' });
+    expect(
+      await client.task.findUnique({ where: { id: t.id } }),
+    ).not.toBeNull();
   });
   it('executes free-mode feature decisions under the source transaction and preserves atomic usage on denial/replay', async () => {
     const policy = app.get(SharedFeaturePolicy),

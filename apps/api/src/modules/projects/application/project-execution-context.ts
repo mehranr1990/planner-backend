@@ -34,6 +34,7 @@ export type ExecutionContext = TaskToolContext & {
   pid: string;
   now: Date;
   didWrite: boolean;
+  activityDetails?: Prisma.InputJsonValue;
   begin: () => Promise<void>;
   grow: (feature: SharedFeatureKey, count?: number) => Promise<void>;
   member: (
@@ -263,6 +264,7 @@ export class ProjectExecutionContext {
                 typeof taskId === 'string'
                   ? { kind: 'TASK', id: taskId }
                   : taskId,
+                s.activityDetails,
               );
             }
             if (feature) usage.set(feature, (usage.get(feature) ?? 0) + 1);
@@ -280,7 +282,12 @@ export class ProjectExecutionContext {
           return result;
         } catch (error) {
           if (error instanceof P.PrismaClientKnownRequestError) {
-            if (error.code === 'P2002') throw new ConflictException();
+            if (error.code === 'P2002')
+              throw new ConflictException(
+                action === 'project.metadata.update'
+                  ? { code: 'PROJECT_KEY_CONFLICT' }
+                  : undefined,
+              );
             if (error.code === 'P2003') throw new BadRequestException();
             if (error.code === 'P2025') throw new NotFoundException();
           }

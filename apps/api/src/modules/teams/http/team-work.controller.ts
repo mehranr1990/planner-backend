@@ -83,8 +83,8 @@ export class TeamWorkController {
     @CurrentActor() actor: RequestActor,
     @Param('id', uuid) teamId: string,
     @Query(empty) _query: unknown,
-    @Body(new ZodValidationPipe(c.ProjectTaskCreateSchema))
-    body: z.infer<typeof c.ProjectTaskCreateSchema>,
+    @Body(new ZodValidationPipe(c.TeamTaskCreateSchema))
+    body: z.infer<typeof c.TeamTaskCreateSchema>,
     @Headers('idempotency-key') key: string | undefined,
     @Res({ passthrough: true }) res: Response,
   ) {
@@ -114,8 +114,8 @@ export class TeamWorkController {
     @Param('id', uuid) teamId: string,
     @Param('sourceId', uuid) sourceId: string,
     @Query(empty) _query: unknown,
-    @Body(new ZodValidationPipe(c.ProjectTaskPatchSchema))
-    body: z.infer<typeof c.ProjectTaskPatchSchema>,
+    @Body(new ZodValidationPipe(c.TeamTaskPatchSchema))
+    body: z.infer<typeof c.TeamTaskPatchSchema>,
     @Headers('idempotency-key') key: string | undefined,
     @Headers('if-match') match: string | undefined,
     @Res({ passthrough: true }) res: Response,

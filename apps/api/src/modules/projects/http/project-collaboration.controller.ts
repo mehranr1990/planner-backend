@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Put,
+  Patch,
   Delete,
   Body,
   Param,
@@ -38,6 +39,7 @@ import { ProjectsService } from '../application/projects.service.js';
 import { ProjectExportService } from '../application/project-export.service.js';
 const uuid = new ZodValidationPipe(c.ProjectCreateSchema.shape.id),
   kind = new ZodValidationPipe(c.ProjectContentTargetSchema.shape.kind),
+  commentKind = new ZodValidationPipe(c.ProjectCommentTargetSchema.shape.kind),
   page = new ZodValidationPipe(c.ProjectPageQuerySchema),
   empty = new ZodValidationPipe(c.ProjectEmptySchema);
 function revision(raw: string | undefined) {
@@ -58,6 +60,153 @@ export class ProjectCollaborationController {
     @Inject(ProjectExportService)
     private readonly exports: ProjectExportService,
   ) {}
+  @Get('files/config') fileConfig(
+    @CurrentActor() a: RequestActor,
+    @Param('projectId', uuid) p: string,
+    @Query(empty) _q: unknown,
+  ) {
+    return this.files.configuration(a, p);
+  }
+  @Get('file-folders') folders(
+    @CurrentActor() a: RequestActor,
+    @Param('projectId', uuid) p: string,
+    @Query(page) q: z.infer<typeof c.ProjectPageQuerySchema>,
+  ) {
+    return this.files.folders(a, p, q);
+  }
+  @Post('file-folders') async folderCreate(
+    @CurrentActor() a: RequestActor,
+    @Param('projectId', uuid) p: string,
+    @Body(new ZodValidationPipe(c.ProjectFileFolderCreateSchema))
+    input: z.infer<typeof c.ProjectFileFolderCreateSchema>,
+    @Headers('idempotency-key') key: string | undefined,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const v = await this.files.createFolder(a, p, input, key);
+    res.setHeader('ETag', revisionTag(v.revision));
+    return v;
+  }
+  @Patch('file-folders/:folderId') async folderPatch(
+    @CurrentActor() a: RequestActor,
+    @Param('projectId', uuid) p: string,
+    @Param('folderId', uuid) id: string,
+    @Body(new ZodValidationPipe(c.ProjectFileFolderPatchSchema))
+    input: z.infer<typeof c.ProjectFileFolderPatchSchema>,
+    @Headers('if-match') match: string | undefined,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const v = await this.files.patchFolder(a, p, id, revision(match), input);
+    res.setHeader('ETag', revisionTag(v.revision));
+    return v;
+  }
+  @Delete('file-folders/:folderId') async folderArchive(
+    @CurrentActor() a: RequestActor,
+    @Param('projectId', uuid) p: string,
+    @Param('folderId', uuid) id: string,
+    @Body(new ZodValidationPipe(c.ProjectEmptySchema.optional())) _b: unknown,
+    @Headers('if-match') match: string | undefined,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const v = await this.files.archiveFolder(a, p, id, revision(match));
+    res.setHeader('ETag', revisionTag(v.revision));
+    return v;
+  }
+  @Get('file-library') library(
+    @CurrentActor() a: RequestActor,
+    @Param('projectId', uuid) p: string,
+    @Query(new ZodValidationPipe(c.ProjectFileLibraryQuerySchema))
+    q: z.infer<typeof c.ProjectFileLibraryQuerySchema>,
+  ) {
+    return this.files.library(a, p, q);
+  }
+  @Get('files/:fileId/metadata') async fileMetadata(
+    @CurrentActor() a: RequestActor,
+    @Param('projectId', uuid) p: string,
+    @Param('fileId', uuid) id: string,
+    @Query(empty) _q: unknown,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const v = await this.files.metadata(a, p, id);
+    res.setHeader('ETag', revisionTag(v.revision));
+    return v;
+  }
+  @Patch('files/:fileId/folder') async fileMove(
+    @CurrentActor() a: RequestActor,
+    @Param('projectId', uuid) p: string,
+    @Param('fileId', uuid) id: string,
+    @Body(new ZodValidationPipe(c.ProjectFileMoveSchema))
+    input: z.infer<typeof c.ProjectFileMoveSchema>,
+    @Headers('if-match') match: string | undefined,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const v = await this.files.move(a, p, id, revision(match), input.folderId);
+    res.setHeader('ETag', revisionTag(v.revision));
+    return v;
+  }
+  @Get('files/:fileId/versions') fileVersions(
+    @CurrentActor() a: RequestActor,
+    @Param('projectId', uuid) p: string,
+    @Param('fileId', uuid) id: string,
+    @Query(empty) _q: unknown,
+  ) {
+    return this.files.versions(a, p, id);
+  }
+  @Post('files/:fileId/versions')
+  @UseGuards(FileThrottleGuard)
+  async fileVersionCreate(
+    @CurrentActor() a: RequestActor,
+    @Param('projectId', uuid) p: string,
+    @Param('fileId', uuid) id: string,
+    @Body(new ZodValidationPipe(c.ProjectFileVersionCreateSchema))
+    input: z.infer<typeof c.ProjectFileVersionCreateSchema>,
+    @Headers('if-match') match: string | undefined,
+    @Headers('idempotency-key') key: string | undefined,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const v = await this.files.initiateVersion(
+      a,
+      p,
+      id,
+      revision(match),
+      input,
+      key,
+    );
+    res.setHeader('ETag', revisionTag(v.revision));
+    return v;
+  }
+  @Get('files/:fileId/versions/:versionId/download')
+  @UseGuards(FileThrottleGuard)
+  async fileVersionDownload(
+    @CurrentActor() a: RequestActor,
+    @Param('projectId', uuid) p: string,
+    @Param('fileId', uuid) id: string,
+    @Param('versionId', uuid) versionId: string,
+    @Query(empty) _q: unknown,
+    @Res() res: Response,
+  ) {
+    const { file, stream } = await this.files.versionDownload(
+        a,
+        p,
+        id,
+        versionId,
+      ),
+      name = encodeURIComponent(file.filename).replace(
+        /[!'()*]/g,
+        (ch) => '%' + ch.charCodeAt(0).toString(16).toUpperCase(),
+      );
+    res.setHeader('Content-Type', 'application/octet-stream');
+    res.setHeader('Content-Length', file.actualSize!);
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="download"; filename*=UTF-8''${name}`,
+    );
+    try {
+      await pipeline(stream, res);
+    } catch {
+      res.destroy();
+    }
+  }
   @Post('exports')
   @HttpCode(200)
   async export(
@@ -182,7 +331,8 @@ export class ProjectCollaborationController {
   comments(
     @CurrentActor() a: RequestActor,
     @Param('projectId', uuid) p: string,
-    @Param('targetKind', kind) k: Kind,
+    @Param('targetKind', commentKind)
+    k: z.infer<typeof c.ProjectCommentTargetSchema>['kind'],
     @Param('targetId', uuid) id: string,
     @Query(page) q: z.infer<typeof c.ProjectPageQuerySchema>,
   ) {
@@ -192,7 +342,8 @@ export class ProjectCollaborationController {
   history(
     @CurrentActor() a: RequestActor,
     @Param('projectId', uuid) p: string,
-    @Param('targetKind', kind) k: Kind,
+    @Param('targetKind', commentKind)
+    k: z.infer<typeof c.ProjectCommentTargetSchema>['kind'],
     @Param('targetId', uuid) id: string,
     @Param('commentId', uuid) commentId: string,
     @Query(page) q: z.infer<typeof c.ProjectPageQuerySchema>,
@@ -203,7 +354,8 @@ export class ProjectCollaborationController {
   async commentEdit(
     @CurrentActor() a: RequestActor,
     @Param('projectId', uuid) p: string,
-    @Param('targetKind', kind) k: Kind,
+    @Param('targetKind', commentKind)
+    k: z.infer<typeof c.ProjectCommentTargetSchema>['kind'],
     @Param('targetId', uuid) id: string,
     @Param('commentId', uuid) commentId: string,
     @Body(new ZodValidationPipe(c.ProjectCommentInputSchema))
@@ -226,7 +378,8 @@ export class ProjectCollaborationController {
   async commentDelete(
     @CurrentActor() a: RequestActor,
     @Param('projectId', uuid) p: string,
-    @Param('targetKind', kind) k: Kind,
+    @Param('targetKind', commentKind)
+    k: z.infer<typeof c.ProjectCommentTargetSchema>['kind'],
     @Param('targetId', uuid) id: string,
     @Param('commentId', uuid) commentId: string,
     @Body(new ZodValidationPipe(c.ProjectEmptySchema.optional())) _v: unknown,

@@ -23,7 +23,7 @@ import type { RequestActor } from '../../../platform/auth/request-actor.js';
 import { SharedControl } from '../../../platform/storage/shared-control.js';
 import type { SharedControlRecord } from '../../../platform/storage/shared-control.js';
 import { SharedKernel } from './shared-kernel.service.js';
-import type { SharedAuthority } from '../public/shared-authority.js';
+import { SharedAuthority } from '../public/shared-authority.js';
 import { CollaborationLimit } from './collaboration-limit.js';
 import {
   roleAdministration,
@@ -650,6 +650,204 @@ export class CollaborationService {
       },
     );
   }
+  async projectSent(
+    actor: RequestActor,
+    spaceId: string,
+    q: z.infer<typeof c.ProjectSentInvitationQuerySchema>,
+  ) {
+    await this.requireContextKind(spaceId, 'PROJECT');
+    return this.kernel.participate(
+      actor,
+      spaceId,
+      [],
+      async (tx, now, locked) => {
+        const access = await this.kernel.participantAuthority(
+            tx,
+            actor,
+            actor.userId,
+            { spaceId, scopeId: spaceId, capability: 'membership.member' },
+            locked,
+          ),
+          context = 'project-sent:' + spaceId + ':' + q.state,
+          stamp = String(access.authorizationVersion),
+          after = this.kernel.cursorPosition(
+            context,
+            stamp,
+            actor.userId,
+            q.after,
+          );
+        const rows = await tx.contextInvitation.findMany({
+          where: {
+            ...(await this.location(tx, spaceId)),
+            companyScopeId: null,
+            ...(q.state === 'EXPIRED'
+              ? {
+                  OR: [
+                    { state: 'EXPIRED' },
+                    { state: 'PENDING', expiresAt: { lte: now } },
+                  ],
+                }
+              : {
+                  state: q.state,
+                  ...(q.state === 'PENDING' ? { expiresAt: { gt: now } } : {}),
+                }),
+            ...(after ? { id: { gt: after } } : {}),
+          },
+          orderBy: { id: 'asc' },
+          take: q.limit + 1,
+        });
+        const items = [];
+        for (const row of rows.slice(0, q.limit)) {
+          try {
+            await this.kernel.participantAuthority(
+              tx,
+              actor,
+              actor.userId,
+              {
+                spaceId,
+                scopeId: spaceId,
+                capability: roleAdministration(row.memberRole as MemberRole),
+              },
+              locked,
+            );
+          } catch (error) {
+            if (
+              error instanceof ForbiddenException ||
+              error instanceof NotFoundException
+            )
+              continue;
+            throw error;
+          }
+          const recipient = row.recipientUserId
+            ? await this.identity.current(tx, row.recipientUserId)
+            : null;
+          items.push(
+            c.ProjectSentInvitationSchema.parse({
+              ...invitationView(row),
+              state:
+                row.state === 'PENDING' && row.expiresAt <= now
+                  ? 'EXPIRED'
+                  : row.state,
+              recipientEmail: recipient?.email ?? row.recipientEmail,
+              createdAt: row.createdAt.toISOString(),
+              sentAt: (row.resentAt ?? row.createdAt).toISOString(),
+              declineNote: row.declineNote,
+            }),
+          );
+        }
+        return this.kernel.cursorPage(context, stamp, actor.userId, {
+          items,
+          nextCursor: rows.length > q.limit ? rows[q.limit - 1]!.id : null,
+        });
+      },
+    );
+  }
+  async resendProjectInvitation(
+    actor: RequestActor,
+    spaceId: string,
+    id: string,
+    revision: number,
+    raw: string | undefined,
+  ) {
+    await this.requireContextKind(spaceId, 'PROJECT');
+    const creationKey = keyHash(raw),
+      hint = await this.db.client.contextInvitation.findUnique({
+        where: { id },
+      }),
+      issuer = hint
+        ? await this.userForAccess(this.db.client, hint.inviterAccessId)
+        : null;
+    return this.signed(
+      actor,
+      spaceId,
+      issuer ? [issuer] : [],
+      'invitation.resend',
+      id,
+      async (tx, now, locked, begin) => {
+        const row = await tx.contextInvitation.findFirst({
+          where: {
+            id,
+            ...(await this.location(tx, spaceId)),
+            companyScopeId: null,
+          },
+        });
+        if (!row) throw new NotFoundException();
+        const request = {
+            spaceId,
+            scopeId: spaceId,
+            capability: roleAdministration(row.memberRole as MemberRole) as
+              'membership.admin' | 'membership.manager' | 'membership.member',
+          },
+          access = await this.kernel.participantAuthority(
+            tx,
+            actor,
+            actor.userId,
+            request,
+            locked,
+          ),
+          a = new SharedAuthority(tx, [access], spaceId);
+        try {
+          await this.kernel.receipt(
+            tx,
+            a,
+            request,
+            {
+              operation: 'project.invitation.resend',
+              key: creationKey,
+              fingerprint: hash(JSON.stringify({ id, revision })),
+            },
+            async () => {
+              if (row.state !== 'PENDING' || row.expiresAt <= now)
+                throw new ConflictException({
+                  code: 'INVITATION_RESEND_UNAVAILABLE',
+                });
+              if (row.revision !== revision)
+                throw new ConflictException({ code: 'STALE_REVISION' });
+              if (
+                !issuer ||
+                issuer !== (await this.userForAccess(tx, row.inviterAccessId))
+              )
+                throw new NotFoundException();
+              await this.kernel.participantAuthority(
+                tx,
+                actor,
+                issuer,
+                { ...request, generation: row.inviterGeneration },
+                locked,
+              );
+              await this.limit.take('invitation.context:' + spaceId, 20, tx);
+              const audit = await begin();
+              await tx.contextInvitation.update({
+                where: { id },
+                data: {
+                  proofHash: hash(randomBytes(32).toString('base64url')),
+                  resentAt: now,
+                  revision: { increment: 1 },
+                },
+              });
+              await this.kernel.offerEffect(
+                tx,
+                actor,
+                spaceId,
+                access.actorId,
+                'invitation.resend',
+                id,
+                audit,
+              );
+              return { id, statusCode: 200 };
+            },
+          );
+          // Recipient retrieves a fresh proof through the existing in-app recipient
+          // endpoint; neither a raw proof nor an email delivery claim is returned.
+          return invitationView(
+            await tx.contextInvitation.findUniqueOrThrow({ where: { id } }),
+          );
+        } finally {
+          a.close();
+        }
+      },
+    );
+  }
   async pendingSent(
     actor: RequestActor,
     spaceId: string,
@@ -1091,6 +1289,7 @@ export class CollaborationService {
       locked: string[],
       createdAt: Date,
     ) => Promise<void>,
+    declineNote?: string,
   ) {
     const hint = await this.invitationHint(id, proof),
       issuerUser = await this.userForAccess(
@@ -1291,6 +1490,13 @@ export class CollaborationService {
           where: { id },
           data: {
             state: accept ? 'ACCEPTED' : 'DECLINED',
+            ...(!accept && kind === 'PROJECT' && declineNote !== undefined
+              ? {
+                  declineNote: c.ProjectInvitationDeclineSchema.parse({
+                    note: declineNote,
+                  }).note!,
+                }
+              : {}),
             endedAt: now,
             recipientUserId: null,
             recipientEmail: null,

@@ -3346,15 +3346,28 @@ export class SharedKernel {
       | 'MEETING'
       | 'SOCIAL_GROUP' = 'PROJECT',
     additionalUsers: string[] = [],
+    additionalRequests: SharedRequest[] = [],
   ) {
     this.enabled();
     uuid.parse(spaceId);
     await this.control.records();
+    const lockedUsers = [...new Set([actor.userId, ...additionalUsers])].sort();
+    const extraSpaces = await Promise.all(
+      additionalRequests.map((r) => this.custodySpace(r.scopeId ?? r.spaceId)),
+    );
     return this.transaction(
-      [...new Set([actor.userId, ...additionalUsers])].sort(),
-      [],
+      lockedUsers,
+      [...new Set(extraSpaces)].sort(),
       actor,
       async (tx) => {
+        for (const request of additionalRequests)
+          await this.participantAuthority(
+            tx,
+            actor,
+            actor.userId,
+            request,
+            lockedUsers,
+          );
         if (!(await this.accountActive(tx, actor.userId)))
           throw new ForbiddenException();
         const retention = await tx.sharedRetentionPolicy.findUnique({

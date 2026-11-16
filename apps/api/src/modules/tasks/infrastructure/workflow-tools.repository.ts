@@ -4,6 +4,7 @@ import {
   ConflictException,
   NotFoundException,
   ForbiddenException,
+  PayloadTooLargeException,
 } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import * as c from '@mehran/api-contracts';
@@ -47,6 +48,211 @@ const statusCap = (s: Task['status']) =>
     : ('task.update' as const);
 @Injectable()
 export class WorkflowTools {
+  private draftView(r: {
+    id: string;
+    workflowId: string | null;
+    baseRevision: number;
+    definition: Prisma.JsonValue;
+    state: string;
+    revision: number;
+    publishedVersion: number | null;
+    createdByActorId: string;
+    createdAt: Date;
+    updatedAt: Date;
+  }) {
+    return c.ProjectWorkflowDraftSchema.strip().parse({
+      ...r,
+      createdAt: r.createdAt.toISOString(),
+      updatedAt: r.updatedAt.toISOString(),
+    });
+  }
+  private async draftRow(
+    tx: Prisma.TransactionClient,
+    a: SharedAuthority,
+    ctx: TaskToolContext,
+    id: string,
+  ) {
+    a.require(tx, ctx.scopeId, 'workflow.publish');
+    const row = await tx.taskWorkflowDraft.findFirst({
+      where: { ...scope(ctx), id },
+    });
+    if (!row) throw new NotFoundException();
+    return row;
+  }
+  async drafts(
+    tx: Prisma.TransactionClient,
+    a: SharedAuthority,
+    ctx: TaskToolContext,
+    after: string | undefined,
+    limit: number,
+  ) {
+    a.require(tx, ctx.scopeId, 'workflow.publish');
+    return (
+      await tx.taskWorkflowDraft.findMany({
+        where: { ...scope(ctx), ...(after ? { id: { gt: after } } : {}) },
+        orderBy: { id: 'asc' },
+        take: limit,
+      })
+    ).map((r) => this.draftView(r));
+  }
+  async draft(
+    tx: Prisma.TransactionClient,
+    a: SharedAuthority,
+    ctx: TaskToolContext,
+    id: string,
+  ) {
+    return this.draftView(await this.draftRow(tx, a, ctx, id));
+  }
+  async saveDraft(
+    tx: Prisma.TransactionClient,
+    a: SharedAuthority,
+    ctx: TaskToolContext,
+    id: string,
+    expected: number,
+    input: z.infer<typeof c.ProjectWorkflowDraftCreateSchema>,
+    key: string,
+    fingerprint: string,
+  ) {
+    const actor = a.require(tx, ctx.scopeId, 'workflow.publish');
+    rule(() =>
+      validateWorkflow(input.definition.states, input.definition.edges),
+    );
+    if (expected === 0) {
+      const previous = await tx.taskWorkflowDraft.findFirst({
+        where: {
+          ...scope(ctx),
+          createdByActorId: actor.actorId,
+          creationKey: key,
+        },
+      });
+      if (previous) {
+        if (previous.id !== id || previous.fingerprint !== fingerprint)
+          throw new ConflictException();
+        return this.draftView(previous);
+      }
+      if (input.workflowId) {
+        const current = await tx.taskWorkflow.findFirst({
+          where: { ...scope(ctx), id: input.workflowId },
+        });
+        if (!current) throw new NotFoundException();
+        revision(current.revision, input.baseRevision);
+      } else if (input.baseRevision !== 0) throw new ConflictException();
+      await ctx.begin?.();
+      return this.draftView(
+        await tx.taskWorkflowDraft.create({
+          data: {
+            ...scope(ctx),
+            id,
+            workflowId: input.workflowId,
+            baseRevision: input.baseRevision,
+            definition: input.definition,
+            createdByActorId: actor.actorId,
+            creationKey: key,
+            fingerprint,
+          },
+        }),
+      );
+    }
+    const row = await this.draftRow(tx, a, ctx, id);
+    revision(row.revision, expected);
+    if (row.state !== 'DRAFT')
+      throw new ConflictException({ code: 'WORKFLOW_DRAFT_TERMINAL' });
+    await ctx.begin?.();
+    return this.draftView(
+      await tx.taskWorkflowDraft.update({
+        where: { id },
+        data: {
+          definition: input.definition,
+          revision: { increment: 1 },
+          updatedAt: new Date(),
+        },
+      }),
+    );
+  }
+  async previewDraft(
+    tx: Prisma.TransactionClient,
+    a: SharedAuthority,
+    ctx: TaskToolContext,
+    id: string,
+  ) {
+    const row = await this.draftRow(tx, a, ctx, id),
+      definition = c.WorkflowVersionInputSchema.parse(row.definition),
+      ids = definition.states.map((s) => s.id);
+    const states = row.workflowId
+      ? await tx.taskWorkflowState.findMany({
+          where: {
+            ...scope(ctx),
+            workflowId: row.workflowId,
+            id: { notIn: ids },
+          },
+          select: { id: true, version: true },
+          take: 10001,
+        })
+      : [];
+    if (states.length > 10000) throw new PayloadTooLargeException();
+    const removedStates = [];
+    for (const state of states)
+      removedStates.push({
+        version: state.version,
+        stateId: state.id,
+        taskCount: await tx.taskWorkflowBinding.count({
+          where: {
+            ...scope(ctx),
+            workflowId: row.workflowId!,
+            version: state.version,
+            stateId: state.id,
+          },
+        }),
+      });
+    return c.ProjectWorkflowDraftPreviewSchema.parse({
+      id,
+      revision: row.revision,
+      preservesExistingBindings: true,
+      removedStates,
+    });
+  }
+  async finishDraft(
+    tx: Prisma.TransactionClient,
+    a: SharedAuthority,
+    ctx: TaskToolContext,
+    id: string,
+    expected: number,
+    publish: boolean,
+    key: string,
+    fingerprint: string,
+  ) {
+    const row = await this.draftRow(tx, a, ctx, id);
+    revision(row.revision, expected);
+    if (row.state !== 'DRAFT')
+      throw new ConflictException({ code: 'WORKFLOW_DRAFT_TERMINAL' });
+    let publishedVersion: number | null = null;
+    if (publish) {
+      const result = await this.publishWorkflow(
+        tx,
+        a,
+        ctx,
+        row.workflowId ?? row.id,
+        row.baseRevision,
+        c.WorkflowVersionInputSchema.parse(row.definition),
+        key,
+        fingerprint,
+      );
+      publishedVersion = result.version;
+    }
+    await ctx.begin?.();
+    return this.draftView(
+      await tx.taskWorkflowDraft.update({
+        where: { id },
+        data: {
+          state: publish ? 'PUBLISHED' : 'DISCARDED',
+          ...(publish ? { workflowId: row.workflowId ?? row.id } : {}),
+          publishedVersion,
+          revision: { increment: 1 },
+          updatedAt: new Date(),
+        },
+      }),
+    );
+  }
   constructor(@Inject(SharedKernel) private readonly kernel: SharedKernel) {}
   async replayedTransition(
     tx: Prisma.TransactionClient,

@@ -18,6 +18,7 @@ import type {
   ProjectMilestone,
   ProjectMemberAssignment,
 } from '../../../generated/prisma/client.js';
+import { Prisma as P } from '../../../generated/prisma/client.js';
 import { DatabaseService } from '../../../platform/database/database.service.js';
 import { AuthService } from '../../../platform/auth/auth.service.js';
 import type { RequestActor } from '../../../platform/auth/request-actor.js';
@@ -25,13 +26,19 @@ import {
   SharedKernel,
   SharedAuthority,
   ResourceGrants,
+  CollaborationService,
 } from '../../spaces/public/index.js';
 import type { SharedRequest } from '../../spaces/public/index.js';
 import { SharedTasks, ProjectTaskTools } from '../../tasks/public/index.js';
 import { SharedGoals } from '../../goals/public/index.js';
+import { initialProjectTemplates } from '../domain/initial-templates.js';
 type Kind = z.infer<typeof c.ProjectComponentKindSchema>;
 const hash = (v: unknown) =>
   createHash('sha256').update(JSON.stringify(v)).digest('hex');
+const templateNodeId = (projectId: string, key: string) => {
+  const h = hash({ projectId, key, templateVersion: 1 });
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-8${h.slice(13, 16)}-a${h.slice(17, 20)}-${h.slice(20, 32)}`;
+};
 function key(v: string | undefined) {
   if (!v || !/^[!-~]{1,128}$/.test(v)) throw new BadRequestException();
   return v;
@@ -53,6 +60,14 @@ const componentView = (
         ? (row.targetDate?.toISOString().slice(0, 10) ?? null)
         : null,
     completed: 'completed' in row ? row.completed : null,
+    startDate:
+      'startDate' in row
+        ? (row.startDate?.toISOString().slice(0, 10) ?? null)
+        : null,
+    endDate:
+      'endDate' in row
+        ? (row.endDate?.toISOString().slice(0, 10) ?? null)
+        : null,
   });
 const assignmentView = (row: ProjectMemberAssignment) =>
   c.ProjectMemberAssignmentSchema.strip().parse({
@@ -73,7 +88,13 @@ export class ProjectsService {
     @Inject(SharedGoals) private readonly goals: SharedGoals,
     @Inject(AuthService) private readonly auth: AuthService,
     @Inject(ResourceGrants) private readonly grants: ResourceGrants,
+    @Inject(CollaborationService)
+    private readonly collaboration: CollaborationService,
   ) {}
+  initialTemplates() {
+    this.kernel.assertEnabled();
+    return { items: initialProjectTemplates };
+  }
   validateGrantTarget = async (
     tx: Prisma.TransactionClient,
     a: SharedAuthority,
@@ -241,6 +262,7 @@ export class ProjectsService {
     action: string,
     id: string,
     feature?: string,
+    details?: Prisma.InputJsonValue,
   ) {
     const access = a.require(
       tx,
@@ -262,6 +284,7 @@ export class ProjectsService {
             : action.startsWith('goal.')
               ? { kind: 'GOAL', id }
               : undefined),
+        details,
       );
     await this.kernel.offerEffect(
       tx,
@@ -311,6 +334,19 @@ export class ProjectsService {
     const input = c.ProjectCreateSchema.parse(body),
       creationKey = hash(key(rawKey)),
       fingerprint = hash(input);
+    if (input.startDate && input.endDate && input.startDate > input.endDate)
+      throw new BadRequestException();
+    if (input.ownerTeamId)
+      await this.collaboration.requireContextKind(input.ownerTeamId, 'TEAM');
+    const additionalRequests: SharedRequest[] = input.ownerTeamId
+      ? [
+          {
+            spaceId: input.ownerTeamId,
+            scopeId: input.ownerTeamId,
+            capability: 'settings.manage',
+          },
+        ]
+      : [];
     try {
       await this.kernel.provision(
         actor,
@@ -325,10 +361,149 @@ export class ProjectsService {
               createdByActorId: b.actorId,
               title: input.title,
               description: input.description ?? null,
+              key: input.key ?? null,
+              keyOwnerTeamId: input.ownerTeamId ?? null,
+              color: input.color ?? null,
+              startDate: input.startDate ? new Date(input.startDate) : null,
+              endDate: input.endDate ? new Date(input.endDate) : null,
+              initialTemplate: input.template ?? 'BLANK',
+              initialTemplateVersion: 1,
               creationKey,
               creationFingerprint: fingerprint,
             },
           });
+          const template = initialProjectTemplates.find(
+            (t) => t.id === (input.template ?? 'BLANK'),
+          )!;
+          const caps: SharedRequest['capability'][] = [
+            'task.read',
+            'workflow.publish',
+            'work.manage',
+            'settings.manage',
+          ];
+          const entries = [];
+          for (const capability of caps)
+            entries.push(
+              await this.kernel.participantAuthority(
+                tx,
+                actor,
+                actor.userId,
+                { spaceId: b.spaceId, scopeId: b.scopeId, capability },
+                [actor.userId],
+              ),
+            );
+          for (const r of additionalRequests)
+            entries.push(
+              await this.kernel.participantAuthority(
+                tx,
+                actor,
+                actor.userId,
+                r,
+                [actor.userId],
+              ),
+            );
+          const a = new SharedAuthority(tx, entries);
+          try {
+            for (const [position, title] of template.sections.entries())
+              await tx.projectSection.create({
+                data: {
+                  id: templateNodeId(input.id, 'section:' + position),
+                  spaceId: b.spaceId,
+                  scopeId: b.scopeId,
+                  projectId: input.id,
+                  title,
+                  position,
+                },
+              });
+            if (template.workflow) {
+              const statuses = [
+                'OPEN',
+                'IN_PROGRESS',
+                'DONE',
+                'CANCELED',
+              ] as const;
+              const states = statuses.map((status) => ({
+                id: templateNodeId(input.id, 'state:' + status),
+                label: status.replaceAll('_', ' '),
+                status,
+              }));
+              const edges = states.flatMap((from) =>
+                states
+                  .filter((to) => to.id !== from.id)
+                  .map((to) => ({
+                    id: templateNodeId(
+                      input.id,
+                      'edge:' + from.status + ':' + to.status,
+                    ),
+                    fromStateId: from.id,
+                    toStateId: to.id,
+                    requiresApproval: false,
+                    approvers: [],
+                  })),
+              );
+              const workflowId = templateNodeId(input.id, 'workflow');
+              await this.taskTools.publishWorkflow(
+                tx,
+                a,
+                {
+                  spaceId: b.spaceId,
+                  scopeId: b.scopeId,
+                  actor,
+                  lockedUsers: [actor.userId],
+                },
+                workflowId,
+                0,
+                { name: template.name, states, edges },
+                hash({ project: input.id, template: template.id, version: 1 }),
+                hash(template),
+              );
+              await this.kernel.offerEffect(
+                tx,
+                actor,
+                b.scopeId,
+                b.actorId,
+                'workflow.publish',
+                workflowId,
+                randomUUID(),
+                {
+                  actorId: b.actorId,
+                  feature: 'task.workflow-version',
+                  delta: 1,
+                },
+              );
+            }
+            if (input.ownerTeamId) {
+              const team = a.require(tx, input.ownerTeamId, 'settings.manage');
+              await this.kernel.featureGrowth(
+                tx,
+                input.ownerTeamId,
+                'team.project-reference',
+              );
+              await tx.teamProjectReference.create({
+                data: {
+                  teamId: input.ownerTeamId,
+                  projectId: input.id,
+                  spaceId: b.spaceId,
+                },
+              });
+              await this.kernel.offerEffect(
+                tx,
+                actor,
+                input.ownerTeamId,
+                team.actorId,
+                'team.project.reference',
+                input.id,
+                randomUUID(),
+                {
+                  actorId: team.actorId,
+                  feature: 'team.project-reference',
+                  delta: 1,
+                },
+              );
+            }
+          } finally {
+            a.close();
+          }
           await this.kernel.offerEffect(
             tx,
             actor,
@@ -339,9 +514,21 @@ export class ProjectsService {
             randomUUID(),
           );
         },
+        'PROJECT',
+        [],
+        additionalRequests,
       );
     } catch (error) {
+      if (
+        error instanceof P.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      )
+        throw new ConflictException({ code: 'PROJECT_KEY_CONFLICT' });
       if (!(error instanceof ConflictException)) throw error;
+      if (
+        !(await this.db.client.project.findUnique({ where: { id: input.id } }))
+      )
+        throw error;
     }
     const row = await this.hint(input.id);
     return this.run(
@@ -517,10 +704,15 @@ export class ProjectsService {
       phaseId?: string | null | undefined;
       targetDate?: string | null | undefined;
       completed?: boolean | undefined;
+      startDate?: string | null | undefined;
+      endDate?: string | null | undefined;
     },
   ) {
     if (
       (kind === 'phases' && input.phaseId !== undefined) ||
+      (kind !== 'phases' &&
+        (input.startDate !== undefined || input.endDate !== undefined)) ||
+      (input.startDate && input.endDate && input.startDate > input.endDate) ||
       (kind !== 'milestones' &&
         (input.targetDate !== undefined || input.completed !== undefined))
     )
@@ -620,7 +812,15 @@ export class ProjectsService {
             };
             const created =
               kind === 'phases'
-                ? await tx.projectPhase.create({ data })
+                ? await tx.projectPhase.create({
+                    data: {
+                      ...data,
+                      startDate: input.startDate
+                        ? new Date(input.startDate)
+                        : null,
+                      endDate: input.endDate ? new Date(input.endDate) : null,
+                    },
+                  })
                 : kind === 'sections'
                   ? await tx.projectSection.create({
                       data: { ...data, phaseId: input.phaseId ?? null },
@@ -670,6 +870,18 @@ export class ProjectsService {
         const current = await this.component(tx, kind, row, componentId);
         if (!current) throw new NotFoundException();
         if (current.revision !== revision) throw new ConflictException();
+        if (kind === 'phases') {
+          const phase = current as ProjectPhase;
+          const start =
+            input.startDate !== undefined
+              ? input.startDate
+              : phase.startDate?.toISOString().slice(0, 10);
+          const end =
+            input.endDate !== undefined
+              ? input.endDate
+              : phase.endDate?.toISOString().slice(0, 10);
+          if (start && end && start > end) throw new BadRequestException();
+        }
         if (
           input.phaseId &&
           !(await this.component(tx, 'phases', row, input.phaseId))
@@ -680,9 +892,47 @@ export class ProjectsService {
           ...(input.position !== undefined ? { position: input.position } : {}),
           revision: { increment: 1 },
         };
+        if (kind !== 'phases' && input.phaseId) {
+          const conflict = await tx.projectTask.findFirst({
+            where: {
+              spaceId: row.spaceId,
+              scopeId: row.scopeId,
+              projectId: id,
+              Task: { deletedAt: null },
+              ...(kind === 'sections'
+                ? {
+                    sectionId: componentId,
+                    ProjectMilestone: { phaseId: { not: input.phaseId } },
+                  }
+                : {
+                    milestoneId: componentId,
+                    ProjectSection: { phaseId: { not: input.phaseId } },
+                  }),
+            },
+          });
+          if (conflict)
+            throw new ConflictException({ code: 'PROJECT_PHASE_MISMATCH' });
+        }
         const result =
           kind === 'phases'
-            ? await tx.projectPhase.update({ where: { id: componentId }, data })
+            ? await tx.projectPhase.update({
+                where: { id: componentId },
+                data: {
+                  ...data,
+                  ...(input.startDate !== undefined
+                    ? {
+                        startDate: input.startDate
+                          ? new Date(input.startDate)
+                          : null,
+                      }
+                    : {}),
+                  ...(input.endDate !== undefined
+                    ? {
+                        endDate: input.endDate ? new Date(input.endDate) : null,
+                      }
+                    : {}),
+                },
+              })
             : kind === 'sections'
               ? await tx.projectSection.update({
                   where: { id: componentId },
@@ -719,6 +969,32 @@ export class ProjectsService {
           r,
           'project.' + kind + '.update',
           componentId,
+          undefined,
+          {
+            changes: (
+              [
+                'title',
+                'position',
+                'phaseId',
+                'targetDate',
+                'completed',
+                'startDate',
+                'endDate',
+              ] as const
+            ).flatMap((field) => {
+              const before = componentView(kind, current),
+                after = componentView(kind, result);
+              return after[field] !== before[field]
+                ? [
+                    {
+                      field,
+                      from: before[field] ?? null,
+                      to: after[field] ?? null,
+                    },
+                  ]
+                : [];
+            }),
+          },
         );
         return componentView(kind, result);
       },
@@ -923,7 +1199,10 @@ export class ProjectsService {
     if (
       input.title !== undefined ||
       input.description !== undefined ||
-      input.priority !== undefined
+      input.priority !== undefined ||
+      input.parentTaskId !== undefined ||
+      input.position !== undefined ||
+      input.sectionId !== undefined
     )
       requests.push(this.request(row, 'task.update', resource));
     return this.run(actor, row, requests, async (tx, a) => {
@@ -935,19 +1214,152 @@ export class ProjectsService {
         rawKey,
         { sourceId, revision, input },
         async () => {
+          const before = await this.tasks.read(tx, a, row.scopeId, sourceId);
+          const { position, sectionId, ...patch } = input;
+          const changes: {
+            field: string;
+            from: string | number | boolean | null;
+            to: string | number | boolean | null;
+          }[] = [];
+          if (position !== undefined || sectionId !== undefined) {
+            const link = await tx.projectTask.findFirst({
+              where: {
+                spaceId: row.spaceId,
+                scopeId: row.scopeId,
+                projectId: id,
+                taskId: sourceId,
+              },
+            });
+            if (!link) throw new NotFoundException();
+            if (position !== undefined)
+              changes.push({
+                field: 'position',
+                from: link.position,
+                to: position,
+              });
+            if (sectionId !== undefined)
+              changes.push({
+                field: 'sectionId',
+                from: link.sectionId,
+                to: sectionId,
+              });
+            await this.associationTargets(tx, row, {
+              sectionId: sectionId !== undefined ? sectionId : link.sectionId,
+              milestoneId: link.milestoneId,
+            });
+            await tx.projectTask.update({
+              where: { taskId: sourceId },
+              data: {
+                ...(position !== undefined ? { position } : {}),
+                ...(sectionId !== undefined ? { sectionId } : {}),
+                revision: { increment: 1 },
+              },
+            });
+          }
           const result = await this.tasks.update(
             tx,
             a,
             row.spaceId,
             sourceId,
             revision,
-            input,
+            patch,
           );
-          await this.effect(tx, actor, a, r, 'task.update', sourceId);
+          for (const field of [
+            'title',
+            'status',
+            'priority',
+            'parentTaskId',
+          ] as const)
+            if (patch[field] !== undefined && patch[field] !== before[field])
+              changes.push({
+                field,
+                from: before[field] ?? null,
+                to: patch[field] ?? null,
+              });
+          await this.effect(
+            tx,
+            actor,
+            a,
+            r,
+            'task.update',
+            sourceId,
+            undefined,
+            { changes },
+          );
           return result;
         },
       );
       return this.tasks.read(tx, a, row.spaceId, sourceId);
+    });
+  }
+  async children(
+    actor: RequestActor,
+    id: string,
+    taskId: string,
+    q: z.infer<typeof c.ProjectPageQuerySchema>,
+  ) {
+    const row = await this.hint(id),
+      r = this.request(row, 'task.read');
+    return this.run(actor, row, [r], async (tx, a) => {
+      const b = this.kernel.scopeCursor(tx, a, r, 'subtasks:' + taskId);
+      const after = this.kernel.cursorPosition(
+        b.context,
+        b.stamp,
+        actor.userId,
+        q.after,
+      );
+      return this.kernel.cursorPage(
+        b.context,
+        b.stamp,
+        actor.userId,
+        await this.tasks.children(tx, a, row.scopeId, taskId, {
+          limit: q.limit,
+          ...(after ? { after } : {}),
+        }),
+      );
+    });
+  }
+  async removeTask(
+    actor: RequestActor,
+    id: string,
+    taskId: string,
+    revision: number,
+    raw: string | undefined,
+  ) {
+    const row = await this.hint(id),
+      resource = { kind: 'TASK' as const, id: taskId },
+      r = this.request(row, 'task.delete', resource);
+    return this.run(actor, row, [r], async (tx, a) => {
+      await this.once(
+        tx,
+        a,
+        r,
+        'project.task.delete',
+        raw,
+        { taskId, revision },
+        async () => {
+          await this.tasks.remove(tx, a, row.scopeId, taskId, revision);
+          const now = (
+            await tx.$queryRaw<{ now: Date }[]>`SELECT clock_timestamp() now`
+          )[0]!.now;
+          await tx.taskAssignment.updateMany({
+            where: {
+              spaceId: row.spaceId,
+              scopeId: row.scopeId,
+              projectId: id,
+              taskId,
+              endedAt: null,
+            },
+            data: {
+              endedAt: now,
+              endReason: 'REVOKED',
+              revision: { increment: 1 },
+            },
+          });
+          await this.effect(tx, actor, a, r, 'task.delete', taskId);
+          return { id: taskId };
+        },
+      );
     });
   }
   async patchGoal(
@@ -998,16 +1410,29 @@ export class ProjectsService {
       milestoneId?: string | null | undefined;
     },
   ) {
-    if (
-      input.sectionId &&
-      !(await this.component(tx, 'sections', row, input.sectionId))
-    )
+    const where = {
+      spaceId: row.spaceId,
+      scopeId: row.scopeId,
+      projectId: row.id,
+    };
+    const section = input.sectionId
+      ? await tx.projectSection.findFirst({
+          where: { ...where, id: input.sectionId },
+        })
+      : null;
+    const milestone = input.milestoneId
+      ? await tx.projectMilestone.findFirst({
+          where: { ...where, id: input.milestoneId },
+        })
+      : null;
+    if ((input.sectionId && !section) || (input.milestoneId && !milestone))
       throw new NotFoundException();
     if (
-      input.milestoneId &&
-      !(await this.component(tx, 'milestones', row, input.milestoneId))
+      section?.phaseId &&
+      milestone?.phaseId &&
+      section.phaseId !== milestone.phaseId
     )
-      throw new NotFoundException();
+      throw new ConflictException({ code: 'PROJECT_PHASE_MISMATCH' });
   }
   async associate(
     actor: RequestActor,

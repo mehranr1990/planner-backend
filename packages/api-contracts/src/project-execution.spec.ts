@@ -1,7 +1,15 @@
 import { it, expect } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import * as c from './project-execution.js';
+import { ProjectRiskCloseSchema } from './project-gap-closure.js';
 it('rejects SQL-null characters before register or template publication', () => {
+  expect(
+    ProjectRiskCloseSchema.safeParse({ reason: 'Unsafe\0reason' }).success,
+  ).toBe(false);
+  expect(
+    ProjectRiskCloseSchema.safeParse({ reason: 'Closed', note: 'Unsafe\0note' })
+      .success,
+  ).toBe(false);
   const row = {
     kind: 'ISSUE',
     title: 'Unsafe\0title',
@@ -50,6 +58,14 @@ it('requires typed risk probability and forbids issue probability or arbitrary o
     status: 'OPEN',
   };
   expect(c.ProjectRegisterCreateSchema.safeParse(base).success).toBe(true);
+  for (const probability of [0, 100])
+    expect(
+      c.ProjectRegisterCreateSchema.safeParse({ ...base, probability }).success,
+    ).toBe(true);
+  for (const probability of [-1, 101, 'LOW', 'MEDIUM', 'HIGH'])
+    expect(
+      c.ProjectRegisterCreateSchema.safeParse({ ...base, probability }).success,
+    ).toBe(false);
   expect(
     c.ProjectRegisterCreateSchema.safeParse({ ...base, kind: 'ISSUE' }).success,
   ).toBe(false);

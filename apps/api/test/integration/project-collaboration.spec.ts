@@ -358,6 +358,208 @@ describe('P2-07 authorized Project content and consistent views', () => {
       await db.projectCommentVersion.count({ where: { commentId: v.id } }),
     ).toBe(3);
   });
+  it('P2 gap keeps risk comments in the existing author-history engine and isolates their parent', async () => {
+    const p = await project(),
+      other = await project();
+    const created = await request(app.getHttpServer())
+      .post('/api/v1/projects/' + p.id + '/register-items')
+      .set('Cookie', owner.cookie)
+      .set('Origin', origin)
+      .set('Idempotency-Key', randomUUID())
+      .send({
+        id: randomUUID(),
+        kind: 'RISK',
+        title: 'Observed risk',
+        description: 'Details',
+        severity: 'HIGH',
+        probability: 100,
+        owner: null,
+        mitigation: 'Review',
+        status: 'OPEN',
+      })
+      .expect(200);
+    const target = { kind: 'REGISTER_ITEM' as const, id: created.body.id };
+    const comment = await content.createComment(
+      owner.actor,
+      p.id,
+      { id: randomUUID(), target, body: 'Risk comment' },
+      randomUUID(),
+    );
+    expect(
+      (
+        await content.comments(owner.actor, p.id, {
+          limit: 25,
+          targetKind: 'REGISTER_ITEM',
+          targetId: target.id,
+        })
+      ).items[0]?.id,
+    ).toBe(comment.id);
+    expect(
+      (
+        await content.comments(owner.actor, p.id, {
+          limit: 25,
+          targetKind: 'PROJECT',
+          targetId: p.id,
+        })
+      ).items,
+    ).toEqual([]);
+    await expect(
+      content.createComment(
+        owner.actor,
+        other.id,
+        { id: randomUUID(), target, body: 'Foreign' },
+        randomUUID(),
+      ),
+    ).rejects.toThrow();
+    await content.updateComment(
+      owner.actor,
+      p.id,
+      comment.id,
+      target,
+      comment.revision,
+      { body: 'Corrected' },
+    );
+    expect(
+      (
+        await content.commentVersions(owner.actor, p.id, comment.id, target, {
+          limit: 25,
+        })
+      ).items.length,
+    ).toBe(2);
+  });
+  it('P2 gap persists folders, rejects cycles and foreign moves, and archives only empty folders', async () => {
+    const p = await project(),
+      other = await project(),
+      parent = await files.createFolder(
+        owner.actor,
+        p.id,
+        { id: randomUUID(), title: 'Parent', parentId: null },
+        randomUUID(),
+      );
+    const child = await files.createFolder(
+      owner.actor,
+      p.id,
+      { id: randomUUID(), title: 'Child', parentId: parent.id },
+      randomUUID(),
+    );
+    await expect(
+      files.patchFolder(owner.actor, p.id, parent.id, 1, {
+        parentId: child.id,
+      }),
+    ).rejects.toThrow();
+    await expect(
+      files.archiveFolder(owner.actor, p.id, parent.id, 1),
+    ).rejects.toThrow();
+    await expect(
+      files.createFolder(
+        owner.actor,
+        other.id,
+        { id: randomUUID(), title: 'Foreign', parentId: parent.id },
+        randomUUID(),
+      ),
+    ).rejects.toThrow();
+    await files.patchFolder(owner.actor, p.id, child.id, 1, {
+      parentId: null,
+      title: 'Moved',
+    });
+    const archived = await files.archiveFolder(owner.actor, p.id, parent.id, 1);
+    expect(archived.archivedAt).not.toBeNull();
+    expect(
+      (await files.folders(owner.actor, p.id, { limit: 25 })).items.map(
+        (i) => i.title,
+      ),
+    ).toEqual(['Moved']);
+  });
+  it('P2 gap uploads actual immutable versions, selects only READY versions and protects version downloads', async () => {
+    const p = await project(),
+      target = { kind: 'PROJECT' as const, id: p.id },
+      root = await files.initiate(
+        owner.actor,
+        p.id,
+        {
+          id: randomUUID(),
+          target,
+          filename: 'v1.txt',
+          mimeType: 'text/plain',
+          expectedSize: 3,
+        },
+        randomUUID(),
+      );
+    await files.complete(
+      owner.actor,
+      p.id,
+      root.id,
+      target,
+      Readable.from(['one']),
+      '3',
+    );
+    const key = randomUUID(),
+      input = {
+        id: randomUUID(),
+        filename: 'v2.txt',
+        mimeType: 'text/plain' as const,
+        expectedSize: 3,
+      };
+    const version = await files.initiateVersion(
+      owner.actor,
+      p.id,
+      root.id,
+      1,
+      input,
+      key,
+    );
+    expect(
+      (await files.initiateVersion(owner.actor, p.id, root.id, 1, input, key))
+        .id,
+    ).toBe(version.id);
+    expect(
+      (await files.versions(owner.actor, p.id, root.id)).currentVersionId,
+    ).toBe(root.id);
+    await files.complete(
+      owner.actor,
+      p.id,
+      version.id,
+      target,
+      Readable.from(['two']),
+      '3',
+    );
+    expect(
+      (await files.versions(owner.actor, p.id, root.id)).currentVersionId,
+    ).toBe(version.id);
+    const dl = await files.versionDownload(
+      owner.actor,
+      p.id,
+      root.id,
+      version.id,
+    );
+    let bytes = '';
+    for await (const chunk of dl.stream) bytes += chunk.toString();
+    expect(bytes).toBe('two');
+    const old = await files.versionDownload(
+      owner.actor,
+      p.id,
+      root.id,
+      root.id,
+    );
+    let original = '';
+    for await (const chunk of old.stream) original += chunk.toString();
+    expect(original).toBe('one');
+    await expect(
+      files.versionDownload(outsider.actor, p.id, root.id, version.id),
+    ).rejects.toThrow();
+    const config = await files.configuration(owner.actor, p.id);
+    expect(config.maxBytes).toBeGreaterThan(0);
+    expect(config.allowedTypes).toContain('text/plain');
+    const current = await files.get(owner.actor, p.id, root.id, target);
+    await files.delete(owner.actor, p.id, root.id, target, current.revision);
+    await expect(
+      files.download(owner.actor, p.id, version.id, target),
+    ).rejects.toThrow();
+    expect(
+      (await db.storedFile.findUniqueOrThrow({ where: { id: version.id } }))
+        .status,
+    ).toBe('DELETED');
+  });
   it('uploads private bytes, exposes no key, and rechecks access on download', async () => {
     const p = await project(),
       t = await task(p.id),
@@ -395,6 +597,62 @@ describe('P2-07 authorized Project content and consistent views', () => {
     await files.delete(owner.actor, p.id, v.id, target, ready.revision);
     await expect(
       files.download(member.actor, p.id, v.id, target),
+    ).rejects.toThrow();
+  });
+  it('P2 gap retains task comments and private file bytes after tombstoning while denying stale source downloads', async () => {
+    const p = await project(),
+      t = await task(p.id),
+      target = { kind: 'TASK' as const, id: t.id };
+    const comment = await content.createComment(
+      owner.actor,
+      p.id,
+      { id: randomUUID(), target, body: 'Retained history' },
+      randomUUID(),
+    );
+    const file = await files.initiate(
+      owner.actor,
+      p.id,
+      {
+        id: randomUUID(),
+        target,
+        filename: 'retained.txt',
+        mimeType: 'text/plain',
+        expectedSize: 5,
+      },
+      randomUUID(),
+    );
+    await files.complete(
+      owner.actor,
+      p.id,
+      file.id,
+      target,
+      Readable.from(['hello']),
+      '5',
+    );
+    await projects.removeTask(owner.actor, p.id, t.id, 1, randomUUID());
+    expect(
+      await db.projectComment.findUnique({ where: { id: comment.id } }),
+    ).toMatchObject({ taskId: t.id, body: 'Retained history' });
+    expect(
+      await db.projectCommentVersion.count({
+        where: { commentId: comment.id },
+      }),
+    ).toBe(1);
+    expect(
+      await db.projectFile.findUnique({ where: { fileId: file.id } }),
+    ).toMatchObject({ taskId: t.id });
+    expect(
+      await db.storedFile.findUnique({ where: { id: file.id } }),
+    ).toMatchObject({ status: 'READY' });
+    await expect(
+      files.download(owner.actor, p.id, file.id, target),
+    ).rejects.toThrow();
+    await expect(
+      content.comments(owner.actor, p.id, {
+        limit: 25,
+        targetKind: 'TASK',
+        targetId: t.id,
+      }),
     ).rejects.toThrow();
   });
   it('uses current Task sources for all six views with bounded ranges', async () => {

@@ -99,6 +99,16 @@ export class ProjectViewsService {
           return Promise.all(
             rows.map(async (r) => ({
               id: r.task.id,
+              position: (
+                await s.tx.projectTask.findUniqueOrThrow({
+                  where: { taskId: r.task.id },
+                })
+              ).position,
+              sectionId: (
+                await s.tx.projectTask.findUniqueOrThrow({
+                  where: { taskId: r.task.id },
+                })
+              ).sectionId,
               task: r.task,
               schedule: r.schedule,
               estimatedMinutes:

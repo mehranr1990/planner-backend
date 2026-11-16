@@ -395,6 +395,101 @@ describe('P3-02 Team sources, Calendar and authorized group planning', () => {
       ),
     );
   }
+  it('P2 gap atomically associates a new Project with an authorized Team without inheriting its roster', async () => {
+    const tm = await team();
+    await join(tm.id, member);
+    const input = {
+        id: randomUUID(),
+        title: 'Team-associated Project',
+        ownerTeamId: tm.id,
+        template: 'SCRUM' as const,
+        retentionPolicyVersion: version,
+      },
+      key = randomUUID();
+    const created = await projects.create(owner.actor, input, key);
+    expect((await projects.create(owner.actor, input, key)).id).toBe(
+      created.id,
+    );
+    expect(
+      await client.teamProjectReference.findUnique({
+        where: { teamId_projectId: { teamId: tm.id, projectId: created.id } },
+      }),
+    ).toMatchObject({ active: true });
+    expect(
+      await client.contextAccess.count({
+        where: { scopeId: created.id, state: 'ACTIVE' },
+      }),
+    ).toBe(1);
+    await expect(projects.read(member.actor, created.id)).rejects.toThrow();
+    const denied = randomUUID();
+    await expect(
+      projects.create(member.actor, { ...input, id: denied }, randomUUID()),
+    ).rejects.toThrow();
+    expect(
+      await client.project.findUnique({ where: { id: denied } }),
+    ).toBeNull();
+  });
+  it('P2 gap isolates Team key namespaces and safely rehomes them when a Team is removed', async () => {
+    const a = await team(),
+      b = await team(),
+      key = 'TEAM-' + randomUUID().slice(0, 8);
+    const make = (teamId?: string) =>
+      projects.create(
+        owner.actor,
+        {
+          id: randomUUID(),
+          title: 'Namespaced',
+          key,
+          retentionPolicyVersion: version,
+          ...(teamId ? { ownerTeamId: teamId } : {}),
+        },
+        randomUUID(),
+      );
+    const first = await make(a.id);
+    await expect(make(a.id)).rejects.toThrow();
+    const second = await make(b.id),
+      independent = await make();
+    expect(
+      await client.project.findUnique({ where: { id: first.id } }),
+    ).toMatchObject({ keyOwnerTeamId: a.id, keyOwnerUserId: null });
+    expect(
+      await client.project.findUnique({ where: { id: second.id } }),
+    ).toMatchObject({ keyOwnerTeamId: b.id });
+    expect(
+      await client.project.findUnique({ where: { id: independent.id } }),
+    ).toMatchObject({
+      keyOwnerTeamId: null,
+      keyOwnerUserId: owner.actor.userId,
+    });
+    // Directly exercise the lifecycle database invariant in a rolled-back
+    // transaction: destination key conflict must abort before Team deletion.
+    await expect(
+      client.$transaction(async (tx) => {
+        await tx.teamProjectReference.deleteMany({ where: { teamId: a.id } });
+        await tx.team.delete({ where: { id: a.id } });
+      }),
+    ).rejects.toHaveProperty('code', 'P2002');
+    expect(
+      await client.team.findUnique({ where: { id: a.id } }),
+    ).not.toBeNull();
+    expect(
+      await client.project.findUnique({ where: { id: first.id } }),
+    ).toMatchObject({ keyOwnerTeamId: a.id });
+    await client.project.update({
+      where: { id: independent.id },
+      data: { key: null },
+    });
+    await client.$transaction(async (tx) => {
+      await tx.teamProjectReference.deleteMany({ where: { teamId: a.id } });
+      await tx.team.delete({ where: { id: a.id } });
+    });
+    expect(
+      await client.project.findUnique({ where: { id: first.id } }),
+    ).toMatchObject({
+      keyOwnerTeamId: null,
+      keyOwnerUserId: owner.actor.userId,
+    });
+  });
   it('owns Team Tasks/Goals in existing engines with actor history, receipts, usage and same-custody links', async () => {
     const t = await team(),
       body = {

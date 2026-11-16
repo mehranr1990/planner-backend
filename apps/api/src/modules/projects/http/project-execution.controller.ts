@@ -29,6 +29,7 @@ import { ProjectGuard } from './projects.controller.js';
 import { ProjectRegisterService } from '../application/project-register.service.js';
 import { ProjectPlansService } from '../application/project-plans.service.js';
 import { ProjectWorkMetricsService } from '../application/project-work-metrics.service.js';
+import { ProjectAnalyticsService } from '../application/project-analytics.service.js';
 const uuid = new ZodValidationPipe(c.ProjectCreateSchema.shape.id);
 function rev(match: string | undefined) {
   const r = expectedRevision(match);
@@ -39,12 +40,156 @@ function rev(match: string | undefined) {
 @UseGuards(VerifiedSessionGuard, ProjectGuard)
 export class ProjectExecutionController {
   constructor(
+    @Inject(ProjectAnalyticsService)
+    private readonly analytics: ProjectAnalyticsService,
     @Inject(ProjectRegisterService)
     private readonly register: ProjectRegisterService,
     @Inject(ProjectPlansService) private readonly plans: ProjectPlansService,
     @Inject(ProjectWorkMetricsService)
     private readonly metrics: ProjectWorkMetricsService,
   ) {}
+  @Get('analytics') analyticsReport(
+    @CurrentActor() actor: RequestActor,
+    @Param('projectId', uuid) pid: string,
+    @Query(new ZodValidationPipe(c.ProjectReportWindowSchema))
+    q: z.infer<typeof c.ProjectReportWindowSchema>,
+  ) {
+    return this.analytics.report(actor, pid, q);
+  }
+  @Post('register-items/:itemId/checklist')
+  @HttpCode(200)
+  async riskChecklist(
+    @CurrentActor() actor: RequestActor,
+    @Param('projectId', uuid) pid: string,
+    @Param('itemId', uuid) id: string,
+    @Body(new ZodValidationPipe(c.ProjectChecklistChangeSchema))
+    input: z.infer<typeof c.ProjectChecklistChangeSchema>,
+    @Headers('if-match') match: string | undefined,
+    @Headers('idempotency-key') key: string | undefined,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const v = await this.register.changeChecklist(
+      actor,
+      pid,
+      id,
+      rev(match),
+      input,
+      key,
+    );
+    res.setHeader('ETag', revisionTag(v.revision));
+    return v;
+  }
+  @Post('register-items/:itemId/close')
+  @HttpCode(200)
+  async riskClose(
+    @CurrentActor() actor: RequestActor,
+    @Param('projectId', uuid) pid: string,
+    @Param('itemId', uuid) id: string,
+    @Body(new ZodValidationPipe(c.ProjectRiskCloseSchema))
+    input: z.infer<typeof c.ProjectRiskCloseSchema>,
+    @Headers('if-match') match: string | undefined,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const v = await this.register.close(actor, pid, id, rev(match), input);
+    res.setHeader('ETag', revisionTag(v.revision));
+    return v;
+  }
+  @Post('register-items/:itemId/convert')
+  @HttpCode(200)
+  async riskConvert(
+    @CurrentActor() actor: RequestActor,
+    @Param('projectId', uuid) pid: string,
+    @Param('itemId', uuid) id: string,
+    @Body(new ZodValidationPipe(c.ProjectRiskConvertSchema))
+    input: z.infer<typeof c.ProjectRiskConvertSchema>,
+    @Headers('if-match') match: string | undefined,
+    @Headers('idempotency-key') key: string | undefined,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const v = await this.register.convert(
+      actor,
+      pid,
+      id,
+      rev(match),
+      input,
+      key,
+    );
+    res.setHeader('ETag', revisionTag(v.revision));
+    return v;
+  }
+  @Get('activity') activity(
+    @CurrentActor() actor: RequestActor,
+    @Param('projectId', uuid) pid: string,
+    @Query(new ZodValidationPipe(c.ProjectDetailedActivityQuerySchema))
+    q: z.infer<typeof c.ProjectDetailedActivityQuerySchema>,
+  ) {
+    return this.analytics.activity(actor, pid, q);
+  }
+  @Get('scope-history') scopeHistory(
+    @CurrentActor() actor: RequestActor,
+    @Param('projectId', uuid) pid: string,
+    @Query(new ZodValidationPipe(c.ProjectDetailedActivityQuerySchema))
+    q: z.infer<typeof c.ProjectDetailedActivityQuerySchema>,
+  ) {
+    return this.analytics.activity(actor, pid, q, true);
+  }
+  @Get('tasks/order') order(
+    @CurrentActor() actor: RequestActor,
+    @Param('projectId', uuid) pid: string,
+    @Query(new ZodValidationPipe(c.ProjectTaskOrderQuerySchema))
+    q: z.infer<typeof c.ProjectTaskOrderQuerySchema>,
+  ) {
+    return this.analytics.order(actor, pid, q);
+  }
+  @Get('health') health(
+    @CurrentActor() actor: RequestActor,
+    @Param('projectId', uuid) pid: string,
+    @Query(new ZodValidationPipe(c.ProjectEmptySchema)) _q: unknown,
+  ) {
+    return this.analytics.health(actor, pid);
+  }
+  @Get('structure/progress') structure(
+    @CurrentActor() actor: RequestActor,
+    @Param('projectId', uuid) pid: string,
+    @Query(new ZodValidationPipe(c.ProjectEmptySchema)) _q: unknown,
+  ) {
+    return this.analytics.structure(actor, pid);
+  }
+  @Get('tasks/:taskId/checklist')
+  async checklist(
+    @CurrentActor() actor: RequestActor,
+    @Param('projectId', uuid) pid: string,
+    @Param('taskId', uuid) taskId: string,
+    @Query(new ZodValidationPipe(c.ProjectEmptySchema)) _q: unknown,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const v = await this.metrics.checklist(actor, pid, taskId);
+    res.setHeader('ETag', revisionTag(v.revision));
+    return v;
+  }
+  @Post('tasks/:taskId/checklist')
+  @HttpCode(200)
+  async checklistChange(
+    @CurrentActor() actor: RequestActor,
+    @Param('projectId', uuid) pid: string,
+    @Param('taskId', uuid) taskId: string,
+    @Headers('if-match') match: string | undefined,
+    @Headers('idempotency-key') key: string | undefined,
+    @Body(new ZodValidationPipe(c.ProjectChecklistChangeSchema))
+    input: z.infer<typeof c.ProjectChecklistChangeSchema>,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const v = await this.metrics.changeChecklist(
+      actor,
+      pid,
+      taskId,
+      rev(match),
+      input,
+      key,
+    );
+    res.setHeader('ETag', revisionTag(v.revision));
+    return v;
+  }
   @Get('register-items')
   async registerList(
     @CurrentActor() actor: RequestActor,

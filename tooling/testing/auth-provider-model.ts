@@ -1,4 +1,5 @@
 const applicationUserRelations: Readonly<Record<string, string>> = {
+  keyedProjects: 'keyedProjectsProject[]@relation("ProjectKeyOwnerUser")',
   settings: 'settingsUserSettings?',
   spaces: 'spacesSpace[]',
   securityAuditEvents: 'securityAuditEventsSecurityAuditEvent[]',

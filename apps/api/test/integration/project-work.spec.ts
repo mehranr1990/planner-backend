@@ -413,6 +413,193 @@ describe('P2-04 assignment, work projections and private scheduling', () => {
       },
     });
   }
+  it('P2 gap withdraws acceptance into a fresh pending assignment without rewriting the accepted history', async () => {
+    const p = await project(),
+      t = await task(p.id),
+      a = await assignment(p.id, t.id);
+    const accepted = await work.respond(
+        member.actor,
+        p.id,
+        t.id,
+        a.id,
+        a.revision,
+        { decision: 'ACCEPTED' },
+      ),
+      key = randomUUID();
+    await expect(
+      work.revert(
+        owner.actor,
+        p.id,
+        t.id,
+        a.id,
+        accepted.revision,
+        randomUUID(),
+      ),
+    ).rejects.toThrow();
+    const reverted = await work.revert(
+      member.actor,
+      p.id,
+      t.id,
+      a.id,
+      accepted.revision,
+      key,
+    );
+    expect(reverted.previous).toMatchObject({
+      decision: 'ACCEPTED',
+      endReason: 'REASSIGNED',
+      endedAt: expect.any(String),
+    });
+    expect(reverted.current).toMatchObject({
+      decision: 'PENDING',
+      respondedAt: null,
+      recipientAccessId: a.recipientAccessId,
+    });
+    expect(
+      await work.revert(member.actor, p.id, t.id, a.id, accepted.revision, key),
+    ).toEqual(reverted);
+    expect(
+      (await work.taskProjection(member.actor, { limit: 25, projectId: p.id }))
+        .items,
+    ).toEqual([]);
+    expect(
+      await client.sharedAssignmentNotification.count({
+        where: { assignmentId: a.id, kind: 'WITHDRAWN' },
+      }),
+    ).toBe(1);
+  });
+  it('P2 gap serializes recipient withdrawal against manager reassignment without duplicate live owners', async () => {
+    const p = await project(),
+      t = await task(p.id),
+      a = await assignment(p.id, t.id),
+      other = await join(p.id, viewer);
+    const accepted = await work.respond(
+      member.actor,
+      p.id,
+      t.id,
+      a.id,
+      a.revision,
+      { decision: 'ACCEPTED' },
+    );
+    const result = await Promise.allSettled([
+      work.revert(
+        member.actor,
+        p.id,
+        t.id,
+        a.id,
+        accepted.revision,
+        randomUUID(),
+      ),
+      work.reassign(
+        owner.actor,
+        p.id,
+        t.id,
+        a.id,
+        accepted.revision,
+        {
+          id: randomUUID(),
+          recipientAccessId: other.id,
+          recipientGeneration: other.generation,
+          sourceRevision: 1,
+        },
+        randomUUID(),
+      ),
+    ]);
+    expect(result.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    expect(result.filter((r) => r.status === 'rejected')).toHaveLength(1);
+    expect(
+      await client.taskAssignment.count({
+        where: { taskId: t.id, endedAt: null, kind: 'PRIMARY' },
+      }),
+    ).toBe(1);
+    expect(
+      await client.taskAssignment.findUnique({ where: { id: a.id } }),
+    ).toMatchObject({
+      decision: 'ACCEPTED',
+      endedAt: expect.any(Date),
+      endReason: 'REASSIGNED',
+    });
+  });
+  it('P2 gap deduplicates assignment reminders, applies the existing daily limit and respects in-app preferences', async () => {
+    const p = await project(),
+      t = await task(p.id),
+      a = await assignment(p.id, t.id),
+      key = randomUUID();
+    const sent = await work.remind(
+      owner.actor,
+      p.id,
+      t.id,
+      a.id,
+      a.revision,
+      key,
+    );
+    expect(
+      await work.remind(owner.actor, p.id, t.id, a.id, a.revision, key),
+    ).toEqual(sent);
+    expect(
+      await client.sharedAssignmentNotification.count({
+        where: { assignmentId: a.id, kind: 'REMINDER' },
+      }),
+    ).toBe(1);
+    await expect(
+      work.remind(owner.actor, p.id, t.id, a.id, sent.revision, randomUUID()),
+    ).rejects.toThrow();
+    await expect(
+      work.remind(member.actor, p.id, t.id, a.id, sent.revision, randomUUID()),
+    ).rejects.toThrow();
+    const personal = await spaces.personalFor(member.actor.userId);
+    await client.notificationPreference.upsert({
+      where: { spaceId: personal.id },
+      create: {
+        spaceId: personal.id,
+        ownerUserId: member.actor.userId,
+        createdByUserId: member.actor.userId,
+        inApp: false,
+      },
+      update: { inApp: false },
+    });
+    try {
+      const second = await task(p.id),
+        next = await assignment(p.id, second.id);
+      await work.remind(
+        owner.actor,
+        p.id,
+        second.id,
+        next.id,
+        next.revision,
+        randomUUID(),
+      );
+      expect(
+        await client.sharedAssignmentNotification.count({
+          where: { assignmentId: next.id, kind: 'REMINDER' },
+        }),
+      ).toBe(0);
+    } finally {
+      await client.notificationPreference.update({
+        where: { spaceId: personal.id },
+        data: { inApp: true },
+      });
+    }
+  });
+  it('P2 gap closes live assignments on task deletion and preserves assignment and work records', async () => {
+    const p = await project(),
+      t = await task(p.id),
+      a = await assignment(p.id, t.id);
+    await work.respond(member.actor, p.id, t.id, a.id, a.revision, {
+      decision: 'ACCEPTED',
+    });
+    await projects.removeTask(owner.actor, p.id, t.id, 1, randomUUID());
+    expect(
+      await client.taskAssignment.findUnique({ where: { id: a.id } }),
+    ).toMatchObject({
+      decision: 'ACCEPTED',
+      endReason: 'REVOKED',
+      endedAt: expect.any(Date),
+    });
+    expect(
+      (await work.taskProjection(member.actor, { limit: 25, projectId: p.id }))
+        .items,
+    ).toEqual([]);
+  });
   it('keeps pending assignments in authorized preview and accepted work in a separate source projection', async () => {
     const p = await project(),
       t = await task(p.id),

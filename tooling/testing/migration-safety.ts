@@ -88,6 +88,10 @@ import {
 } from './reviewed-voice-migration.ts';
 import fs from 'node:fs';
 import {
+  projectGapMigrationHashes,
+  assertReviewedProjectGapMigration,
+} from './reviewed-project-gap-migrations.ts';
+import {
   companyDomainRepresentationMigrationName,
   assertReviewedCompanyDomainRepresentationMigration,
 } from './reviewed-company-domain-representation-migration.ts';
@@ -196,7 +200,9 @@ export function reviewMigrations(directory = 'prisma/migrations'): string[] {
       path.join(directory, name, 'migration.sql'),
       'utf8',
     );
-    if (name === finalClosureMigrationName)
+    if (Object.hasOwn(projectGapMigrationHashes, name))
+      assertReviewedProjectGapMigration(name, sql);
+    else if (name === finalClosureMigrationName)
       assertReviewedFinalClosureMigration(name, sql);
     else if (name === companyGoalSourceMigrationName)
       assertReviewedCompanyGoalSourceMigration(name, sql);

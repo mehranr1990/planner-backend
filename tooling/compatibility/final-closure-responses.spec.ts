@@ -1,7 +1,11 @@
 import fs from 'node:fs';
 import { it, expect } from 'vitest';
 import { createOpenApiDocument } from '../../packages/api-contracts/src/openapi.js';
-import { apiSignatures, assertApiCompatible } from './openapi-compatibility.js';
+import {
+  apiSignatures,
+  assertApiCompatible,
+  approvedProjectHash,
+} from './openapi-compatibility.js';
 import { historicalCompanyCustodyResponses } from './company-custody-responses.js';
 import { finalClosureOperations } from '../../packages/api-contracts/src/final-closure-openapi.js';
 
@@ -21,5 +25,5 @@ it('freezes the 5 final-closure operations', () => {
   expect(() => assertApiCompatible(doc, frozen)).not.toThrow();
   const current = apiSignatures(historicalCompanyCustodyResponses(doc));
   for (const [key, hash] of Object.entries(frozen))
-    expect(current[key]).toBe(hash);
+    expect(current[key]).toBe(approvedProjectHash(key, hash));
 });

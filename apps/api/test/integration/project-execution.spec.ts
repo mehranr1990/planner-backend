@@ -424,6 +424,314 @@ describe('P2-06 risk register, safe plans and explicit shared work', () => {
       projects.validateGrantTarget,
     );
   }
+  it('P2 gap persists drafts, previews pinned states and publishes without changing active bindings', async () => {
+    const p = await project(),
+      state = randomUUID(),
+      input = {
+        id: randomUUID(),
+        workflowId: null,
+        baseRevision: 0,
+        definition: {
+          name: 'Draft',
+          states: [{ id: state, label: 'Open', status: 'OPEN' as const }],
+          edges: [],
+        },
+      },
+      key = randomUUID();
+    const draft = await tools.saveDraft(
+      owner.actor,
+      p.id,
+      input.id,
+      0,
+      input,
+      key,
+    );
+    expect(
+      await tools.saveDraft(owner.actor, p.id, input.id, 0, input, key),
+    ).toEqual(draft);
+    expect(await db.taskWorkflow.count({ where: { scopeId: p.id } })).toBe(0);
+    await join(p.id, viewer, 'VIEWER');
+    await expect(tools.draft(viewer.actor, p.id, draft.id)).rejects.toThrow();
+    const edited = await tools.editDraft(
+      owner.actor,
+      p.id,
+      draft.id,
+      1,
+      { definition: { ...input.definition, name: 'Ready' } },
+      randomUUID(),
+    );
+    await expect(
+      tools.editDraft(
+        owner.actor,
+        p.id,
+        draft.id,
+        1,
+        { definition: input.definition },
+        randomUUID(),
+      ),
+    ).rejects.toThrow();
+    expect(await tools.previewDraft(owner.actor, p.id, draft.id)).toMatchObject(
+      { preservesExistingBindings: true, removedStates: [] },
+    );
+    const publishKey = randomUUID(),
+      published = await tools.finishDraft(
+        owner.actor,
+        p.id,
+        draft.id,
+        edited.revision,
+        true,
+        publishKey,
+      );
+    expect(published).toMatchObject({
+      state: 'PUBLISHED',
+      publishedVersion: 1,
+    });
+    expect(
+      await tools.finishDraft(
+        owner.actor,
+        p.id,
+        draft.id,
+        edited.revision,
+        true,
+        publishKey,
+      ),
+    ).toEqual(published);
+    await expect(
+      tools.editDraft(
+        owner.actor,
+        p.id,
+        draft.id,
+        published.revision,
+        { definition: input.definition },
+        randomUUID(),
+      ),
+    ).rejects.toThrow();
+    const t = await task(p.id);
+    await tools.bind(owner.actor, p.id, t.id, 1, {
+      workflowId: draft.id,
+      version: 1,
+      stateId: state,
+    });
+    const replacementId = randomUUID(),
+      replacement = await tools.saveDraft(
+        owner.actor,
+        p.id,
+        replacementId,
+        0,
+        {
+          id: replacementId,
+          workflowId: draft.id,
+          baseRevision: 1,
+          definition: {
+            name: 'Second',
+            states: [{ id: randomUUID(), label: 'Open again', status: 'OPEN' }],
+            edges: [],
+          },
+        },
+        randomUUID(),
+      );
+    expect(
+      (await tools.previewDraft(owner.actor, p.id, replacement.id))
+        .removedStates,
+    ).toContainEqual({ version: 1, stateId: state, taskCount: 1 });
+    await tools.finishDraft(
+      owner.actor,
+      p.id,
+      replacement.id,
+      1,
+      true,
+      randomUUID(),
+    );
+    expect(
+      (await tools.binding(owner.actor, p.id, t.id)).binding,
+    ).toMatchObject({ workflowId: draft.id, version: 1, stateId: state });
+  });
+  it('P2 gap retains risk codes, checklists, closure evidence and repeat-safe issue conversion', async () => {
+    const p = await project(),
+      r = await register.create(owner.actor, p.id, risk(), randomUUID()),
+      itemId = randomUUID();
+    expect(r.code).toBe('R-1');
+    const listed = await register.changeChecklist(
+      owner.actor,
+      p.id,
+      r.id,
+      1,
+      { kind: 'ADD', id: itemId, title: 'Mitigate' },
+      randomUUID(),
+    );
+    const checked = await register.changeChecklist(
+      owner.actor,
+      p.id,
+      r.id,
+      listed.revision,
+      { kind: 'UPDATE', id: itemId, completed: true },
+      randomUUID(),
+    );
+    expect(checked.checklist?.[0]?.completed).toBe(true);
+    const target = { id: randomUUID(), targetKind: 'ISSUE' as const },
+      key = randomUUID();
+    const converted = await register.convert(
+      owner.actor,
+      p.id,
+      r.id,
+      checked.revision,
+      target,
+      key,
+    );
+    expect(
+      await register.convert(
+        owner.actor,
+        p.id,
+        r.id,
+        checked.revision,
+        target,
+        key,
+      ),
+    ).toEqual(converted);
+    expect(converted).toMatchObject({
+      status: 'OPEN',
+      convertedIssueId: target.id,
+    });
+    expect(await register.get(owner.actor, p.id, target.id)).toMatchObject({
+      kind: 'ISSUE',
+      probability: null,
+      code: 'I-1',
+    });
+    const closed = await register.close(
+      owner.actor,
+      p.id,
+      r.id,
+      converted.revision,
+      { reason: 'Observed and tracked', note: 'Linked issue remains open' },
+    );
+    expect(closed).toMatchObject({
+      status: 'CLOSED',
+      closeReason: 'Observed and tracked',
+      closedByActorId: expect.any(String),
+      closedAt: expect.any(String),
+    });
+    await expect(
+      register.close(outsider.actor, p.id, r.id, closed.revision, {
+        reason: 'Denied',
+      }),
+    ).rejects.toThrow();
+    const { id: _id, ...patch } = risk();
+    const reopened = await register.update(
+      owner.actor,
+      p.id,
+      r.id,
+      closed.revision,
+      { ...patch, status: 'OPEN' },
+    );
+    expect(reopened).toMatchObject({ closedAt: null, code: 'R-1' });
+    expect(
+      (
+        await register.events(owner.actor, p.id, r.id, { limit: 100 })
+      ).items.some(
+        (e) =>
+          (e.after as { closeReason?: string }).closeReason ===
+          'Observed and tracked',
+      ),
+    ).toBe(true);
+  });
+  it('P2 gap rolls back failed risk conversions and creates one linked real Task', async () => {
+    const p = await project(),
+      r = await register.create(owner.actor, p.id, risk(), randomUUID()),
+      existing = await task(p.id),
+      key = randomUUID();
+    await expect(
+      register.convert(
+        owner.actor,
+        p.id,
+        r.id,
+        1,
+        { id: existing.id, targetKind: 'TASK' },
+        key,
+      ),
+    ).rejects.toThrow();
+    expect(await register.get(owner.actor, p.id, r.id)).toMatchObject({
+      revision: 1,
+      status: 'OPEN',
+      convertedTaskId: null,
+    });
+    const input = { id: randomUUID(), targetKind: 'TASK' as const },
+      retry = randomUUID(),
+      converted = await register.convert(
+        owner.actor,
+        p.id,
+        r.id,
+        1,
+        input,
+        retry,
+      );
+    expect(
+      await register.convert(owner.actor, p.id, r.id, 1, input, retry),
+    ).toEqual(converted);
+    expect(converted).toMatchObject({
+      status: 'OPEN',
+      convertedTaskId: input.id,
+    });
+    expect(
+      await projects.source(owner.actor, p.id, 'TASK', input.id),
+    ).toMatchObject({ id: input.id, title: r.title });
+    expect(
+      await db.projectTask.count({
+        where: { projectId: p.id, taskId: input.id },
+      }),
+    ).toBe(1);
+  });
+  it('P2 gap checks task checklist revisions, retries and Project isolation through the shared engine', async () => {
+    const p = await project(),
+      t = await projects.createTask(
+        owner.actor,
+        p.id,
+        { id: randomUUID(), title: 'Checklist', priority: 'NONE' },
+        randomUUID(),
+      ),
+      id = randomUUID(),
+      key = randomUUID();
+    const result = await metrics.changeChecklist(
+      owner.actor,
+      p.id,
+      t.id,
+      1,
+      { kind: 'ADD', id, title: 'Step' },
+      key,
+    );
+    expect(
+      await metrics.changeChecklist(
+        owner.actor,
+        p.id,
+        t.id,
+        1,
+        { kind: 'ADD', id, title: 'Step' },
+        key,
+      ),
+    ).toEqual(result);
+    expect(result.total).toBe(1);
+    await expect(
+      metrics.changeChecklist(
+        owner.actor,
+        p.id,
+        t.id,
+        1,
+        { kind: 'UPDATE', id, completed: true },
+        randomUUID(),
+      ),
+    ).rejects.toThrow();
+    await expect(
+      metrics.checklist(outsider.actor, p.id, t.id),
+    ).rejects.toThrow();
+    const completed = await metrics.changeChecklist(
+      owner.actor,
+      p.id,
+      t.id,
+      result.revision,
+      { kind: 'UPDATE', id, completed: true },
+      randomUUID(),
+    );
+    expect(completed.done).toBe(1);
+  });
   it('retains risk/issue owner, severity, probability, mitigation and immutable revision history', async () => {
     const p = await project(),
       m = await join(p.id),

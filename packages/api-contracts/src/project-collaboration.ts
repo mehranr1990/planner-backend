@@ -32,6 +32,13 @@ export const ProjectContentQuerySchema = ProjectPageQuerySchema.extend({
   targetKind: ProjectContentTargetSchema.shape.kind,
   targetId: id,
 });
+export const ProjectCommentTargetSchema = ProjectContentTargetSchema.extend({
+  kind: z.enum(['PROJECT', 'TASK', 'GOAL', 'DOCUMENT', 'REGISTER_ITEM']),
+});
+export const ProjectCommentQuerySchema = ProjectPageQuerySchema.extend({
+  targetKind: ProjectCommentTargetSchema.shape.kind,
+  targetId: id,
+});
 export const ProjectDocumentInputSchema = z.strictObject({
   title: plain(300).trim().min(1),
   body: plain(100000),
@@ -57,7 +64,7 @@ export const ProjectCommentInputSchema = z.strictObject({
 });
 export const ProjectCommentCreateSchema = ProjectCommentInputSchema.extend({
   id,
-  target: ProjectContentTargetSchema,
+  target: ProjectCommentTargetSchema,
 });
 export const ProjectCommentSchema = ProjectCommentCreateSchema.extend({
   body: plain(10000),
@@ -77,7 +84,7 @@ export const ProjectCommentVersionSchema = z.strictObject({
 export const ProjectActivitySchema = z.strictObject({
   id,
   projectId: id,
-  target: ProjectContentTargetSchema,
+  target: ProjectCommentTargetSchema,
   actorId: id,
   action: z.string().regex(/^[a-z.]{1,80}$/),
   resourceId: id,
@@ -86,6 +93,7 @@ export const ProjectActivitySchema = z.strictObject({
 export const ProjectFileCreateSchema = FileUploadSchema.extend({
   id,
   target: ProjectContentTargetSchema,
+  folderId: id.nullable().optional(),
 });
 export const ProjectFileSchema = z.strictObject({
   id,
@@ -104,6 +112,7 @@ export const ProjectFileSchema = z.strictObject({
   createdAt: z.iso.datetime(),
   uploadExpiresAt: z.iso.datetime(),
   completedAt: z.iso.datetime().nullable(),
+  createdByActorId: id.optional(),
 });
 export const ProjectViewQuerySchema = ProjectPageQuerySchema.extend({
   kind: z.enum([
@@ -130,6 +139,8 @@ export const ProjectViewQuerySchema = ProjectPageQuerySchema.extend({
 });
 export const ProjectViewEntrySchema = z.strictObject({
   id,
+  position: z.number().int().nonnegative().optional(),
+  sectionId: id.nullable().optional(),
   task: SharedTaskSchema,
   schedule: SharedTaskScheduleSchema,
   estimatedMinutes: z.number().int().min(0).max(10080).nullable(),

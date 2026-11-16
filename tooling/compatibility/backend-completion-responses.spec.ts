@@ -1,7 +1,11 @@
 import fs from 'node:fs';
 import { it, expect } from 'vitest';
 import { createOpenApiDocument } from '../../packages/api-contracts/src/openapi.js';
-import { apiSignatures, assertApiCompatible } from './openapi-compatibility.js';
+import {
+  apiSignatures,
+  assertApiCompatible,
+  approvedProjectHash,
+} from './openapi-compatibility.js';
 import { historicalCompanyCustodyResponses } from './company-custody-responses.js';
 import { backendCompletionOperations } from '../../packages/api-contracts/src/backend-completion-openapi.js';
 
@@ -29,9 +33,9 @@ it('freezes the 50 backend completion operations and only the 18 exact approved 
   expect(() => assertApiCompatible(doc, frozen)).not.toThrow();
   const current = apiSignatures(historicalCompanyCustodyResponses(doc));
   for (const [key, hash] of Object.entries(frozen))
-    expect(current[key]).toBe(hash);
+    expect(current[key]).toBe(approvedProjectHash(key, hash));
   for (const [key, value] of Object.entries(extensions))
-    expect(current[key]).toBe(value.approved);
+    expect(current[key]).toBe(approvedProjectHash(key, value.approved));
   const changed = structuredClone(doc) as unknown as {
     paths: Record<string, { get: { security: unknown[] } }>;
   };

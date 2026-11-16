@@ -11,6 +11,45 @@ export type TaskToolContext = {
   begin?: () => Promise<void>;
 };
 export abstract class ProjectTaskTools {
+  abstract drafts(
+    tx: Prisma.TransactionClient,
+    a: SharedAuthority,
+    ctx: TaskToolContext,
+    after: string | undefined,
+    limit: number,
+  ): Promise<z.infer<typeof c.ProjectWorkflowDraftSchema>[]>;
+  abstract draft(
+    tx: Prisma.TransactionClient,
+    a: SharedAuthority,
+    ctx: TaskToolContext,
+    id: string,
+  ): Promise<z.infer<typeof c.ProjectWorkflowDraftSchema>>;
+  abstract saveDraft(
+    tx: Prisma.TransactionClient,
+    a: SharedAuthority,
+    ctx: TaskToolContext,
+    id: string,
+    expected: number,
+    input: z.infer<typeof c.ProjectWorkflowDraftCreateSchema>,
+    key: string,
+    fingerprint: string,
+  ): Promise<z.infer<typeof c.ProjectWorkflowDraftSchema>>;
+  abstract previewDraft(
+    tx: Prisma.TransactionClient,
+    a: SharedAuthority,
+    ctx: TaskToolContext,
+    id: string,
+  ): Promise<z.infer<typeof c.ProjectWorkflowDraftPreviewSchema>>;
+  abstract finishDraft(
+    tx: Prisma.TransactionClient,
+    a: SharedAuthority,
+    ctx: TaskToolContext,
+    id: string,
+    expected: number,
+    publish: boolean,
+    key: string,
+    fingerprint: string,
+  ): Promise<z.infer<typeof c.ProjectWorkflowDraftSchema>>;
   abstract replayedTransition(
     tx: Prisma.TransactionClient,
     a: SharedAuthority,

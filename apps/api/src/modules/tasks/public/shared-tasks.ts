@@ -3,6 +3,20 @@ import type * as c from '@mehran/api-contracts';
 import type { Prisma } from '../../../generated/prisma/client.js';
 import type { SharedAuthority } from '../../spaces/public/index.js';
 export abstract class SharedTasks {
+  abstract remove(
+    tx: Prisma.TransactionClient,
+    a: SharedAuthority,
+    space: string,
+    id: string,
+    revision: number,
+  ): Promise<void>;
+  abstract children(
+    tx: Prisma.TransactionClient,
+    a: SharedAuthority,
+    space: string,
+    id: string,
+    query: z.infer<typeof c.ProjectPageQuerySchema>,
+  ): Promise<z.infer<typeof c.SharedTaskPageSchema>>;
   /** Internal locator hints expose no body and never confer resource authority. */
   abstract hint(
     id: string,

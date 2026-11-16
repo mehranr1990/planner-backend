@@ -22,6 +22,7 @@ export const taskView = (r: Task) =>
   c.SharedTaskSchema.strip().parse({
     ...r,
     description: r.descriptionContent,
+    createdAt: r.createdAt.toISOString(),
     deletedAt: r.deletedAt?.toISOString() ?? null,
     completedAt: r.completedAt?.toISOString() ?? null,
   });

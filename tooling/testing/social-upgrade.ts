@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import type { Client } from 'pg';
+import { verifyProjectGapUpgrade } from './project-gap-upgrade.ts';
 import {
   socialMigrationName as name,
   assertReviewedSocialMigration,
@@ -158,4 +159,5 @@ export async function verifySocialUpgrade(input: {
   process.stdout.write(
     'PASS: M045 preserves all 238 predecessor datasets, 68 historical checksums and prior constraints/functions except two reviewed CHECK and two owner-function extensions; interrupted rollback, repeat deploy, no discovery/friendship backfill and exact 777-FK catalog.\n',
   );
+  await verifyProjectGapUpgrade(input);
 }

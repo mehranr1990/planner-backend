@@ -141,6 +141,22 @@ export class ProjectOverviewService {
             ? input.endDate
             : current.endDate?.toISOString().slice(0, 10);
         if (start && end && start > end) throw new BadRequestException();
+        const previous = {
+          key: current.key,
+          color: current.color,
+          startDate: current.startDate?.toISOString().slice(0, 10) ?? null,
+          endDate: current.endDate?.toISOString().slice(0, 10) ?? null,
+          statusNote: current.statusNote,
+        };
+        s.activityDetails = {
+          changes: (
+            ['key', 'color', 'startDate', 'endDate', 'statusNote'] as const
+          ).flatMap((field) =>
+            input[field] !== undefined && input[field] !== previous[field]
+              ? [{ field, from: previous[field], to: input[field]! }]
+              : [],
+          ),
+        };
         await s.begin();
         await s.tx.project.update({
           where: { id: pid },

@@ -14,9 +14,24 @@ import type { Prisma } from '../../generated/prisma/client.js';
 // and the final closure (5: CompanyContextMove rows deleted in COMPANY_CONTENT
 // before units, departments and actors, CompanyRoomBookingTitle before
 // allocations; 951 FKs).
+// Personal gap closure adds two same-space Routine references (953 FKs):
+// RoutineExecution and Reminder cascade from Routine. Routine's owner-composite
+// Space FK restricts it to Personal custody; neither edge joins shared content.
+// Shared deletion ownership/order is unchanged. Personal erasure follows the
+// existing Routine/Space cascade, including executions and reminder derivatives.
+// Project gap closure adds 15 reviewed FKs (968 total): TaskWorkflowDraft is
+// removed in TASKS before workflows, scopes and actors; ProjectRegisterDetail
+// before risk/issue sources and Task associations; risk comments/activity before
+// register rows; ProjectFileVersion before files, files before leaf-first folders.
+// Team links retain independent Project custody. No parent-owned finance is purged.
+// Key namespaces add two typed User/Team references (970): Project disposal removes
+// the referencing row. Team deletion atomically rehomes its Projects' namespaces
+// to their current owners; a collision blocks deletion without renaming data.
+// Personal identity erasure clears the account namespace with SET NULL and a
+// typed ERASED-owner tombstone; retained Projects never block account erasure.
 // Future FK changes still fail closed until reviewed.
 export const SHARED_CLEANUP_FK_SHA256 =
-  '5a2f9c1bf386bcc6448a84c4259db02b51077d8b522863fdfd93a5406a7912ec';
+  '277ebbfeb7671c28d683c198a4eb9c0c3b2d7db7833c5e6db537f20be2a79fb1';
 export async function assertSharedCleanupCatalog(tx: Prisma.TransactionClient) {
   const rows = await tx.$queryRaw<
     { table: string; name: string; target: string; definition: string }[]

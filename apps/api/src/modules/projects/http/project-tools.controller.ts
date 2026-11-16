@@ -40,6 +40,85 @@ export class ProjectToolsController {
   constructor(
     @Inject(ProjectToolsService) private readonly s: ProjectToolsService,
   ) {}
+  @Get('workflow-drafts') drafts(
+    @CurrentActor() a: RequestActor,
+    @Param('projectId', uuid) p: string,
+    @Query(new ZodValidationPipe(c.ProjectPageQuerySchema))
+    q: z.infer<typeof c.ProjectPageQuerySchema>,
+  ) {
+    return this.s.drafts(a, p, q);
+  }
+  @Get('workflow-drafts/:draftId') async draft(
+    @CurrentActor() a: RequestActor,
+    @Param('projectId', uuid) p: string,
+    @Param('draftId', uuid) id: string,
+    @Query(new ZodValidationPipe(c.ProjectEmptySchema)) _q: unknown,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const v = await this.s.draft(a, p, id);
+    res.setHeader('ETag', revisionTag(v.revision));
+    return v;
+  }
+  @Post('workflow-drafts') @HttpCode(201) async createDraft(
+    @CurrentActor() a: RequestActor,
+    @Param('projectId', uuid) p: string,
+    @Body(new ZodValidationPipe(c.ProjectWorkflowDraftCreateSchema))
+    input: z.infer<typeof c.ProjectWorkflowDraftCreateSchema>,
+    @Headers('idempotency-key') key: string | undefined,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const v = await this.s.saveDraft(a, p, input.id, 0, input, key);
+    res.setHeader('ETag', revisionTag(v.revision));
+    return v;
+  }
+  @Patch('workflow-drafts/:draftId') async editDraft(
+    @CurrentActor() a: RequestActor,
+    @Param('projectId', uuid) p: string,
+    @Param('draftId', uuid) id: string,
+    @Body(new ZodValidationPipe(c.ProjectWorkflowDraftPatchSchema))
+    input: z.infer<typeof c.ProjectWorkflowDraftPatchSchema>,
+    @Headers('if-match') match: string | undefined,
+    @Headers('idempotency-key') key: string | undefined,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const v = await this.s.editDraft(a, p, id, rev(match), input, key);
+    res.setHeader('ETag', revisionTag(v.revision));
+    return v;
+  }
+  @Get('workflow-drafts/:draftId/publish-preview') previewDraft(
+    @CurrentActor() a: RequestActor,
+    @Param('projectId', uuid) p: string,
+    @Param('draftId', uuid) id: string,
+    @Query(new ZodValidationPipe(c.ProjectEmptySchema)) _q: unknown,
+  ) {
+    return this.s.previewDraft(a, p, id);
+  }
+  @Post('workflow-drafts/:draftId/publish') @HttpCode(200) async finishDraft(
+    @CurrentActor() a: RequestActor,
+    @Param('projectId', uuid) p: string,
+    @Param('draftId', uuid) id: string,
+    @Body(new ZodValidationPipe(c.ProjectEmptySchema.optional())) _b: unknown,
+    @Headers('if-match') match: string | undefined,
+    @Headers('idempotency-key') key: string | undefined,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const v = await this.s.finishDraft(a, p, id, rev(match), true, key);
+    res.setHeader('ETag', revisionTag(v.revision));
+    return v;
+  }
+  @Post('workflow-drafts/:draftId/discard') @HttpCode(200) async discardDraft(
+    @CurrentActor() a: RequestActor,
+    @Param('projectId', uuid) p: string,
+    @Param('draftId', uuid) id: string,
+    @Body(new ZodValidationPipe(c.ProjectEmptySchema.optional())) _b: unknown,
+    @Headers('if-match') match: string | undefined,
+    @Headers('idempotency-key') key: string | undefined,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const v = await this.s.finishDraft(a, p, id, rev(match), false, key);
+    res.setHeader('ETag', revisionTag(v.revision));
+    return v;
+  }
   @Get('workflows')
   async workflows(
     @CurrentActor() actor: RequestActor,

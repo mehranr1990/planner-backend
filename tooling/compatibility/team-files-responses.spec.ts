@@ -1,7 +1,11 @@
 import fs from 'node:fs';
 import { it, expect } from 'vitest';
 import { createOpenApiDocument } from '../../packages/api-contracts/src/openapi.js';
-import { apiSignatures, assertApiCompatible } from './openapi-compatibility.js';
+import {
+  apiSignatures,
+  assertApiCompatible,
+  approvedProjectHash,
+} from './openapi-compatibility.js';
 import { teamFileOperations } from '../../packages/api-contracts/src/team-files-openapi.js';
 
 it('freezes the 13 additive TM-11 Team file library operations', () => {
@@ -20,7 +24,7 @@ it('freezes the 13 additive TM-11 Team file library operations', () => {
   expect(() => assertApiCompatible(doc, frozen)).not.toThrow();
   const current = apiSignatures(doc);
   for (const [key, hash] of Object.entries(frozen))
-    expect(current[key]).toBe(hash);
+    expect(current[key]).toBe(approvedProjectHash(key, hash));
   const changed = structuredClone(doc) as unknown as {
     paths: Record<string, { get: { security: unknown[] } }>;
   };

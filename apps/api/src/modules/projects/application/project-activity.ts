@@ -9,6 +9,7 @@ export async function appendProjectActivity(
   action: string,
   resourceId: string,
   target: Target = { kind: 'PROJECT', id: pid },
+  details?: Prisma.InputJsonValue,
 ) {
   const project = await tx.project.findUniqueOrThrow({
     where: { id: pid },
@@ -22,6 +23,7 @@ export async function appendProjectActivity(
       actorId,
       action,
       resourceId,
+      ...(details !== undefined ? { details } : {}),
       taskId: target.kind === 'TASK' ? target.id : null,
       goalId: target.kind === 'GOAL' ? target.id : null,
       documentId: target.kind === 'DOCUMENT' ? target.id : null,

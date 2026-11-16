@@ -3,13 +3,22 @@ import {
   Inject,
   NotFoundException,
   ConflictException,
+  BadRequestException,
+  PayloadTooLargeException,
 } from '@nestjs/common';
 import * as c from '@mehran/api-contracts';
+import { randomUUID } from 'node:crypto';
 import type { z } from 'zod';
 import type { Prisma, Task } from '../../../generated/prisma/client.js';
 import { SharedAuthority } from '../../spaces/public/index.js';
 import { SharedTasks } from '../public/shared-tasks.js';
-import { normalizeTitle, transition, history } from '../domain/tasks.js';
+import {
+  normalizeTitle,
+  transition,
+  history,
+  validateHierarchy,
+  TaskRuleError,
+} from '../domain/tasks.js';
 import { DatabaseService } from '../../../platform/database/database.service.js';
 import {
   legacyWorkflowGuard,
@@ -21,6 +30,7 @@ const view = (row: Task) =>
     description: row.descriptionContent,
     deletedAt: row.deletedAt?.toISOString() ?? null,
     completedAt: row.completedAt?.toISOString() ?? null,
+    createdAt: row.createdAt.toISOString(),
   });
 const scheduleView = (r: Task) =>
   c.SharedTaskScheduleSchema.parse({
@@ -34,6 +44,136 @@ const scheduleView = (r: Task) =>
 export class SharedTasksRepository extends SharedTasks {
   constructor(@Inject(DatabaseService) private readonly db: DatabaseService) {
     super();
+  }
+  private async hierarchy(
+    tx: Prisma.TransactionClient,
+    a: SharedAuthority,
+    space: string,
+    id: string,
+    parent: string | null,
+  ) {
+    const rows = await tx.task.findMany({
+      where: {
+        spaceId: a.space(tx, space),
+        scopeId: a.scope(tx, space),
+        deletedAt: null,
+      },
+      take: 10001,
+    });
+    if (rows.length > 10000) throw new PayloadTooLargeException();
+    const chain: Task[] = [];
+    let next = parent;
+    while (next) {
+      if (chain.some((r) => r.id === next) || next === id)
+        throw new ConflictException({ code: 'TASK_HIERARCHY' });
+      a.require(tx, space, 'task.read', { kind: 'TASK', id: next });
+      const row = rows.find((r) => r.id === next);
+      if (!row) throw new NotFoundException();
+      chain.push(row);
+      next = row.parentTaskId;
+    }
+    const descendants = new Set([id]);
+    for (let pass = 0; pass < 6; pass++)
+      for (const row of rows)
+        if (row.parentTaskId && descendants.has(row.parentTaskId))
+          descendants.add(row.id);
+    try {
+      validateHierarchy(
+        id,
+        chain,
+        rows.filter((r) => descendants.has(r.id)),
+      );
+    } catch (error) {
+      if (error instanceof TaskRuleError)
+        throw new BadRequestException({ code: 'TASK_HIERARCHY' });
+      throw error;
+    }
+  }
+  async children(
+    tx: Prisma.TransactionClient,
+    a: SharedAuthority,
+    space: string,
+    id: string,
+    q: z.infer<typeof c.ProjectPageQuerySchema>,
+  ) {
+    await this.read(tx, a, space, id);
+    // A parent grant does not confer access to its children.
+    a.require(tx, space, 'task.read');
+    const rows = await tx.task.findMany({
+      where: {
+        spaceId: a.space(tx, space),
+        scopeId: a.scope(tx, space),
+        parentTaskId: id,
+        deletedAt: null,
+        ...(q.after ? { id: { gt: q.after } } : {}),
+      },
+      orderBy: { id: 'asc' },
+      take: q.limit + 1,
+    });
+    return {
+      items: rows.slice(0, q.limit).map(view),
+      nextCursor: rows.length > q.limit ? rows[q.limit - 1]!.id : null,
+    };
+  }
+  async remove(
+    tx: Prisma.TransactionClient,
+    a: SharedAuthority,
+    space: string,
+    id: string,
+    revision: number,
+  ) {
+    const access = a.require(tx, space, 'task.delete', { kind: 'TASK', id });
+    const before = await tx.task.findFirst({
+      where: {
+        id,
+        spaceId: a.space(tx, space),
+        scopeId: a.scope(tx, space),
+        deletedAt: null,
+      },
+    });
+    if (!before) throw new NotFoundException();
+    if (before.revision !== revision)
+      throw new ConflictException({ code: 'STALE_REVISION' });
+    if (
+      await tx.task.count({
+        where: {
+          spaceId: before.spaceId,
+          scopeId: before.scopeId,
+          parentTaskId: id,
+          deletedAt: null,
+        },
+      })
+    )
+      throw new ConflictException({ code: 'TASK_HAS_ACTIVE_CHILDREN' });
+    const now = (
+      await tx.$queryRaw<{ now: Date }[]>`SELECT clock_timestamp() now`
+    )[0]!.now;
+    const row = await tx.task.update({
+      where: { id },
+      data: {
+        deletedAt: now,
+        deletionBatchId: randomUUID(),
+        revision: { increment: 1 },
+      },
+    });
+    await tx.taskDependency.updateMany({
+      where: {
+        spaceId: before.spaceId,
+        scopeId: a.scope(tx, space),
+        retiredAt: null,
+        OR: [{ predecessorId: id }, { successorId: id }],
+      },
+      data: { retiredAt: now, revision: { increment: 1 } },
+    });
+    await tx.taskChange.create({
+      data: {
+        spaceId: before.spaceId,
+        scopeId: before.scopeId,
+        actorId: access.actorId,
+        actorUserId: null,
+        ...history(before, row, 'DELETED', ['deletedAt']),
+      },
+    });
   }
   hint(id: string, spaceId: string) {
     return this.location(this.db.client, id, spaceId);
@@ -199,7 +339,28 @@ export class SharedTasksRepository extends SharedTasks {
       if (rows.length < q.limit) break;
       after = rows.at(-1)!.id;
     }
-    return output.map((r) => ({ task: view(r), schedule: scheduleView(r) }));
+    const starts = await tx.taskChange.groupBy({
+      by: ['taskId'],
+      where: {
+        OR: output.map((r) => ({
+          spaceId: r.spaceId,
+          scopeId: r.scopeId,
+          taskId: r.id,
+        })),
+        afterStatus: 'IN_PROGRESS',
+      },
+      _min: { createdAt: true },
+    });
+    return output.map((r) => ({
+      task: {
+        ...view(r),
+        firstStartedAt:
+          starts
+            .find((s) => s.taskId === r.id)
+            ?._min.createdAt?.toISOString() ?? null,
+      },
+      schedule: scheduleView(r),
+    }));
   }
   async read(
     tx: Prisma.TransactionClient,
@@ -248,6 +409,8 @@ export class SharedTasksRepository extends SharedTasks {
     input: z.infer<typeof c.ProjectTaskCreateSchema>,
   ) {
     const access = a.require(tx, space, 'task.create');
+    if (input.parentTaskId)
+      await this.hierarchy(tx, a, space, input.id, input.parentTaskId);
     const row = await tx.task.create({
       data: {
         id: input.id,
@@ -258,6 +421,7 @@ export class SharedTasksRepository extends SharedTasks {
         title: normalizeTitle(input.title),
         descriptionContent: input.description ?? null,
         priority: input.priority,
+        parentTaskId: input.parentTaskId ?? null,
       },
     });
     await tx.taskChange.create({
@@ -287,7 +451,8 @@ export class SharedTasksRepository extends SharedTasks {
     if (
       input.title !== undefined ||
       input.description !== undefined ||
-      input.priority !== undefined
+      input.priority !== undefined ||
+      input.parentTaskId !== undefined
     )
       a.require(tx, space, 'task.update', { kind: 'TASK', id });
     const before = await tx.task.findFirst({
@@ -300,6 +465,8 @@ export class SharedTasksRepository extends SharedTasks {
     });
     if (!before) throw new NotFoundException();
     if (before.revision !== revision) throw new ConflictException();
+    if (input.parentTaskId !== undefined)
+      await this.hierarchy(tx, a, space, id, input.parentTaskId);
     if (input.status) await legacyWorkflowGuard(tx, a, before, input.status);
     const now = (
       await tx.$queryRaw<{ now: Date }[]>`SELECT clock_timestamp() now`
@@ -315,6 +482,9 @@ export class SharedTasksRepository extends SharedTasks {
     const row = await tx.task.update({
       where: { id },
       data: {
+        ...(input.parentTaskId !== undefined
+          ? { parentTaskId: input.parentTaskId }
+          : {}),
         ...(input.title !== undefined
           ? { title: normalizeTitle(input.title) }
           : {}),
@@ -326,6 +496,9 @@ export class SharedTasksRepository extends SharedTasks {
         revision: { increment: 1 },
       },
     });
+    // Project-only association/order writes advance the source revision; their
+    // authoritative field history belongs to the Project aggregate.
+    if (!Object.keys(input).length) return view(row);
     await tx.taskChange.create({
       data: {
         spaceId: a.space(tx, space),
@@ -340,7 +513,9 @@ export class SharedTasksRepository extends SharedTasks {
             : input.status === 'OPEN'
               ? 'REOPENED'
               : 'UPDATED',
-          Object.keys(input) as Array<'title' | 'status' | 'priority'>,
+          Object.keys(input).filter(
+            (k) => k !== 'position' && k !== 'sectionId',
+          ) as Array<'title' | 'status' | 'priority'>,
         ),
       },
     });

@@ -12,6 +12,8 @@ import {
   ProjectPageQuerySchema,
   ProjectSchema,
   DomainCustodyAssociationSchema,
+  ProjectTaskCreateSchema,
+  ProjectTaskPatchSchema,
 } from './projects.js';
 /** Owner-only Team ownership handover history (T-M2). */
 export const TeamHandoverPageSchema = z.strictObject({
@@ -75,7 +77,25 @@ export const TeamInvitationPreviewSchema = z.strictObject({
   offerCategory: z.literal('MEMBERSHIP'),
   expiresAt: z.iso.datetime(),
 });
-export const TeamCreateSchema = ProjectCreateSchema;
+export const TeamCreateSchema = ProjectCreateSchema.omit({
+  key: true,
+  startDate: true,
+  endDate: true,
+  color: true,
+  template: true,
+  ownerTeamId: true,
+});
+export const TeamTaskCreateSchema = ProjectTaskCreateSchema.omit({
+  parentTaskId: true,
+});
+export const TeamTaskPatchSchema = z
+  .strictObject({
+    title: ProjectTaskPatchSchema.shape.title,
+    description: ProjectTaskPatchSchema.shape.description,
+    priority: ProjectTaskPatchSchema.shape.priority,
+    status: ProjectTaskPatchSchema.shape.status,
+  })
+  .refine((v) => Object.keys(v).length > 0);
 export const TeamPatchSchema = ProjectPatchSchema;
 export const TeamPageQuerySchema = ProjectPageQuerySchema;
 export const TeamSchema = ProjectSchema.omit({ association: true }).extend({

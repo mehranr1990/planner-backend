@@ -12,6 +12,7 @@ import {
   Inject,
   UseGuards,
   BadRequestException,
+  HttpCode,
 } from '@nestjs/common';
 import type { Response } from 'express';
 import type { z } from 'zod';
@@ -43,6 +44,38 @@ function etag<T>(res: Response, value: T, revision: number) {
 @UseGuards(VerifiedSessionGuard, ProjectGuard)
 export class WorkController {
   constructor(@Inject(WorkService) private readonly work: WorkService) {}
+  @Post('tasks/:taskId/assignments/:assignmentId/revert')
+  @HttpCode(200)
+  async revert(
+    @CurrentActor() actor: RequestActor,
+    @Param('projectId', uuid) pid: string,
+    @Param('taskId', uuid) tid: string,
+    @Param('assignmentId', uuid) id: string,
+    @Headers('if-match') match: string | undefined,
+    @Headers('idempotency-key') key: string | undefined,
+    @Body(emptyBody) _b: unknown,
+    @Query(empty) _q: unknown,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const v = await this.work.revert(actor, pid, tid, id, rev(match), key);
+    return etag(res, v, v.current.revision);
+  }
+  @Post('tasks/:taskId/assignments/:assignmentId/remind')
+  @HttpCode(200)
+  async remind(
+    @CurrentActor() actor: RequestActor,
+    @Param('projectId', uuid) pid: string,
+    @Param('taskId', uuid) tid: string,
+    @Param('assignmentId', uuid) id: string,
+    @Headers('if-match') match: string | undefined,
+    @Headers('idempotency-key') key: string | undefined,
+    @Body(emptyBody) _b: unknown,
+    @Query(empty) _q: unknown,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const v = await this.work.remind(actor, pid, tid, id, rev(match), key);
+    return etag(res, v, v.revision);
+  }
   @Get('assignment-policy')
   async policy(
     @CurrentActor() actor: RequestActor,

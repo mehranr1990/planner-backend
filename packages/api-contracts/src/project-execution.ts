@@ -32,6 +32,8 @@ export const ProjectRegisterInputSchema = z
     owner: member.nullable(),
     mitigation: body,
     status: z.enum(['OPEN', 'MITIGATING', 'RESOLVED', 'CLOSED']),
+    closeReason: z.string().trim().min(1).max(500).optional(),
+    closeNote: z.string().max(2000).nullable().optional(),
   })
   .refine((v) =>
     v.kind === 'RISK' ? v.probability !== null : v.probability === null,
@@ -44,6 +46,22 @@ export const ProjectRegisterSchema = ProjectRegisterCreateSchema.safeExtend({
   createdByActorId: id,
   createdAt: z.iso.datetime(),
   retiredAt: z.iso.datetime().nullable(),
+  code: z.string().nullable().optional(),
+  checklist: z
+    .array(
+      z.strictObject({
+        id,
+        title: text,
+        completed: z.boolean(),
+        position: z.number().int().nonnegative(),
+      }),
+    )
+    .max(100)
+    .optional(),
+  closedAt: z.iso.datetime().nullable().optional(),
+  closedByActorId: id.nullable().optional(),
+  convertedIssueId: id.nullable().optional(),
+  convertedTaskId: id.nullable().optional(),
 });
 export const ProjectRegisterQuerySchema = ProjectPageQuerySchema.safeExtend({
   kind: z.enum(['RISK', 'ISSUE']).optional(),
@@ -99,7 +117,7 @@ const optionalEstimate =
   SharedEstimateInputSchema.shape.estimatedMinutes.optional();
 export const ProjectCreateTaskOperationSchema = z.strictObject({
   kind: z.literal('CREATE_TASK'),
-  task: ProjectTaskCreateSchema,
+  task: ProjectTaskCreateSchema.omit({ parentTaskId: true }),
   estimatedMinutes: optionalEstimate,
   schedule: SharedTaskScheduleInputSchema.optional(),
 });
@@ -108,7 +126,15 @@ export const ProjectUpdateTaskOperationSchema = z
     kind: z.literal('UPDATE_TASK'),
     taskId: id,
     sourceRevision: revision,
-    patch: ProjectTaskPatchSchema.optional(),
+    patch: z
+      .strictObject({
+        title: ProjectTaskPatchSchema.shape.title,
+        description: ProjectTaskPatchSchema.shape.description,
+        priority: ProjectTaskPatchSchema.shape.priority,
+        status: ProjectTaskPatchSchema.shape.status,
+      })
+      .refine((v) => Object.keys(v).length > 0)
+      .optional(),
     estimatedMinutes: optionalEstimate,
     schedule: SharedTaskScheduleInputSchema.optional(),
   })
@@ -120,7 +146,10 @@ export const ProjectUpdateTaskOperationSchema = z
   );
 export const ProjectComponentOperationSchema = z.strictObject({
   kind: z.enum(['CREATE_PHASE', 'CREATE_SECTION', 'CREATE_MILESTONE']),
-  component: ProjectComponentCreateSchema,
+  component: ProjectComponentCreateSchema.omit({
+    startDate: true,
+    endDate: true,
+  }),
 });
 export const ProjectDependencyOperationSchema = z.strictObject({
   kind: z.literal('CREATE_DEPENDENCY'),

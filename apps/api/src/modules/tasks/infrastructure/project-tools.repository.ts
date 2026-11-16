@@ -10,6 +10,21 @@ import { DependencyTools } from './dependency-tools.repository.js';
 import { scope, source } from './project-tool-common.js';
 @Injectable()
 export class ProjectTaskToolsRepository extends ProjectTaskTools {
+  drafts(...args: Parameters<WorkflowTools['drafts']>) {
+    return this.w.drafts(...args);
+  }
+  draft(...args: Parameters<WorkflowTools['draft']>) {
+    return this.w.draft(...args);
+  }
+  saveDraft(...args: Parameters<WorkflowTools['saveDraft']>) {
+    return this.w.saveDraft(...args);
+  }
+  previewDraft(...args: Parameters<WorkflowTools['previewDraft']>) {
+    return this.w.previewDraft(...args);
+  }
+  finishDraft(...args: Parameters<WorkflowTools['finishDraft']>) {
+    return this.w.finishDraft(...args);
+  }
   replayedTransition(...args: Parameters<WorkflowTools['replayedTransition']>) {
     return this.w.replayedTransition(...args);
   }

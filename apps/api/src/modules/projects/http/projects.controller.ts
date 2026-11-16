@@ -15,6 +15,7 @@ import {
   UseGuards,
   SetMetadata,
   BadRequestException,
+  HttpCode,
 } from '@nestjs/common';
 import type { CanActivate, ExecutionContext } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
@@ -97,6 +98,9 @@ export class ProjectsController {
     @Query(query) q: z.infer<typeof c.ProjectPageQuerySchema>,
   ) {
     return this.service.list(actor, q);
+  }
+  @Get('templates/catalog') initialTemplates(@Query(empty) _q: unknown) {
+    return this.service.initialTemplates();
   }
   @Get(':id')
   async read(
@@ -322,6 +326,28 @@ export class ProjectsController {
       key,
     );
     return result(res, value, value.revision);
+  }
+  @Delete(':id/tasks/:taskId')
+  @HttpCode(204)
+  async removeTask(
+    @CurrentActor() actor: RequestActor,
+    @Param('id', uuid) id: string,
+    @Param('taskId', uuid) taskId: string,
+    @Headers('if-match') match: string | undefined,
+    @Headers('idempotency-key') key: string | undefined,
+    @Body(emptyBody) _b: unknown,
+    @Query(empty) _q: unknown,
+  ) {
+    await this.service.removeTask(actor, id, taskId, revision(match), key);
+  }
+  @Get(':id/tasks/:taskId/subtasks')
+  children(
+    @CurrentActor() actor: RequestActor,
+    @Param('id', uuid) id: string,
+    @Param('taskId', uuid) taskId: string,
+    @Query(query) q: z.infer<typeof c.ProjectPageQuerySchema>,
+  ) {
+    return this.service.children(actor, id, taskId, q);
   }
   @Get(':id/tasks/:taskId/association')
   readTaskAssociation(

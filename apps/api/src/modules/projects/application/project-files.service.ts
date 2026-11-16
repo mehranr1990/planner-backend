@@ -3,6 +3,7 @@ import {
   Injectable,
   NotFoundException,
   ConflictException,
+  PayloadTooLargeException,
 } from '@nestjs/common';
 import type { Readable } from 'node:stream';
 import * as c from '@mehran/api-contracts';
@@ -45,6 +46,454 @@ export class ProjectFilesService {
     @Inject(SharedFiles) private readonly files: SharedFiles,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {}
+  private async folder(s: ExecutionContext, id: string) {
+    const r = await s.tx.projectFileFolder.findFirst({
+      where: { ...projectWhere(s), id, archivedAt: null },
+    });
+    if (!r) throw new NotFoundException();
+    return r;
+  }
+  private folderView(r: {
+    id: string;
+    parentId: string | null;
+    title: string;
+    revision: number;
+    createdAt: Date;
+    updatedAt: Date;
+    archivedAt: Date | null;
+  }) {
+    return c.ProjectFileFolderSchema.parse({
+      id: r.id,
+      parentId: r.parentId,
+      title: r.title,
+      revision: r.revision,
+      createdAt: r.createdAt.toISOString(),
+      updatedAt: r.updatedAt.toISOString(),
+      archivedAt: r.archivedAt?.toISOString() ?? null,
+    });
+  }
+  folders(
+    actor: RequestActor,
+    pid: string,
+    q: z.infer<typeof c.ProjectPageQuerySchema>,
+  ) {
+    return this.content.op.read(actor, pid, ['file.read'], undefined, (s) =>
+      this.content.op.page(s, 'file-folders', q, async (after) =>
+        (
+          await s.tx.projectFileFolder.findMany({
+            where: {
+              ...projectWhere(s),
+              archivedAt: null,
+              ...(after ? { id: { gt: after } } : {}),
+            },
+            orderBy: { id: 'asc' },
+            take: q.limit + 1,
+          })
+        ).map((r) => this.folderView(r)),
+      ),
+    );
+  }
+  createFolder(
+    actor: RequestActor,
+    pid: string,
+    input: z.infer<typeof c.ProjectFileFolderCreateSchema>,
+    raw: string | undefined,
+  ) {
+    const key = executionKey(raw);
+    return this.content.op.write(
+      actor,
+      pid,
+      ['work.manage', 'file.read'],
+      undefined,
+      'file.folder.create',
+      input.id,
+      [],
+      async (s) => {
+        await this.content.op.kernel.receipt(
+          s.tx,
+          s.a,
+          { spaceId: s.spaceId, scopeId: s.scopeId, capability: 'work.manage' },
+          {
+            operation: 'project.file.folder.create',
+            key,
+            fingerprint: executionHash(input),
+          },
+          async () => {
+            if (input.parentId) await this.folder(s, input.parentId);
+            if (
+              (await s.tx.projectFileFolder.count({
+                where: projectWhere(s),
+              })) >= 10000
+            )
+              throw new ConflictException({ code: 'FOLDER_LIMIT' });
+            await s.begin();
+            await s.tx.projectFileFolder.create({
+              data: {
+                ...projectWhere(s),
+                ...input,
+                createdByActorId: s.a.require(s.tx, pid, 'work.manage').actorId,
+              },
+            });
+            return { id: input.id, statusCode: 201 };
+          },
+        );
+        return this.folderView(await this.folder(s, input.id));
+      },
+    );
+  }
+  patchFolder(
+    actor: RequestActor,
+    pid: string,
+    id: string,
+    revision: number,
+    input: z.infer<typeof c.ProjectFileFolderPatchSchema>,
+  ) {
+    return this.content.op.write(
+      actor,
+      pid,
+      ['work.manage', 'file.read'],
+      undefined,
+      'file.folder.update',
+      id,
+      [],
+      async (s) => {
+        const row = await this.folder(s, id);
+        if (row.revision !== revision)
+          throw new ConflictException({ code: 'STALE_REVISION' });
+        let parent = input.parentId ?? null;
+        const visited = new Set([id]);
+        while (parent) {
+          if (visited.has(parent))
+            throw new ConflictException({ code: 'FOLDER_CYCLE' });
+          if (visited.size > 10000)
+            throw new ConflictException({ code: 'FOLDER_LIMIT' });
+          visited.add(parent);
+          parent = (await this.folder(s, parent)).parentId;
+        }
+        await s.begin();
+        return this.folderView(
+          await s.tx.projectFileFolder.update({
+            where: { id },
+            data: {
+              ...(input.title !== undefined ? { title: input.title } : {}),
+              ...(input.parentId !== undefined
+                ? { parentId: input.parentId }
+                : {}),
+              revision: { increment: 1 },
+              updatedAt: s.now,
+            },
+          }),
+        );
+      },
+    );
+  }
+  archiveFolder(
+    actor: RequestActor,
+    pid: string,
+    id: string,
+    revision: number,
+  ) {
+    return this.content.op.write(
+      actor,
+      pid,
+      ['work.manage', 'file.read'],
+      undefined,
+      'file.folder.archive',
+      id,
+      [],
+      async (s) => {
+        const row = await this.folder(s, id);
+        if (row.revision !== revision)
+          throw new ConflictException({ code: 'STALE_REVISION' });
+        if (
+          (await s.tx.projectFileFolder.count({
+            where: { ...projectWhere(s), parentId: id, archivedAt: null },
+          })) ||
+          (await s.tx.projectFile.count({
+            where: {
+              ...projectWhere(s),
+              folderId: id,
+              StoredFile: { status: { not: 'DELETED' } },
+            },
+          }))
+        )
+          throw new ConflictException({ code: 'FOLDER_NOT_EMPTY' });
+        await s.begin();
+        return this.folderView(
+          await s.tx.projectFileFolder.update({
+            where: { id },
+            data: {
+              archivedAt: s.now,
+              revision: { increment: 1 },
+              updatedAt: s.now,
+            },
+          }),
+        );
+      },
+    );
+  }
+  configuration(actor: RequestActor, pid: string) {
+    return this.content.op.read(
+      actor,
+      pid,
+      ['file.read'],
+      undefined,
+      async () =>
+        c.ProjectFileConfigSchema.parse({
+          maxBytes: Math.min(this.config.FILE_MAX_BYTES, 104857600),
+          allowedTypes: c.FileMimeSchema.options,
+        }),
+    );
+  }
+  private async root(s: ExecutionContext, id: string) {
+    const link = await s.tx.projectFile.findFirst({
+      where: { ...projectWhere(s), fileId: id, version: null },
+    });
+    if (!link) throw new NotFoundException();
+    const file = await this.row(s, id, contentTarget(link));
+    if (file.status === 'DELETED') throw new NotFoundException();
+    return { link, file };
+  }
+  private async versionRows(s: ExecutionContext, id: string) {
+    const { link, file } = await this.root(s, id),
+      links = await s.tx.projectFileVersion.findMany({
+        where: { ...projectWhere(s), rootFileId: id },
+        orderBy: { number: 'asc' },
+        take: 100,
+      });
+    const records = [{ file, number: 1 }];
+    for (const v of links)
+      records.push({
+        file: await this.files.row(
+          s.tx,
+          this.scope(s, contentTarget(link)),
+          v.fileId,
+        ),
+        number: v.number,
+      });
+    const items = records.map(({ file: r, number }) =>
+      c.ProjectFileVersionSchema.parse({
+        id: r.id,
+        rootFileId: id,
+        number,
+        createdByActorId: r.createdByActorId,
+        filename: r.filename,
+        mimeType: r.mimeType,
+        status: r.status,
+        revision: r.revision,
+        size: r.actualSize,
+        createdAt: r.createdAt.toISOString(),
+      }),
+    );
+    return c.ProjectFileVersionsSchema.parse({
+      items,
+      currentVersionId:
+        items.filter((r) => r.status === 'READY').at(-1)?.id ?? null,
+    });
+  }
+  versions(actor: RequestActor, pid: string, id: string) {
+    return this.content.op.read(actor, pid, ['file.read'], undefined, (s) =>
+      this.versionRows(s, id),
+    );
+  }
+  private async libraryView(s: ExecutionContext, id: string) {
+    const { link, file } = await this.root(s, id),
+      versions = await this.versionRows(s, id);
+    return c.ProjectFileLibraryEntrySchema.parse({
+      id,
+      folderId: link.folderId,
+      revision: link.revision,
+      createdByActorId: file.createdByActorId,
+      currentVersionId: versions.currentVersionId,
+      versionCount: versions.items.length,
+    });
+  }
+  metadata(actor: RequestActor, pid: string, id: string) {
+    return this.content.op.read(actor, pid, ['file.read'], undefined, (s) =>
+      this.libraryView(s, id),
+    );
+  }
+  library(
+    actor: RequestActor,
+    pid: string,
+    q: z.infer<typeof c.ProjectFileLibraryQuerySchema>,
+  ) {
+    return this.content.op.read(
+      actor,
+      pid,
+      ['file.read'],
+      undefined,
+      async (s) => {
+        if (q.folderId) await this.folder(s, q.folderId);
+        return this.content.op.page(
+          s,
+          'file-library:' + executionHash({ folderId: q.folderId ?? null }),
+          q,
+          async (after) => {
+            const out: z.infer<typeof c.ProjectFileLibraryEntrySchema>[] = [];
+            let position = after;
+            let scanned = 0;
+            for (;;) {
+              const rows = await s.tx.projectFile.findMany({
+                where: {
+                  ...projectWhere(s),
+                  version: null,
+                  ...(q.folderId ? { folderId: q.folderId } : {}),
+                  ...(position ? { fileId: { gt: position } } : {}),
+                },
+                orderBy: { fileId: 'asc' },
+                take: 100,
+              });
+              scanned += rows.length;
+              if (scanned > 10000)
+                throw new PayloadTooLargeException({
+                  code: 'FILE_LIBRARY_FILTER_TOO_BROAD',
+                });
+              for (const row of rows) {
+                try {
+                  out.push(await this.libraryView(s, row.fileId));
+                } catch (e) {
+                  if (!(e instanceof NotFoundException)) throw e;
+                }
+                if (out.length > q.limit) return out;
+              }
+              if (rows.length < 100) return out;
+              position = rows.at(-1)!.fileId;
+            }
+          },
+        );
+      },
+    );
+  }
+  move(
+    actor: RequestActor,
+    pid: string,
+    id: string,
+    revision: number,
+    folderId: string | null,
+  ) {
+    return this.content.op.write(
+      actor,
+      pid,
+      ['work.manage', 'file.read'],
+      undefined,
+      'file.move',
+      id,
+      [],
+      async (s) => {
+        const { link } = await this.root(s, id);
+        if (link.revision !== revision)
+          throw new ConflictException({ code: 'STALE_REVISION' });
+        if (folderId) await this.folder(s, folderId);
+        await s.begin();
+        await s.tx.projectFile.update({
+          where: { fileId: id },
+          data: { folderId, revision: { increment: 1 } },
+        });
+        return this.libraryView(s, id);
+      },
+    );
+  }
+  initiateVersion(
+    actor: RequestActor,
+    pid: string,
+    id: string,
+    revision: number,
+    input: z.infer<typeof c.ProjectFileVersionCreateSchema>,
+    raw: string | undefined,
+  ) {
+    const key = executionKey(raw),
+      fingerprint = executionHash({ id, revision, input });
+    return this.content.op.write(
+      actor,
+      pid,
+      ['file.read', 'work.manage'],
+      undefined,
+      'file.version.initiate',
+      id,
+      [],
+      async (s) => {
+        const { link, file: root } = await this.root(s, id),
+          t = contentTarget(link),
+          prior = await s.tx.projectFile.findFirst({
+            where: { ...projectWhere(s), creationKey: key },
+          });
+        if (prior) {
+          if (prior.fileId !== input.id || prior.fingerprint !== fingerprint)
+            throw new ConflictException();
+          return this.view(pid, t, await this.row(s, input.id, t));
+        }
+        if (link.revision !== revision || root.status !== 'READY')
+          throw new ConflictException({
+            code: 'STALE_REVISION_OR_FILE_NOT_READY',
+          });
+        const max = await s.tx.projectFileVersion.aggregate({
+            where: { ...projectWhere(s), rootFileId: id },
+            _max: { number: true },
+          }),
+          number = (max._max.number ?? 1) + 1;
+        if (number > 100)
+          throw new ConflictException({ code: 'FILE_VERSION_LIMIT' });
+        await s.grow('file.shared');
+        await s.begin();
+        const file = await this.files.initiate(
+          s.tx,
+          this.scope(s, t),
+          input.id,
+          input,
+          s.now,
+        );
+        await s.tx.projectFile.create({
+          data: {
+            ...projectWhere(s),
+            ...contentColumns(t),
+            fileId: input.id,
+            creationKey: key,
+            fingerprint,
+          },
+        });
+        await s.tx.projectFileVersion.create({
+          data: {
+            ...projectWhere(s),
+            rootFileId: id,
+            fileId: input.id,
+            number,
+          },
+        });
+        await s.tx.projectFile.update({
+          where: { fileId: id },
+          data: { revision: { increment: 1 } },
+        });
+        await this.content.activity(s, t, 'file.version.initiate', input.id);
+        return this.view(pid, t, file);
+      },
+    );
+  }
+  async versionDownload(
+    actor: RequestActor,
+    pid: string,
+    id: string,
+    versionId: string,
+  ) {
+    const target = await this.content.op.read(
+      actor,
+      pid,
+      ['file.read'],
+      undefined,
+      async (s) => {
+        const { link } = await this.root(s, id);
+        if (
+          versionId !== id &&
+          !(await s.tx.projectFileVersion.findFirst({
+            where: { ...projectWhere(s), rootFileId: id, fileId: versionId },
+          }))
+        )
+          throw new NotFoundException();
+        return contentTarget(link);
+      },
+    );
+    return this.download(actor, pid, versionId, target);
+  }
   private scope(s: ExecutionContext, t: ContentTarget): SharedFileScope {
     const target = contentProof(s.pid, t),
       actorId = s.a.require(s.tx, s.pid, 'file.read', target).actorId;
@@ -65,6 +514,15 @@ export class ProjectFilesService {
       where: { ...projectWhere(s), ...contentColumns(t), fileId: id },
     });
     if (!row) throw new NotFoundException();
+    const version = await s.tx.projectFileVersion.findUnique({
+      where: { fileId: id },
+    });
+    if (
+      version &&
+      (await this.files.row(s.tx, this.scope(s, t), version.rootFileId))
+        .status === 'DELETED'
+    )
+      throw new NotFoundException();
     return this.files.row(s.tx, this.scope(s, t), id);
   }
   private view(pid: string, t: ContentTarget, r: StoredFile) {
@@ -82,6 +540,7 @@ export class ProjectFilesService {
       createdAt: r.createdAt.toISOString(),
       uploadExpiresAt: r.uploadExpiresAt.toISOString(),
       completedAt: r.completedAt?.toISOString() ?? null,
+      createdByActorId: r.createdByActorId,
     });
   }
   list(
@@ -108,6 +567,7 @@ export class ProjectFilesService {
               const links = await s.tx.projectFile.findMany({
                 where: {
                   ...projectWhere(s),
+                  version: null,
                   ...contentColumns(t),
                   ...(position ? { fileId: { gt: position } } : {}),
                 },
@@ -249,13 +709,18 @@ export class ProjectFilesService {
     return this.content.op.write(
       actor,
       pid,
-      ['file.read', writeCap(t)],
+      [
+        'file.read',
+        writeCap(t),
+        ...(input.folderId ? ['work.manage' as const] : []),
+      ],
       contentRequest(t),
       'file.initiate',
       input.id,
       [],
       async (s) => {
         await this.content.authorize(s, t);
+        if (input.folderId) await this.folder(s, input.folderId);
         const previous = await s.tx.projectFile.findFirst({
           where: { ...projectWhere(s), creationKey: key },
         });
@@ -286,6 +751,7 @@ export class ProjectFilesService {
             ...projectWhere(s),
             ...contentColumns(t),
             fileId: file.id,
+            folderId: input.folderId ?? null,
             creationKey: key,
             fingerprint,
           },
@@ -513,6 +979,27 @@ export class ProjectFilesService {
             revision,
             s.now,
           );
+          // Keep historical version references, but revoke every binary in this
+          // logical file atomically. Existing reconciliation removes their bytes.
+          const versions = await s.tx.projectFileVersion.findMany({
+            where: { ...projectWhere(s), rootFileId: id },
+            take: 100,
+          });
+          for (const version of versions) {
+            const file = await this.files.row(
+              s.tx,
+              this.scope(s, t),
+              version.fileId,
+            );
+            if (file.status !== 'DELETED')
+              await this.files.deleted(
+                s.tx,
+                this.scope(s, t),
+                file.id,
+                file.revision,
+                s.now,
+              );
+          }
           await this.content.activity(s, t, 'file.delete', id);
           return row;
         },

@@ -252,6 +252,111 @@ export class ProjectToolsService {
         this.tools.workflows(tx, a, ctx, after, q.limit + 1),
     );
   }
+  drafts(
+    actor: RequestActor,
+    pid: string,
+    q: z.infer<typeof c.ProjectPageQuerySchema>,
+  ) {
+    return this.read(actor, pid, ['workflow.publish'], undefined, async (s) => {
+      const r = this.requests(pid, ['workflow.publish'], undefined, true)[0]!,
+        b = this.kernel.scopeCursor(s.tx, s.a, r, 'workflow-drafts'),
+        after = this.kernel.cursorPosition(
+          b.context,
+          b.stamp,
+          actor.userId,
+          q.after,
+        ),
+        rows = await this.tools.drafts(s.tx, s.a, s.ctx, after, q.limit + 1);
+      return this.kernel.cursorPage(b.context, b.stamp, actor.userId, {
+        items: rows.slice(0, q.limit),
+        nextCursor: rows.length > q.limit ? rows[q.limit - 1]!.id : null,
+      });
+    });
+  }
+  draft(actor: RequestActor, pid: string, id: string) {
+    return this.read(actor, pid, ['workflow.publish'], undefined, (s) =>
+      this.tools.draft(s.tx, s.a, s.ctx, id),
+    );
+  }
+  previewDraft(actor: RequestActor, pid: string, id: string) {
+    return this.read(actor, pid, ['workflow.publish'], undefined, (s) =>
+      this.tools.previewDraft(s.tx, s.a, s.ctx, id),
+    );
+  }
+  saveDraft(
+    actor: RequestActor,
+    pid: string,
+    id: string,
+    expected: number,
+    input: z.infer<typeof c.ProjectWorkflowDraftCreateSchema>,
+    raw: string | undefined,
+  ) {
+    return this.command(
+      actor,
+      pid,
+      ['workflow.publish'],
+      undefined,
+      'workflow.draft.save',
+      id,
+      [],
+      (s, k, f) =>
+        this.tools.saveDraft(s.tx, s.a, s.ctx, id, expected, input, k, f),
+      {
+        key: raw,
+        input: { expected, input },
+        replay: (s) => this.tools.draft(s.tx, s.a, s.ctx, id),
+      },
+    );
+  }
+  async finishDraft(
+    actor: RequestActor,
+    pid: string,
+    id: string,
+    expected: number,
+    publish: boolean,
+    raw: string | undefined,
+  ) {
+    const hint = await this.draft(actor, pid, id);
+    return this.command(
+      actor,
+      pid,
+      ['workflow.publish'],
+      undefined,
+      publish ? 'workflow.draft.publish' : 'workflow.draft.discard',
+      id,
+      hint.definition.edges.flatMap((e) => e.approvers.map((p) => p.accessId)),
+      (s, k, f) =>
+        this.tools.finishDraft(s.tx, s.a, s.ctx, id, expected, publish, k, f),
+      {
+        key: raw,
+        input: { expected, publish },
+        replay: (s) => this.tools.draft(s.tx, s.a, s.ctx, id),
+      },
+    );
+  }
+  async editDraft(
+    actor: RequestActor,
+    pid: string,
+    id: string,
+    expected: number,
+    body: z.infer<typeof c.ProjectWorkflowDraftPatchSchema>,
+    raw: string | undefined,
+  ) {
+    const current = await this.draft(actor, pid, id);
+    return this.saveDraft(
+      actor,
+      pid,
+      id,
+      expected,
+      {
+        id,
+        workflowId: current.workflowId,
+        baseRevision: current.baseRevision,
+        definition: body.definition,
+      },
+      raw,
+    );
+  }
   workflow(actor: RequestActor, pid: string, id: string, version: number) {
     return this.read(actor, pid, [], undefined, ({ tx, a, ctx }) =>
       this.tools.workflow(tx, a, ctx, id, version),

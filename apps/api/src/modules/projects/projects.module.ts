@@ -1,5 +1,6 @@
 import { ProjectCustodyGraph } from './application/projects-custody-graph.js';
 import { ProjectOverviewService } from './application/project-overview.service.js';
+import { ProjectAnalyticsService } from './application/project-analytics.service.js';
 import { ProjectOverviewController } from './http/project-overview.controller.js';
 import { ProjectCompanyAssociations } from './application/project-company-associations.js';
 import { Module } from '@nestjs/common';
@@ -60,6 +61,7 @@ export class ProjectsModule {
         storage,
       ],
       providers: [
+        ProjectAnalyticsService,
         ProjectOverviewService,
         ProjectCustodyGraph,
         ProjectCompanyAssociations,

@@ -1,7 +1,11 @@
 import fs from 'node:fs';
 import { it, expect } from 'vitest';
 import { createOpenApiDocument } from '../../packages/api-contracts/src/openapi.js';
-import { apiSignatures, assertApiCompatible } from './openapi-compatibility.js';
+import {
+  apiSignatures,
+  assertApiCompatible,
+  approvedProjectHash,
+} from './openapi-compatibility.js';
 import { historicalCompanyCustodyResponses } from './company-custody-responses.js';
 import { gapClosureOperations } from '../../packages/api-contracts/src/gap-closure-openapi.js';
 
@@ -43,10 +47,10 @@ it('freezes the 67 gap-closure operations and only the approved KPI goals transi
   for (const [key, hash] of Object.entries(frozen))
     if (later[key]) {
       expect(later[key].previous).toBe(hash);
-      expect(current[key]).toBe(later[key].approved);
-    } else expect(current[key]).toBe(hash);
+      expect(current[key]).toBe(approvedProjectHash(key, later[key].approved));
+    } else expect(current[key]).toBe(approvedProjectHash(key, hash));
   for (const [key, value] of Object.entries(extensions))
-    expect(current[key]).toBe(value.approved);
+    expect(current[key]).toBe(approvedProjectHash(key, value.approved));
   const changed = structuredClone(doc) as unknown as {
     paths: Record<string, { get: { security: unknown[] } }>;
   };

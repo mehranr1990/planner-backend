@@ -71,6 +71,7 @@ export class ProjectCleanupService {
         'ProjectActivity',
         'ProjectCommentVersion',
         'ProjectComment',
+        'ProjectFileVersion',
         'ProjectFile',
         'ProjectWorkAllocation',
         'ProjectCapacityDay',
@@ -79,6 +80,7 @@ export class ProjectCleanupService {
         'ProjectChangeSource',
         'ProjectChangePlan',
         'ProjectTransfer',
+        'ProjectRegisterDetail',
         'ProjectRiskIssueEvent',
         'ProjectRiskIssue',
         'TaskAssignment',
@@ -91,6 +93,9 @@ export class ProjectCleanupService {
       ]))
     )
       return false;
+    const folders =
+      await tx.$executeRaw`DELETE FROM "ProjectFileFolder" WHERE id IN (SELECT f.id FROM "ProjectFileFolder" f WHERE f."spaceId"=${s.spaceId}::uuid AND (${s.scopeId ?? null}::uuid IS NULL OR f."scopeId"=${s.scopeId ?? null}::uuid) AND NOT EXISTS(SELECT 1 FROM "ProjectFileFolder" c WHERE c."parentId"=f.id) ORDER BY f.id LIMIT 200)`;
+    if (folders) return false;
     if (
       !(await sharedVersionedDelete(
         tx,

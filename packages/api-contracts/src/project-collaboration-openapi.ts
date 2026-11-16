@@ -259,7 +259,16 @@ export function projectCollaborationPaths() {
         required: true,
         schema:
           m[1] === 'targetKind'
-            ? { type: 'string', enum: ['PROJECT', 'TASK', 'GOAL', 'DOCUMENT'] }
+            ? {
+                type: 'string',
+                enum: [
+                  'PROJECT',
+                  'TASK',
+                  'GOAL',
+                  'DOCUMENT',
+                  ...(op.path.includes('/comments') ? ['REGISTER_ITEM'] : []),
+                ],
+              }
             : { type: 'string', format: 'uuid' },
       }),
     );

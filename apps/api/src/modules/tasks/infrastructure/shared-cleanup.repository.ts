@@ -12,6 +12,7 @@ export class SharedTasksCleanupRepository extends SharedTasksCleanup {
     s.verify(tx);
     if (
       !(await sharedDeleteBatch(tx, s, [
+        'TaskWorkflowDraft',
         'SharedTaskWorkLog',
         'TaskWorkflowApproval',
         'TaskWorkflowBinding',

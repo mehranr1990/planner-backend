@@ -8,6 +8,21 @@ export const ProjectCreateSchema = z.strictObject({
   title,
   description: description.optional(),
   retentionPolicyVersion: z.string().min(1).max(100),
+  key: z
+    .string()
+    .trim()
+    .regex(/^[A-Za-z0-9-]{1,32}$/)
+    .nullable()
+    .optional(),
+  startDate: z.iso.date().nullable().optional(),
+  endDate: z.iso.date().nullable().optional(),
+  color: z
+    .string()
+    .regex(/^#[A-Fa-f0-9]{6}$/)
+    .nullable()
+    .optional(),
+  template: z.enum(['BLANK', 'KANBAN', 'SCRUM']).optional(),
+  ownerTeamId: z.uuid().optional(),
 });
 export const ProjectPatchSchema = z
   .strictObject({
@@ -71,6 +86,8 @@ export const ProjectComponentCreateSchema = z.strictObject({
   position: z.number().int().nonnegative().max(1000000).default(0),
   phaseId: z.uuid().nullable().optional(),
   targetDate: z.iso.date().nullable().optional(),
+  startDate: z.iso.date().nullable().optional(),
+  endDate: z.iso.date().nullable().optional(),
 });
 export const ProjectComponentPatchSchema = z
   .strictObject({
@@ -79,6 +96,8 @@ export const ProjectComponentPatchSchema = z
     phaseId: z.uuid().nullable().optional(),
     targetDate: z.iso.date().nullable().optional(),
     completed: z.boolean().optional(),
+    startDate: z.iso.date().nullable().optional(),
+    endDate: z.iso.date().nullable().optional(),
   })
   .refine((v) => Object.keys(v).length > 0);
 export const ProjectComponentSchema = z.strictObject({
@@ -91,6 +110,8 @@ export const ProjectComponentSchema = z.strictObject({
   phaseId: z.uuid().nullable(),
   targetDate: z.iso.date().nullable(),
   completed: z.boolean().nullable(),
+  startDate: z.iso.date().nullable().optional(),
+  endDate: z.iso.date().nullable().optional(),
 });
 export const ProjectComponentPageSchema = z.strictObject({
   items: z.array(ProjectComponentSchema),
@@ -108,6 +129,7 @@ export const ProjectTaskCreateSchema = z.strictObject({
   priority: z.enum(['NONE', 'LOW', 'MEDIUM', 'HIGH', 'URGENT']).default('NONE'),
   sectionId: z.uuid().nullable().optional(),
   milestoneId: z.uuid().nullable().optional(),
+  parentTaskId: z.uuid().nullable().optional(),
 });
 export const ProjectTaskPatchSchema = z
   .strictObject({
@@ -115,6 +137,9 @@ export const ProjectTaskPatchSchema = z
     description: description.optional(),
     priority: z.enum(['NONE', 'LOW', 'MEDIUM', 'HIGH', 'URGENT']).optional(),
     status: z.enum(['OPEN', 'IN_PROGRESS', 'DONE', 'CANCELED']).optional(),
+    parentTaskId: z.uuid().nullable().optional(),
+    position: z.number().int().min(0).max(1000000).optional(),
+    sectionId: z.uuid().nullable().optional(),
   })
   .refine((v) => Object.keys(v).length > 0);
 export const SharedTaskSchema = z.strictObject({
@@ -129,6 +154,9 @@ export const SharedTaskSchema = z.strictObject({
   revision: z.number().int().positive(),
   deletedAt: z.iso.datetime().nullable(),
   completedAt: z.iso.datetime().nullable(),
+  createdAt: z.iso.datetime().optional(),
+  firstStartedAt: z.iso.datetime().nullable().optional(),
+  parentTaskId: z.uuid().nullable().optional(),
 });
 export const SharedTaskPageSchema = z.strictObject({
   items: z.array(SharedTaskSchema),

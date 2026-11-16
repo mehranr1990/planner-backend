@@ -26,25 +26,33 @@ import type {
   ExecutionContext,
   ExecutionTarget,
 } from './project-execution-context.js';
-export type ContentTarget = z.infer<typeof c.ProjectContentTargetSchema>;
+export type ContentTarget = z.infer<typeof c.ProjectCommentTargetSchema>;
 export const contentColumns = (t: ContentTarget) => ({
   taskId: t.kind === 'TASK' ? t.id : null,
   goalId: t.kind === 'GOAL' ? t.id : null,
   documentId: t.kind === 'DOCUMENT' ? t.id : null,
+  ...(t.kind === 'REGISTER_ITEM' ? { registerItemId: t.id } : {}),
+});
+const commentColumns = (t: ContentTarget) => ({
+  ...contentColumns(t),
+  registerItemId: t.kind === 'REGISTER_ITEM' ? t.id : null,
 });
 export const contentTarget = (r: {
   projectId: string;
   taskId: string | null;
   goalId: string | null;
   documentId: string | null;
+  registerItemId?: string | null;
 }): ContentTarget =>
-  r.taskId
-    ? { kind: 'TASK', id: r.taskId }
-    : r.goalId
-      ? { kind: 'GOAL', id: r.goalId }
-      : r.documentId
-        ? { kind: 'DOCUMENT', id: r.documentId }
-        : { kind: 'PROJECT', id: r.projectId };
+  r.registerItemId
+    ? { kind: 'REGISTER_ITEM', id: r.registerItemId }
+    : r.taskId
+      ? { kind: 'TASK', id: r.taskId }
+      : r.goalId
+        ? { kind: 'GOAL', id: r.goalId }
+        : r.documentId
+          ? { kind: 'DOCUMENT', id: r.documentId }
+          : { kind: 'PROJECT', id: r.projectId };
 export const contentRequest = (
   t: ContentTarget,
 ): ExecutionTarget | undefined =>
@@ -54,8 +62,11 @@ export const contentRequest = (
       ? { kind: t.kind, id: t.id }
       : undefined;
 export const contentProof = (pid: string, t: ContentTarget) => ({
-  kind: t.kind === 'DOCUMENT' ? ('PROJECT' as const) : t.kind,
-  id: t.kind === 'DOCUMENT' ? pid : t.id,
+  kind:
+    t.kind === 'DOCUMENT' || t.kind === 'REGISTER_ITEM'
+      ? ('PROJECT' as const)
+      : t.kind,
+  id: t.kind === 'DOCUMENT' || t.kind === 'REGISTER_ITEM' ? pid : t.id,
 });
 const comment = (r: ProjectComment) =>
   c.ProjectCommentSchema.parse({
@@ -76,7 +87,19 @@ export class ProjectContentService {
     @Inject(SharedGoals) private readonly goals: SharedGoals,
   ) {}
   async authorize(s: ExecutionContext, t: ContentTarget, allowRetired = false) {
-    if (t.kind === 'TASK') {
+    if (t.kind === 'REGISTER_ITEM') {
+      s.a.require(s.tx, s.pid, 'task.read');
+      if (
+        !(await s.tx.projectRiskIssue.findFirst({
+          where: {
+            ...projectWhere(s),
+            id: t.id,
+            ...(!allowRetired ? { retiredAt: null } : {}),
+          },
+        }))
+      )
+        throw new NotFoundException();
+    } else if (t.kind === 'TASK') {
       await this.op.linked(s, t.id);
       await this.tasks.read(s.tx, s.a, s.pid, t.id);
     } else if (t.kind === 'GOAL') {
@@ -374,7 +397,7 @@ export class ProjectContentService {
   comments(
     actor: RequestActor,
     pid: string,
-    q: z.infer<typeof c.ProjectContentQuerySchema>,
+    q: z.infer<typeof c.ProjectCommentQuerySchema>,
   ) {
     const t: ContentTarget = { kind: q.targetKind, id: q.targetId };
     return this.op.read(actor, pid, [], contentRequest(t), async (s) => {
@@ -388,7 +411,7 @@ export class ProjectContentService {
             await s.tx.projectComment.findMany({
               where: {
                 ...projectWhere(s),
-                ...contentColumns(t),
+                ...commentColumns(t),
                 deletedAt: null,
                 ...(after ? { id: { gt: after } } : {}),
               },
@@ -438,7 +461,7 @@ export class ProjectContentService {
         const row = await s.tx.projectComment.create({
           data: {
             ...projectWhere(s),
-            ...contentColumns(t),
+            ...commentColumns(t),
             id: input.id,
             body: input.body,
             creationKey: key,
@@ -481,7 +504,7 @@ export class ProjectContentService {
         const row = await s.tx.projectComment.findFirst({
           where: {
             ...projectWhere(s),
-            ...contentColumns(t),
+            ...commentColumns(t),
             id,
             deletedAt: null,
           },
@@ -628,7 +651,7 @@ export class ProjectContentService {
     return this.op.read(actor, pid, [], contentRequest(t), async (s) => {
       await this.authorize(s, t);
       const row = await s.tx.projectComment.findFirst({
-        where: { ...projectWhere(s), ...contentColumns(t), id },
+        where: { ...projectWhere(s), ...commentColumns(t), id },
       });
       if (!row) throw new NotFoundException();
       if (

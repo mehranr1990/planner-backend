@@ -4,14 +4,14 @@ import { ProjectPageQuerySchema } from './projects.js';
 import { embeddedJsonSchema, pointerSegment } from './embedded-json-schema.js';
 export type Operation = {
   path: string;
-  method: 'get' | 'post' | 'put' | 'patch';
+  method: 'get' | 'post' | 'put' | 'patch' | 'delete';
   output: z.ZodType;
   input?: z.ZodType;
   query?: z.ZodType;
   revision?: boolean;
   idempotency?: boolean;
   etag?: boolean;
-  status?: 200 | 201;
+  status?: 200 | 201 | 204;
 };
 export const teamCompletionOperations: Operation[] = [
   {
@@ -244,17 +244,21 @@ export function teamCompletionPaths(
           'Cache-Control': { schema: { type: 'string', const: 'no-store' } },
           ...(op.etag ? { ETag: { schema: { type: 'string' } } } : {}),
         },
-        content: {
-          'application/json': {
-            schema: schema(
-              op.output,
-              pointer +
-                '/responses/' +
-                status +
-                '/content/application~1json/schema',
-            ),
-          },
-        },
+        ...(status === 204
+          ? {}
+          : {
+              content: {
+                'application/json': {
+                  schema: schema(
+                    op.output,
+                    pointer +
+                      '/responses/' +
+                      status +
+                      '/content/application~1json/schema',
+                  ),
+                },
+              },
+            }),
       },
     };
     for (const code of [400, 401, 403, 404, 409, 413, 422, 429, 500, 503])

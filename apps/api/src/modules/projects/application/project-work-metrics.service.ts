@@ -10,7 +10,7 @@ import * as c from '@mehran/api-contracts';
 import type { z } from 'zod';
 import type { RequestActor } from '../../../platform/auth/request-actor.js';
 import { DatabaseService } from '../../../platform/database/database.service.js';
-import { SharedTaskWork } from '../../tasks/public/index.js';
+import { SharedTaskWork, SharedTasks } from '../../tasks/public/index.js';
 import {
   ProjectExecutionContext,
   projectWhere,
@@ -47,7 +47,73 @@ export class ProjectWorkMetricsService {
     private readonly op: ProjectExecutionContext,
     @Inject(SharedTaskWork) private readonly work: SharedTaskWork,
     @Inject(DatabaseService) private readonly db: DatabaseService,
+    @Inject(SharedTasks) private readonly tasks: SharedTasks,
   ) {}
+  private async checklistView(s: ExecutionContext, taskId: string) {
+    const task = await this.tasks.read(s.tx, s.a, s.pid, taskId),
+      items = await this.work.checklist(s.tx, s.a, s.pid, taskId);
+    return c.ProjectChecklistSchema.parse({
+      taskId,
+      revision: task.revision,
+      items,
+      done: items.filter((i) => i.completed).length,
+      total: items.length,
+    });
+  }
+  checklist(actor: RequestActor, pid: string, taskId: string) {
+    return this.op.read(actor, pid, [], taskId, (s) =>
+      this.checklistView(s, taskId),
+    );
+  }
+  changeChecklist(
+    actor: RequestActor,
+    pid: string,
+    taskId: string,
+    revision: number,
+    input: z.infer<typeof c.ProjectChecklistChangeSchema>,
+    raw: string | undefined,
+  ) {
+    const key = executionKey(raw),
+      change = c.ProjectChecklistChangeSchema.parse(input);
+    return this.op.write(
+      actor,
+      pid,
+      ['task.update'],
+      taskId,
+      'task.checklist',
+      taskId,
+      [],
+      async (s) => {
+        await this.op.kernel.receipt(
+          s.tx,
+          s.a,
+          {
+            spaceId: s.spaceId,
+            scopeId: s.scopeId,
+            capability: 'task.update',
+            resource: { kind: 'TASK', id: taskId },
+          },
+          {
+            operation: 'project.checklist',
+            key,
+            fingerprint: executionHash({ taskId, revision, change }),
+          },
+          async () => {
+            await this.work.changeChecklist(
+              s.tx,
+              s.a,
+              s,
+              taskId,
+              revision,
+              change,
+            );
+            return { id: taskId, statusCode: 200 };
+          },
+        );
+        return this.checklistView(s, taskId);
+      },
+    );
+  }
   records(
     actor: RequestActor,
     pid: string,
@@ -84,7 +150,7 @@ export class ProjectWorkMetricsService {
               })
             ).map(capacityView);
           const rows = await s.tx.projectWorkAllocation.findMany({
-            where,
+            where: { ...where, ProjectTask: { Task: { deletedAt: null } } },
             orderBy: { id: 'asc' },
             take: q.limit + 1,
           });
@@ -453,7 +519,7 @@ export class ProjectWorkMetricsService {
     input: z.infer<typeof c.ProjectReportWindowSchema>,
   ) {
     const links = await s.tx.projectTask.findMany({
-      where: projectWhere(s),
+      where: { ...projectWhere(s), Task: { deletedAt: null } },
       orderBy: { taskId: 'asc' },
       take: 10001,
     });

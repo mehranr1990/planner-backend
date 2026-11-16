@@ -584,6 +584,227 @@ export class WorkService {
       },
     );
   }
+  async revert(
+    actor: RequestActor,
+    pid: string,
+    taskId: string,
+    id: string,
+    revision: number,
+    raw: string | undefined,
+  ) {
+    const creationKey = key(raw),
+      fingerprint = hash({ id, revision, action: 'REVERT' });
+    const hint = await this.db.client.taskAssignment.findUnique({
+        where: { id },
+      }),
+      issuer = hint
+        ? await this.kernel.memberUserHint(pid, hint.issuerAccessId)
+        : null;
+    return this.command(
+      actor,
+      pid,
+      'assignment.accept',
+      issuer ? [issuer] : [],
+      'assignment.revert',
+      id,
+      async (tx, a, now, begin) => {
+        await this.source(tx, a, pid, taskId);
+        const old = await this.row(tx, a, pid, taskId, id);
+        if (
+          !(await this.kernel.audienceMatches(tx, a, pid, {
+            accessId: old.recipientAccessId,
+            generation: old.recipientGeneration,
+          }))
+        )
+          throw new NotFoundException();
+        const previous = await tx.taskAssignment.findFirst({
+          where: {
+            spaceId: old.spaceId,
+            scopeId: old.scopeId,
+            issuerAccessId: old.issuerAccessId,
+            issuerGeneration: old.issuerGeneration,
+            creationKey,
+          },
+        });
+        if (previous) {
+          if (previous.fingerprint !== fingerprint)
+            throw new ConflictException();
+          return { previous: view(old), current: view(previous) };
+        }
+        const source = await this.source(tx, a, pid, taskId);
+        if (
+          old.revision !== revision ||
+          old.endedAt ||
+          old.decision !== 'ACCEPTED' ||
+          !['OPEN', 'IN_PROGRESS'].includes(source.status)
+        )
+          throw new ConflictException({
+            code: 'ASSIGNMENT_WITHDRAWAL_UNAVAILABLE',
+          });
+        if (!issuer)
+          throw new ConflictException({
+            code: 'ASSIGNMENT_ISSUER_UNAVAILABLE',
+          });
+        await this.kernel.toolParticipant(
+          tx,
+          pid,
+          old.issuerAccessId,
+          old.issuerGeneration,
+          issuer,
+          ['task.read', 'assignment.assign'],
+        );
+        const audit = await begin();
+        const ended = await tx.taskAssignment.update({
+          where: { id },
+          data: {
+            endedAt: now,
+            endReason: 'REASSIGNED',
+            revision: { increment: 1 },
+          },
+        });
+        const next = await tx.taskAssignment.create({
+          data: {
+            id: randomUUID(),
+            spaceId: old.spaceId,
+            scopeId: old.scopeId,
+            projectId: pid,
+            taskId,
+            kind: old.kind,
+            recipientAccessId: old.recipientAccessId,
+            recipientGeneration: old.recipientGeneration,
+            createdByActorId: old.createdByActorId,
+            issuerAccessId: old.issuerAccessId,
+            issuerGeneration: old.issuerGeneration,
+            selectedTaskRevision: source.revision,
+            creationKey,
+            fingerprint,
+          },
+        });
+        await this.notifications.append(tx, a, {
+          spaceId: pid,
+          assignmentId: id,
+          recipientActorId: old.createdByActorId,
+          assignmentRevision: ended.revision,
+          kind: 'WITHDRAWN',
+        });
+        await this.kernel.offerEffect(
+          tx,
+          actor,
+          pid,
+          a.require(tx, pid, 'assignment.accept').actorId,
+          'assignment.revert',
+          id,
+          audit,
+        );
+        return { previous: view(ended), current: view(next) };
+      },
+    );
+  }
+  async remind(
+    actor: RequestActor,
+    pid: string,
+    taskId: string,
+    id: string,
+    revision: number,
+    raw: string | undefined,
+  ) {
+    const receiptKey = key(raw);
+    const hint = await this.db.client.taskAssignment.findUnique({
+      where: { id },
+    });
+    const recipient = hint
+      ? await this.kernel.memberUserHint(pid, hint.recipientAccessId)
+      : null;
+    return this.command(
+      actor,
+      pid,
+      'assignment.assign',
+      recipient ? [recipient] : [],
+      'assignment.remind',
+      id,
+      async (tx, a, now, begin) => {
+        const source = await this.source(tx, a, pid, taskId),
+          row = await this.row(tx, a, pid, taskId, id),
+          me = a.require(tx, pid, 'assignment.assign');
+        const target = await this.kernel.localActor(
+          tx,
+          pid,
+          row.recipientAccessId,
+        );
+        if (!target || target === me.actorId) throw new ForbiddenException();
+        if (
+          !recipient ||
+          !(await this.kernel.visibleWorkMember(
+            tx,
+            a,
+            pid,
+            row.recipientAccessId,
+            row.recipientGeneration,
+          ))
+        )
+          throw new NotFoundException();
+        const r = this.request(pid, 'assignment.assign');
+        await this.kernel.receipt(
+          tx,
+          a,
+          r,
+          {
+            operation: 'project.assignment.remind',
+            key: receiptKey,
+            fingerprint: hash({ id, revision }),
+          },
+          async () => {
+            if (
+              row.revision !== revision ||
+              row.endedAt ||
+              !['OPEN', 'IN_PROGRESS'].includes(source.status) ||
+              !(
+                row.decision === 'PENDING' ||
+                (row.decision === 'ACCEPTED' &&
+                  (await this.tasks.schedule(tx, a, pid, taskId)).dueAt !==
+                    null &&
+                  new Date(
+                    (await this.tasks.schedule(tx, a, pid, taskId)).dueAt!,
+                  ) < now)
+              )
+            )
+              throw new ConflictException({ code: 'REMINDER_NOT_APPLICABLE' });
+            // Reuse Team's one reminder per UTC date, without inventing a new window.
+            if (
+              row.remindedAt?.toISOString().slice(0, 10) ===
+              now.toISOString().slice(0, 10)
+            )
+              throw new ConflictException({
+                code: 'ASSIGNMENT_REMINDER_COOLDOWN',
+              });
+            const audit = await begin(),
+              updated = await tx.taskAssignment.update({
+                where: { id },
+                data: { remindedAt: now, revision: { increment: 1 } },
+              });
+            await this.notifications.append(tx, a, {
+              spaceId: pid,
+              assignmentId: id,
+              recipientActorId: target,
+              assignmentRevision: updated.revision,
+              kind: 'REMINDER',
+            });
+            await this.kernel.offerEffect(
+              tx,
+              actor,
+              pid,
+              me.actorId,
+              'assignment.remind',
+              id,
+              audit,
+            );
+            return { id, statusCode: 200 };
+          },
+        );
+        return view(await this.row(tx, a, pid, taskId, id));
+      },
+    );
+  }
   async policy(actor: RequestActor, pid: string) {
     await this.projects.hint(pid);
     return this.kernel.run(

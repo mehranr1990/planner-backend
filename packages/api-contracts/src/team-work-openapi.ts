@@ -169,13 +169,10 @@ export function teamWorkPaths(): Record<string, Record<string, unknown>> {
     page: true,
     etag: false,
   });
-  add(
-    '/teams/{id}/tasks',
-    'post',
-    c.SharedTaskSchema,
-    c.ProjectTaskCreateSchema,
-    { idempotency: true, etag: true },
-  );
+  add('/teams/{id}/tasks', 'post', c.SharedTaskSchema, c.TeamTaskCreateSchema, {
+    idempotency: true,
+    etag: true,
+  });
   add('/teams/{id}/tasks/{sourceId}', 'get', c.SharedTaskSchema, undefined, {
     etag: true,
   });
@@ -183,7 +180,7 @@ export function teamWorkPaths(): Record<string, Record<string, unknown>> {
     '/teams/{id}/tasks/{sourceId}',
     'patch',
     c.SharedTaskSchema,
-    c.ProjectTaskPatchSchema,
+    c.TeamTaskPatchSchema,
     { idempotency: true, revision: true, etag: true },
   );
   add(
