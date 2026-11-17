@@ -96,6 +96,7 @@ export * from './messaging-media.js';
 export * from './meetings.js';
 export * from './communication-lifecycle.js';
 export * from './social.js';
+export * from './social-activities.js';
 export * from './scope-access.js';
 export * from './backend-completion.js';
 export * from './team-files.js';

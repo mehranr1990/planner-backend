@@ -26,6 +26,112 @@ export class SocialDataOwner extends SocialData {
       where: { requesterUserId: userId, state: 'PENDING' },
       data: { state: 'CANCELED', revision: { increment: 1 } },
     });
+    // P6-02: pending Activity invitations end; accepted history is retained.
+    await tx.socialActivityParticipant.updateMany({
+      where: { userId, state: 'INVITED' },
+      data: { state: 'DECLINED', rsvp: 'DECLINED', revision: { increment: 1 } },
+    });
+  }
+  /**
+   * P6-02/P6-03 erasure detaches the identity from shared Activity and ledger
+   * history; amounts stay reconcilable for the remaining participants.
+   * Departure settlement obligations remain a P6-06 decision.
+   */
+  private async eraseActivities(tx: Prisma.TransactionClient, userId: string) {
+    await tx.socialNotice.deleteMany({ where: { userId } });
+    const mine = await tx.socialActivityParticipant.findMany({
+      where: { userId },
+      select: { id: true },
+    });
+    const ids = mine.map((p) => p.id);
+    // ADR 0060 decision A: erasure is never blocked and never silently promotes
+    // anyone. An independent Activity losing its last organizer is closed and
+    // marked orphaned; participants keep their content and ledger rights.
+    const organizing = await tx.socialActivityParticipant.findMany({
+      where: { userId, state: 'ACTIVE', role: 'ORGANIZER' },
+      include: { activity: true },
+    });
+    for (const p of organizing) {
+      if (p.activity.groupId) continue;
+      const others = await tx.socialActivityParticipant.count({
+        where: {
+          activityId: p.activityId,
+          role: 'ORGANIZER',
+          state: 'ACTIVE',
+          userId: { not: null },
+          id: { not: p.id },
+        },
+      });
+      if (others) continue;
+      await tx.socialActivity.update({
+        where: { id: p.activityId },
+        data: {
+          orphanedAt: new Date(),
+          successorParticipantId: null,
+          ...(p.activity.state === 'PLANNED' ? { state: 'CLOSED' } : {}),
+          revision: { increment: 1 },
+        },
+      });
+    }
+    await tx.socialActivity.updateMany({
+      where: { successorParticipantId: { in: ids } },
+      data: { successorParticipantId: null },
+    });
+    await tx.socialActivityBusy.deleteMany({
+      where: { participantId: { in: ids } },
+    });
+    await tx.socialActivityParticipant.updateMany({
+      where: { id: { in: ids }, rsvp: 'GOING' },
+      data: {
+        rsvp: 'DECLINED',
+        seat: 'NONE',
+        waitlistedAt: null,
+        offerExpiresAt: null,
+      },
+    });
+    await tx.socialActivityParticipant.updateMany({
+      where: { id: { in: ids } },
+      data: {
+        userId: null,
+        state: 'LEFT',
+        role: 'PARTICIPANT',
+        seat: 'NONE',
+        waitlistedAt: null,
+        offerExpiresAt: null,
+        reminderMinutes: null,
+        revision: { increment: 1 },
+      },
+    });
+    await tx.socialActivity.updateMany({
+      where: { createdByUserId: userId },
+      data: { createdByUserId: null },
+    });
+    await tx.socialExpense.updateMany({
+      where: { proposedByUserId: userId },
+      data: { proposedByUserId: null },
+    });
+    for (const field of [
+      'payerUserId',
+      'proposedByUserId',
+      'decidedByUserId',
+    ] as const)
+      await tx.socialExpenseRevision.updateMany({
+        where: { [field]: userId },
+        data: { [field]: null },
+      });
+    await tx.socialExpenseShare.updateMany({
+      where: { userId },
+      data: { userId: null },
+    });
+    for (const field of ['payerUserId', 'payeeUserId'] as const)
+      await tx.socialSettlement.updateMany({
+        where: { [field]: userId },
+        data: { [field]: null },
+      });
+    await tx.socialAuditEvent.updateMany({
+      where: { actorUserId: userId },
+      data: { actorUserId: null },
+    });
   }
   async erase(tx: Prisma.TransactionClient, scope: AuthorizedSpace) {
     await tx.socialPrivacy.deleteMany({
@@ -45,6 +151,7 @@ export class SocialDataOwner extends SocialData {
     await tx.socialJoinRequest.deleteMany({
       where: { requesterUserId: scope.actor.userId },
     });
+    await this.eraseActivities(tx, scope.actor.userId);
   }
   async snapshot(
     tx: Prisma.TransactionClient,
@@ -111,6 +218,26 @@ export class SocialDataOwner extends SocialData {
           take: 100,
         }),
       (r) => ({ circleId: r.circleId, connectionId: r.connectionId }),
+    );
+    await budget.collect(
+      'socialActivityParticipations',
+      (after: string | undefined) =>
+        tx.socialActivityParticipant.findMany({
+          where: { userId, ...(after ? { id: { gt: after } } : {}) },
+          orderBy: { id: 'asc' },
+          take: 100,
+        }),
+      (r) => r.id,
+    );
+    await budget.collect(
+      'socialNotices',
+      (after: string | undefined) =>
+        tx.socialNotice.findMany({
+          where: { userId, ...(after ? { id: { gt: after } } : {}) },
+          orderBy: { id: 'asc' },
+          take: 100,
+        }),
+      (r) => r.id,
     );
     await budget.collect(
       'socialJoinRequests',

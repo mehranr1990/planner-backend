@@ -4,6 +4,8 @@ import { AnalyticsFinance } from './public/analytics.js';
 import { AnalyticsFinanceRepository } from './infrastructure/analytics.repository.js';
 import { AuditModule } from '../../platform/audit/audit.service.js';
 import { Module } from '@nestjs/common';
+import { ExternalExpensePosting } from './public/external-posting.js';
+import { ExternalPostingService } from './application/external-posting.service.js';
 import type { DynamicModule } from '@nestjs/common';
 import { DatabaseModule } from '../../platform/database/database.module.js';
 import { SpacesModule } from '../spaces/public/index.js';
@@ -33,8 +35,9 @@ export class FinanceModule {
         LedgerService,
         FinancePlanningService,
         FinanceReportsService,
+        { provide: ExternalExpensePosting, useClass: ExternalPostingService },
       ],
-      exports: [FinanceData, AnalyticsFinance],
+      exports: [FinanceData, AnalyticsFinance, ExternalExpensePosting],
       controllers: [FinanceController],
     };
   }

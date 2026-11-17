@@ -1464,7 +1464,8 @@ describe('P4-01 Company contexts, corporate admission and bounded policy inherit
       .send({})
       .expect(200);
     const actorKey = control.opaqueRateKey(
-      'collaboration.actor:' + viewer.actor.userId,
+      // ADR 0058: invitation decisions use the Companies sensitive actor budget.
+      'http:v2:companies:sensitive:actor:' + viewer.actor.userId,
     );
     expect(
       (

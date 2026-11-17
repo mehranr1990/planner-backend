@@ -538,6 +538,34 @@ export class Store implements FinanceTransactionPort {
     if (count !== 1) throw new ConflictException();
     return this.get(kind, id);
   }
+  externalPosting(kind: 'SOCIAL_EXPENSE_SHARE', ref: string) {
+    return this.tx.financeExternalPosting.findUnique({
+      where: {
+        spaceId_sourceKind_sourceRef: {
+          spaceId: this.scope.spaceId,
+          sourceKind: kind,
+          sourceRef: ref,
+        },
+      },
+      select: { transactionId: true, sourceRevisionRef: true },
+    });
+  }
+  async linkExternal(
+    kind: 'SOCIAL_EXPENSE_SHARE',
+    ref: string,
+    revisionRef: string,
+    transactionId: string,
+  ) {
+    await this.tx.financeExternalPosting.create({
+      data: {
+        spaceId: this.scope.spaceId,
+        sourceKind: kind,
+        sourceRef: ref,
+        sourceRevisionRef: revisionRef,
+        transactionId,
+      },
+    });
+  }
   async post(data: LedgerWrite) {
     const { postings, exchangeRate, ...input } = data;
     const r = await this.tx.transaction.create({

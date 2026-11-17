@@ -6,7 +6,9 @@ import {
   messagesMeetingsGapMigrationName,
   assertReviewedMessagesMeetingsGapMigration,
 } from './reviewed-messages-meetings-gap-migration.ts';
-import { SHARED_CLEANUP_FK_SHA256 } from '../../apps/api/src/platform/lifecycle/shared-cleanup-catalog.ts';
+// Pinned to the 1,071-FK catalog reviewed through migration 0076; later batches re-pin the live constant.
+const SHARED_CLEANUP_FK_SHA256 =
+  'e7581b5e95a60c1c55322ab57b541fbf58353cab38dd9c3e76a8b8e33bc9bdec';
 export async function verifyMessagesMeetingsGapUpgrade(input: {
   client: Client;
   schema: string;

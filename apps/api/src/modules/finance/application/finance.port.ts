@@ -67,6 +67,20 @@ export interface FinanceTransactionPort {
           : In<typeof c.FinancePeriodPatchSchema>,
   ): Promise<Resources[K]>;
   post(data: LedgerWrite): Promise<c.FinanceTransaction>;
+  /** ADR 0061: Finance-owned proof of one explicit posting per external source. */
+  externalPosting(
+    kind: 'SOCIAL_EXPENSE_SHARE',
+    ref: string,
+  ): Promise<{
+    transactionId: string;
+    sourceRevisionRef: string | null;
+  } | null>;
+  linkExternal(
+    kind: 'SOCIAL_EXPENSE_SHARE',
+    ref: string,
+    revisionRef: string,
+    transactionId: string,
+  ): Promise<void>;
   markReversed(id: string, revision: number): Promise<void>;
   history(
     id: string,

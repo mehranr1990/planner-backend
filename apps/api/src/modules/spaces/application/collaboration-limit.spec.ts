@@ -114,10 +114,45 @@ describe('Shared endpoint-aware request budgets', () => {
     '/conversations/:id/members/:memberId',
     '/meetings/:id/restore-admission',
     '/companies/:id/contexts/:scopeId/policy',
+    '/social-activities/:id/invitations',
+    '/social-activities/:id/lifecycle/:action',
+    '/social-activities/:id/expenses/:expenseId/decisions/:action',
+    '/social-groups/:id/settlements/:settlementId/decisions/:action',
+    '/social-activities/:id/succession',
+    '/social-activities/:id/succession/:action',
+    '/social-activities/:id/restore',
   ])('keeps %s in the sensitive class', (route) => {
     expect(sharedRatePolicy({ method: 'POST', route }).actor).toBe(20);
   });
 
+  it('treats Activity deletion as sensitive but ordinary edits as writes', () => {
+    expect(
+      sharedRatePolicy({ method: 'DELETE', route: '/social-activities/:id' })
+        .actor,
+    ).toBe(20);
+    expect(
+      sharedRatePolicy({ method: 'PATCH', route: '/social-activities/:id' })
+        .actor,
+    ).toBe(120);
+  });
+  it('keeps P6-02/P6-03 routes in the independent Social family', () => {
+    for (const route of [
+      '/social-activities/:id',
+      '/social-activities/:id/rsvp',
+      '/social-notices',
+    ])
+      expect(sharedRatePolicy({ method: 'POST', route }).family).toBe('social');
+    expect(
+      sharedRatePolicy({ method: 'POST', route: '/social-activities/:id/rsvp' })
+        .actor,
+    ).toBe(120);
+    expect(
+      sharedRatePolicy({
+        method: 'GET',
+        route: '/social-activities/:id/expenses/:expenseId',
+      }).actor,
+    ).toBe(600);
+  });
   it('allows ordinary membership reads and caps aggregation aliases', () => {
     expect(
       sharedRatePolicy({

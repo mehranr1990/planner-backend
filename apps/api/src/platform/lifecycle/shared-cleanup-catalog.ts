@@ -37,9 +37,18 @@ import type { Prisma } from '../../generated/prisma/client.js';
 // P5-GAP-CLOSURE adds four typed edges (1,071 total): schedules are removed
 // before announcement versions and source intervals; immutable agenda revisions
 // are removed under the actual lifecycle claim before entries and admissions.
-// None references User or Personal custody. Future FK changes fail closed.
+// None references User or Personal custody.
+// P6-02/P6-03 (ADR 0060) adds 36 Social edges (1,107 total). Activity, notice,
+// expense, settlement and audit rows CASCADE from SocialGroup/SocialActivity, so
+// the existing Space→SocialGroup purge removes them in one cascade; intra-Activity
+// composite edges are NO ACTION/deferrable inside that cascade. User edges are
+// SET NULL (notices CASCADE) and never block Personal erasure.
+// ADR 0060-0062 gap closure adds two edges (1,109 total): the Activity nominee
+// reference is same-Activity, deferrable NO ACTION inside the Activity cascade;
+// FinanceExternalPosting cascades from its Personal Transaction (Space cascade on
+// erasure). Neither joins shared custody content. Future FK changes fail closed.
 export const SHARED_CLEANUP_FK_SHA256 =
-  'e7581b5e95a60c1c55322ab57b541fbf58353cab38dd9c3e76a8b8e33bc9bdec';
+  '79d45783f36fc4f3b2356994806ae87bb49f5e32389b516f6b5bded6ea6e2097';
 export async function assertSharedCleanupCatalog(tx: Prisma.TransactionClient) {
   const rows = await tx.$queryRaw<
     { table: string; name: string; target: string; definition: string }[]

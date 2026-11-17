@@ -6,6 +6,7 @@ import { AuditModule } from '../../platform/audit/audit.service.js';
 import { SpacesModule } from '../spaces/public/index.js';
 import { MessagingService } from './application/messaging.service.js';
 import { DmContacts } from './application/dm-contacts.service.js';
+import { ConversationSources } from './application/conversation-sources.js';
 import { DmContactsController } from './http/dm-contacts.controller.js';
 import { AdvancedMessagingService } from './application/advanced-messaging.service.js';
 import { AdvancedMessagingController } from './http/advanced-messaging.controller.js';
@@ -22,6 +23,7 @@ import {
     MessagingGuard,
     DmContacts,
     MessagingExtensionsService,
+    ConversationSources,
   ],
   controllers: [
     DmContactsController,
@@ -35,6 +37,7 @@ import {
     AdvancedMessagingService,
     MessagingGuard,
     DmContacts,
+    ConversationSources,
   ],
 })
 export class MessagingModule {}

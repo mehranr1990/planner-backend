@@ -3,3 +3,7 @@ export { ConnectionsService } from '../application/connections.service.js';
 export { SocialGroupsService } from '../application/groups.service.js';
 export { SocialData } from './personal-data.js';
 export { SocialLifecycle } from '../application/social-lifecycle.js';
+export { SocialActivitiesModule } from '../social-activities.module.js';
+export { SocialActivitiesService } from '../application/activities.service.js';
+export { SocialPlanningService } from '../application/activity-planning.service.js';
+export { SocialExpensesService } from '../application/expenses.service.js';

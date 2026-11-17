@@ -15,6 +15,17 @@ model User {
   socialRequestsSent SocialConnection[] @relation("SocialConnection_requester")
   socialRequestsReceived SocialConnection[] @relation("SocialConnection_recipient")
   socialJoinRequests SocialJoinRequest[]
+  socialActivitiesCreated SocialActivity[] @relation("SocialActivity_creator")
+  socialParticipations SocialActivityParticipant[] @relation("SocialActivityParticipant_user")
+  socialNotices SocialNotice[] @relation("SocialNotice_user")
+  socialExpensesProposed SocialExpense[] @relation("SocialExpense_proposer")
+  socialRevisionsPaid SocialExpenseRevision[] @relation("SocialExpenseRevision_payer")
+  socialRevisionsProposed SocialExpenseRevision[] @relation("SocialExpenseRevision_proposer")
+  socialRevisionsDecided SocialExpenseRevision[] @relation("SocialExpenseRevision_decider")
+  socialShares SocialExpenseShare[] @relation("SocialExpenseShare_user")
+  socialSettlementsPaid SocialSettlement[] @relation("SocialSettlement_payer")
+  socialSettlementsReceived SocialSettlement[] @relation("SocialSettlement_payee")
+  socialAuditEvents SocialAuditEvent[] @relation("SocialAuditEvent_actor")
   receivedDmBlocks DmContactBlock[] @relation("DmContactBlock_target_fk")
   ContextInvitation   ContextInvitation[]
   sharedActors        SharedActor[]
@@ -1492,6 +1503,7 @@ model Transaction {
   @@unique([spaceId, originalId])
   @@unique([spaceId, replacesId])
   @@unique([spaceId, sourceCaptureId])
+  externalPosting FinanceExternalPosting? @relation("FinanceExternalPosting_transaction")
   @@index([spaceId, occurredAt, id])
   @@index([spaceId, createdAt, id])
 }
@@ -5263,6 +5275,10 @@ model Conversation {
  lastSequence BigInt @default(0)
  revision Int @default(1)
  createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ // ADR 0062: Messaging-owned typed source binding for Social Activity chat.
+ sourceKind String? @db.VarChar(20)
+ sourceId String? @db.Uuid
+ @@unique([sourceKind,sourceId])
  Scope AccessScope @relation(fields:[spaceId,scopeId], references:[spaceId,id], onDelete:NoAction, onUpdate:NoAction, map:"Conversation_scope_fk")
  Creator SharedActor @relation(fields:[spaceId,createdByActorId], references:[spaceId,id], onDelete:NoAction, onUpdate:NoAction, map:"Conversation_creator_fk")
  Project Project? @relation(fields:[spaceId,projectId], references:[spaceId,id], onDelete:NoAction, onUpdate:NoAction, map:"Conversation_project_fk")
@@ -6228,6 +6244,11 @@ model SocialGroup {
   scope AccessScope @relation(fields:[spaceId,scopeId],references:[spaceId,id],onDelete:Cascade,onUpdate:NoAction)
   creator SharedActor @relation(fields:[spaceId,createdByActorId],references:[spaceId,id],onDelete:Restrict,onUpdate:NoAction)
   requests SocialJoinRequest[]
+  activities SocialActivity[]
+  notices SocialNotice[]
+  expenses SocialExpense[]
+  settlements SocialSettlement[]
+  auditEvents SocialAuditEvent[]
   @@unique([spaceId,scopeId])
   @@index([discoverable,id])
 }
@@ -7158,4 +7179,286 @@ model CompanyRecoveryPolicyDraft {
  updatedAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
  @@unique([spaceId,version])
  @@index([spaceId,id])
+}
+
+// P6-02 / ADR 0051 / ADR 0060: Social-owned Activity participation context.
+model SocialActivity {
+  id String @id @db.Uuid
+  groupId String? @db.Uuid
+  template String @db.VarChar(12)
+  title String @db.VarChar(200)
+  description String? @db.VarChar(4000)
+  location String? @db.VarChar(500)
+  timezone String @db.VarChar(100)
+  startsAt DateTime @db.Timestamptz(3)
+  endsAt DateTime @db.Timestamptz(3)
+  capacity Int?
+  state String @default("PLANNED") @db.VarChar(10)
+  conversationId String? @db.Uuid
+  conversationManaged Boolean @default(false)
+  successorParticipantId String? @db.Uuid
+  orphanedAt DateTime? @db.Timestamptz(3)
+  stateBeforeDelete String? @db.VarChar(10)
+  deletedAt DateTime? @db.Timestamptz(3)
+  recoverUntil DateTime? @db.Timestamptz(3)
+  contentDisposedAt DateTime? @db.Timestamptz(3)
+  createdByUserId String? @db.Uuid
+  creationKeyHash String @db.Char(64)
+  creationFingerprint String @db.Char(64)
+  revision Int @default(1)
+  createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+  updatedAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+  successor SocialActivityParticipant? @relation("SocialActivity_successor",fields:[id,successorParticipantId],references:[activityId,id],onDelete:NoAction,onUpdate:NoAction)
+  group SocialGroup? @relation(fields:[groupId],references:[id],onDelete:Cascade,onUpdate:NoAction)
+  creator User? @relation("SocialActivity_creator",fields:[createdByUserId],references:[id],onDelete:SetNull,onUpdate:NoAction)
+  participants SocialActivityParticipant[]
+  items SocialActivityItem[]
+  polls SocialActivityPoll[]
+  notices SocialNotice[]
+  expenses SocialExpense[]
+  settlements SocialSettlement[]
+  auditEvents SocialAuditEvent[]
+  @@index([groupId,id])
+}
+model SocialActivityParticipant {
+  id String @id @db.Uuid
+  activityId String @db.Uuid
+  userId String? @db.Uuid
+  role String @default("PARTICIPANT") @db.VarChar(12)
+  state String @db.VarChar(10)
+  rsvp String @default("PENDING") @db.VarChar(10)
+  seat String @default("NONE") @db.VarChar(10)
+  guest Boolean @default(false)
+  waitlistedAt DateTime? @db.Timestamptz(3)
+  offerExpiresAt DateTime? @db.Timestamptz(3)
+  reminderMinutes Int?
+  generation Int @default(1)
+  revision Int @default(1)
+  createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+  updatedAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+  activity SocialActivity @relation(fields:[activityId],references:[id],onDelete:Cascade,onUpdate:NoAction)
+  user User? @relation("SocialActivityParticipant_user",fields:[userId],references:[id],onDelete:SetNull,onUpdate:NoAction)
+  assigned SocialActivityItem[] @relation("SocialActivityItem_assignee")
+  createdItems SocialActivityItem[] @relation("SocialActivityItem_creator")
+  successorFor SocialActivity[] @relation("SocialActivity_successor")
+  taskLinks SocialActivityTaskLink[]
+  votes SocialActivityPollVote[]
+  busy SocialActivityBusy?
+  @@unique([activityId,userId])
+  @@unique([activityId,id])
+  @@index([userId,state,id])
+}
+model SocialActivityItem {
+  id String @id @db.Uuid
+  activityId String @db.Uuid
+  kind String @db.VarChar(10)
+  title String @db.VarChar(300)
+  notes String? @db.VarChar(2000)
+  location String? @db.VarChar(500)
+  startsAt DateTime? @db.Timestamptz(3)
+  endsAt DateTime? @db.Timestamptz(3)
+  position Int
+  done Boolean @default(false)
+  assigneeParticipantId String? @db.Uuid
+  createdByParticipantId String @db.Uuid
+  deletedAt DateTime? @db.Timestamptz(3)
+  recoverUntil DateTime? @db.Timestamptz(3)
+  revision Int @default(1)
+  createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+  updatedAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+  activity SocialActivity @relation(fields:[activityId],references:[id],onDelete:Cascade,onUpdate:NoAction)
+  assignee SocialActivityParticipant? @relation("SocialActivityItem_assignee",fields:[activityId,assigneeParticipantId],references:[activityId,id],onDelete:NoAction,onUpdate:NoAction)
+  creator SocialActivityParticipant @relation("SocialActivityItem_creator",fields:[activityId,createdByParticipantId],references:[activityId,id],onDelete:NoAction,onUpdate:NoAction)
+  taskLinks SocialActivityTaskLink[]
+  @@unique([activityId,id])
+}
+model SocialActivityTaskLink {
+  itemId String @db.Uuid
+  activityId String @db.Uuid
+  participantId String @db.Uuid
+  taskSpaceId String @db.Uuid
+  taskId String @db.Uuid
+  createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+  item SocialActivityItem @relation(fields:[activityId,itemId],references:[activityId,id],onDelete:Cascade,onUpdate:NoAction)
+  participant SocialActivityParticipant @relation(fields:[activityId,participantId],references:[activityId,id],onDelete:Cascade,onUpdate:NoAction)
+  @@id([itemId,participantId])
+}
+model SocialActivityPoll {
+  id String @id @db.Uuid
+  activityId String @db.Uuid
+  kind String @db.VarChar(10)
+  question String @db.VarChar(300)
+  multiple Boolean @default(false)
+  state String @default("OPEN") @db.VarChar(8)
+  chosenOptionId String? @db.Uuid
+  revision Int @default(1)
+  createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+  closedAt DateTime? @db.Timestamptz(3)
+  activity SocialActivity @relation(fields:[activityId],references:[id],onDelete:Cascade,onUpdate:NoAction)
+  options SocialActivityPollOption[] @relation("SocialActivityPollOption_poll")
+  chosen SocialActivityPollOption? @relation("SocialActivityPoll_chosen",fields:[id,chosenOptionId],references:[pollId,id],onDelete:NoAction,onUpdate:NoAction)
+  votes SocialActivityPollVote[]
+  @@unique([activityId,id])
+}
+model SocialActivityPollOption {
+  id String @id @db.Uuid
+  pollId String @db.Uuid
+  position Int
+  label String @db.VarChar(200)
+  startsAt DateTime? @db.Timestamptz(3)
+  endsAt DateTime? @db.Timestamptz(3)
+  poll SocialActivityPoll @relation("SocialActivityPollOption_poll",fields:[pollId],references:[id],onDelete:Cascade,onUpdate:NoAction)
+  chosenFor SocialActivityPoll[] @relation("SocialActivityPoll_chosen")
+  votes SocialActivityPollVote[]
+  @@unique([pollId,id])
+  @@unique([pollId,position])
+}
+model SocialActivityPollVote {
+  activityId String @db.Uuid
+  pollId String @db.Uuid
+  optionId String @db.Uuid
+  participantId String @db.Uuid
+  createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+  poll SocialActivityPoll @relation(fields:[activityId,pollId],references:[activityId,id],onDelete:Cascade,onUpdate:NoAction)
+  option SocialActivityPollOption @relation(fields:[pollId,optionId],references:[pollId,id],onDelete:Cascade,onUpdate:NoAction)
+  participant SocialActivityParticipant @relation(fields:[activityId,participantId],references:[activityId,id],onDelete:Cascade,onUpdate:NoAction)
+  @@id([optionId,participantId])
+  @@index([pollId,participantId])
+}
+model SocialActivityBusy {
+  participantId String @id @db.Uuid
+  activityId String @db.Uuid
+  intervals Json
+  capturedAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+  participant SocialActivityParticipant @relation(fields:[activityId,participantId],references:[activityId,id],onDelete:Cascade,onUpdate:NoAction)
+  @@unique([activityId,participantId])
+}
+model SocialNotice {
+  id String @id @db.Uuid
+  userId String @db.Uuid
+  activityId String? @db.Uuid
+  groupId String? @db.Uuid
+  kind String @db.VarChar(24)
+  resourceId String @db.Uuid
+  dedupeKey String @db.VarChar(160)
+  createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+  readAt DateTime? @db.Timestamptz(3)
+  user User @relation("SocialNotice_user",fields:[userId],references:[id],onDelete:Cascade,onUpdate:NoAction)
+  activity SocialActivity? @relation(fields:[activityId],references:[id],onDelete:Cascade,onUpdate:NoAction)
+  group SocialGroup? @relation(fields:[groupId],references:[id],onDelete:Cascade,onUpdate:NoAction)
+  @@unique([userId,dedupeKey])
+  @@index([userId,id])
+}
+
+// P6-03 / ADR 0051 / ADR 0060: recordkeeping-only shared expense ledger.
+model SocialExpense {
+  id String @id @db.Uuid
+  groupId String? @db.Uuid
+  activityId String? @db.Uuid
+  state String @default("PENDING") @db.VarChar(10)
+  effectiveRevisionId String? @unique @db.Uuid
+  proposedByUserId String? @db.Uuid
+  creationKeyHash String @db.Char(64)
+  creationFingerprint String @db.Char(64)
+  revision Int @default(1)
+  createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+  updatedAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+  group SocialGroup? @relation(fields:[groupId],references:[id],onDelete:Cascade,onUpdate:NoAction)
+  activity SocialActivity? @relation(fields:[activityId],references:[id],onDelete:Cascade,onUpdate:NoAction)
+  proposer User? @relation("SocialExpense_proposer",fields:[proposedByUserId],references:[id],onDelete:SetNull,onUpdate:NoAction)
+  effective SocialExpenseRevision? @relation("SocialExpense_effective",fields:[id,effectiveRevisionId],references:[expenseId,id],onDelete:NoAction,onUpdate:NoAction)
+  revisions SocialExpenseRevision[] @relation("SocialExpenseRevision_expense")
+  @@unique([id,effectiveRevisionId])
+  @@index([groupId,id])
+  @@index([activityId,id])
+}
+model SocialExpenseRevision {
+  id String @id @db.Uuid
+  expenseId String @db.Uuid
+  number Int
+  state String @default("PENDING") @db.VarChar(10)
+  title String @db.VarChar(200)
+  note String? @db.VarChar(2000)
+  currency String @db.Char(3)
+  scale Int
+  amountMinor BigInt
+  payerUserId String? @db.Uuid
+  method String @db.VarChar(10)
+  incurredOn DateTime @db.Date
+  proposedByUserId String? @db.Uuid
+  decidedByUserId String? @db.Uuid
+  decidedAt DateTime? @db.Timestamptz(3)
+  decisionNote String? @db.VarChar(2000)
+  createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+  expense SocialExpense @relation("SocialExpenseRevision_expense",fields:[expenseId],references:[id],onDelete:Cascade,onUpdate:NoAction)
+  effectiveFor SocialExpense? @relation("SocialExpense_effective")
+  payer User? @relation("SocialExpenseRevision_payer",fields:[payerUserId],references:[id],onDelete:SetNull,onUpdate:NoAction)
+  proposer User? @relation("SocialExpenseRevision_proposer",fields:[proposedByUserId],references:[id],onDelete:SetNull,onUpdate:NoAction)
+  decider User? @relation("SocialExpenseRevision_decider",fields:[decidedByUserId],references:[id],onDelete:SetNull,onUpdate:NoAction)
+  shares SocialExpenseShare[]
+  @@unique([expenseId,number])
+  @@unique([expenseId,id])
+}
+model SocialExpenseShare {
+  revisionId String @db.Uuid
+  position Int
+  userId String? @db.Uuid
+  input BigInt?
+  shareMinor BigInt
+  revision SocialExpenseRevision @relation(fields:[revisionId],references:[id],onDelete:Cascade,onUpdate:NoAction)
+  user User? @relation("SocialExpenseShare_user",fields:[userId],references:[id],onDelete:SetNull,onUpdate:NoAction)
+  @@id([revisionId,position])
+  @@unique([revisionId,userId])
+  @@index([userId])
+}
+model SocialSettlement {
+  id String @id @db.Uuid
+  groupId String? @db.Uuid
+  activityId String? @db.Uuid
+  payerUserId String? @db.Uuid
+  payeeUserId String? @db.Uuid
+  currency String @db.Char(3)
+  scale Int
+  amountMinor BigInt
+  state String @default("RECORDED") @db.VarChar(10)
+  note String? @db.VarChar(2000)
+  disputeNote String? @db.VarChar(2000)
+  creationKeyHash String @db.Char(64)
+  creationFingerprint String @db.Char(64)
+  revision Int @default(1)
+  createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+  decidedAt DateTime? @db.Timestamptz(3)
+  group SocialGroup? @relation(fields:[groupId],references:[id],onDelete:Cascade,onUpdate:NoAction)
+  activity SocialActivity? @relation(fields:[activityId],references:[id],onDelete:Cascade,onUpdate:NoAction)
+  payer User? @relation("SocialSettlement_payer",fields:[payerUserId],references:[id],onDelete:SetNull,onUpdate:NoAction)
+  payee User? @relation("SocialSettlement_payee",fields:[payeeUserId],references:[id],onDelete:SetNull,onUpdate:NoAction)
+  @@index([groupId,id])
+  @@index([activityId,id])
+}
+model SocialAuditEvent {
+  id String @id @db.Uuid
+  groupId String? @db.Uuid
+  activityId String? @db.Uuid
+  actorUserId String? @db.Uuid
+  action String @db.VarChar(40)
+  resourceId String @db.Uuid
+  occurredAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+  group SocialGroup? @relation(fields:[groupId],references:[id],onDelete:Cascade,onUpdate:NoAction)
+  activity SocialActivity? @relation(fields:[activityId],references:[id],onDelete:Cascade,onUpdate:NoAction)
+  actor User? @relation("SocialAuditEvent_actor",fields:[actorUserId],references:[id],onDelete:SetNull,onUpdate:NoAction)
+  @@index([activityId,id])
+  @@index([groupId,id])
+}
+
+// ADR 0061: Finance-owned source link for explicit external (Social) postings.
+model FinanceExternalPosting {
+  spaceId String @db.Uuid
+  sourceKind String @db.VarChar(32)
+  sourceRef String @db.VarChar(128)
+  sourceRevisionRef String? @db.VarChar(128)
+  transactionId String @db.Uuid
+  createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+  transaction Transaction @relation("FinanceExternalPosting_transaction",fields:[spaceId,transactionId],references:[spaceId,id],onDelete:Cascade,onUpdate:NoAction)
+  @@id([spaceId,sourceKind,sourceRef])
+  @@unique([spaceId,transactionId])
 }

@@ -30,6 +30,7 @@ import { SocialLifecycle } from './application/social-lifecycle.js';
     SocialGroupInvitationsController,
   ],
   exports: [
+    SocialContext,
     ConnectionsService,
     SocialGroupsService,
     SocialData,

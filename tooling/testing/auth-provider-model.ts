@@ -14,6 +14,28 @@ const applicationUserRelations: Readonly<Record<string, string>> = {
   socialRequestsReceived:
     'socialRequestsReceivedSocialConnection[]@relation("SocialConnection_recipient")',
   socialJoinRequests: 'socialJoinRequestsSocialJoinRequest[]',
+  // P6-02/P6-03 (ADR 0060): SET NULL / notice-only CASCADE Social links.
+  socialActivitiesCreated:
+    'socialActivitiesCreatedSocialActivity[]@relation("SocialActivity_creator")',
+  socialParticipations:
+    'socialParticipationsSocialActivityParticipant[]@relation("SocialActivityParticipant_user")',
+  socialNotices: 'socialNoticesSocialNotice[]@relation("SocialNotice_user")',
+  socialExpensesProposed:
+    'socialExpensesProposedSocialExpense[]@relation("SocialExpense_proposer")',
+  socialRevisionsPaid:
+    'socialRevisionsPaidSocialExpenseRevision[]@relation("SocialExpenseRevision_payer")',
+  socialRevisionsProposed:
+    'socialRevisionsProposedSocialExpenseRevision[]@relation("SocialExpenseRevision_proposer")',
+  socialRevisionsDecided:
+    'socialRevisionsDecidedSocialExpenseRevision[]@relation("SocialExpenseRevision_decider")',
+  socialShares:
+    'socialSharesSocialExpenseShare[]@relation("SocialExpenseShare_user")',
+  socialSettlementsPaid:
+    'socialSettlementsPaidSocialSettlement[]@relation("SocialSettlement_payer")',
+  socialSettlementsReceived:
+    'socialSettlementsReceivedSocialSettlement[]@relation("SocialSettlement_payee")',
+  socialAuditEvents:
+    'socialAuditEventsSocialAuditEvent[]@relation("SocialAuditEvent_actor")',
 };
 /** Ignore only exact reviewed application-owned inverse relations, never provider columns/indexes. */
 export function normalizedAuthModel(source: string, name: string): string {

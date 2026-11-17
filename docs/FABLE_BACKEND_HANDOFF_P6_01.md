@@ -21,6 +21,16 @@ X1/X2/M1/X4/M2/Company export reads are implemented; X3 reuses the existing
 privacy-safe `POST /api/v1/social/discovery`. Shared remains disabled; this work
 does not resolve OD-1–OD-14 or authorize Frontend activation, live tests or P6-02.
 
+### Local Social Activities and shared expenses (P6-02/P6-03) — 2026-11-17
+
+Local, uncommitted; contract now **1,255 operations** (62 additions incl. the 2026-11-18 gap closure). Activities,
+RSVP/capacity/waitlist, itineraries, polls, consented Free/Busy, checklists with
+Personal Task creation, notices, and Group/Activity expense proposals, approvals,
+revisions, balances and settlement confirmation. Personal Finance posting, Activity
+files and a Social chat context are **not** implemented. Exact operations, states,
+money encoding and error codes:
+[`frontend-handoff/SOCIAL_ACTIVITIES_EXPENSES.md`](frontend-handoff/SOCIAL_ACTIVITIES_EXPENSES.md).
+
 ### Local stabilization (Teams, Companies, Meetings) — 2026-11-13
 
 Local, uncommitted; contract now **864 operations**. No migration. Hints never

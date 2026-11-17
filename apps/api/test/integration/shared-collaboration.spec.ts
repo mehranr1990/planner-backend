@@ -897,7 +897,7 @@ describe('P2-02 verified invitations and accepted custody succession', () => {
     await client.$executeRaw`UPDATE "SharedRateLimit" SET "windowAt"=clock_timestamp()-interval '3 minutes'`;
     await expect(
       service.request('synthetic-preview-ip', undefined, true),
-    ).resolves.toBeUndefined();
+    ).resolves.toMatchObject({ limit: 30, remaining: 29 });
     for (let i = 0; i < 20; i++)
       await service.request('synthetic-actor-ip', owner.actor);
     await expect(

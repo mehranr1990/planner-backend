@@ -625,17 +625,28 @@ describe('P5-06 privacy lifecycle and REST recovery', () => {
       expect(args?.take).toBeLessThanOrEqual(101);
     const token = await cookie(alice);
     await db.sharedRateLimit.deleteMany();
-    for (let i = 0; i < 20; i++)
-      await request(app.getHttpServer())
+    // ADR 0058: recovery polling is a Messages-family authenticated read (600/user/minute).
+    for (let i = 0; i < 21; i++) {
+      const ok = await request(app.getHttpServer())
         .get('/api/v1/conversations/' + g.id + '/recovery')
         .set('Cookie', token)
         .expect(200);
+      expect(ok.headers['ratelimit-limit']).toBe('600');
+    }
+    await exhaust('http:v2:messages:read:actor:' + alice.actor.userId, 600);
     const denied = await request(app.getHttpServer())
       .get('/api/v1/conversations/' + g.id + '/recovery')
       .set('Cookie', token)
       .expect(429);
-    expect(denied.headers['retry-after']).toBe('60');
+    expect(denied.headers['ratelimit-remaining']).toBe('0');
+    expect(Number(denied.headers['retry-after'])).toBeGreaterThanOrEqual(1);
+    expect(Number(denied.headers['retry-after'])).toBeLessThanOrEqual(60);
   });
+  /** Fills the current DB-minute window of one opaque ADR 0058 counter. */
+  async function exhaust(subject: string, requests: number) {
+    const key = control.opaqueRateKey(subject);
+    await db.$executeRaw`INSERT INTO "SharedRateLimit" ("keyHash","windowAt",requests,"expiresAt") VALUES (${key},date_trunc('minute',clock_timestamp()),${requests},date_trunc('minute',clock_timestamp())+interval '2 minutes') ON CONFLICT ("keyHash") DO UPDATE SET requests=EXCLUDED.requests,"windowAt"=EXCLUDED."windowAt","expiresAt"=EXCLUDED."expiresAt"`;
+  }
   it('lets a named pending DM invitee block privately without granting message access', async () => {
     const dm = await create('DM'),
       invite = (await messages.invitations(alice.actor, page)).items.find(
@@ -1995,6 +2006,8 @@ describe('P5-06 privacy lifecycle and REST recovery', () => {
       }),
     );
     await db.sharedRateLimit.deleteMany();
+    // Alice's devices share one exhausted read budget; owner and Bob stay independent.
+    await exhaust('http:v2:messages:read:actor:' + alice.actor.userId, 600);
     const started = performance.now();
     const results = await Promise.all(
       sessions.flatMap((token) =>
@@ -2018,16 +2031,20 @@ describe('P5-06 privacy lifecycle and REST recovery', () => {
         expect(body.items.length).toBeLessThanOrEqual(7);
         expect(body.throughSequence).toBe('12');
         expect(body.hasMore).toBe(true);
-      } else expect(r.response.headers['retry-after']).toBe('60');
+      } else {
+        const retry = Number(r.response.headers['retry-after']);
+        expect(retry).toBeGreaterThanOrEqual(1);
+        expect(retry).toBeLessThanOrEqual(60);
+      }
     }
     const latencies = results.map((r) => r.latencyMs).sort((a, b) => a - b),
       counts = {
         ok: results.filter((r) => r.status === 200).length,
         limited: results.filter((r) => r.status === 429).length,
       };
-    expect(counts.ok).toBeGreaterThan(0);
-    expect(counts.ok).toBeLessThanOrEqual(30);
-    expect(counts.limited).toBeGreaterThan(0);
+
+    // ADR 0058: 48 reads fit the 600/user read budget; only the exhausted device is limited.
+    expect(counts).toEqual({ ok: 32, limited: 16 });
     expect(
       await db.conversationMessage.count({ where: { conversationId: g.id } }),
     ).toBe(12);

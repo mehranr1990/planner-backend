@@ -6,3 +6,7 @@ export { MessagingData } from './personal-data.js';
 export { ConversationLifecycle } from '../application/messaging-lifecycle.service.js';
 
 export { DmContacts } from '../application/dm-contacts.service.js';
+export {
+  ConversationSources,
+  ConversationSourceGuard,
+} from '../application/conversation-sources.js';

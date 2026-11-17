@@ -28,6 +28,8 @@ import {
 } from '../../spaces/public/index.js';
 import { managesChannel, sameAdmission } from '../domain/messaging-policy.js';
 import { DmContacts } from './dm-contacts.service.js';
+import { ConversationSources } from './conversation-sources.js';
+import type { ConversationSourceKind } from './conversation-sources.js';
 import { purgeMessaging } from './messaging-cleanup.js';
 import type { SharedCleanupScope } from '../../../platform/lifecycle/shared-cleanup.js';
 
@@ -49,6 +51,7 @@ const hash = (value: string) =>
   createHash('sha256').update(value).digest('hex');
 const fingerprint = (value: unknown) => hash(JSON.stringify(value));
 const independent = (kind: string) => kind === 'DM' || kind === 'PRIVATE_GROUP';
+const SOURCED_ADMIT = 'messaging.member.admit.sourced';
 function keyHash(key: string | undefined) {
   if (!key || !/^[\x21-\x7e]{1,128}$/.test(key))
     throw new BadRequestException({ code: 'IDEMPOTENCY_KEY_REQUIRED' });
@@ -95,7 +98,103 @@ export class MessagingService {
     @Inject(CollaborationService)
     private readonly collaboration: CollaborationService,
     @Inject(MessagingAuthority) private readonly authority: MessagingAuthority,
+    @Inject(ConversationSources) readonly sources: ConversationSources,
   ) {}
+  /** ADR 0062: open (once) the Messaging-owned private conversation bound to an owner source. */
+  async openSourced(
+    actor: RequestActor,
+    input: {
+      id: string;
+      sourceKind: ConversationSourceKind;
+      sourceId: string;
+      title: string;
+      retentionPolicyVersion: string;
+    },
+    key: string | undefined,
+  ) {
+    const bound = await this.db.client.conversation.findUnique({
+      where: {
+        sourceKind_sourceId: {
+          sourceKind: input.sourceKind,
+          sourceId: input.sourceId,
+        },
+      },
+    });
+    if (bound) return bound.id;
+    await this.create(
+      actor,
+      {
+        id: input.id,
+        kind: 'PRIVATE_GROUP',
+        title: input.title,
+        participants: [],
+        retentionPolicyVersion: input.retentionPolicyVersion,
+      },
+      key,
+    );
+    return this.operation(actor, input.id, SOURCED_ADMIT, async (s) => {
+      const member = await this.currentMember(s);
+      const role = await this.sources.check(
+        s.tx,
+        { sourceKind: input.sourceKind, sourceId: input.sourceId },
+        actor.userId,
+      );
+      if (member.role !== 'ADMIN' || role !== 'ADMIN')
+        throw new ForbiddenException();
+      if (s.conv.sourceKind) {
+        if (s.conv.sourceId !== input.sourceId)
+          throw new ConflictException({ code: 'CONVERSATION_SOURCE_CONFLICT' });
+        return s.conv.id;
+      }
+      await s.tx.conversation.update({
+        where: { id: s.conv.id },
+        data: { sourceKind: input.sourceKind, sourceId: input.sourceId },
+      });
+      return s.conv.id;
+    });
+  }
+  /** Explicit self-join: the owner guard decides admission; history starts at join (OD-10 default). */
+  admitSourced(actor: RequestActor, id: string) {
+    return this.operation(
+      actor,
+      id,
+      SOURCED_ADMIT,
+      async (s) => {
+        const role = await this.sources.check(s.tx, s.conv, actor.userId);
+        if (!role) throw new NotFoundException();
+        await this.authority.independentSeat(
+          s.tx,
+          s.conv.spaceId,
+          actor.userId,
+          s.now,
+        );
+        s.proof = await this.proof(s);
+        let current = true;
+        try {
+          await this.currentMember(s);
+        } catch (error) {
+          if (!hidden(error)) throw error;
+          current = false;
+        }
+        if (!current) {
+          await this.admit(s, s.proof, role);
+          await s.tx.conversation.update({
+            where: { id },
+            data: { revision: { increment: 1 } },
+          });
+          await this.effect(
+            s,
+            'messaging.member.admit',
+            id,
+            'messaging.participant',
+          );
+        }
+        return this.view(s);
+      },
+      [],
+      true,
+    );
+  }
   request(
     ip: string,
     actor?: RequestActor,
@@ -410,6 +509,9 @@ export class MessagingService {
         };
         if (!(background && pending) && (!pending || !independent(conv.kind)))
           s.proof = await this.proof(s);
+        // ADR 0062: sourced conversations recheck the owning context on every user operation.
+        if (!background && action !== SOURCED_ADMIT)
+          await this.sources.check(tx, conv, actor.userId);
         try {
           return await work(s);
         } finally {
