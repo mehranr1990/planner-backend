@@ -1,4 +1,6 @@
 export { SpacesModule } from '../spaces.module.js';
+export { sharedHttpRequest } from './shared-http-request.js';
+export type { SharedTraffic } from '../domain/http-rate-policy.js';
 export { SpacesService } from '../application/spaces.service.js';
 export { initialSpaceRelations } from './identity-creation.js';
 export { personalScope } from './personal-scope.js';

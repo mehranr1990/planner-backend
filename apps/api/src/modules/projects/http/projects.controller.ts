@@ -1,3 +1,4 @@
+import { sharedHttpRequest } from '../../spaces/public/index.js';
 import {
   Controller,
   Get,
@@ -66,9 +67,10 @@ export class ProjectGuard implements CanActivate {
       .setHeader('Cache-Control', 'no-store');
     if (req.method !== 'GET' && Object.keys(req.query).length)
       throw new BadRequestException();
-    await this.collaboration.request(
-      req.ip ?? req.socket.remoteAddress ?? 'unknown',
-      req.actor,
+    await sharedHttpRequest(
+      this.collaboration,
+      req,
+      context.switchToHttp().getResponse<Response>(),
       this.reflector.get<boolean>('project.preview', context.getHandler()) ??
         false,
     );

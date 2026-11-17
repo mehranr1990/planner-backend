@@ -162,6 +162,12 @@ export class AuthController {
       const value = result.headers.get(name);
       if (value) res.setHeader(name, value);
     }
+    // Better Auth emits X-Retry-After; expose its actual delay under the standard name.
+    if (result.status === 429 && !res.getHeader('Retry-After')) {
+      const delay = result.headers.get('x-retry-after');
+      if (delay && /^\d+$/.test(delay))
+        res.setHeader('Retry-After', String(Math.max(1, Number(delay))));
+    }
     res.setHeader('cache-control', 'no-store');
     if (result.status >= 400)
       throw new HttpException(

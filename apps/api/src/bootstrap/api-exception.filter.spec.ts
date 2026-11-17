@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  HttpException,
 } from '@nestjs/common';
 import { expect, it, vi } from 'vitest';
 import { randomUUID } from 'node:crypto';
@@ -9,6 +10,7 @@ import type { Response } from 'express';
 import { ApiErrorSchema } from '@mehran/api-contracts';
 import { ApiExceptionFilter } from './api-exception.filter.js';
 import type { ContextRequest } from './request-context.js';
+import { RateLimitException } from './rate-limit.js';
 
 function reply(exception: unknown) {
   const json = vi.fn(),
@@ -66,3 +68,47 @@ it('keeps unknown, unstructured and non-conflict exceptions private', () => {
     );
   }
 });
+
+it('preserves provider retry timing and emits the actual Shared limiting budget', () => {
+  for (const shared of [false, true]) {
+    const headers = new Map<string, string>([['Retry-After', '7']]);
+    const response = {
+      getHeader: (name: string) => headers.get(name),
+      setHeader: (name: string, value: string) => headers.set(name, value),
+      status: vi.fn().mockReturnThis(),
+      json: vi.fn(),
+    } as unknown as Response;
+    new ApiExceptionFilter().reply(
+      shared
+        ? new RateLimitException({ limit: 20, remaining: 0, reset: 17 })
+        : new HttpException('private provider detail', 429),
+      { id: randomUUID() } as ContextRequest,
+      response,
+    );
+    expect(headers.get('Retry-After')).toBe(shared ? '17' : '7');
+    if (shared) {
+      expect(headers.get('RateLimit-Limit')).toBe('20');
+      expect(headers.get('RateLimit-Remaining')).toBe('0');
+      expect(headers.get('RateLimit-Reset')).toBe('17');
+    }
+  }
+});
+
+it.each(['files', 'lifecycle'])(
+  'maps the %s throttler delay to Retry-After',
+  (name) => {
+    const headers = new Map<string, string>([['Retry-After-' + name, '12']]);
+    const response = {
+      getHeader: (key: string) => headers.get(key),
+      setHeader: (key: string, value: string) => headers.set(key, value),
+      status: vi.fn().mockReturnThis(),
+      json: vi.fn(),
+    } as unknown as Response;
+    new ApiExceptionFilter().reply(
+      new HttpException('private', 429),
+      { id: randomUUID() } as ContextRequest,
+      response,
+    );
+    expect(headers.get('Retry-After')).toBe('12');
+  },
+);

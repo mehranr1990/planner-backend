@@ -122,6 +122,9 @@ listing/revocation are 20/minute; other auth paths use the provider's default
 special rules or 100/minute. The adapter overwrites caller-supplied IP headers with
 the actual socket IP. No Redis, queue, extra rate-limit table or custom crypto is
 introduced. Limits are per process and do not persist on restart.
+The adapter maps Better Auth's X-Retry-After to Retry-After; the error filter
+preserves its actual delay. Business traffic uses independent
+[Shared API budgets](shared-api-rate-limits.md).
 
 Before release behind a proxy, explicitly configure and test the actual trusted
 proxy/IP topology. Current code intentionally trusts no forwarded client IP. A

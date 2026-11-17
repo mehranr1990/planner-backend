@@ -25,6 +25,7 @@ import type { SharedControlRecord } from '../../../platform/storage/shared-contr
 import { SharedKernel } from './shared-kernel.service.js';
 import { SharedAuthority } from '../public/shared-authority.js';
 import { CollaborationLimit } from './collaboration-limit.js';
+import type { SharedTraffic } from '../domain/http-rate-policy.js';
 import {
   roleAdministration,
   roleInContext,
@@ -92,10 +93,16 @@ export class CollaborationService {
     @Inject(SharedControl) private readonly control: SharedControl,
     @Inject(CollaborationLimit) private readonly limit: CollaborationLimit,
   ) {}
-  async request(ip: string, actor?: RequestActor, preview = false) {
+  async request(
+    ip: string,
+    actor?: RequestActor,
+    preview = false,
+    traffic?: SharedTraffic,
+  ) {
     this.kernel.assertEnabled();
-    await this.limit.request(ip, actor?.userId, preview);
+    const state = await this.limit.request(ip, actor?.userId, preview, traffic);
     await this.control.records();
+    return state;
   }
   async requireContextKind(
     spaceId: string,

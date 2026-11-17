@@ -1,3 +1,4 @@
+import { sharedHttpRequest } from '../public/shared-http-request.js';
 import {
   Controller,
   Get,
@@ -44,9 +45,11 @@ export class RetentionGuard implements CanActivate {
       .switchToHttp()
       .getResponse<Response>()
       .setHeader('Cache-Control', 'no-store');
-    await this.service.request(
-      request.ip ?? request.socket.remoteAddress ?? 'unknown',
-      request.actor,
+    await sharedHttpRequest(
+      this.service,
+      request,
+      context.switchToHttp().getResponse<Response>(),
+      request.path.endsWith('/preview'),
     );
     return true;
   }

@@ -41,6 +41,11 @@ export async function configureApp(app: NestExpressApplication): Promise<void> {
       'ETag',
       'Content-Disposition',
       'X-Export-Id',
+      'Retry-After',
+      'RateLimit-Limit',
+      'RateLimit-Remaining',
+      'RateLimit-Reset',
+      'RateLimit-Policy',
     ],
   });
   app.use((req: Request, res: Response, next: NextFunction) => {

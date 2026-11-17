@@ -1,3 +1,4 @@
+import { sharedHttpRequest } from '../../spaces/public/index.js';
 import {
   Inject,
   Injectable,
@@ -15,7 +16,12 @@ export class MeetingsGuard implements CanActivate {
       request = http.getRequest<Request & { actor: RequestActor }>(),
       response = http.getResponse<Response>();
     response.setHeader('Cache-Control', 'no-store');
-    await this.op.collaboration.request(request.ip ?? 'unknown', request.actor);
+    await sharedHttpRequest(
+      this.op.collaboration,
+      request,
+      context.switchToHttp().getResponse<Response>(),
+      request.path.endsWith('/preview'),
+    );
     return true;
   }
 }

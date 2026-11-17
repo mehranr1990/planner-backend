@@ -102,7 +102,18 @@ export function communicationLifecyclePaths() {
       const operation = op as { responses: Record<string, unknown> };
       const response = operation.responses['429'] as { headers?: unknown };
       response.headers = {
-        'Retry-After': { schema: { type: 'string', const: '60' } },
+        'Retry-After': { schema: { type: 'string', pattern: '^[1-9][0-9]*$' } },
+        'RateLimit-Limit': {
+          schema: { type: 'string', pattern: '^[1-9][0-9]*$' },
+        },
+        'RateLimit-Remaining': {
+          schema: { type: 'string', pattern: '^[0-9]+$' },
+        },
+        'RateLimit-Reset': {
+          description: 'Seconds until the applied minute window resets.',
+          schema: { type: 'string', pattern: '^[1-9][0-9]*$' },
+        },
+        'RateLimit-Policy': { schema: { type: 'string' }, example: '20;w=60' },
       };
     }
   return paths;

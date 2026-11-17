@@ -4,6 +4,7 @@ import type { Response } from 'express';
 import type { ApiError, ErrorCode } from '@mehran/api-contracts';
 import type { ContextRequest } from './request-context.js';
 import { persistenceStatus } from '../platform/database/persistence-error.js';
+import { RateLimitException, rateLimitHeaders } from './rate-limit.js';
 
 const errors: Record<number, [ErrorCode, string]> = {
   400: ['BAD_REQUEST', 'Invalid request'],
@@ -62,7 +63,25 @@ export class ApiExceptionFilter implements ExceptionFilter {
       'INTERNAL_ERROR',
       'An unexpected error occurred',
     ];
-    if (status === 429) response.setHeader('Retry-After', '60');
+    if (exception instanceof RateLimitException) {
+      for (const [name, value] of Object.entries(
+        rateLimitHeaders(exception.state),
+      ))
+        response.setHeader(name, value);
+      response.setHeader('Retry-After', String(exception.state.reset));
+    } else if (status === 429 && !response.getHeader('Retry-After')) {
+      // Named Nest throttlers suffix their retry header. Keep their real block delay.
+      const delay = Number(
+        response.getHeader('Retry-After-files') ??
+          response.getHeader('Retry-After-lifecycle'),
+      );
+      response.setHeader(
+        'Retry-After',
+        Number.isSafeInteger(delay) && delay >= 0
+          ? String(Math.max(1, delay))
+          : '60',
+      );
+    }
     const body: ApiError = { error: { code, message, requestId: request.id } };
     if (exception instanceof HttpException && status === 409) {
       const detail = exception.getResponse();

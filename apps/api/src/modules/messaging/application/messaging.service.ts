@@ -1,3 +1,4 @@
+import type { SharedTraffic } from '../../spaces/public/index.js';
 import {
   Inject,
   Injectable,
@@ -95,8 +96,13 @@ export class MessagingService {
     private readonly collaboration: CollaborationService,
     @Inject(MessagingAuthority) private readonly authority: MessagingAuthority,
   ) {}
-  request(ip: string, actor: RequestActor) {
-    return this.collaboration.request(ip, actor);
+  request(
+    ip: string,
+    actor?: RequestActor,
+    preview = false,
+    traffic?: SharedTraffic,
+  ) {
+    return this.collaboration.request(ip, actor, preview, traffic);
   }
   cleanup(tx: Tx, s: SharedCleanupScope) {
     return purgeMessaging(tx, s);

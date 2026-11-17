@@ -1,3 +1,4 @@
+import { sharedHttpRequest } from '../public/shared-http-request.js';
 import {
   Controller,
   Post,
@@ -58,9 +59,10 @@ export class CollaborationGuard implements CanActivate {
       .switchToHttp()
       .getResponse<Response>()
       .setHeader('Cache-Control', 'no-store');
-    await this.service.request(
-      request.ip ?? request.socket.remoteAddress ?? 'unknown',
-      request.actor,
+    await sharedHttpRequest(
+      this.service,
+      request,
+      context.switchToHttp().getResponse<Response>(),
       this.reflector.get<boolean>(
         'collaboration.preview',
         context.getHandler(),

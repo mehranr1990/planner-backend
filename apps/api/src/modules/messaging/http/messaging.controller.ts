@@ -1,3 +1,4 @@
+import { sharedHttpRequest } from '../../spaces/public/index.js';
 import {
   Controller,
   Get,
@@ -53,9 +54,11 @@ export class MessagingGuard implements CanActivate {
       .switchToHttp()
       .getResponse<Response>()
       .setHeader('Cache-Control', 'no-store');
-    await this.service.request(
-      req.ip ?? req.socket.remoteAddress ?? 'unknown',
-      req.actor,
+    await sharedHttpRequest(
+      this.service,
+      req,
+      context.switchToHttp().getResponse<Response>(),
+      req.path.endsWith('/preview'),
     );
     return true;
   }
