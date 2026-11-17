@@ -78,23 +78,28 @@ pnpm test:integration
 pnpm quality
 ```
 
-Company local integration (2026-11-17): development-only policy provisioning is
-authorized, but Company retention values still require an explicit owner choice;
+Company local integration (2026-11-17): development-only policy and values are
+owner-approved and provisioned as `mp-local-company-v1-20261117`;
 see [catalog decision](../retention-policy-catalog-v1.md#local-company-testing-decision-2026-11-17).
 Do not pass the PROJECT/TEAM policy to Company creation, edit an immutable policy,
-or seed the proposed seven-year finance period. No Company policy is enabled yet.
-After approval, provision a distinct version using insert-only, dry-run/conflict
-checks, restricted to explicit local development mode and loopback `mehran_dev`;
-do not include it in the general development/pre-production catalog seed.
+or seed the proposed seven-year finance period. Use the separate seed commands in
+the catalog decision to dry-run/apply this version. They require explicit local
+development mode and loopback `mehran_dev`; the policy is excluded from the general
+development/pre-production seed. Do not copy development data/policies to production.
 
 A second synthetic Company reviewer account was created through Better Auth and
 verified through the private mail sink. Sign-in, `/me` and Company list returned
 200; the verification session was signed out. Its credentials are in ignored
 `.tools/company-development-accounts.json` (`second`); never commit or log them.
-It has no Company membership yet. Invitations, role assignment and financial
-approval configuration must use the existing authorized APIs after Company creation
-is unblocked. Existing dedicated-account credentials were not available to this
-session; no existing account password was changed. API and worker were left running.
+It accepted a recipient-bound invitation as MEMBER in the synthetic Company
+`ccd4876a-92c4-40b9-803d-f6dfefbc8c4d` and can read it; Company edits remain denied.
+The original dedicated synthetic Projects verification account was reused as Owner
+through normal password recovery via the private sink; its new credentials are
+stored under `primary` in that same ignored file. No ordinary user account was
+changed. Sessions used for verification were signed out. Financial reviewer roles
+and approval policies require explicit configuration through the existing APIs;
+no approval thresholds or financial authority were seeded. API and worker remain
+running; local mode still denies business files and export archives.
 
 During development run targeted checks; run the full applicable quality gate
 once at submission, with focused reruns only after failures or changes. The

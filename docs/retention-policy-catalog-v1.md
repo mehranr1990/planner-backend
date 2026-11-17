@@ -39,31 +39,43 @@ Because a closed Space is purged at its longest class window, the 2-year audit w
 
 ## Not seeded: approval required
 
-| Category                                                                 | Reason                                                                                                                                                                                                                                                                                                                 |
-| ------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **COMPANY** (financial records, proposed 7 years; sealed employee files) | Waiting for legal review. No class exists for finance or employee files, and a Company policy would allow whole-Space `PURGE`. Automatic deletion stays disabled. No legal period was invented, and unlimited retention was not substituted. Company creation cannot choose a version until the operator approves one. |
-| **SOCIAL_GROUP**                                                         | v1.0 defines no rule for it.                                                                                                                                                                                                                                                                                           |
+| Category                                                                                   | Reason                                                                                                                                                                                                    |
+| ------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **COMPANY production policy** (financial records, proposed 7 years; sealed employee files) | Waiting for legal review. No class exists for finance or employee files. The general catalog seeds no Company policy. The separate local synthetic policy below supplies no legal or production approval. |
+| **SOCIAL_GROUP**                                                                           | v1.0 defines no rule for it.                                                                                                                                                                              |
 
 ## Local Company testing decision (2026-11-17)
 
-The owner authorized a development-only Company policy for local `mehran_dev`,
-without production activation. No existing approved COMPANY entry was found.
-The authorization does not specify Company class durations. No policy was inserted
-and no existing immutable version was changed.
+The owner explicitly approved copying Project/Team settings into separate version
+`mp-local-company-v1-20261117`; see [ADR 0059](adr/0059-local-company-development-retention.md).
+Recovery: 2,592,000 seconds. Additional work, comments, files and exports: 0 seconds;
+audit: 63,072,000 seconds. All classes use PURGE, OWNER/ADMIN audience and OWNER
+export authority, with no holds or obligations. Existing evidence, backup and
+disposal gates remain. Whole-Space disposal retains closed Company data through
+the longest window plus recovery. These values cover synthetic development data
+only and provide no legal or production approval. Seven-year finance remains
+unapproved. No existing immutable version was changed.
 
-Pending owner choice: reuse the documented Project/Team values in a separate local
-Company version (2,592,000 seconds recovery; additional work, comments, files and
-exports: 0 seconds; audit: 63,072,000 seconds), or supply different explicit class
-durations and lifecycle rules. The reuse option would keep PURGE, OWNER/ADMIN
-audience, OWNER export authority, empty holds/obligations and all existing evidence,
-backup and disposal gates. Whole-Space disposal retains all closed Company data
-through the longest window. This is a proposal for synthetic development data,
-not legal approval or a production policy. The proposed seven-year finance period
-remains unapproved. Stop policy provisioning until the owner chooses.
+Data: `tooling/retention/local-company.ts`. Procedure (dry run, apply, repeat):
 
-Live local verification: authenticated COMPANY catalog returned no entries;
-Company creation using the Project/Team version returned 403 `FORBIDDEN`.
-Company creation/read and invitation/approval verification remain blocked.
+```powershell
+node --env-file=.env tooling/scripts/retention-company-local-seed.ts
+node --env-file=.env tooling/scripts/retention-company-local-seed.ts --apply
+node --env-file=.env tooling/scripts/retention-company-local-seed.ts --apply
+```
+
+Requires explicit Shared local development test mode; its existing parser enforces
+development, loopback API/auth/CORS and loopback `mehran_dev` without URL options.
+Other environments fail before database access. The separate seed inserts only a
+missing version, reports PLANNED/INSERTED/UNCHANGED/CONFLICT and never updates,
+deletes or starts cleanup. It is excluded from the general catalog and must never
+be copied with development data into production.
+
+Live results: PLANNED → INSERTED → UNCHANGED; Company creation 201, owner list/read
+200; second verified account denied before invitation (404), accepted its own
+recipient proof (200), then read (200), with Company edit denied (403). File upload
+remains denied (403). Existing signed control evidence and six audit events were
+verified. Financial approval configuration/decisions were not exercised.
 
 ## Rules outside the catalog
 
@@ -80,6 +92,16 @@ These rules are already handled outside the catalog. The catalog has no field fo
 | Operational activity records (2 years)                    | Expressed as `accessAuditLifecycle` = 2 years. The mandatory evidence floor and backup admissibility guards still apply.                                           |
 
 ## Verification
+
+Local Company focused checks (2026-11-17):
+
+- `pnpm.cmd exec vitest run --project compatibility tooling/compatibility/retention-company-local.spec.ts tooling/compatibility/retention-catalog-v1.spec.ts`: 7 passed, including unsafe-environment refusals before database access and insert-only/conflict behavior.
+- `pnpm.cmd exec eslint tooling/retention/local-company.ts tooling/scripts/retention-company-local-seed.ts tooling/compatibility/retention-company-local.spec.ts --max-warnings 0`: passed.
+- `pnpm.cmd exec tsc --noEmit`: passed.
+- `node --env-file=.env.test.local node_modules/vitest/vitest.mjs run --project integration apps/api/test/integration/retention-catalog.spec.ts`: 3 passed against isolated PostgreSQL, including catalog authorization, immutable-policy and conflict safeguards. Development data was not used by this suite.
+- Prettier checks on the six changed files and `git diff --check`: passed.
+- `node --env-file=.env .tools/company-local-live.mjs`: 20 local live assertions passed; evidence is in ignored `.tools/company-local-live-result.json`. Existing synthetic account recovery and second-account invitation acceptance used supported APIs. Both verification sessions were signed out.
+- No application code, schema migration, API contract, event/job implementation or production configuration changed. No cleanup or database reset ran. Broad suites, production release gates and financial approval decisions were not run.
 
 - `tooling/compatibility/retention-catalog-v1.spec.ts` checks:
   - schema validity and PURGE-only policies;
