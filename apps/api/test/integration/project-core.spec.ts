@@ -446,6 +446,27 @@ describe('P2-03 independent Projects and authorized shared sources', () => {
     await expect(
       projects.removeTask(owner.actor, p.id, parent.id, 1, randomUUID()),
     ).rejects.toThrow();
+    const blocked = await request(app.getHttpServer())
+      .delete(`/api/v1/projects/${p.id}/tasks/${parent.id}`)
+      .set('Cookie', owner.cookie)
+      .set('Origin', origin)
+      .set('If-Match', '"1"')
+      .set('Idempotency-Key', randomUUID())
+      .send({})
+      .expect(409);
+    expect(c.ApiErrorSchema.parse(blocked.body).error).toMatchObject({
+      code: 'CONFLICT',
+      details: [{ path: '', code: 'TASK_HAS_ACTIVE_CHILDREN' }],
+    });
+    const denied = await request(app.getHttpServer())
+      .delete(`/api/v1/projects/${p.id}/tasks/${parent.id}`)
+      .set('Cookie', member.cookie)
+      .set('Origin', origin)
+      .set('If-Match', '"1"')
+      .set('Idempotency-Key', randomUUID())
+      .send({})
+      .expect(404);
+    expect(denied.body.error.details).toBeUndefined();
     const detached = await projects.patchTask(
       owner.actor,
       p.id,
@@ -751,6 +772,17 @@ describe('P2-03 independent Projects and authorized shared sources', () => {
     if (!created || created.status !== 'fulfilled')
       throw new Error('Missing Project');
     const p = created.value;
+    const duplicate = await request(app.getHttpServer())
+      .post('/api/v1/projects')
+      .set('Cookie', owner.cookie)
+      .set('Origin', origin)
+      .set('Idempotency-Key', randomUUID())
+      .send(input(name.toLowerCase()))
+      .expect(409);
+    expect(c.ApiErrorSchema.parse(duplicate.body).error).toMatchObject({
+      code: 'CONFLICT',
+      details: [{ path: '', code: 'PROJECT_KEY_CONFLICT' }],
+    });
     expect(
       await client.space.count({ where: { id: { in: [a.id, b.id] } } }),
     ).toBe(1);

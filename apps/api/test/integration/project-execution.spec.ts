@@ -473,6 +473,18 @@ describe('P2-06 risk register, safe plans and explicit shared work', () => {
     expect(await tools.previewDraft(owner.actor, p.id, draft.id)).toMatchObject(
       { preservesExistingBindings: true, removedStates: [] },
     );
+    const staleDraft = await request(app.getHttpServer())
+      .post(`/api/v1/projects/${p.id}/workflow-drafts/${draft.id}/publish`)
+      .set('Cookie', owner.cookie)
+      .set('Origin', origin)
+      .set('If-Match', '"1"')
+      .set('Idempotency-Key', randomUUID())
+      .send({})
+      .expect(409);
+    expect(c.ApiErrorSchema.parse(staleDraft.body).error).toMatchObject({
+      code: 'CONFLICT',
+      details: [{ path: '', code: 'WORKFLOW_PUBLICATION_CONFLICT' }],
+    });
     const publishKey = randomUUID(),
       published = await tools.finishDraft(
         owner.actor,
@@ -534,6 +546,15 @@ describe('P2-06 risk register, safe plans and explicit shared work', () => {
       (await tools.previewDraft(owner.actor, p.id, replacement.id))
         .removedStates,
     ).toContainEqual({ version: 1, stateId: state, taskCount: 1 });
+    const competingId = randomUUID();
+    const competing = await tools.saveDraft(
+      owner.actor,
+      p.id,
+      competingId,
+      0,
+      { ...input, id: competingId, workflowId: draft.id, baseRevision: 1 },
+      randomUUID(),
+    );
     await tools.finishDraft(
       owner.actor,
       p.id,
@@ -545,6 +566,36 @@ describe('P2-06 risk register, safe plans and explicit shared work', () => {
     expect(
       (await tools.binding(owner.actor, p.id, t.id)).binding,
     ).toMatchObject({ workflowId: draft.id, version: 1, stateId: state });
+    const conflict = await request(app.getHttpServer())
+      .post(`/api/v1/projects/${p.id}/workflow-drafts/${competing.id}/publish`)
+      .set('Cookie', owner.cookie)
+      .set('Origin', origin)
+      .set('If-Match', '"1"')
+      .set('Idempotency-Key', randomUUID())
+      .send({})
+      .expect(409);
+    expect(c.ApiErrorSchema.parse(conflict.body).error).toMatchObject({
+      code: 'CONFLICT',
+      details: [{ path: '', code: 'WORKFLOW_PUBLICATION_CONFLICT' }],
+    });
+    expect(await tools.draft(owner.actor, p.id, competing.id)).toMatchObject({
+      state: 'DRAFT',
+      revision: 1,
+    });
+    expect(
+      await db.taskWorkflowVersion.count({ where: { workflowId: draft.id } }),
+    ).toBe(2);
+    const terminal = await request(app.getHttpServer())
+      .post(`/api/v1/projects/${p.id}/workflow-drafts/${draft.id}/publish`)
+      .set('Cookie', owner.cookie)
+      .set('Origin', origin)
+      .set('If-Match', `"${published.revision}"`)
+      .set('Idempotency-Key', randomUUID())
+      .send({})
+      .expect(409);
+    expect(c.ApiErrorSchema.parse(terminal.body).error.details).toEqual([
+      { path: '', code: 'WORKFLOW_DRAFT_TERMINAL' },
+    ]);
   });
   it('P2 gap retains risk codes, checklists, closure evidence and repeat-safe issue conversion', async () => {
     const p = await project(),

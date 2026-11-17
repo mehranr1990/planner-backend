@@ -222,6 +222,8 @@ export class WorkflowTools {
     fingerprint: string,
   ) {
     const row = await this.draftRow(tx, a, ctx, id);
+    if (publish && row.revision !== expected)
+      throw new ConflictException({ code: 'WORKFLOW_PUBLICATION_CONFLICT' });
     revision(row.revision, expected);
     if (row.state !== 'DRAFT')
       throw new ConflictException({ code: 'WORKFLOW_DRAFT_TERMINAL' });
@@ -427,13 +429,17 @@ export class WorkflowTools {
       });
       if (old) {
         if (old.id !== id || old.fingerprint !== fingerprint)
-          throw new ConflictException();
+          throw new ConflictException({
+            code: 'WORKFLOW_PUBLICATION_CONFLICT',
+          });
         return this.version(tx, ctx, id, 1);
       }
-      if (current) throw new ConflictException();
+      if (current)
+        throw new ConflictException({ code: 'WORKFLOW_PUBLICATION_CONFLICT' });
     } else {
       if (!current) throw new NotFoundException();
-      revision(current.revision, expected);
+      if (current.revision !== expected)
+        throw new ConflictException({ code: 'WORKFLOW_PUBLICATION_CONFLICT' });
     }
     for (const edge of input.edges) {
       const target = input.states.find((s) => s.id === edge.toStateId)!;

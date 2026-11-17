@@ -157,6 +157,35 @@ their scoped cursors. Versions return at most 100 entries without a page cursor.
     replace it. Original is version 1; use explicit version download route.
     Existing attachment references remain stable. Root deletion denies all versions.
 
+## Integration corrections (2026-11-17)
+
+- **D9 manual Project Status:** no approved manual status vocabulary or initial
+  value exists in the inspected contracts or ADR 0053. `metadata.status` remains
+  the read-only custody lifecycle; `statusNote` remains editable text. The advisory
+  `/health` endpoint remains computed and separate. Do not render lifecycle or
+  health as an editable manual status. Owner decision needed: exact manual status
+  values and initial value for existing/new Projects, before adding its API.
+- **Workflow editor:** remove the promise to map/move tasks out of removed
+  statuses during publication. Use: "Publish a new workflow version. Existing
+  tasks keep their current version and status." Preview counts describe pinned
+  bindings, not a task migration. ADR 0053 preserves those bindings; a mapping
+  payload is not supported. Resolve a publication conflict by refreshing the
+  workflow and draft before retrying with the current revision.
+- **PB-18:** HTTP 409 keeps `error.code: "CONFLICT"`, the generic message and
+  requestId. Optional `error.details` uses the existing array shape. A resource
+  reason has `path: ""` and one of these codes: `PROJECT_KEY_CONFLICT` (creation
+  or metadata key collision), `TASK_HAS_ACTIVE_CHILDREN` (parent deletion),
+  `WORKFLOW_PUBLICATION_CONFLICT` (stale draft/base workflow revision or conflicting
+  publication), `WORKFLOW_DRAFT_TERMINAL` (already published/discarded draft).
+  Handle absent/unknown details with the generic conflict UI. Other errors and
+  authorization behavior remain unchanged; no private IDs or SQL are returned.
+- PB-13 probability remains numeric 0–100; PB-14 capacity remains UNKNOWN without
+  sufficient authorized availability. Guest-grant extensions remain deferred.
+- Local Shared activation still requires the actual security prerequisites.
+  ADR 0049 requires malware-engine integration/scanning before Shared activation;
+  structural file validation is not that clearance. The authorized development
+  activation request does not itself supply completed scanner evidence.
+
 ## Existing extra capabilities are preserved
 
 The backend already supports **custom Project templates**: create, publish new

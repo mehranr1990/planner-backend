@@ -18,6 +18,15 @@ const errors: Record<number, [ErrorCode, string]> = {
   503: ['SERVICE_UNAVAILABLE', 'Service temporarily unavailable'],
 };
 
+// Only reviewed public reasons may cross this boundary. Never forward exception
+// messages, persistence metadata or arbitrary domain codes.
+const projectConflictReasons = new Set([
+  'PROJECT_KEY_CONFLICT',
+  'TASK_HAS_ACTIVE_CHILDREN',
+  'WORKFLOW_DRAFT_TERMINAL',
+  'WORKFLOW_PUBLICATION_CONFLICT',
+]);
+
 @Catch()
 export class ApiExceptionFilter implements ExceptionFilter {
   catch(exception: unknown, host: ArgumentsHost): void {
@@ -55,6 +64,16 @@ export class ApiExceptionFilter implements ExceptionFilter {
     ];
     if (status === 429) response.setHeader('Retry-After', '60');
     const body: ApiError = { error: { code, message, requestId: request.id } };
+    if (exception instanceof HttpException && status === 409) {
+      const detail = exception.getResponse();
+      if (
+        typeof detail === 'object' &&
+        'code' in detail &&
+        typeof detail.code === 'string' &&
+        projectConflictReasons.has(detail.code)
+      )
+        body.error.details = [{ path: '', code: detail.code }];
+    }
     if (exception instanceof HttpException && status === 400) {
       const detail = exception.getResponse();
       if (

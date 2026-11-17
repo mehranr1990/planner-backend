@@ -242,7 +242,12 @@ export function createOpenApiDocument() {
   };
   const document = {
     openapi: '3.1.0',
-    info: { title: 'Mehran Planner API', version: '0.0.1' },
+    info: {
+      title: 'Mehran Planner API',
+      version: '0.0.1',
+      description:
+        'HTTP 409 preserves error.code CONFLICT and the generic message. Optional error.details uses the existing array of {path, code}; path "" identifies a resource conflict. Reviewed Project reasons: PROJECT_KEY_CONFLICT (key collision), TASK_HAS_ACTIVE_CHILDREN (parent deletion), WORKFLOW_PUBLICATION_CONFLICT (stale or conflicting publication), WORKFLOW_DRAFT_TERMINAL (published/discarded draft). Other conflicts may omit details; clients must retain generic fallback handling.',
+    },
     paths: {
       ...filePaths(),
       ...taskPaths(),
