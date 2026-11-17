@@ -291,6 +291,8 @@ export class CompaniesController {
     const value = c.CompanyInvitationDeliverySchema.parse(
       await this.service.invite(actor, id, scopeId, body, key),
     );
+    // Acceptance proof is delivered only through the verified recipient endpoint.
+    value.proof = null;
     void res;
     return value;
   }

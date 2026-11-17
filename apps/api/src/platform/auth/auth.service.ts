@@ -122,6 +122,15 @@ export class AuthService {
   async revokeAllInside(tx: Prisma.TransactionClient, userId: string) {
     await tx.authSession.deleteMany({ where: { userId } });
   }
+  async revokeOtherSessionsInside(
+    tx: Prisma.TransactionClient,
+    userId: string,
+    sessionId: string | undefined,
+  ) {
+    await tx.authSession.deleteMany({
+      where: { userId, ...(sessionId ? { id: { not: sessionId } } : {}) },
+    });
+  }
   /** Identity-owner erasure in the caller's transaction; provider has no secondary storage. */
   async eraseIdentityInside(tx: Prisma.TransactionClient, userId: string) {
     await tx.authVerification.deleteMany({ where: { value: userId } });

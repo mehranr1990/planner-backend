@@ -18,6 +18,8 @@ import type {
 import type { RequestActor } from '../../../platform/auth/request-actor.js';
 import { CompanyFinanceService } from './company-finance.service.js';
 import { CompanyFinanceExtensions } from './company-finance.extensions.js';
+import { CompanyApprovalPoliciesService } from './company-approval-policies.service.js';
+import { CompanyFinanceRequestsService } from './company-finance-requests.service.js';
 import { CompanyReimbursementsService } from './company-reimbursements.service.js';
 import type {
   StaffContext,
@@ -37,7 +39,157 @@ const hash = (v: unknown) =>
   createHash('sha256').update(JSON.stringify(v)).digest('hex');
 @Injectable()
 export class CompanyFinancialApprovalsService implements OnModuleInit {
+  actionState(
+    actor: RequestActor,
+    id: string,
+    scopeId: string,
+    target: string,
+  ) {
+    return this.finance.read(actor, id, scopeId, async (s) => {
+      const a = await this.approvalRow(s, target),
+        can = {
+          approve: false,
+          reject: false,
+          escalate: false,
+          restart: false,
+        };
+      let currentStepId: string | null = null;
+      if (a.state === 'ACTIVE')
+        try {
+          await this.source(s, a);
+          const { reviewer, st } = await this.assigned(s, a);
+          currentStepId = st.id;
+          const mine = this.op.self(
+              s,
+              ref(a.requesterAccessId, a.requesterGeneration),
+            ),
+            beneficiary = a.beneficiaryAccessId === s.me.accessId;
+          const delegation = await s.tx.companyApprovalDelegation.findFirst({
+            where: {
+              ...this.op.where(s),
+              workflowVersionId: a.workflowVersionId,
+              delegatorAccessId: reviewer.accessId,
+              delegatorGeneration: reviewer.generation,
+              delegateAccessId: s.me.accessId,
+              delegateGeneration: s.me.generation,
+              validFrom: { lte: s.now },
+              expiresAt: { gt: s.now },
+              revokedAt: null,
+            },
+          });
+          can.approve =
+            !mine &&
+            !beneficiary &&
+            (this.op.self(s, reviewer) ||
+              (this.finance.manager(s) && !!delegation)) &&
+            !(await s.tx.companyFinancialApprovalEvent.findFirst({
+              where: {
+                approvalId: target,
+                action: 'APPROVE',
+                createdByActorId: s.root.actorId,
+              },
+            }));
+          can.reject = can.approve;
+          can.escalate =
+            !a.escalated &&
+            !!st.alternateAccessId &&
+            (mine || this.finance.manager(s));
+          can.restart = mine;
+        } catch (e) {
+          if (
+            !(e instanceof NotFoundException) &&
+            !(e instanceof ForbiddenException) &&
+            !(e instanceof ConflictException)
+          )
+            throw e;
+        }
+      return c.CompanyApprovalActionStateSchema.parse({
+        id: a.id,
+        revision: a.revision,
+        state: a.state,
+        currentStepId,
+        policyVersionId: a.policyVersionId,
+        can,
+      });
+    });
+  }
+  budgetSubmit(
+    actor: RequestActor,
+    id: string,
+    scopeId: string,
+    target: string,
+    revision: number,
+    input: z.infer<typeof c.CompanyFinancialWorkflowBindSchema> | null,
+  ) {
+    return this.finance.write(
+      actor,
+      id,
+      scopeId,
+      'workflow.budget.submit',
+      target,
+      async (s) => {
+        this.op.manage(s);
+        const { r, budget } = await this.budgetRequests.requestRow(s, target);
+        this.op.match(r.revision, revision);
+        if (r.state !== 'PENDING') throw new ConflictException();
+        if (!this.op.self(s, ref(r.requesterAccessId, r.requesterGeneration)))
+          throw new ForbiddenException();
+        if (
+          await s.tx.companyFinancialApproval.findFirst({
+            where: { budgetChangeRequestId: target },
+          })
+        )
+          throw new ConflictException({ code: 'APPROVAL_ALREADY_BOUND' });
+        const policy = await this.policies.select(
+          s,
+          'BUDGET_CHANGE',
+          {
+            currency: budget.currency,
+            amount: r.amount.abs().toString(),
+            categoryId: null,
+          },
+          input === null,
+        );
+        if (
+          policy &&
+          input &&
+          policy.rule.workflowVersionId !== input.workflowVersionId
+        )
+          throw new ConflictException({
+            code: 'APPROVAL_POLICY_WORKFLOW_MISMATCH',
+          });
+        const requester = ref(r.requesterAccessId, r.requesterGeneration),
+          { v } = await this.published(
+            s,
+            input?.workflowVersionId ?? policy!.rule.workflowVersionId,
+            'BUDGET_CHANGE',
+            requester,
+            null,
+          );
+        await s.change();
+        return this.approvalView(
+          await this.newApproval(
+            s,
+            v.id,
+            {
+              expenseVersionId: null,
+              reimbursementId: null,
+              budgetChangeRequestId: r.id,
+            },
+            requester,
+            null,
+            r.revision,
+            policy,
+          ),
+        );
+      },
+    );
+  }
   constructor(
+    @Inject(CompanyFinanceRequestsService)
+    private readonly budgetRequests: CompanyFinanceRequestsService,
+    @Inject(CompanyApprovalPoliciesService)
+    private readonly policies: CompanyApprovalPoliciesService,
     @Inject(CompanyFinanceService) readonly finance: CompanyFinanceService,
     @Inject(CompanyReimbursementsService)
     readonly reimbursements: CompanyReimbursementsService,
@@ -498,6 +650,63 @@ export class CompanyFinancialApprovalsService implements OnModuleInit {
       );
     });
   }
+  timeline(
+    actor: RequestActor,
+    id: string,
+    scopeId: string,
+    target: string,
+    q: StaffPage,
+  ) {
+    return this.finance.read(actor, id, scopeId, async (s) => {
+      const a = await this.approvalRow(s, target);
+      return this.op.page(
+        s,
+        'company.approval.timeline:' + target,
+        q,
+        async () => {
+          const events = await s.tx.companyFinancialApprovalEvent.findMany({
+            where: { ...this.op.where(s), approvalId: target },
+            take: 1001,
+          });
+          const reasons = new Map(
+            (
+              await s.tx.companyDecisionReason.findMany({
+                where: { approvalEventId: { in: events.map((e) => e.id) } },
+              })
+            ).map((r) => [r.approvalEventId, r.reason]),
+          );
+          return events.map((e) =>
+            c.CompanyApprovalTimelineEventSchema.parse({
+              id: e.id,
+              approvalId: target,
+              requestId:
+                a.expenseVersionId ??
+                a.reimbursementId ??
+                a.budgetChangeRequestId!,
+              requestType: a.expenseVersionId
+                ? 'EXPENSE'
+                : a.reimbursementId
+                  ? 'REIMBURSEMENT'
+                  : 'BUDGET_CHANGE',
+              workflowVersionId: a.workflowVersionId,
+              policyVersionId: a.policyVersionId,
+              stepId: e.stepId,
+              actorId: e.createdByActorId,
+              delegationId: e.delegationId,
+              reviewer: e.reviewerAccessId
+                ? ref(e.reviewerAccessId, e.reviewerGeneration!)
+                : null,
+              action: e.action,
+              reason: reasons.get(e.id) ?? null,
+              previousStatus: e.previousStatus,
+              resultingStatus: e.resultingStatus,
+              createdAt: e.createdAt.toISOString(),
+            }),
+          );
+        },
+      );
+    });
+  }
   async event(
     s: StaffContext,
     a: CompanyFinancialApproval,
@@ -505,6 +714,7 @@ export class CompanyFinancialApprovalsService implements OnModuleInit {
     stepId: string | null = null,
     reviewer: StaffMember | null = null,
     reason: string | null = null,
+    delegationId: string | null = null,
   ) {
     const eventId = randomUUID();
     await s.tx.companyFinancialApprovalEvent.create({
@@ -514,6 +724,18 @@ export class CompanyFinancialApprovalsService implements OnModuleInit {
         approvalId: a.id,
         stepId,
         action,
+        delegationId,
+        previousStatus: a.state,
+        resultingStatus:
+          action === 'REJECT'
+            ? 'REJECTED'
+            : action === 'CANCEL' || action === 'RESTART'
+              ? 'CANCELED'
+              : action === 'APPROVE' &&
+                  (await this.steps(s, a.workflowVersionId)).length ===
+                    a.stepIndex + 1
+                ? 'APPROVED'
+                : a.state,
         createdByActorId: s.root.actorId,
         reviewerAccessId: reviewer?.accessId ?? null,
         reviewerGeneration: reviewer?.generation ?? null,
@@ -562,8 +784,26 @@ export class CompanyFinancialApprovalsService implements OnModuleInit {
   }
   async fingerprint(
     s: StaffContext,
-    target: { expenseVersionId: string | null; reimbursementId: string | null },
+    target: {
+      expenseVersionId: string | null;
+      reimbursementId: string | null;
+      budgetChangeRequestId?: string | null;
+    },
   ) {
+    if (target.budgetChangeRequestId) {
+      const { r } = await this.budgetRequests.requestRow(
+        s,
+        target.budgetChangeRequestId,
+      );
+      return hash([
+        r.id,
+        r.budgetId,
+        r.budgetRevision,
+        r.amount.toString(),
+        r.requesterAccessId,
+        r.requesterGeneration,
+      ]);
+    }
     if (target.expenseVersionId) {
       const v = await s.tx.companyExpenseVersion.findFirstOrThrow({
         where: { ...this.op.where(s), id: target.expenseVersionId },
@@ -612,10 +852,18 @@ export class CompanyFinancialApprovalsService implements OnModuleInit {
   async newApproval(
     s: StaffContext,
     versionId: string,
-    target: { expenseVersionId: string | null; reimbursementId: string | null },
+    target: {
+      expenseVersionId: string | null;
+      reimbursementId: string | null;
+      budgetChangeRequestId?: string | null;
+    },
     requester: StaffMember,
     beneficiary: StaffMember | null,
     sourceRevision: number,
+    policy: {
+      policyId: string;
+      rule: { escalateAfterSeconds: number | null };
+    } | null = null,
   ) {
     await this.op.growth(
       s,
@@ -631,6 +879,9 @@ export class CompanyFinancialApprovalsService implements OnModuleInit {
         ...this.op.where(s),
         id: randomUUID(),
         workflowVersionId: versionId,
+        policyVersionId: policy?.policyId ?? null,
+        escalateAfterSeconds: policy?.rule.escalateAfterSeconds ?? null,
+        stepStartedAt: s.now,
         ...target,
         requesterAccessId: requester.accessId,
         requesterGeneration: requester.generation,
@@ -651,7 +902,7 @@ export class CompanyFinancialApprovalsService implements OnModuleInit {
     scopeId: string,
     target: string,
     revision: number,
-    input: z.infer<typeof c.CompanyFinancialWorkflowBindSchema>,
+    input: z.infer<typeof c.CompanyFinancialWorkflowBindSchema> | null,
   ) {
     return this.finance.write(
       actor,
@@ -663,13 +914,31 @@ export class CompanyFinancialApprovalsService implements OnModuleInit {
         const v = await this.finance.version(s, target);
         await this.finance.audience(s, v);
         this.finance.requester(s, v);
+        const policy = await this.policies.select(
+          s,
+          'EXPENSE',
+          {
+            amount: v.amount.toString(),
+            currency: v.currency,
+            categoryId: v.categoryId,
+          },
+          input === null,
+        );
+        if (
+          policy &&
+          input &&
+          policy.rule.workflowVersionId !== input.workflowVersionId
+        )
+          throw new ConflictException({
+            code: 'APPROVAL_POLICY_WORKFLOW_MISMATCH',
+          });
         const requester = ref(v.requesterAccessId, v.requesterGeneration),
           beneficiary = v.payerAccessId
             ? ref(v.payerAccessId, v.payerGeneration!)
             : null;
         const { v: version, steps } = await this.published(
           s,
-          input.workflowVersionId,
+          input?.workflowVersionId ?? policy!.rule.workflowVersionId,
           'EXPENSE',
           requester,
           beneficiary,
@@ -695,6 +964,7 @@ export class CompanyFinancialApprovalsService implements OnModuleInit {
             requester,
             beneficiary,
             expense.revision,
+            policy,
           ),
         );
       },
@@ -706,7 +976,7 @@ export class CompanyFinancialApprovalsService implements OnModuleInit {
     scopeId: string,
     target: string,
     revision: number,
-    input: z.infer<typeof c.CompanyFinancialWorkflowBindSchema>,
+    input: z.infer<typeof c.CompanyFinancialWorkflowBindSchema> | null,
   ) {
     return this.finance.write(
       actor,
@@ -722,9 +992,30 @@ export class CompanyFinancialApprovalsService implements OnModuleInit {
         if (r.state !== 'DRAFT') throw new ConflictException();
         await this.reimbursements.current(s, r);
         const requester = ref(r.beneficiaryAccessId, r.beneficiaryGeneration);
+        const sourceExpense = await s.tx.companyExpenseVersion.findFirstOrThrow(
+          { where: { id: r.expenseVersionId } },
+        );
+        const policy = await this.policies.select(
+          s,
+          'REIMBURSEMENT',
+          {
+            amount: r.amount.toString(),
+            currency: sourceExpense.currency,
+            categoryId: sourceExpense.categoryId,
+          },
+          input === null,
+        );
+        if (
+          policy &&
+          input &&
+          policy.rule.workflowVersionId !== input.workflowVersionId
+        )
+          throw new ConflictException({
+            code: 'APPROVAL_POLICY_WORKFLOW_MISMATCH',
+          });
         const { v } = await this.published(
           s,
-          input.workflowVersionId,
+          input?.workflowVersionId ?? policy!.rule.workflowVersionId,
           'REIMBURSEMENT',
           requester,
           requester,
@@ -742,6 +1033,7 @@ export class CompanyFinancialApprovalsService implements OnModuleInit {
             requester,
             requester,
             updated.revision,
+            policy,
           ),
         );
       },
@@ -750,6 +1042,16 @@ export class CompanyFinancialApprovalsService implements OnModuleInit {
   async source(s: StaffContext, a: CompanyFinancialApproval) {
     if ((await this.fingerprint(s, a)) !== a.fingerprint)
       throw new ConflictException({ code: 'FINANCIAL_SOURCE_CHANGED' });
+    if (a.budgetChangeRequestId) {
+      const { r } = await this.budgetRequests.requestRow(
+        s,
+        a.budgetChangeRequestId,
+      );
+      if (r.state !== 'PENDING' || r.revision !== a.sourceRevision)
+        throw new ConflictException({ code: 'FINANCIAL_SOURCE_CHANGED' });
+      await this.op.member(s, ref(r.requesterAccessId, r.requesterGeneration));
+      return { expense: null, reimbursement: null, budget: r };
+    }
     if (a.expenseVersionId) {
       const v = await s.tx.companyExpenseVersion.findFirstOrThrow({
           where: { ...this.op.where(s), id: a.expenseVersionId },
@@ -775,13 +1077,13 @@ export class CompanyFinancialApprovalsService implements OnModuleInit {
         throw new ForbiddenException();
       if (v.payerAccessId)
         await this.op.member(s, ref(v.payerAccessId, v.payerGeneration!));
-      return { expense: v, reimbursement: null };
+      return { expense: v, reimbursement: null, budget: null };
     }
     const r = await this.reimbursements.row(s, a.reimbursementId!);
     if (r.state !== 'SUBMITTED' || r.revision !== a.sourceRevision)
       throw new ConflictException({ code: 'FINANCIAL_SOURCE_CHANGED' });
     await this.reimbursements.current(s, r);
-    return { expense: null, reimbursement: r };
+    return { expense: null, reimbursement: r, budget: null };
   }
   async assigned(s: StaffContext, a: CompanyFinancialApproval) {
     const steps = await this.steps(s, a.workflowVersionId),
@@ -849,6 +1151,7 @@ export class CompanyFinancialApprovalsService implements OnModuleInit {
     target: string,
     revision: number,
     input: z.infer<typeof c.CompanyFinancialApprovalDecisionSchema>,
+    key?: string,
   ) {
     return this.finance.write(
       actor,
@@ -857,73 +1160,152 @@ export class CompanyFinancialApprovalsService implements OnModuleInit {
       'workflow.decide',
       target,
       async (s) => {
-        const a = await this.approvalRow(s, target);
-        this.op.match(a.revision, revision);
-        if (a.state !== 'ACTIVE') throw new ConflictException();
-        const source = await this.source(s, a),
-          { steps, st, reviewer } = await this.assigned(s, a);
-        if (!this.op.self(s, reviewer)) throw new ForbiddenException();
-        await this.priorDecisions(s, a);
-        await s.change();
-        await this.event(
+        if (key === undefined)
+          return this.decisionWithin(s, target, revision, input);
+        await this.approvalRow(s, target);
+        await this.op.once(
           s,
-          a,
-          input.decision,
-          st.id,
-          reviewer,
-          input.reason ?? null,
-        );
-        const final =
-          input.decision === 'REJECT' || a.stepIndex === steps.length - 1;
-        let sourceRevision = a.sourceRevision;
-        if (!final) {
-          const next = steps[a.stepIndex + 1]!;
-          if (source.expense)
-            sourceRevision = await this.updateExpenseReviewer(
-              s,
-              source.expense,
-              ref(next.primaryAccessId, next.primaryGeneration),
-            );
-          else
-            sourceRevision = (
-              await s.tx.companyReimbursementRequest.update({
-                where: { id: source.reimbursement!.id },
-                data: this.op.changed(s),
-              })
-            ).revision;
-        }
-        const updated = await s.tx.companyFinancialApproval.update({
-          where: { id: a.id },
-          data: {
-            state: final
-              ? input.decision === 'APPROVE'
-                ? 'APPROVED'
-                : 'REJECTED'
-              : 'ACTIVE',
-            ...(final ? {} : { stepIndex: a.stepIndex + 1, escalated: false }),
-            sourceRevision,
-            ...this.op.changed(s),
+          'company.approval.decision',
+          key,
+          { target, revision, ...input },
+          async () => {
+            await this.decisionWithin(s, target, revision, input);
+            return { id: target };
           },
-        });
-        if (final) {
-          if (source.expense)
-            await this.finance.decideWithin(
-              s,
-              source.expense.expenseId,
-              sourceRevision,
-              input,
-              true,
-            );
-          else
-            await this.reimbursements.approveWithin(
-              s,
-              source.reimbursement!,
-              input.decision === 'APPROVE',
-            );
-        }
-        return this.approvalView(updated);
+        );
+        return this.approvalView(await this.approvalRow(s, target));
       },
     );
+  }
+  private async decisionWithin(
+    s: StaffContext,
+    target: string,
+    revision: number,
+    input: z.infer<typeof c.CompanyFinancialApprovalDecisionSchema>,
+  ) {
+    const a = await this.approvalRow(s, target);
+    this.op.match(a.revision, revision);
+    if (a.state !== 'ACTIVE') throw new ConflictException();
+    const source = await this.source(s, a),
+      { steps, st, reviewer } = await this.assigned(s, a);
+    let delegationId: string | null = null;
+    if (!this.op.self(s, reviewer)) {
+      if (
+        s.me.accessId === a.requesterAccessId ||
+        s.me.accessId === a.beneficiaryAccessId
+      )
+        throw new ForbiddenException();
+      await this.reimbursements.managerMember(s, {
+        accessId: s.me.accessId,
+        generation: s.me.generation,
+      });
+      const delegation = await s.tx.companyApprovalDelegation.findFirst({
+        where: {
+          ...this.op.where(s),
+          workflowVersionId: a.workflowVersionId,
+          delegatorAccessId: reviewer.accessId,
+          delegatorGeneration: reviewer.generation,
+          delegateAccessId: s.me.accessId,
+          delegateGeneration: s.me.generation,
+          validFrom: { lte: s.now },
+          expiresAt: { gt: s.now },
+          revokedAt: null,
+        },
+      });
+      if (!delegation) throw new ForbiddenException();
+      delegationId = delegation.id;
+    }
+    if (
+      await s.tx.companyFinancialApprovalEvent.findFirst({
+        where: {
+          approvalId: a.id,
+          action: 'APPROVE',
+          createdByActorId: s.root.actorId,
+        },
+      })
+    )
+      throw new ForbiddenException({ code: 'DISTINCT_STAGE_ACTORS_REQUIRED' });
+    await this.priorDecisions(s, a);
+    await s.change();
+    await this.event(
+      s,
+      a,
+      input.decision,
+      st.id,
+      reviewer,
+      input.reason ?? null,
+      delegationId,
+    );
+    const final =
+      input.decision === 'REJECT' || a.stepIndex === steps.length - 1;
+    let sourceRevision = a.sourceRevision;
+    if (!final) {
+      const next = steps[a.stepIndex + 1]!;
+      if (source.expense)
+        sourceRevision = await this.updateExpenseReviewer(
+          s,
+          source.expense,
+          ref(next.primaryAccessId, next.primaryGeneration),
+        );
+      else if (source.budget)
+        sourceRevision = (
+          await s.tx.companyBudgetChangeRequest.update({
+            where: { id: source.budget.id },
+            data: this.op.changed(s),
+          })
+        ).revision;
+      else
+        sourceRevision = (
+          await s.tx.companyReimbursementRequest.update({
+            where: { id: source.reimbursement!.id },
+            data: this.op.changed(s),
+          })
+        ).revision;
+    }
+    const updated = await s.tx.companyFinancialApproval.update({
+      where: { id: a.id },
+      data: {
+        state: final
+          ? input.decision === 'APPROVE'
+            ? 'APPROVED'
+            : 'REJECTED'
+          : 'ACTIVE',
+        ...(final
+          ? {}
+          : {
+              stepIndex: a.stepIndex + 1,
+              escalated: false,
+              stepStartedAt: s.now,
+            }),
+        sourceRevision,
+        ...this.op.changed(s),
+      },
+    });
+    if (final) {
+      if (source.expense)
+        await this.finance.decideWithin(
+          s,
+          source.expense.expenseId,
+          sourceRevision,
+          input,
+          true,
+        );
+      else if (source.budget)
+        await this.budgetRequests.decideWithin(
+          s,
+          source.budget.id,
+          sourceRevision,
+          { decision: input.decision, reason: input.reason ?? null },
+          true,
+        );
+      else
+        await this.reimbursements.approveWithin(
+          s,
+          source.reimbursement!,
+          input.decision === 'APPROVE',
+        );
+    }
+    return this.approvalView(updated);
   }
   escalate(
     actor: RequestActor,
@@ -938,43 +1320,56 @@ export class CompanyFinancialApprovalsService implements OnModuleInit {
       scopeId,
       'workflow.escalate',
       target,
-      async (s) => {
-        const a = await this.approvalRow(s, target);
-        this.op.match(a.revision, revision);
-        if (a.state !== 'ACTIVE' || a.escalated) throw new ConflictException();
-        if (
-          !this.finance.manager(s) &&
-          !this.op.self(s, ref(a.requesterAccessId, a.requesterGeneration))
-        )
-          throw new ForbiddenException();
-        const source = await this.source(s, a),
-          steps = await this.steps(s, a.workflowVersionId),
-          st = steps[a.stepIndex];
-        if (!st?.alternateAccessId) throw new ConflictException();
-        const alternate = ref(st.alternateAccessId, st.alternateGeneration!);
-        if (
-          alternate.accessId === a.requesterAccessId ||
-          alternate.accessId === a.beneficiaryAccessId
-        )
-          throw new ForbiddenException();
-        await this.reimbursements.managerMember(s, alternate);
-        await s.change();
-        const sourceRevision = source.expense
-          ? await this.updateExpenseReviewer(s, source.expense, alternate)
-          : (
-              await s.tx.companyReimbursementRequest.update({
-                where: { id: source.reimbursement!.id },
-                data: this.op.changed(s),
-              })
-            ).revision;
-        await this.event(s, a, 'ESCALATE', st.id, alternate);
-        return this.approvalView(
-          await s.tx.companyFinancialApproval.update({
-            where: { id: a.id },
-            data: { escalated: true, sourceRevision, ...this.op.changed(s) },
-          }),
-        );
-      },
+      (s) => this.escalateWithin(s, target, revision),
+    );
+  }
+  async escalateWithin(
+    s: StaffContext,
+    target: string,
+    revision: number,
+    reason: string | null = null,
+  ) {
+    const a = await this.approvalRow(s, target);
+    this.op.match(a.revision, revision);
+    if (a.state !== 'ACTIVE' || a.escalated) throw new ConflictException();
+    if (
+      !this.finance.manager(s) &&
+      !this.op.self(s, ref(a.requesterAccessId, a.requesterGeneration))
+    )
+      throw new ForbiddenException();
+    const source = await this.source(s, a),
+      steps = await this.steps(s, a.workflowVersionId),
+      st = steps[a.stepIndex];
+    if (!st?.alternateAccessId) throw new ConflictException();
+    const alternate = ref(st.alternateAccessId, st.alternateGeneration!);
+    if (
+      alternate.accessId === a.requesterAccessId ||
+      alternate.accessId === a.beneficiaryAccessId
+    )
+      throw new ForbiddenException();
+    await this.reimbursements.managerMember(s, alternate);
+    await s.change();
+    const sourceRevision = source.expense
+      ? await this.updateExpenseReviewer(s, source.expense, alternate)
+      : source.budget
+        ? (
+            await s.tx.companyBudgetChangeRequest.update({
+              where: { id: source.budget.id },
+              data: this.op.changed(s),
+            })
+          ).revision
+        : (
+            await s.tx.companyReimbursementRequest.update({
+              where: { id: source.reimbursement!.id },
+              data: this.op.changed(s),
+            })
+          ).revision;
+    await this.event(s, a, 'ESCALATE', st.id, alternate, reason);
+    return this.approvalView(
+      await s.tx.companyFinancialApproval.update({
+        where: { id: a.id },
+        data: { escalated: true, sourceRevision, ...this.op.changed(s) },
+      }),
     );
   }
   restart(
@@ -1004,10 +1399,57 @@ export class CompanyFinancialApprovalsService implements OnModuleInit {
           beneficiary = a.beneficiaryAccessId
             ? ref(a.beneficiaryAccessId, a.beneficiaryGeneration!)
             : null;
+        const facts = source.expense
+          ? {
+              amount: source.expense.amount.toString(),
+              currency: source.expense.currency,
+              categoryId: source.expense.categoryId,
+            }
+          : source.budget
+            ? await (async () => {
+                const { budget } = await this.budgetRequests.requestRow(
+                  s,
+                  source.budget.id,
+                );
+                return {
+                  amount: source.budget.amount.abs().toString(),
+                  currency: budget.currency,
+                  categoryId: null,
+                };
+              })()
+            : await (async () => {
+                const e = await s.tx.companyExpenseVersion.findUniqueOrThrow({
+                  where: { id: source.reimbursement!.expenseVersionId },
+                });
+                return {
+                  amount: source.reimbursement!.amount.toString(),
+                  currency: e.currency,
+                  categoryId: e.categoryId,
+                };
+              })();
+        const policy = a.policyVersionId
+          ? await this.policies.select(
+              s,
+              a.expenseVersionId
+                ? 'EXPENSE'
+                : a.budgetChangeRequestId
+                  ? 'BUDGET_CHANGE'
+                  : 'REIMBURSEMENT',
+              facts,
+            )
+          : null;
+        if (policy && policy.rule.workflowVersionId !== input.workflowVersionId)
+          throw new ConflictException({
+            code: 'APPROVAL_POLICY_WORKFLOW_MISMATCH',
+          });
         const { v, steps } = await this.published(
           s,
           input.workflowVersionId,
-          a.expenseVersionId ? 'EXPENSE' : 'REIMBURSEMENT',
+          a.expenseVersionId
+            ? 'EXPENSE'
+            : a.budgetChangeRequestId
+              ? 'BUDGET_CHANGE'
+              : 'REIMBURSEMENT',
           requester,
           beneficiary,
         );
@@ -1023,12 +1465,19 @@ export class CompanyFinancialApprovalsService implements OnModuleInit {
               source.expense,
               ref(steps[0]!.primaryAccessId, steps[0]!.primaryGeneration),
             )
-          : (
-              await s.tx.companyReimbursementRequest.update({
-                where: { id: source.reimbursement!.id },
-                data: this.op.changed(s),
-              })
-            ).revision;
+          : source.budget
+            ? (
+                await s.tx.companyBudgetChangeRequest.update({
+                  where: { id: source.budget.id },
+                  data: this.op.changed(s),
+                })
+              ).revision
+            : (
+                await s.tx.companyReimbursementRequest.update({
+                  where: { id: source.reimbursement!.id },
+                  data: this.op.changed(s),
+                })
+              ).revision;
         return this.approvalView(
           await this.newApproval(
             s,
@@ -1036,10 +1485,12 @@ export class CompanyFinancialApprovalsService implements OnModuleInit {
             {
               expenseVersionId: a.expenseVersionId,
               reimbursementId: a.reimbursementId,
+              budgetChangeRequestId: a.budgetChangeRequestId,
             },
             requester,
             beneficiary,
             sourceRevision,
+            policy,
           ),
         );
       },
@@ -1047,7 +1498,11 @@ export class CompanyFinancialApprovalsService implements OnModuleInit {
   }
   async cancelAny(
     s: StaffContext,
-    target: { expenseVersionId?: string; reimbursementId?: string },
+    target: {
+      expenseVersionId?: string;
+      reimbursementId?: string;
+      budgetChangeRequestId?: string;
+    },
   ) {
     for (const a of await s.tx.companyFinancialApproval.findMany({
       where: { ...this.op.where(s), ...target, state: 'ACTIVE' },
@@ -1075,7 +1530,33 @@ export class CompanyFinancialApprovalsService implements OnModuleInit {
       throw new ConflictException();
     await this.source(s, a);
     const { steps, reviewer } = await this.assigned(s, a);
-    if (!this.op.self(s, reviewer)) throw new ForbiddenException();
+    if (!this.op.self(s, reviewer)) {
+      const decision = await s.tx.companyFinancialApprovalEvent.findFirst({
+        where: {
+          approvalId: a.id,
+          stepId: steps[a.stepIndex]!.id,
+          createdByActorId: s.root.actorId,
+          delegationId: { not: null },
+          action: { in: ['APPROVE', 'REJECT'] },
+        },
+      });
+      if (
+        !decision ||
+        !(await s.tx.companyApprovalDelegation.findFirst({
+          where: {
+            id: decision.delegationId!,
+            delegatorAccessId: reviewer.accessId,
+            delegatorGeneration: reviewer.generation,
+            delegateAccessId: s.me.accessId,
+            delegateGeneration: s.me.generation,
+            revokedAt: null,
+            validFrom: { lte: s.now },
+            expiresAt: { gt: s.now },
+          },
+        }))
+      )
+        throw new ForbiddenException();
+    }
     await this.priorDecisions(s, a);
     const decisions = await s.tx.companyFinancialApprovalEvent.findMany({
       where: { approvalId: a.id, action: { in: ['APPROVE', 'REJECT'] } },

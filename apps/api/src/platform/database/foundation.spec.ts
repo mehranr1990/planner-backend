@@ -296,6 +296,8 @@ describe('scoped persistence and API conventions', () => {
       '202611160070_project_key_identity_erasure',
       '202611160071_team_gap_configuration',
       '202611160072_typed_team_association_requests',
+      '202611160073_company_gap_closure',
+      '202611170074_company_history_guards',
     ]);
     for (const sql of [
       '',

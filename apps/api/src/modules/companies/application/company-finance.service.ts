@@ -102,6 +102,7 @@ export class CompanyFinanceService {
       'workflow.version.create': 'company.financial-workflow-version',
       'workflow.expense.submit': 'company.financial-approval',
       'workflow.reimbursement.submit': 'company.financial-approval',
+      'workflow.budget.submit': 'company.financial-approval',
       'workflow.restart': 'company.financial-approval',
       'reimbursement.create': 'company.reimbursement-request',
       'payment.propose': 'company.payment-acknowledgement',
@@ -120,7 +121,11 @@ export class CompanyFinanceService {
       scopeId,
       'company.finance.' + action,
       target,
-      work,
+      async (s) => {
+        const result = await work(s);
+        await this.extensions.evaluateBudgetAlerts(s);
+        return result;
+      },
       features[action as keyof typeof features],
     );
   }
@@ -1007,6 +1012,12 @@ export class CompanyFinanceService {
     this.op.match(r.revision, revision);
     const v = await this.version(s, target);
     this.requester(s, v);
+    if (!controlled && !reassign)
+      await this.extensions.requireSubmissionPolicy(s, 'EXPENSE', {
+        currency: v.currency,
+        amount: v.amount.toString(),
+        categoryId: v.categoryId,
+      });
     if (!controlled || reassign) await this.extensions.assertExpense(s, v.id);
     if (v.state !== (reassign ? 'SUBMITTED' : 'DRAFT'))
       throw new ConflictException();
@@ -1271,10 +1282,11 @@ export class CompanyFinanceService {
     if (
       v.state !== 'SUBMITTED' ||
       !v.reviewerAccessId ||
-      !this.op.self(s, {
-        accessId: v.reviewerAccessId,
-        generation: v.reviewerGeneration!,
-      })
+      (!controlled &&
+        !this.op.self(s, {
+          accessId: v.reviewerAccessId,
+          generation: v.reviewerGeneration!,
+        }))
     )
       throw new ForbiddenException();
     await this.reviewer(s, v, {

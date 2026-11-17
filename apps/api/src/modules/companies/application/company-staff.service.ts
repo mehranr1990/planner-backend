@@ -616,6 +616,12 @@ export class CompanyStaffService implements OnModuleInit {
         this.op.match(row.revision, revision);
         if (
           row.state !== 'ACTIVE' ||
+          (await s.tx.companyAssetCustody.count({
+            where: { resourceId, returnedAt: null },
+          })) > 0 ||
+          (await s.tx.companyAssetMaintenance.count({
+            where: { resourceId, state: { in: ['SCHEDULED', 'IN_PROGRESS'] } },
+          })) > 0 ||
           (await s.tx.companyResourceAllocation.count({
             where: { resourceId, state: 'ALLOCATED' },
           }))
@@ -658,6 +664,15 @@ export class CompanyStaffService implements OnModuleInit {
           async () => {
             if (
               item.state !== 'ACTIVE' ||
+              (await s.tx.companyAssetCustody.count({
+                where: { resourceId, returnedAt: null },
+              })) > 0 ||
+              (await s.tx.companyAssetMaintenance.count({
+                where: {
+                  resourceId,
+                  state: { in: ['SCHEDULED', 'IN_PROGRESS'] },
+                },
+              })) > 0 ||
               (await s.tx.companyResourceAllocation.count({
                 where: {
                   resourceId,
@@ -776,6 +791,77 @@ export class CompanyStaffService implements OnModuleInit {
         actorId,
       ),
       ids = admissions.map((a) => a.id);
+    const privateReviews = await tx.companyPerformanceReview.findMany({
+      where: {
+        spaceId: id,
+        OR: [
+          { subjectAccessId: { in: ids } },
+          { reviewerAccessId: { in: ids } },
+        ],
+      },
+      select: { id: true },
+      take: 1001,
+    });
+    const privateOnes = await tx.companyOneOnOne.findMany({
+      where: {
+        spaceId: id,
+        OR: [
+          { managerAccessId: { in: ids } },
+          { employeeAccessId: { in: ids } },
+        ],
+      },
+      select: { id: true },
+      take: 1001,
+    });
+    if (privateReviews.length > 1000 || privateOnes.length > 1000)
+      throw new ConflictException({ code: 'COMPANY_ERASURE_BOUND_EXCEEDED' });
+    const reviewIds = privateReviews.map((r) => r.id),
+      oneIds = privateOnes.map((r) => r.id),
+      redact = {
+        redactedAt: new Date(),
+        revision: { increment: 1 },
+        updatedAt: new Date(),
+      };
+    await tx.companyReviewRevision.updateMany({
+      where: { reviewId: { in: reviewIds }, redactedAt: null },
+      data: { body: null, ...redact },
+    });
+    await tx.companyPerformanceReview.updateMany({
+      where: { id: { in: reviewIds }, redactedAt: null },
+      data: redact,
+    });
+    await tx.companyOneOnOneRevision.updateMany({
+      where: { recordId: { in: oneIds }, redactedAt: null },
+      data: { notes: null, ...redact },
+    });
+    await tx.companyOneOnOneAction.updateMany({
+      where: { recordId: { in: oneIds }, redactedAt: null },
+      data: { body: null, ...redact },
+    });
+    await tx.companyOneOnOne.updateMany({
+      where: { id: { in: oneIds }, redactedAt: null },
+      data: { notes: null, ...redact },
+    });
+    await tx.companyTemporaryGrant.updateMany({
+      where: { spaceId: id, actorId, reason: { not: null } },
+      data: { reason: null, revision: { increment: 1 }, updatedAt: new Date() },
+    });
+    await tx.companyAccessReview.updateMany({
+      where: { spaceId: id, actorId, reason: { not: null } },
+      data: { reason: null, revision: { increment: 1 }, updatedAt: new Date() },
+    });
+    await tx.companyAssetMaintenance.updateMany({
+      where: { spaceId: id, createdByActorId: actorId, reason: { not: null } },
+      data: { reason: null, revision: { increment: 1 }, updatedAt: new Date() },
+    });
+    await tx.companyRecoveryCase.updateMany({
+      where: { spaceId: id, actorId, evidenceReference: { not: null } },
+      data: {
+        evidenceReference: null,
+        revision: { increment: 1 },
+        updatedAt: new Date(),
+      },
+    });
     // Identity erasure always removes direct contacts. Scoped retention never blocks unrelated Personal erasure.
     await tx.companyStaffProfile.updateMany({
       where: { spaceId: id, memberAccessId: { in: ids }, redactedAt: null },

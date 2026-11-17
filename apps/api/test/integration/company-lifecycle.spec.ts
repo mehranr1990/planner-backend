@@ -248,6 +248,34 @@ describe('P4-06 Company lifecycle and preservation', () => {
   beforeEach(async () => {
     vi.restoreAllMocks();
     await client.sharedRateLimit.deleteMany();
+    // Handover now revokes prior-owner sessions. Each independent scenario starts
+    // with a newly provider-authenticated session when the previous one was revoked.
+    for (const who of [owner, member, viewer, admin, outsider])
+      if (
+        !(await client.authSession.findUnique({
+          where: { id: who.actor.sessionId! },
+        }))
+      ) {
+        // Provider-created sessions are fixture setup; HTTP login-rate behavior
+        // remains covered separately, as in communication-lifecycle fixtures.
+        const login = await app.get(AuthService).auth.api.signInEmail({
+          body: { email: who.email, password },
+          returnHeaders: true,
+        });
+        who.cookie = login.headers
+          .getSetCookie()
+          .map((v) => v.split(';')[0])
+          .join('; ');
+        who.actor = {
+          ...who.actor,
+          sessionId: (
+            await client.authSession.findFirstOrThrow({
+              where: { userId: who.actor.userId },
+              orderBy: { createdAt: 'desc' },
+            })
+          ).id,
+        };
+      }
   });
   afterAll(async () => {
     vi.restoreAllMocks();
@@ -468,6 +496,16 @@ describe('P4-06 Company lifecycle and preservation', () => {
         password,
       ),
     ).rejects.toHaveProperty('status', 404);
+    await expect(
+      life.decide(
+        member.actor,
+        f.co.id,
+        offer.id,
+        offer.revision,
+        'accept',
+        'incorrect-provider-proof',
+      ),
+    ).rejects.toHaveProperty('status', 403);
     await life.decide(
       member.actor,
       f.co.id,
@@ -475,6 +513,18 @@ describe('P4-06 Company lifecycle and preservation', () => {
       offer.revision,
       'accept',
       password,
+    );
+    expect(
+      await client.authSession.count({ where: { userId: owner.actor.userId } }),
+    ).toBe(0);
+    expect(
+      await client.authSession.count({
+        where: { userId: member.actor.userId },
+      }),
+    ).toBe(1);
+    await expect(companies.read(owner.actor, f.co.id)).rejects.toHaveProperty(
+      'status',
+      403,
     );
     expect(
       (

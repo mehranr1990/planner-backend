@@ -51,6 +51,7 @@ for (const batch of [
   'gap-closure',
   'final-closure',
   'team-gap',
+  'company-gap',
 ])
   assertApiCompatible(
     createOpenApiDocument(),

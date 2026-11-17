@@ -29,9 +29,14 @@ import type { Prisma } from '../../generated/prisma/client.js';
 // to their current owners; a collision blocks deletion without renaming data.
 // Personal identity erasure clears the account namespace with SET NULL and a
 // typed ERASED-owner tombstone; retained Projects never block account erasure.
+// P4-GAP-CLOSURE adds 97 typed Company edges (1,067 total). CompanyCleanupService
+// removes private revisions/actions before reviews/cycles and one-on-ones; custody,
+// maintenance, observations, grant assignments and recovery drafts before their
+// members/resources; alert occurrences before rules/budgets; financial events and
+// approvals before delegations/policies. No new User FK blocks Personal erasure.
 // Future FK changes still fail closed until reviewed.
 export const SHARED_CLEANUP_FK_SHA256 =
-  '277ebbfeb7671c28d683c198a4eb9c0c3b2d7db7833c5e6db537f20be2a79fb1';
+  '958a5063f1f5aee880e8881441134a31b5c1979e00d33bfb51782a4c939cb2c3';
 export async function assertSharedCleanupCatalog(tx: Prisma.TransactionClient) {
   const rows = await tx.$queryRaw<
     { table: string; name: string; target: string; definition: string }[]

@@ -1913,6 +1913,15 @@ export class CollaborationService {
             : undefined,
         );
         if (decision === 'accept' && custody.spaceId === custody.scopeId) {
+          if (custody.kind === 'COMPANY') {
+            await this.auth.revokeAllInside(tx, fromUser);
+            // Keep only the session that just supplied the recipient's provider proof.
+            await this.auth.revokeOtherSessionsInside(
+              tx,
+              actor.userId,
+              actor.sessionId,
+            );
+          }
           const acquired = randomUUID();
           await tx.sharedAuditEvent.create({
             data: {

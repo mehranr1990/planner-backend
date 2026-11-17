@@ -639,6 +639,18 @@ export class CompanyResourceRequestsService {
           }))
         )
           throw new ConflictException({ code: 'RESOURCE_UNAVAILABLE' });
+        if (
+          (await s.tx.companyAssetCustody.count({
+            where: { resourceId: row.resourceId, returnedAt: null },
+          })) ||
+          (await s.tx.companyAssetMaintenance.count({
+            where: {
+              resourceId: row.resourceId,
+              state: { in: ['SCHEDULED', 'IN_PROGRESS'] },
+            },
+          }))
+        )
+          throw new ConflictException({ code: 'RESOURCE_UNAVAILABLE' });
         const allocation = await s.tx.companyResourceAllocation.create({
           data: {
             id: randomUUID(),

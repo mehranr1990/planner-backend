@@ -15,7 +15,10 @@ import { RewardsPort } from './modules/rewards/public/index.js';
 import { PersonalLifecycle } from './modules/account/public/index.js';
 import { SyncService } from './modules/sync/public/index.js';
 import { ProjectCleanupService } from './modules/projects/public/index.js';
-import { CompanyCleanupService } from './modules/companies/public/index.js';
+import {
+  CompanyCleanupService,
+  CompanyPolicyWorker,
+} from './modules/companies/public/index.js';
 import { TeamCleanupService } from './modules/teams/public/index.js';
 import { SocialLifecycle } from './modules/social/public/index.js';
 import {
@@ -50,6 +53,7 @@ try {
     const projectCleanup = await app.get(ProjectCleanupService).consume();
     const teamCleanup = await app.get(TeamCleanupService).consume();
     const socialCleanup = await app.get(SocialLifecycle).consume();
+    const companyPolicy = await app.get(CompanyPolicyWorker).consume();
     const companyCleanup = await app.get(CompanyCleanupService).consume();
     const conversationCleanup = await app.get(ConversationLifecycle).consume();
     const meetingCleanup = await app.get(MeetingLifecycle).consume();
@@ -65,6 +69,7 @@ try {
       projectCleanup ||
       teamCleanup ||
       socialCleanup ||
+      companyPolicy ||
       companyCleanup ||
       conversationCleanup ||
       meetingCleanup ||

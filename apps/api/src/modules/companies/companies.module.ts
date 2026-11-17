@@ -1,3 +1,11 @@
+import { CompanyPolicyWorker } from './application/company-policy-worker.service.js';
+import { CompanyAssetsService } from './application/company-assets.service.js';
+import { CompanyPerformanceService } from './application/company-performance.service.js';
+import { CompanyGapQueriesService } from './application/company-gap-queries.service.js';
+import { CompanyAccessGovernanceService } from './application/company-access-governance.service.js';
+import { CompanyApprovalPoliciesService } from './application/company-approval-policies.service.js';
+import { CompanyBudgetAlertsService } from './application/company-budget-alerts.service.js';
+import { CompanyGapClosureController } from './http/company-gap-closure.controller.js';
 import { CompanyGoalsService } from './application/company-goals.service.js';
 import { CompanyRoomsService } from './application/company-rooms.service.js';
 import { CompanyKnowledgePagesService } from './application/company-knowledge-pages.service.js';
@@ -67,6 +75,13 @@ export class CompaniesModule {
       module: CompaniesModule,
       imports: [projects, storage, teams, calendar, goals],
       providers: [
+        CompanyPolicyWorker,
+        CompanyAssetsService,
+        CompanyPerformanceService,
+        CompanyGapQueriesService,
+        CompanyAccessGovernanceService,
+        CompanyApprovalPoliciesService,
+        CompanyBudgetAlertsService,
         CompanyAssociationsService,
         CompanyResourceRequestsService,
         CompanyCleanupService,
@@ -87,6 +102,7 @@ export class CompaniesModule {
         CompanyEmployeeFilesService,
       ],
       controllers: [
+        CompanyGapClosureController,
         CompanySettingsController,
         CompanyCompletionController,
         CompanyAssociationsController,
@@ -99,6 +115,7 @@ export class CompaniesModule {
         CompanyKnowledgeController,
       ],
       exports: [
+        CompanyPolicyWorker,
         CompanyCleanupService,
         CompanyLifecycleService,
         CompanyFinanceService,

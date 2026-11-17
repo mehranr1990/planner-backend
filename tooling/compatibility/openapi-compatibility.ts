@@ -240,6 +240,16 @@ export function assertOpenApiContract(document: unknown): {
   }
   return { references, operations: ids.size };
 }
+const companyGapExtensions = JSON.parse(
+  fs.readFileSync(
+    new URL('./company-gap-api-extensions.json', import.meta.url),
+    'utf8',
+  ),
+) as Record<string, { previous: string[]; approved: string }>;
+export function approvedCompanyHash(contract: string, previous: string) {
+  const change = companyGapExtensions[contract];
+  return change?.previous.includes(previous) ? change.approved : previous;
+}
 export function assertApiCompatible(
   document: unknown,
   baseline: Record<string, string>,
@@ -249,10 +259,16 @@ export function assertApiCompatible(
     const extension = responseExtensions[contract];
     if (
       current[contract] !==
-        approvedTeamHash(contract, approvedProjectHash(contract, hash)) &&
+        approvedCompanyHash(
+          contract,
+          approvedTeamHash(contract, approvedProjectHash(contract, hash)),
+        ) &&
       !(
         extension?.previous === hash &&
-        approvedTeamHash(contract, extension.approved) === current[contract]
+        approvedCompanyHash(
+          contract,
+          approvedTeamHash(contract, extension.approved),
+        ) === current[contract]
       )
     )
       throw new Error(

@@ -21,6 +21,7 @@ const base = {
 export const CompanyFinancialWorkflowKindSchema = z.enum([
   'EXPENSE',
   'REIMBURSEMENT',
+  'BUDGET_CHANGE',
 ]);
 export const CompanyFinancialWorkflowCreateSchema = z.strictObject({
   id: uuid,
@@ -75,6 +76,7 @@ export const CompanyFinancialApprovalSchema = z.strictObject({
   workflowVersionId: uuid,
   expenseVersionId: uuid.nullable(),
   reimbursementId: uuid.nullable(),
+  budgetChangeRequestId: uuid.nullable().optional(),
   requester: CompanyStaffMemberDisplaySchema,
   beneficiary: CompanyStaffMemberDisplaySchema.nullable(),
   attempt: positive,

@@ -24,6 +24,7 @@ import { CollaborationLimit } from './collaboration-limit.js';
 import { SharedAuthority } from '../public/shared-authority.js';
 import type { SharedAccess } from '../public/shared-authority.js';
 import { companyDefaultPolicy } from '../domain/shared-policy.js';
+import { SharedRetentionSchema } from './shared-retention.js';
 type Tx = Prisma.TransactionClient;
 type Role = z.infer<typeof c.CompanyMemberRoleSchema>;
 type Page = z.infer<typeof c.CompanyPageQuerySchema>;
@@ -52,6 +53,283 @@ export type CompanyTransaction = {
 };
 @Injectable()
 export class CompanyAccess {
+  sensitiveAudit(actor: RequestActor, id: string, q: Page) {
+    return this.read(actor, id, async (ctx) => {
+      if (!this.isAdmin(ctx)) throw new ForbiddenException();
+      const context = 'company.sensitive.audit:' + id,
+        stamp = String(ctx.root.authorizationVersion),
+        after = this.kernel.cursorPosition(
+          context,
+          stamp,
+          actor.userId,
+          q.after,
+        );
+      const rows = await ctx.tx.sharedAuditEvent.findMany({
+        where: {
+          spaceId: id,
+          OR: [
+            'company.role.',
+            'company.access.',
+            'company.approval.',
+            'company.finance.',
+            'company.recovery.',
+            'company.invitation.',
+            'handover.',
+            'custody.',
+            'company.membership.',
+          ].map((prefix) => ({ action: { startsWith: prefix } })),
+          ...(after ? { id: { gt: after } } : {}),
+        },
+        orderBy: { id: 'asc' },
+        take: q.limit + 1,
+      });
+      return this.kernel.cursorPage(context, stamp, actor.userId, {
+        items: rows.slice(0, q.limit).map((r) =>
+          c.CompanySensitiveAuditSchema.strip().parse({
+            ...r,
+            occurredAt: r.occurredAt.toISOString(),
+          }),
+        ),
+        nextCursor: rows.length > q.limit ? rows[q.limit - 1]!.id : null,
+      });
+    });
+  }
+  /** Background work executes the configured publisher's current authority; no provider session is fabricated. */
+  async policyMaintenance<T>(
+    spaceId: string,
+    publisherActorId: string,
+    action: string,
+    target: string,
+    work: (ctx: CompanyTransaction) => Promise<T>,
+  ) {
+    const publisher = await this.db.client.sharedActor.findFirst({
+      where: {
+        spaceId,
+        id: publisherActorId,
+        state: 'ACTIVE',
+        userId: { not: null },
+      },
+    });
+    if (!publisher?.userId) throw new NotFoundException();
+    const users = await this.staffHints(spaceId);
+    return this.collaboration.signed(
+      null,
+      spaceId,
+      users,
+      action,
+      target,
+      async (tx, now, locked, begin) => {
+        const current = await tx.sharedActor.findFirst({
+          where: {
+            spaceId,
+            id: publisherActorId,
+            userId: publisher.userId,
+            state: 'ACTIVE',
+          },
+        });
+        if (!current) throw new NotFoundException();
+        return work(
+          await this.context(
+            tx,
+            {
+              userId: publisher.userId!,
+              requestId: target,
+              correlationId: target,
+            },
+            spaceId,
+            now,
+            locked,
+            begin,
+          ),
+        );
+      },
+    );
+  }
+  retentionReadiness(actor: RequestActor, id: string) {
+    return this.read(actor, id, async (ctx) => {
+      if (!this.isAdmin(ctx)) throw new ForbiddenException();
+      const custody = await ctx.tx.sharedCustody.findUniqueOrThrow({
+        where: { spaceId: id },
+      });
+      const policy = await ctx.tx.sharedRetentionPolicy.findUnique({
+          where: { version: custody.retentionPolicyVersion },
+        }),
+        parsed = SharedRetentionSchema.safeParse(policy?.configuration);
+      return c.CompanyRetentionReadinessSchema.parse({
+        companyId: id,
+        policyVersion: custody.retentionPolicyVersion,
+        approvalRecorded:
+          parsed.success &&
+          parsed.data.policyVersion === policy?.version &&
+          parsed.data.applicableContexts.includes('COMPANY') &&
+          parsed.data.approvalReference === policy?.approvalReference,
+        sharedEnabled: true,
+        activationAuthorized: false,
+        holds: parsed.success
+          ? parsed.data.holds.filter((h) => h.state === 'ACTIVE').length
+          : null,
+      });
+    });
+  }
+  transferHistory(actor: RequestActor, id: string, q: Page) {
+    return this.read(actor, id, async (ctx) => {
+      if (!this.isAdmin(ctx)) throw new ForbiddenException();
+      const rows = await ctx.tx.companyDepartmentTransfer.findMany({
+        where: { spaceId: id },
+        take: 1001,
+      });
+      if (rows.length > 1000) throw new PayloadTooLargeException();
+      const context = 'company.transfer.history:' + id,
+        stamp = String(ctx.root.authorizationVersion);
+      const after = this.kernel.cursorPosition(
+        context,
+        stamp,
+        actor.userId,
+        q.after,
+      );
+      const items = [];
+      for (const r of rows
+        .filter((r) => !after || r.id > after)
+        .sort((a, b) => (a.id < b.id ? -1 : 1))
+        .slice(0, q.limit + 1)) {
+        const seat = await ctx.tx.contextAccess.findUniqueOrThrow({
+          where: { id: r.fromAccessId },
+        });
+        items.push(
+          c.CompanyTransferHistorySchema.strip().parse({
+            ...r,
+            employeeActorId: seat.actorId,
+            fromDepartmentId: r.fromDepartmentId,
+            toDepartmentId: r.toDepartmentId,
+            fromUnitId: r.fromUnitId,
+            toUnitId: r.toUnitId,
+            state: 'CONFIRMED',
+            effectiveAt: r.createdAt.toISOString(),
+            createdAt: r.createdAt.toISOString(),
+          }),
+        );
+      }
+      return this.kernel.cursorPage(context, stamp, actor.userId, {
+        items: items.slice(0, q.limit),
+        nextCursor: items.length > q.limit ? items[q.limit - 1]!.id : null,
+      });
+    });
+  }
+  sentDetails(actor: RequestActor, id: string, scopeId: string, q: Page) {
+    return this.read(actor, id, async (ctx) => {
+      await this.administer(ctx, scopeId, ['MEMBER']);
+      const context = 'company.sent.details:' + id + ':' + scopeId,
+        stamp = String(ctx.root.authorizationVersion),
+        after = this.kernel.cursorPosition(
+          context,
+          stamp,
+          actor.userId,
+          q.after,
+        );
+      const rows = await ctx.tx.contextInvitation.findMany({
+        where: {
+          spaceId: id,
+          companyScopeId: scopeId,
+          ...(after ? { id: { gt: after } } : {}),
+        },
+        orderBy: { id: 'asc' },
+        take: 1001,
+      });
+      if (rows.length > 1000) throw new PayloadTooLargeException();
+      const visible = [];
+      for (const r of rows) {
+        try {
+          await this.administer(ctx, scopeId, [
+            c.CompanyMemberRoleSchema.parse(r.memberRole),
+          ]);
+        } catch (e) {
+          if (e instanceof ForbiddenException || e instanceof NotFoundException)
+            continue;
+          throw e;
+        }
+        const identity = r.recipientUserId
+          ? await this.identity.current(ctx.tx, r.recipientUserId)
+          : null;
+        visible.push(
+          c.CompanySentInvitationSchema.parse({
+            id: r.id,
+            scopeId,
+            memberRole: r.memberRole,
+            recipientEmail: identity?.email ?? r.recipientEmail,
+            state:
+              r.state === 'PENDING' && r.expiresAt <= ctx.now
+                ? 'EXPIRED'
+                : r.state,
+            revision: r.revision,
+            createdAt: r.createdAt.toISOString(),
+            sentAt: (r.resentAt ?? r.createdAt).toISOString(),
+            expiresAt: r.expiresAt.toISOString(),
+          }),
+        );
+      }
+      return this.kernel.cursorPage(context, stamp, actor.userId, {
+        items: visible.slice(0, q.limit),
+        nextCursor: visible.length > q.limit ? visible[q.limit - 1]!.id : null,
+      });
+    });
+  }
+  resend(
+    actor: RequestActor,
+    id: string,
+    scopeId: string,
+    offerId: string,
+    revision: number,
+    raw: string | undefined,
+  ) {
+    return this.write(
+      actor,
+      id,
+      'company.invitation.resend',
+      offerId,
+      async (ctx) => {
+        const row = await ctx.tx.contextInvitation.findFirst({
+          where: { spaceId: id, companyScopeId: scopeId, id: offerId },
+        });
+        if (!row) throw new NotFoundException();
+        await this.administer(ctx, scopeId, [
+          c.CompanyMemberRoleSchema.parse(row.memberRole),
+        ]);
+        await this.issuer(ctx, row);
+        await this.once(
+          ctx,
+          scopeId,
+          'company.invitation.resend',
+          raw,
+          { offerId, revision },
+          async () => {
+            if (row.state !== 'PENDING' || row.expiresAt <= ctx.now)
+              throw new ConflictException({
+                code: 'INVITATION_RESEND_UNAVAILABLE',
+              });
+            if (row.revision !== revision)
+              throw new ConflictException({ code: 'STALE_REVISION' });
+            await this.limit.take('invitation.context:' + id, 20, ctx.tx);
+            const audit = await ctx.begin();
+            await ctx.tx.contextInvitation.update({
+              where: { id: offerId },
+              data: {
+                proofHash: digest(randomBytes(32).toString('base64url')),
+                resentAt: ctx.now,
+                revision: { increment: 1 },
+              },
+            });
+            await this.effect(ctx, 'company.invitation.resend', offerId, audit);
+            return { id: offerId };
+          },
+        );
+        return this.invitation(
+          await ctx.tx.contextInvitation.findUniqueOrThrow({
+            where: { id: offerId },
+          }),
+        );
+      },
+    );
+  }
   constructor(
     @Inject(DatabaseService) private readonly db: DatabaseService,
     @Inject(SharedKernel) readonly kernel: SharedKernel,
@@ -516,10 +794,11 @@ export class CompanyAccess {
         generation: number;
         actorId: string;
         userId: string;
+        role: string;
       }[]
     >`
-      SELECT a.id "accessId",a.generation,a."actorId",u.id "userId"
-      FROM "ContextAccess" a JOIN "SharedActor" actor ON actor.id=a."actorId" AND actor.state='ACTIVE'
+      SELECT a.id "accessId",a.generation,a."actorId",u.id "userId",CASE WHEN a.id=c."primaryOwnerAccessId" THEN 'OWNER' ELSE a."memberRole" END role
+      FROM "ContextAccess" a JOIN "SharedCustody" c ON c."spaceId"=a."spaceId" JOIN "SharedActor" actor ON actor.id=a."actorId" AND actor.state='ACTIVE'
       JOIN "User" u ON u.id=actor."userId" AND u."emailVerified"=true
       JOIN "Space" p ON p."ownerUserId"=u.id AND p.kind='PERSONAL' AND p."accessClosedAt" IS NULL
       JOIN "ContextAccess" root ON root."spaceId"=a."spaceId" AND root."scopeId"=a."spaceId" AND root."actorId"=a."actorId" AND root.state='ACTIVE' AND root."memberRole" IS NOT NULL
@@ -1567,7 +1846,16 @@ export class CompanyAccess {
       }),
     ]);
     return {
-      activeAllocations: allocations,
+      activeAllocations:
+        allocations +
+        (await ctx.tx.companyAssetCustody.count({
+          where: {
+            spaceId: ctx.spaceId,
+            scopeId: row.scopeId,
+            memberAccessId: row.id,
+            returnedAt: null,
+          },
+        })),
       pendingResourceRequests: requests,
       pendingExpenseReviews: reviews,
     };
@@ -1744,12 +2032,26 @@ export class CompanyAccess {
             rootGeneration: root.generation,
           },
         });
+        const placement = async (scopeId: string) => {
+          const unit = await ctx.tx.companyUnit.findFirst({
+            where: { spaceId: ctx.spaceId, scopeId },
+          });
+          return unit
+            ? { departmentId: unit.departmentId, unitId: unit.id }
+            : { departmentId: scopeId, unitId: null };
+        };
+        const fromPlacement = await placement(input.fromScopeId),
+          toPlacement = await placement(input.toScopeId);
         await ctx.tx.companyDepartmentTransfer.create({
           data: {
             id: input.id,
             spaceId: ctx.spaceId,
             fromScopeId: input.fromScopeId,
             toScopeId: input.toScopeId,
+            fromDepartmentId: fromPlacement.departmentId,
+            toDepartmentId: toPlacement.departmentId,
+            fromUnitId: fromPlacement.unitId,
+            toUnitId: toPlacement.unitId,
             fromAccessId: row.id,
             fromGeneration: row.generation,
             toAccessId: target.id,

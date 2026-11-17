@@ -4322,6 +4322,7 @@ model CompanyAvailabilityDay {
 }
 
 model CompanyResource {
+ assetTag String? @db.VarChar(100)
  allocations CompanyResourceAllocation[] @relation("CompanyResourceAllocation_resource")
  requests CompanyResourceRequest[] @relation("CompanyResourceRequest_resource")
  typeId String? @db.Uuid
@@ -4762,6 +4763,10 @@ model CompanyFinancialWorkflowStep {
 }
 
 model CompanyFinancialApproval {
+ budgetChangeRequestId String? @db.Uuid
+ policyVersionId String? @db.Uuid
+ escalateAfterSeconds Int?
+ stepStartedAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
  id String @id @db.Uuid
  spaceId String @db.Uuid
  scopeId String @db.Uuid
@@ -4797,6 +4802,9 @@ model CompanyFinancialApproval {
 }
 
 model CompanyFinancialApprovalEvent {
+ delegationId String? @db.Uuid
+ previousStatus String? @db.VarChar(10)
+ resultingStatus String? @db.VarChar(10)
  reviewerAccessId String? @db.Uuid
  reviewerGeneration Int?
  reviewer ContextAccess? @relation("CompanyFinancialApprovalEvent_reviewer",fields:[spaceId,scopeId,reviewerAccessId],references:[spaceId,scopeId,id],onDelete:NoAction,onUpdate:NoAction,map:"CompanyFinancialApprovalEvent_reviewer")
@@ -6744,6 +6752,10 @@ model CompanyEmployeeFileLog {
  @@index([spaceId,subjectAccessId,id],map:"CompanyEmployeeFileLog_page")
 }
 model CompanyDepartmentTransfer {
+ fromDepartmentId String? @db.Uuid
+ toDepartmentId String? @db.Uuid
+ fromUnitId String? @db.Uuid
+ toUnitId String? @db.Uuid
  id String @id @db.Uuid
  spaceId String @db.Uuid
  fromScopeId String @db.Uuid
@@ -6800,4 +6812,308 @@ model BrainDumpLine {
  struck Boolean @default(false)
  updatedAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
  @@unique([pageId,position])
+}
+
+// P4-GAP-CLOSURE: composite containment and immutable facts enforced by reviewed SQL.
+model CompanyAssetCustody {
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ resourceId String @db.Uuid
+ memberAccessId String @db.Uuid
+ memberGeneration Int
+ issuedByActorId String @db.Uuid
+ assignedAt DateTime @db.Timestamptz(3)
+ expectedReturnAt DateTime? @db.Timestamptz(3)
+ returnedAt DateTime? @db.Timestamptz(3)
+ returnedByActorId String? @db.Uuid
+ revision Int @default(1)
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ updatedAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ @@unique([spaceId,scopeId,id],map:"CompanyAssetCustody_scope")
+ @@index([spaceId,scopeId,id],map:"CompanyAssetCustody_page")
+}
+model CompanyAssetMaintenance {
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ resourceId String @db.Uuid
+ kind String @db.VarChar(100)
+ reason String? @db.VarChar(2000)
+ state String @default("SCHEDULED") @db.VarChar(12)
+ scheduledAt DateTime @db.Timestamptz(3)
+ completedAt DateTime? @db.Timestamptz(3)
+ responsibleAccessId String @db.Uuid
+ responsibleGeneration Int
+ createdByActorId String @db.Uuid
+ revision Int @default(1)
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ updatedAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ @@unique([spaceId,scopeId,id],map:"CompanyAssetMaintenance_scope")
+ @@index([spaceId,scopeId,id],map:"CompanyAssetMaintenance_page")
+}
+model CompanyKpiObservation {
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ metric String @db.VarChar(100)
+ source String @db.VarChar(300)
+ unit String @db.VarChar(80)
+ value Decimal @db.Decimal(28,4)
+ periodStart DateTime @db.Timestamptz(3)
+ periodEnd DateTime @db.Timestamptz(3)
+ recordedByActorId String @db.Uuid
+ revision Int @default(1)
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ updatedAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ @@unique([spaceId,scopeId,id],map:"CompanyKpiObservation_scope")
+ @@index([spaceId,scopeId,id],map:"CompanyKpiObservation_page")
+}
+model CompanyReviewCycle {
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ title String @db.VarChar(300)
+ periodStart DateTime @db.Timestamptz(3)
+ periodEnd DateTime @db.Timestamptz(3)
+ state String @default("DRAFT") @db.VarChar(10)
+ createdByActorId String @db.Uuid
+ revision Int @default(1)
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ updatedAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ @@unique([spaceId,scopeId,id],map:"CompanyReviewCycle_scope")
+ @@index([spaceId,scopeId,id],map:"CompanyReviewCycle_page")
+}
+model CompanyPerformanceReview {
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ cycleId String @db.Uuid
+ subjectAccessId String @db.Uuid
+ subjectGeneration Int
+ reviewerAccessId String @db.Uuid
+ reviewerGeneration Int
+ state String @default("DRAFT") @db.VarChar(10)
+ redactedAt DateTime? @db.Timestamptz(3)
+ revision Int @default(1)
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ updatedAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ @@unique([spaceId,scopeId,id],map:"CompanyPerformanceReview_scope")
+ @@index([spaceId,scopeId,id],map:"CompanyPerformanceReview_page")
+}
+model CompanyReviewRevision {
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ reviewId String @db.Uuid
+ body String? @db.VarChar(10000)
+ state String @db.VarChar(10)
+ actorId String @db.Uuid
+ redactedAt DateTime? @db.Timestamptz(3)
+ revision Int @default(1)
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ updatedAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ @@unique([spaceId,scopeId,id],map:"CompanyReviewRevision_scope")
+ @@index([spaceId,scopeId,id],map:"CompanyReviewRevision_page")
+}
+model CompanyOneOnOne {
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ managerAccessId String @db.Uuid
+ managerGeneration Int
+ employeeAccessId String @db.Uuid
+ employeeGeneration Int
+ meetingAt DateTime @db.Timestamptz(3)
+ notes String? @db.VarChar(10000)
+ redactedAt DateTime? @db.Timestamptz(3)
+ revision Int @default(1)
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ updatedAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ @@unique([spaceId,scopeId,id],map:"CompanyOneOnOne_scope")
+ @@index([spaceId,scopeId,id],map:"CompanyOneOnOne_page")
+}
+model CompanyOneOnOneRevision {
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ recordId String @db.Uuid
+ meetingAt DateTime @db.Timestamptz(3)
+ notes String? @db.VarChar(10000)
+ actorId String @db.Uuid
+ redactedAt DateTime? @db.Timestamptz(3)
+ revision Int @default(1)
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ updatedAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ @@unique([spaceId,scopeId,id],map:"CompanyOneOnOneRevision_scope")
+ @@index([spaceId,scopeId,id],map:"CompanyOneOnOneRevision_page")
+}
+model CompanyOneOnOneAction {
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ recordId String @db.Uuid
+ body String? @db.VarChar(2000)
+ state String @default("OPEN") @db.VarChar(10)
+ actorId String @db.Uuid
+ redactedAt DateTime? @db.Timestamptz(3)
+ revision Int @default(1)
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ updatedAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ @@unique([spaceId,scopeId,id],map:"CompanyOneOnOneAction_scope")
+ @@index([spaceId,scopeId,id],map:"CompanyOneOnOneAction_page")
+}
+model CompanyApprovalDelegation {
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ delegatorAccessId String @db.Uuid
+ delegatorGeneration Int
+ delegateAccessId String @db.Uuid
+ delegateGeneration Int
+ workflowVersionId String @db.Uuid
+ validFrom DateTime @db.Timestamptz(3)
+ expiresAt DateTime @db.Timestamptz(3)
+ revokedAt DateTime? @db.Timestamptz(3)
+ actorId String @db.Uuid
+ revision Int @default(1)
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ updatedAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ @@unique([spaceId,scopeId,id],map:"CompanyApprovalDelegation_scope")
+ @@index([spaceId,scopeId,id],map:"CompanyApprovalDelegation_page")
+}
+model CompanyCustomRole {
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ title String @db.VarChar(100)
+ capabilities String[] @db.VarChar(40)
+ archivedAt DateTime? @db.Timestamptz(3)
+ actorId String @db.Uuid
+ revision Int @default(1)
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ updatedAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ @@unique([spaceId,scopeId,id],map:"CompanyCustomRole_scope")
+ @@index([spaceId,scopeId,id],map:"CompanyCustomRole_page")
+}
+model CompanyRoleAssignment {
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ roleId String @db.Uuid
+ memberAccessId String @db.Uuid
+ memberGeneration Int
+ revokedAt DateTime? @db.Timestamptz(3)
+ actorId String @db.Uuid
+ revision Int @default(1)
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ updatedAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ @@unique([spaceId,scopeId,id],map:"CompanyRoleAssignment_scope")
+ @@index([spaceId,scopeId,id],map:"CompanyRoleAssignment_page")
+}
+model CompanyTemporaryGrant {
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ memberAccessId String @db.Uuid
+ memberGeneration Int
+ capabilities String[] @db.VarChar(40)
+ validFrom DateTime @db.Timestamptz(3)
+ expiresAt DateTime @db.Timestamptz(3)
+ revokedAt DateTime? @db.Timestamptz(3)
+ actorId String @db.Uuid
+ reason String? @db.VarChar(2000)
+ revision Int @default(1)
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ updatedAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ @@unique([spaceId,scopeId,id],map:"CompanyTemporaryGrant_scope")
+ @@index([spaceId,scopeId,id],map:"CompanyTemporaryGrant_page")
+}
+model CompanyAccessReview {
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ memberAccessId String @db.Uuid
+ memberGeneration Int
+ decision String @db.VarChar(10)
+ reason String? @db.VarChar(2000)
+ actorId String @db.Uuid
+ revision Int @default(1)
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ updatedAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ @@unique([spaceId,scopeId,id],map:"CompanyAccessReview_scope")
+ @@index([spaceId,scopeId,id],map:"CompanyAccessReview_page")
+}
+model CompanyApprovalPolicyVersion {
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ kind String @db.VarChar(20)
+ state String @default("DRAFT") @db.VarChar(10)
+ rules Json
+ effectiveFrom DateTime @db.Timestamptz(3)
+ effectiveUntil DateTime? @db.Timestamptz(3)
+ actorId String @db.Uuid
+ revision Int @default(1)
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ updatedAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ @@unique([spaceId,scopeId,id],map:"CompanyApprovalPolicyVersion_scope")
+ @@index([spaceId,scopeId,id],map:"CompanyApprovalPolicyVersion_page")
+}
+model CompanyBudgetAlertRule {
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ budgetId String @db.Uuid
+ threshold Decimal @db.Decimal(28,4)
+ basis String @db.VarChar(12)
+ revokedAt DateTime? @db.Timestamptz(3)
+ actorId String @db.Uuid
+ revision Int @default(1)
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ updatedAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ @@unique([spaceId,scopeId,id],map:"CompanyBudgetAlertRule_scope")
+ @@index([spaceId,scopeId,id],map:"CompanyBudgetAlertRule_page")
+}
+model CompanyBudgetAlertOccurrence {
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ ruleId String @db.Uuid
+ actorId String @db.Uuid
+ revision Int @default(1)
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ updatedAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ @@unique([spaceId,scopeId,id],map:"CompanyBudgetAlertOccurrence_scope")
+ @@index([spaceId,scopeId,id],map:"CompanyBudgetAlertOccurrence_page")
+}
+model CompanyRecoveryCase {
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ requesterAccessId String @db.Uuid
+ requesterGeneration Int
+ policyVersion String? @db.VarChar(80)
+ state String @default("POLICY_GATED") @db.VarChar(20)
+ evidenceReference String? @db.VarChar(200)
+ actorId String @db.Uuid
+ revision Int @default(1)
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ updatedAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ @@unique([spaceId,scopeId,id],map:"CompanyRecoveryCase_scope")
+ @@index([spaceId,scopeId,id],map:"CompanyRecoveryCase_page")
+}
+
+model CompanyRecoveryPolicyDraft {
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ version String @db.VarChar(80)
+ configuration Json
+ actorId String @db.Uuid
+ revision Int @default(1)
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ updatedAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ @@unique([spaceId,version])
+ @@index([spaceId,id])
 }

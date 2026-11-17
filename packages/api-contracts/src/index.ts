@@ -106,3 +106,5 @@ export * from './working-hours.js';
 export * from './project-gap-closure.js';
 
 export * from './team-gap-closure.js';
+
+export * from './company-gap-closure.js';

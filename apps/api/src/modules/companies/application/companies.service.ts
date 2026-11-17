@@ -104,7 +104,15 @@ export class CompaniesService {
     const chain = await this.chain(ctx, scopeId);
     if (administrative && this.access.isAdmin(ctx)) return chain;
     const rootRole = c.CompanyRoleSchema.parse(ctx.root.role);
-    if (!companyAllows(chain.slice(0, 1), key, rootRole))
+    if (
+      !(await this.readAllowed(
+        ctx,
+        ctx.spaceId,
+        chain.slice(0, 1),
+        key,
+        rootRole,
+      ))
+    )
       throw new NotFoundException();
     const role =
       scopeId === ctx.spaceId
@@ -112,8 +120,88 @@ export class CompaniesService {
         : c.CompanyRoleSchema.parse(
             (await this.access.seat(ctx, scopeId)).role,
           );
-    if (!companyAllows(chain, key, role)) throw new NotFoundException();
+    if (!(await this.readAllowed(ctx, scopeId, chain, key, role)))
+      throw new NotFoundException();
     return chain;
+  }
+  private async readAllowed(
+    ctx: CompanyTransaction,
+    scopeId: string,
+    chain: PolicyChain,
+    key: CompanyRule['key'],
+    role: z.infer<typeof c.CompanyRoleSchema>,
+  ) {
+    if (companyAllows(chain, key, role)) return true;
+    // Explicit grants may replace a default; mandatory/optional ceilings always intersect.
+    if (
+      chain.some((p) =>
+        p.rules.some(
+          (r) =>
+            r.key === key && r.mode !== 'DEFAULT' && !r.roles.includes(role),
+        ),
+      )
+    )
+      return false;
+    const seat =
+      scopeId === ctx.spaceId ? ctx.root : await this.access.seat(ctx, scopeId);
+    const member = {
+      memberAccessId: seat.accessId,
+      memberGeneration: seat.generation,
+    };
+    if (
+      await ctx.tx.companyTemporaryGrant.findFirst({
+        where: {
+          spaceId: ctx.spaceId,
+          scopeId,
+          ...member,
+          revokedAt: null,
+          validFrom: { lte: ctx.now },
+          expiresAt: { gt: ctx.now },
+          capabilities: { has: key },
+        },
+      })
+    )
+      return true;
+    const assignments = await ctx.tx.companyRoleAssignment.findMany({
+      where: { spaceId: ctx.spaceId, scopeId, ...member, revokedAt: null },
+      take: 1001,
+    });
+    if (assignments.length > 1000) return false;
+    return !!(await ctx.tx.companyCustomRole.findFirst({
+      where: {
+        spaceId: ctx.spaceId,
+        scopeId,
+        id: { in: assignments.map((a) => a.roleId) },
+        archivedAt: null,
+        capabilities: { has: key },
+      },
+    }));
+  }
+  async effectiveReadPermissions(
+    actor: RequestActor,
+    id: string,
+    scopeId: string,
+  ) {
+    await this.hint(id);
+    return this.access.read(actor, id, async (ctx) => {
+      await this.staffVisibility(ctx, scopeId, false);
+      const capabilities = { 'structure.read': false, 'directory.read': false };
+      for (const key of ['structure.read', 'directory.read'] as const)
+        try {
+          await this.visible(ctx, scopeId, key, false);
+          capabilities[key] = true;
+        } catch (e) {
+          if (
+            !(e instanceof NotFoundException) &&
+            !(e instanceof ForbiddenException)
+          )
+            throw e;
+        }
+      return c.CompanyEffectiveReadPermissionsSchema.parse({
+        scopeId,
+        capabilities,
+      });
+    });
   }
   async create(
     actor: RequestActor,
@@ -915,6 +1003,10 @@ export class CompaniesService {
     await this.access.seat(ctx, scopeId);
     await this.path(ctx, scopeId);
     if (ordinary) await this.visible(ctx, scopeId, 'directory.read', false);
+  }
+  async organizationVisibility(ctx: CompanyTransaction, scopeId: string) {
+    await this.staffVisibility(ctx, scopeId, true);
+    await this.visible(ctx, scopeId, 'structure.read', false);
   }
   async invite(
     actor: RequestActor,

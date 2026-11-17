@@ -1,9 +1,11 @@
+import { verifyCompanyGapUpgrade } from './company-gap-upgrade.ts';
 import fs from 'node:fs';
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import type { Client } from 'pg';
 import { reviewMigrations } from './migration-safety.ts';
-import { SHARED_CLEANUP_FK_SHA256 } from '../../apps/api/src/platform/lifecycle/shared-cleanup-catalog.ts';
+const SHARED_CLEANUP_FK_SHA256 =
+  '277ebbfeb7671c28d683c198a4eb9c0c3b2d7db7833c5e6db537f20be2a79fb1';
 /** Continue the existing populated upgrade rehearsal, exclusively in its owned test schema. */
 export async function verifyProjectGapUpgrade(input: {
   client: Client;
@@ -12,7 +14,9 @@ export async function verifyProjectGapUpgrade(input: {
   deploy: () => void;
 }) {
   const { client, schema } = input,
-    names = reviewMigrations(),
+    names = reviewMigrations().filter(
+      (name) => name < '202611160073_company_gap_closure',
+    ),
     boundary = names.indexOf('202611150060_project_order_phase_dates');
   assert.equal(boundary, 84);
   names.slice(69, boundary).forEach(input.copy);
@@ -205,4 +209,5 @@ export async function verifyProjectGapUpgrade(input: {
   process.stdout.write(
     `PASS: Projects gap closure preserves ${tables.size} predecessor datasets and all 84 historical checksums; ${names.length - boundary} interruption rollbacks, repeated deployment, stable risk-code backfill and exact 970-FK cleanup catalog.\n`,
   );
+  await verifyCompanyGapUpgrade(input);
 }

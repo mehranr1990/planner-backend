@@ -1,0 +1,80 @@
+{
+  "get /api/v1/companies/{id}/contexts/{scopeId}/notifications response 200": {
+    "previous": [
+      "28e9af731be973a59edb81d8f8ea457c535f0f52595e5b96b29a6127d4960e58"
+    ],
+    "approved": "90974bb51ba6e27af454404d34965741686453c7cb71145b744ef6eb1c5f93f9"
+  },
+  "post /api/v1/companies/{id}/contexts/{scopeId}/notifications/{notificationId}/read response 200": {
+    "previous": [
+      "145144c190ab2b2b27311a88660578682f97f17c0643266edb56c7c55626ebb2"
+    ],
+    "approved": "ee132814bfab52ed61fe32aebde0d1a0b832aa17b5217ed88e52561eb99032ac"
+  },
+  "post /api/v1/companies/{id}/contexts/{scopeId}/finance/approval-workflows request": {
+    "previous": [
+      "04bd10efa09d0fdede7ae18761f014aba18880308a3bb53d2be0fb3753935994"
+    ],
+    "approved": "c6662356ea6ffcfb41db345c8e8ebb039fada42d80f3ee37f7f54668d39b2a43"
+  },
+  "post /api/v1/companies/{id}/contexts/{scopeId}/finance/approval-workflows response 201": {
+    "previous": [
+      "7d3dcd9a9b05adb51a48ec028d42c746e960c79b6469e843e189e880d83f9ac9"
+    ],
+    "approved": "c8709eb46e62a5a01a0e704ba974261bfc38f542325c937aac47f7457069eb4d"
+  },
+  "get /api/v1/companies/{id}/contexts/{scopeId}/finance/approval-workflows response 200": {
+    "previous": [
+      "50031c92ef28835e5989ae8473b20d3664bdf9f8c38bf307b287649bd7fbd525"
+    ],
+    "approved": "d3d7eca97f4f948b5f4e68cffa386c5fa4d6a7c7aa83a067ed6ae8430e814b3b"
+  },
+  "get /api/v1/companies/{id}/contexts/{scopeId}/finance/approval-workflows/{target} response 200": {
+    "previous": [
+      "7d3dcd9a9b05adb51a48ec028d42c746e960c79b6469e843e189e880d83f9ac9"
+    ],
+    "approved": "c8709eb46e62a5a01a0e704ba974261bfc38f542325c937aac47f7457069eb4d"
+  },
+  "post /api/v1/companies/{id}/contexts/{scopeId}/expenses/{target}/workflow-submit response 200": {
+    "previous": [
+      "92791ef3a5c4669a775b65fada75d1fc7563860e807a1b8a7885f0d8bc4f6e40"
+    ],
+    "approved": "5d04148f5ed05fa727c1e5bdfed3fdf317bebaf4ca5fe2392804f645889dc547"
+  },
+  "post /api/v1/companies/{id}/contexts/{scopeId}/reimbursements/{target}/submit response 200": {
+    "previous": [
+      "92791ef3a5c4669a775b65fada75d1fc7563860e807a1b8a7885f0d8bc4f6e40"
+    ],
+    "approved": "5d04148f5ed05fa727c1e5bdfed3fdf317bebaf4ca5fe2392804f645889dc547"
+  },
+  "get /api/v1/companies/{id}/contexts/{scopeId}/finance/approvals response 200": {
+    "previous": [
+      "460dffe87d3852a05e7c30f067bf802191d31d78a197eac2801455f869f60549"
+    ],
+    "approved": "e1162bb734cae2ab503deece9ae52641ccb98c69897890b0dde171b99d68cf96"
+  },
+  "get /api/v1/companies/{id}/contexts/{scopeId}/finance/approvals/{target} response 200": {
+    "previous": [
+      "92791ef3a5c4669a775b65fada75d1fc7563860e807a1b8a7885f0d8bc4f6e40"
+    ],
+    "approved": "5d04148f5ed05fa727c1e5bdfed3fdf317bebaf4ca5fe2392804f645889dc547"
+  },
+  "post /api/v1/companies/{id}/contexts/{scopeId}/finance/approvals/{target}/decision response 200": {
+    "previous": [
+      "92791ef3a5c4669a775b65fada75d1fc7563860e807a1b8a7885f0d8bc4f6e40"
+    ],
+    "approved": "5d04148f5ed05fa727c1e5bdfed3fdf317bebaf4ca5fe2392804f645889dc547"
+  },
+  "post /api/v1/companies/{id}/contexts/{scopeId}/finance/approvals/{target}/escalate response 200": {
+    "previous": [
+      "92791ef3a5c4669a775b65fada75d1fc7563860e807a1b8a7885f0d8bc4f6e40"
+    ],
+    "approved": "5d04148f5ed05fa727c1e5bdfed3fdf317bebaf4ca5fe2392804f645889dc547"
+  },
+  "post /api/v1/companies/{id}/contexts/{scopeId}/finance/approvals/{target}/restart response 200": {
+    "previous": [
+      "92791ef3a5c4669a775b65fada75d1fc7563860e807a1b8a7885f0d8bc4f6e40"
+    ],
+    "approved": "5d04148f5ed05fa727c1e5bdfed3fdf317bebaf4ca5fe2392804f645889dc547"
+  }
+}

@@ -348,7 +348,12 @@ export const KnowledgeAcknowledgementReportSchema = z.strictObject({
 });
 export const CompanyNotificationSchema = z.strictObject({
   id,
-  kind: z.enum(['KNOWLEDGE_ACK_REMINDER', 'EMPLOYEE_FILE_REQUEST']),
+  kind: z.enum([
+    'KNOWLEDGE_ACK_REMINDER',
+    'EMPLOYEE_FILE_REQUEST',
+    'BUDGET_THRESHOLD',
+    'APPROVAL_ESCALATED',
+  ]),
   subjectId: id,
   createdAt: datetime,
   readAt: datetime.nullable(),

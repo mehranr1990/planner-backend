@@ -1,7 +1,12 @@
 import fs from 'node:fs';
 import { it, expect } from 'vitest';
 import { createOpenApiDocument } from '../../packages/api-contracts/src/openapi.js';
-import { apiSignatures, assertApiCompatible } from './openapi-compatibility.js';
+import {
+  apiSignatures,
+  assertApiCompatible,
+  approvedCompanyHash,
+  approvedProjectHash,
+} from './openapi-compatibility.js';
 import { historicalCompanyCustodyResponses } from './company-custody-responses.js';
 
 const extensions = JSON.parse(
@@ -29,9 +34,15 @@ it('freezes every exact approved response extension and rejects any neighboring 
   for (const [key, extension] of Object.entries(extensions)) {
     expect(key).toMatch(/ response (200|201)$/);
     expect(signatures[key]).toBe(
-      later[key]?.previous === extension.previous
-        ? later[key].approved
-        : extension.approved,
+      approvedCompanyHash(
+        key,
+        approvedProjectHash(
+          key,
+          later[key]?.previous === extension.previous
+            ? later[key].approved
+            : extension.approved,
+        ),
+      ),
     );
   }
   for (const [method, path, status] of [

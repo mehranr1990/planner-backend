@@ -81,3 +81,32 @@ existing records and the exact approved 95-entry ledger before normal corrected
 replay. Finalization preserved existing development/test records and historical
 ledger entries. Shared activation and production/staging deployment remain outside
 this batch. See [Claude handoff](frontend-handoff/TEAMS_GAP_CLOSURE.md).
+
+# Company backend requirements status ? P4-GAP-CLOSURE
+
+All 32 owner-approved capabilities are reconciled against the existing Company
+implementation in [the Company completion record](p4-gap-closure-report.md).
+Current implementation and verification classifications in that record supersede
+older Company gap assessments. [ADR 0055](adr/0055-company-gap-closure.md) records
+the authorized development boundary; the [frontend handoff](frontend-handoff/COMPANY_GAP_CLOSURE.md)
+contains exact route/schema mappings and activation restrictions.
+
+Existing hierarchy, membership, finance, resource booking, reimbursement, payment
+acknowledgement, goals, reports, handover and retention engines are reused. Added
+transfer/organization/analytics reads, physical custody/maintenance, observed KPI
+history, participant-private review/one-on-one records, explicit read roles and
+temporary grants, access reviews, policy tiers, delegation, policy escalation,
+budget alerts and typed budget-change approval sources extend those engines.
+
+Emergency cases/governance drafts remain non-executable. Company retention stays
+subject to the existing operator-approved immutable catalog and legal holds; no
+periods or approvals are invented. Shared remains disabled. M073/M074 target only
+isolated mehran_test; development retains its approved 97-migration baseline.
+No frontend, production/staging, deployment, commit or push is authorized.
+
+Authorized development scope is complete. The completion record contains the full
+observed quality run, corrected-check reruns and final read-only database status:
+development 97 migrations, isolated test 99, no checksum drift or unresolved
+entries. Canonical OpenAPI contains 1,185 operations. Operational recovery and
+retention activation remain policy-gated; neither database currently contains a
+Company-approved retention catalog entry.

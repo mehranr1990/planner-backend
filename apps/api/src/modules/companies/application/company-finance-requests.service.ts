@@ -14,6 +14,7 @@ import type {
 } from '../../../generated/prisma/client.js';
 import type { RequestActor } from '../../../platform/auth/request-actor.js';
 import { units, amount } from '../../finance/public/index.js';
+import { CompanyFinanceExtensions } from './company-finance.extensions.js';
 import { CompanyFinanceService } from './company-finance.service.js';
 import type { FinanceContext } from './company-finance.service.js';
 import type { StaffPage } from './company-staff.context.js';
@@ -29,6 +30,8 @@ const ref = (accessId: string, generation: number) => ({
 @Injectable()
 export class CompanyFinanceRequestsService {
   constructor(
+    @Inject(CompanyFinanceExtensions)
+    private readonly extensions: CompanyFinanceExtensions,
     @Inject(CompanyFinanceService)
     private readonly finance: CompanyFinanceService,
   ) {}
@@ -83,7 +86,7 @@ export class CompanyFinanceRequestsService {
       );
     });
   }
-  private view(
+  private async view(
     s: FinanceContext,
     r: CompanyBudgetChangeRequest,
     budget: CompanyBudget,
@@ -91,6 +94,16 @@ export class CompanyFinanceRequestsService {
     const n = units(r.amount.toString(), budget.scale),
       mine = this.op.self(s, ref(r.requesterAccessId, r.requesterGeneration)),
       pending = r.state === 'PENDING';
+    const guarded =
+      pending &&
+      (!!(await s.tx.companyFinancialApproval.findFirst({
+        where: { ...this.op.where(s), budgetChangeRequestId: r.id },
+      })) ||
+        (await this.extensions.hasSubmissionPolicy(s, 'BUDGET_CHANGE', {
+          currency: budget.currency,
+          amount: r.amount.abs().toString(),
+          categoryId: null,
+        })));
     return {
       id: r.id,
       budgetId: r.budgetId,
@@ -107,7 +120,7 @@ export class CompanyFinanceRequestsService {
       revision: r.revision,
       createdAt: r.createdAt.toISOString(),
       can: {
-        decide: pending && !mine && this.finance.manager(s),
+        decide: pending && !guarded && !mine && this.finance.manager(s),
         withdraw: pending && mine,
       },
     } satisfies z.input<typeof c.CompanyBudgetChangeRequestSchema>;
@@ -117,7 +130,7 @@ export class CompanyFinanceRequestsService {
     if (b.scopeId !== scopeId) throw new NotFoundException();
     return b;
   }
-  private async requestRow(s: FinanceContext, requestId: string) {
+  async requestRow(s: FinanceContext, requestId: string) {
     const r = await s.tx.companyBudgetChangeRequest.findFirst({
       where: { ...this.op.where(s), id: requestId },
     });
@@ -148,12 +161,14 @@ export class CompanyFinanceRequestsService {
         'finance.budget.changes:' + budgetId,
         q,
         async () =>
-          (
-            await s.tx.companyBudgetChangeRequest.findMany({
-              where: { ...this.op.where(s), budgetId },
-              take: 1001,
-            })
-          ).map((r) => this.view(s, r, b)),
+          Promise.all(
+            (
+              await s.tx.companyBudgetChangeRequest.findMany({
+                where: { ...this.op.where(s), budgetId },
+                take: 1001,
+              })
+            ).map((r) => this.view(s, r, b)),
+          ),
       );
     });
   }
@@ -238,56 +253,82 @@ export class CompanyFinanceRequestsService {
       scopeId,
       'budget.change.decide',
       requestId,
-      async (s) => {
-        this.op.manage(s);
-        const { r, budget } = await this.requestRow(s, requestId);
-        this.op.match(r.revision, revision);
-        if (r.state !== 'PENDING')
-          throw new ConflictException({ code: 'BUDGET_CHANGE_CLOSED' });
-        if (this.op.self(s, ref(r.requesterAccessId, r.requesterGeneration)))
-          throw new ForbiddenException({ code: 'SELF_APPROVAL_FORBIDDEN' });
-        let adjustmentId: string | null = null;
-        if (body.decision === 'APPROVE') {
-          if (budget.archived) throw new ConflictException();
-          if (budget.revision !== r.budgetRevision)
-            throw new ConflictException({ code: 'BUDGET_CHANGED' });
-          const n = units(r.amount.toString(), budget.scale);
-          await this.guard(s, budget, n);
-          await s.change();
-          adjustmentId = randomUUID();
-          await s.tx.companyBudgetAdjustment.create({
-            data: {
-              ...this.op.where(s),
-              id: adjustmentId,
-              budgetId: budget.id,
-              amount: amount(n, budget.scale),
-              createdByActorId: s.root.actorId,
-            },
-          });
-          await s.tx.companyBudget.update({
-            where: { id: budget.id },
-            data: this.op.changed(s),
-          });
-        } else await s.change();
-        const updated = await s.tx.companyBudgetChangeRequest.update({
-          where: { id: r.id, revision: r.revision },
-          data: {
-            state: body.decision === 'APPROVE' ? 'APPROVED' : 'REJECTED',
-            deciderActorId: s.root.actorId,
-            decidedAt: s.now,
-            decisionReason: body.reason,
-            adjustmentId,
-            ...this.op.changed(s),
-          },
-        });
-        return this.view(
-          s,
-          updated,
-          await s.tx.companyBudget.findUniqueOrThrow({
-            where: { id: budget.id },
-          }),
-        );
+      (s) => this.decideWithin(s, requestId, revision, body),
+    );
+  }
+  async decideWithin(
+    s: FinanceContext,
+    requestId: string,
+    revision: number,
+    body: z.infer<typeof c.CompanyBudgetChangeDecisionSchema>,
+    controlled = false,
+  ) {
+    this.op.manage(s);
+    const { r, budget } = await this.requestRow(s, requestId);
+    this.op.match(r.revision, revision);
+    const approval = await s.tx.companyFinancialApproval.findFirst({
+      where: { ...this.op.where(s), budgetChangeRequestId: requestId },
+      orderBy: { attempt: 'desc' },
+    });
+    if (
+      approval &&
+      (!controlled ||
+        approval.state !==
+          (body.decision === 'APPROVE' ? 'APPROVED' : 'REJECTED'))
+    )
+      throw new ConflictException({
+        code: 'CONTROLLED_FINANCIAL_APPROVAL_REQUIRED',
+      });
+    if (r.state !== 'PENDING')
+      throw new ConflictException({ code: 'BUDGET_CHANGE_CLOSED' });
+    if (this.op.self(s, ref(r.requesterAccessId, r.requesterGeneration)))
+      throw new ForbiddenException({ code: 'SELF_APPROVAL_FORBIDDEN' });
+    if (!controlled)
+      await this.extensions.requireSubmissionPolicy(s, 'BUDGET_CHANGE', {
+        currency: budget.currency,
+        amount: r.amount.abs().toString(),
+        categoryId: null,
+      });
+    let adjustmentId: string | null = null;
+    if (body.decision === 'APPROVE') {
+      if (budget.archived) throw new ConflictException();
+      if (budget.revision !== r.budgetRevision)
+        throw new ConflictException({ code: 'BUDGET_CHANGED' });
+      const n = units(r.amount.toString(), budget.scale);
+      await this.guard(s, budget, n);
+      await s.change();
+      adjustmentId = randomUUID();
+      await s.tx.companyBudgetAdjustment.create({
+        data: {
+          ...this.op.where(s),
+          id: adjustmentId,
+          budgetId: budget.id,
+          amount: amount(n, budget.scale),
+          createdByActorId: s.root.actorId,
+        },
+      });
+      await s.tx.companyBudget.update({
+        where: { id: budget.id },
+        data: this.op.changed(s),
+      });
+    } else await s.change();
+    const updated = await s.tx.companyBudgetChangeRequest.update({
+      where: { id: r.id, revision: r.revision },
+      data: {
+        state: body.decision === 'APPROVE' ? 'APPROVED' : 'REJECTED',
+        deciderActorId: s.root.actorId,
+        decidedAt: s.now,
+        decisionReason: body.reason,
+        adjustmentId,
+        ...this.op.changed(s),
       },
+    });
+    return this.view(
+      s,
+      updated,
+      await s.tx.companyBudget.findUniqueOrThrow({
+        where: { id: budget.id },
+      }),
     );
   }
   withdraw(
@@ -311,6 +352,7 @@ export class CompanyFinanceRequestsService {
         if (r.state !== 'PENDING')
           throw new ConflictException({ code: 'BUDGET_CHANGE_CLOSED' });
         await s.change();
+        await this.extensions.cancel(s, { budgetChangeRequestId: requestId });
         const updated = await s.tx.companyBudgetChangeRequest.update({
           where: { id: r.id, revision: r.revision },
           data: { state: 'WITHDRAWN', ...this.op.changed(s) },
