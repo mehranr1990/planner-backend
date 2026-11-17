@@ -181,10 +181,12 @@ their scoped cursors. Versions return at most 100 entries without a page cursor.
   authorization behavior remain unchanged; no private IDs or SQL are returned.
 - PB-13 probability remains numeric 0–100; PB-14 capacity remains UNKNOWN without
   sufficient authorized availability. Guest-grant extensions remain deferred.
-- Local Shared activation still requires the actual security prerequisites.
-  ADR 0049 requires malware-engine integration/scanning before Shared activation;
-  structural file validation is not that clearance. The authorized development
-  activation request does not itself supply completed scanner evidence.
+- [ADR 0057](../adr/0057-temporary-local-shared-test-mode.md) permits temporary
+  loopback development Shared business testing against mehran_dev. In that mode,
+  business-file uploads, READY publication, existing-file linking and byte reads
+  return 403; do not treat an old READY status as a malware verdict. Normal
+  authentication/authorization and retention remain enforced. The mode provides
+  no production security acceptance and must be removed before production release.
 
 ## Existing extra capabilities are preserved
 

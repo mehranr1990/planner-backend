@@ -22,6 +22,7 @@ import type { AppConfig } from '../../../bootstrap/environment.js';
 import { STORAGE_PORT, StorageFailure } from '../storage.port.js';
 import type { StoragePort, FileEvidence } from '../storage.port.js';
 import { safeCommunicationContent } from '../communication-content.js';
+import { assertFileContentAvailable } from '../file-content-policy.js';
 import { sharedDeleteBatch } from '../../lifecycle/shared-cleanup.js';
 import type { SharedRestoreScope } from '../../lifecycle/shared-replay.js';
 import type {
@@ -238,6 +239,7 @@ export class SharedFiles {
   }
   async row(tx: Prisma.TransactionClient, s: SharedFileScope, id: string) {
     s.verify(tx, false);
+    assertFileContentAvailable(this.config);
     const row = await tx.storedFile.findFirst({
       where: { id, spaceId: s.spaceId, scopeId: s.scopeId, ownerUserId: null },
     });
@@ -250,6 +252,7 @@ export class SharedFiles {
     ids: string[],
   ) {
     s.verify(tx, false);
+    if (ids.length) assertFileContentAvailable(this.config);
     return tx.storedFile.findMany({
       where: {
         spaceId: s.spaceId,
@@ -316,6 +319,7 @@ export class SharedFiles {
     now: Date,
   ) {
     s.verify(tx, true);
+    assertFileContentAvailable(this.config);
     if (input.expectedSize > this.config.FILE_MAX_BYTES)
       throw new PayloadTooLargeException();
     return tx.storedFile.create({
@@ -374,6 +378,7 @@ export class SharedFiles {
       communication?: boolean;
     } = {},
   ) {
+    assertFileContentAvailable(this.config);
     if (
       length !== undefined &&
       (!/^\d+$/.test(length) || Number(length) !== ticket.file.expectedSize)
@@ -412,6 +417,7 @@ export class SharedFiles {
     now: Date,
   ) {
     s.verify(tx, true);
+    assertFileContentAvailable(this.config);
     const file = await this.row(tx, s, ticket.file.id);
     if (
       file.status !== 'INITIATED' ||
@@ -492,6 +498,7 @@ export class SharedFiles {
       throw new BadRequestException({ code: 'UNSAFE_COMMUNICATION_FILE' });
   }
   async open(file: StoredFile, communication = false) {
+    assertFileContentAvailable(this.config);
     if (file.status !== 'READY' || file.actualSize === null || !file.sha256)
       throw new NotFoundException();
     try {

@@ -81,6 +81,10 @@ const EnvironmentSchema = z.object({
     .min(1)
     .max(200)
     .optional(),
+  SHARED_LOCAL_DEVELOPMENT_TEST_MODE: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((value) => value === 'true'),
   PERSONAL_ERASURE_POLICY_VERSION: z
     .string()
     .regex(/^[A-Za-z0-9._-]{1,80}$/)
@@ -133,6 +137,31 @@ export function parseEnvironment(environment: NodeJS.ProcessEnv): AppConfig {
     );
   }
   const config = result.data;
+  if (config.SHARED_LOCAL_DEVELOPMENT_TEST_MODE) {
+    const database = new URL(config.DATABASE_URL);
+    const loopback = (host: string) =>
+      ['localhost', '127.0.0.1', '[::1]', '::1'].includes(host);
+    if (
+      environment.NODE_ENV !== 'development' ||
+      !loopback(config.HOST) ||
+      !loopback(database.hostname) ||
+      database.pathname !== '/mehran_dev' ||
+      database.search ||
+      database.hash ||
+      !loopback(new URL(config.BETTER_AUTH_URL).hostname) ||
+      config.CORS_ORIGINS.split(',').some((origin) => {
+        if (!origin.trim()) return false;
+        try {
+          return !loopback(new URL(origin.trim()).hostname);
+        } catch {
+          return true;
+        }
+      })
+    )
+      throw new Error(
+        'Invalid configuration: SHARED_LOCAL_DEVELOPMENT_TEST_MODE requires explicit development, loopback binding/origins and local mehran_dev without URL options.',
+      );
+  }
   if (
     config.NODE_ENV === 'production' &&
     (config.PUSH_MODE === 'sink' || config.JOBS_SCHEMA !== 'planner_jobs')

@@ -123,7 +123,8 @@ export class SharedKernel {
   private enabled() {
     this.privacy.assert();
     if (
-      !this.config.SHARED_SECURITY_ACCEPTANCE_REFERENCE ||
+      (!this.config.SHARED_SECURITY_ACCEPTANCE_REFERENCE &&
+        !this.config.SHARED_LOCAL_DEVELOPMENT_TEST_MODE) ||
       !this.config.SHARED_CONTROL_ACTIVE_KEY_ID
     )
       throw new ForbiddenException({ code: 'SHARED_ACTIVATION_GATED' });

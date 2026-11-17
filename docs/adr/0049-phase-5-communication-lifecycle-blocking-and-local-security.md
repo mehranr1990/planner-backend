@@ -107,6 +107,13 @@ failure/quarantine policy and installation authorization.
 
 ## Independent engineering work
 
+Owner-approved amendment, 2026-11-17:
+[ADR 0057](0057-temporary-local-shared-test-mode.md) permits temporary loopback
+development Shared business testing against mehran_dev without fabricated
+security acceptance, with all unscanned business-file operations blocked.
+Production malware/security gates remain unchanged; the mode must be removed
+before production release.
+
 Publication verification, protected snapshots, P5-05 API signature freeze,
 requirement-by-requirement P5-04 audit, REST recovery/backpressure contract and
 tests, current privacy/revocation review, migration planning and targeted checks

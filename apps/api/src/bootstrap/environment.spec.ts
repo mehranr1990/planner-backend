@@ -4,6 +4,45 @@ import { isolatedTestDatabaseUrl } from '../../../../tooling/testing/test-databa
 import { createECDH } from 'node:crypto';
 
 describe('configuration safety', () => {
+  it('keeps Shared local test mode off by default and requires explicit isolated development settings', () => {
+    const base = {
+      DATABASE_URL: 'postgresql://localhost/mehran_dev',
+      BETTER_AUTH_URL: 'http://localhost:3000',
+      BETTER_AUTH_SECRET: 'unit-test-only-secret-at-least-32-characters',
+    };
+    expect(parseEnvironment(base).SHARED_LOCAL_DEVELOPMENT_TEST_MODE).toBe(
+      false,
+    );
+    const enabled = {
+      ...base,
+      NODE_ENV: 'development',
+      SHARED_LOCAL_DEVELOPMENT_TEST_MODE: 'true',
+    };
+    expect(parseEnvironment(enabled).SHARED_LOCAL_DEVELOPMENT_TEST_MODE).toBe(
+      true,
+    );
+    expect(
+      parseEnvironment(enabled).SHARED_SECURITY_ACCEPTANCE_REFERENCE,
+    ).toBeUndefined();
+    for (const override of [
+      { NODE_ENV: undefined },
+      { NODE_ENV: 'production' },
+      { NODE_ENV: 'test' },
+      { HOST: '0.0.0.0' },
+      { HOST: '::' },
+      { DATABASE_URL: 'postgresql://remote.invalid/mehran_dev' },
+      { DATABASE_URL: 'postgresql://localhost/mehran_test' },
+      { DATABASE_URL: 'postgresql://localhost/production' },
+      { DATABASE_URL: 'postgresql://localhost/mehran_dev?host=remote.invalid' },
+      { DATABASE_URL: 'postgresql://localhost/mehran_dev#options' },
+      { BETTER_AUTH_URL: 'http://remote.invalid' },
+      { CORS_ORIGINS: 'http://remote.invalid:3000' },
+      { SHARED_LOCAL_DEVELOPMENT_TEST_MODE: '1' },
+    ])
+      expect(() => parseEnvironment({ ...enabled, ...override })).toThrow(
+        'Invalid configuration',
+      );
+  });
   it('disables notification channels by default and rejects unsafe queue schemas', () => {
     const valid = {
       DATABASE_URL: 'postgresql://localhost/mehran_dev',

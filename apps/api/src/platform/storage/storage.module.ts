@@ -9,7 +9,7 @@ import { ThrottlerModule } from '@nestjs/throttler';
 import { DatabaseModule } from '../database/database.module.js';
 import { AuditModule } from '../audit/audit.service.js';
 import { STORAGE_PORT } from './storage.port.js';
-import { LocalFileStorage } from './local-storage.js';
+import { BusinessFileStorage } from './file-content-policy.js';
 import { FilesRepository } from './files.repository.js';
 import { FilesService } from './files.service.js';
 import { FileThrottleGuard, FilesController } from './files.controller.js';
@@ -40,7 +40,7 @@ export class StorageModule {
         FileThrottleGuard,
         FilesRepository,
         FilesService,
-        { provide: STORAGE_PORT, useClass: LocalFileStorage },
+        { provide: STORAGE_PORT, useClass: BusinessFileStorage },
       ],
       exports: [
         SharedFiles,

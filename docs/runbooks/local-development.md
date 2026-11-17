@@ -50,6 +50,26 @@ pnpm start
 the contracts package after changing shared schemas. `pnpm start` runs compiled
 code and loads `.env`. Defaults bind the API to 127.0.0.1:3000.
 
+Temporary Shared business testing is owner-approved under
+[ADR 0057](../adr/0057-temporary-local-shared-test-mode.md). In ignored `.env`,
+set explicit `NODE_ENV=development` and `SHARED_LOCAL_DEVELOPMENT_TEST_MODE=true`.
+It accepts only loopback API/auth/CORS addresses and loopback PostgreSQL database
+`mehran_dev`, with no database URL query/fragment. Production, test and missing
+NODE_ENV fail startup when the flag is true. The default is false.
+
+Provision purpose-specific Shared signing keys and the independent control root
+using the existing Shared control procedure; preserve any existing evidence/keys.
+No security-acceptance reference is required in this mode. Retention policies,
+restore replay, sessions, memberships and all authorization remain mandatory.
+Never initialize a replacement control namespace over existing Shared data.
+Restart both API and worker with the same configuration. Business-file admission,
+publication, existing-file linking, voice/media/downloads and export archives are
+blocked, including pre-existing READY files; physical removal/retention cleanup and signed
+control IO remain available. No clean scan verdict is synthesized. Mode-dependent
+file metadata operations can also return 403. This is technical debt, not release
+clearance: remove the mode before production and complete real malware scanning
+and the existing security/operational release gates.
+
 ```powershell
 Invoke-RestMethod http://127.0.0.1:3000/health/live
 Invoke-RestMethod http://127.0.0.1:3000/health/ready

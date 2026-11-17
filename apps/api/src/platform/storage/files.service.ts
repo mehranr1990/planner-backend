@@ -24,6 +24,7 @@ import { FilesRepository } from './files.repository.js';
 import { STORAGE_PORT, StorageFailure } from './storage.port.js';
 import type { StoragePort } from './storage.port.js';
 import { fileDownloadLink, verifyFileLink } from './download-links.js';
+import { assertFileContentAvailable } from './file-content-policy.js';
 
 function mapped(error: unknown): unknown {
   if (!(error instanceof StorageFailure)) return error;
@@ -50,7 +51,7 @@ export class FilesService {
   private view(scope: AuthorizedSpace, file: StoredFile, voice = false) {
     this.family(file, voice);
     const link =
-      file.status === 'READY'
+      file.status === 'READY' && !this.config.SHARED_LOCAL_DEVELOPMENT_TEST_MODE
         ? fileDownloadLink(this.config, scope, file.id)
         : null;
     if (voice && link) link.url = link.url.replace('/files/', '/files/voice/');
@@ -74,6 +75,7 @@ export class FilesService {
     key?: string,
     voice = false,
   ) {
+    assertFileContentAvailable(this.config);
     if ((input.mimeType === 'audio/wav') !== voice)
       throw new BadRequestException();
     if (input.expectedSize > this.config.FILE_MAX_BYTES)
@@ -91,6 +93,7 @@ export class FilesService {
   }
   async retryComplete(scope: AuthorizedSpace, id: string, voice = false) {
     const file = await this.repository.owned(scope, id);
+    assertFileContentAvailable(this.config);
     this.family(file, voice);
     if (file.status !== 'READY') throw new ConflictException();
     await this.audit.record({
@@ -111,6 +114,7 @@ export class FilesService {
     voice = false,
   ) {
     this.family(await this.repository.owned(scope, id), voice);
+    assertFileContentAvailable(this.config);
     const attempt = randomUUID();
     const { file, auditId } = await this.repository.claim(scope, id, attempt);
     const abort = new AbortController();
@@ -178,6 +182,7 @@ export class FilesService {
     voice = false,
   ) {
     const file = await this.repository.owned(scope, id);
+    assertFileContentAvailable(this.config);
     if (
       file.status !== 'READY' ||
       file.actualSize === null ||
