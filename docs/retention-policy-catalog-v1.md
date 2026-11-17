@@ -44,6 +44,27 @@ Because a closed Space is purged at its longest class window, the 2-year audit w
 | **COMPANY** (financial records, proposed 7 years; sealed employee files) | Waiting for legal review. No class exists for finance or employee files, and a Company policy would allow whole-Space `PURGE`. Automatic deletion stays disabled. No legal period was invented, and unlimited retention was not substituted. Company creation cannot choose a version until the operator approves one. |
 | **SOCIAL_GROUP**                                                         | v1.0 defines no rule for it.                                                                                                                                                                                                                                                                                           |
 
+## Local Company testing decision (2026-11-17)
+
+The owner authorized a development-only Company policy for local `mehran_dev`,
+without production activation. No existing approved COMPANY entry was found.
+The authorization does not specify Company class durations. No policy was inserted
+and no existing immutable version was changed.
+
+Pending owner choice: reuse the documented Project/Team values in a separate local
+Company version (2,592,000 seconds recovery; additional work, comments, files and
+exports: 0 seconds; audit: 63,072,000 seconds), or supply different explicit class
+durations and lifecycle rules. The reuse option would keep PURGE, OWNER/ADMIN
+audience, OWNER export authority, empty holds/obligations and all existing evidence,
+backup and disposal gates. Whole-Space disposal retains all closed Company data
+through the longest window. This is a proposal for synthetic development data,
+not legal approval or a production policy. The proposed seven-year finance period
+remains unapproved. Stop policy provisioning until the owner chooses.
+
+Live local verification: authenticated COMPANY catalog returned no entries;
+Company creation using the Project/Team version returned 403 `FORBIDDEN`.
+Company creation/read and invitation/approval verification remain blocked.
+
 ## Rules outside the catalog
 
 These rules are already handled outside the catalog. The catalog has no field for them, and nothing about them was changed.

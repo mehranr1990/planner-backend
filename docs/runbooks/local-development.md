@@ -78,6 +78,24 @@ pnpm test:integration
 pnpm quality
 ```
 
+Company local integration (2026-11-17): development-only policy provisioning is
+authorized, but Company retention values still require an explicit owner choice;
+see [catalog decision](../retention-policy-catalog-v1.md#local-company-testing-decision-2026-11-17).
+Do not pass the PROJECT/TEAM policy to Company creation, edit an immutable policy,
+or seed the proposed seven-year finance period. No Company policy is enabled yet.
+After approval, provision a distinct version using insert-only, dry-run/conflict
+checks, restricted to explicit local development mode and loopback `mehran_dev`;
+do not include it in the general development/pre-production catalog seed.
+
+A second synthetic Company reviewer account was created through Better Auth and
+verified through the private mail sink. Sign-in, `/me` and Company list returned
+200; the verification session was signed out. Its credentials are in ignored
+`.tools/company-development-accounts.json` (`second`); never commit or log them.
+It has no Company membership yet. Invitations, role assignment and financial
+approval configuration must use the existing authorized APIs after Company creation
+is unblocked. Existing dedicated-account credentials were not available to this
+session; no existing account password was changed. API and worker were left running.
+
 During development run targeted checks; run the full applicable quality gate
 once at submission, with focused reruns only after failures or changes. The
 quality command records any failure and continues through remaining gates.
