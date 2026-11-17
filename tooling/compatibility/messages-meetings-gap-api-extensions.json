@@ -1,0 +1,57 @@
+{
+  "get /api/v1/announcements/scopes/{kind}/{scopeId} parameters": {
+    "previous": [
+      "684bad98c9cd9ad4e7decb69581845dfc97a8e82b0ea86f37e2de588d7037b38"
+    ],
+    "approved": "e2266a6f34344bfbd86b6784151a3a2efefb48acb8e84a3fd1c6e566026aec86"
+  },
+  "get /api/v1/announcements/scopes/{kind}/{scopeId} response 200": {
+    "previous": [
+      "6f8b12a1f32c3a9330b21eff18704cb0efafe70866165388013413995691dc14",
+      "f6c01e0f093cfbd8f110fe028cdcb3d65aecc2ea5f087aec658a271fed5a84d7"
+    ],
+    "approved": "2ecde13c69aa3935f1876e89913f965ad9ee933f60fedec0bbdd7cc8e0557e88"
+  },
+  "get /api/v1/announcements/{id}/versions response 200": {
+    "previous": [
+      "6f8b12a1f32c3a9330b21eff18704cb0efafe70866165388013413995691dc14",
+      "f6c01e0f093cfbd8f110fe028cdcb3d65aecc2ea5f087aec658a271fed5a84d7"
+    ],
+    "approved": "2ecde13c69aa3935f1876e89913f965ad9ee933f60fedec0bbdd7cc8e0557e88"
+  },
+  "post /api/v1/announcements/{id}/versions response 201": {
+    "previous": [
+      "0eca85b93c52fc5dfaeabb178fa3a3dbf14be65b5feda2e6f787324976e3a2ba",
+      "21c5be3f90e2e542c25797ac630aa7aba8b7c81993a3b9aba43c4bd1a4fca989"
+    ],
+    "approved": "4328238d9f17b86ef5e15fd960ffb7ea0ce6f9473b27749dc7be0834b7bfa610"
+  },
+  "get /api/v1/announcements/{id}/versions/{versionId} response 200": {
+    "previous": [
+      "0eca85b93c52fc5dfaeabb178fa3a3dbf14be65b5feda2e6f787324976e3a2ba",
+      "21c5be3f90e2e542c25797ac630aa7aba8b7c81993a3b9aba43c4bd1a4fca989"
+    ],
+    "approved": "4328238d9f17b86ef5e15fd960ffb7ea0ce6f9473b27749dc7be0834b7bfa610"
+  },
+  "post /api/v1/announcements/{id}/versions/{versionId}/publish response 201": {
+    "previous": [
+      "0eca85b93c52fc5dfaeabb178fa3a3dbf14be65b5feda2e6f787324976e3a2ba",
+      "21c5be3f90e2e542c25797ac630aa7aba8b7c81993a3b9aba43c4bd1a4fca989"
+    ],
+    "approved": "4328238d9f17b86ef5e15fd960ffb7ea0ce6f9473b27749dc7be0834b7bfa610"
+  },
+  "post /api/v1/announcements/{id}/versions/{versionId}/withdraw response 201": {
+    "previous": [
+      "0eca85b93c52fc5dfaeabb178fa3a3dbf14be65b5feda2e6f787324976e3a2ba",
+      "21c5be3f90e2e542c25797ac630aa7aba8b7c81993a3b9aba43c4bd1a4fca989"
+    ],
+    "approved": "4328238d9f17b86ef5e15fd960ffb7ea0ce6f9473b27749dc7be0834b7bfa610"
+  },
+  "patch /api/v1/announcements/{id}/versions/{versionId}/pin response 200": {
+    "previous": [
+      "0eca85b93c52fc5dfaeabb178fa3a3dbf14be65b5feda2e6f787324976e3a2ba",
+      "21c5be3f90e2e542c25797ac630aa7aba8b7c81993a3b9aba43c4bd1a4fca989"
+    ],
+    "approved": "4328238d9f17b86ef5e15fd960ffb7ea0ce6f9473b27749dc7be0834b7bfa610"
+  }
+}

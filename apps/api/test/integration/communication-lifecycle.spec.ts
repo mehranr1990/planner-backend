@@ -8,6 +8,8 @@ import {
   MeetingsService,
   MeetingDocuments,
   AnnouncementsService,
+  AgendaDetailsService,
+  AnnouncementSchedulesService,
 } from '../../src/modules/meetings/public/index.js';
 import 'reflect-metadata';
 import {
@@ -1155,26 +1157,44 @@ describe('P5-06 privacy lifecycle and REST recovery', () => {
   });
   it('purges a finalized independent meeting and its authoritative event without weakening ordinary immutability', async () => {
     const m = await meeting(),
-      documents = app.get(MeetingDocuments),
-      v = await documents.create(
+      documents = app.get(MeetingDocuments);
+    const entry = await app
+      .get(MeetingsService)
+      .propose(
         owner.actor,
         m.id,
-        {
-          id: randomUUID(),
-          minutes: 'Retained until eligible',
-          decisions: [{ id: randomUUID(), text: 'Decision' }],
-          actions: [
-            {
-              id: randomUUID(),
-              title: 'Separate personal action',
-              description: 'Explicit conversion',
-            },
-          ],
-          attachments: [],
-          contributors: [],
-        },
+        { id: randomUUID(), text: 'Retained agenda' },
         randomUUID(),
       );
+    await app
+      .get(AgendaDetailsService)
+      .patch(
+        owner.actor,
+        m.id,
+        entry.id,
+        { notes: 'Immutable shared history', plannedMinutes: 15 },
+        entry.revision,
+        randomUUID(),
+      );
+    const v = await documents.create(
+      owner.actor,
+      m.id,
+      {
+        id: randomUUID(),
+        minutes: 'Retained until eligible',
+        decisions: [{ id: randomUUID(), text: 'Decision' }],
+        actions: [
+          {
+            id: randomUUID(),
+            title: 'Separate personal action',
+            description: 'Explicit conversion',
+          },
+        ],
+        attachments: [],
+        contributors: [],
+      },
+      randomUUID(),
+    );
     await documents.finalize(owner.actor, m.id, v.id, v.revision, randomUUID());
     const link = await documents.convert(
       owner.actor,
@@ -1200,6 +1220,9 @@ describe('P5-06 privacy lifecycle and REST recovery', () => {
     expect(await db.meetingVersion.count({ where: { meetingId: m.id } })).toBe(
       0,
     );
+    expect(
+      await db.meetingAgendaRevision.count({ where: { meetingId: m.id } }),
+    ).toBe(0);
     expect(
       await db.calendarEvent.findUnique({ where: { id: m.event.id } }),
     ).toBeNull();
@@ -1247,6 +1270,22 @@ describe('P5-06 privacy lifecycle and REST recovery', () => {
         'ACCEPTED',
         randomUUID(),
       );
+      const entry = await api.propose(
+        owner.actor,
+        m.id,
+        { id: randomUUID(), text: 'Scoped retained agenda' },
+        randomUUID(),
+      );
+      await app
+        .get(AgendaDetailsService)
+        .patch(
+          owner.actor,
+          m.id,
+          entry.id,
+          { notes: 'Scoped immutable shared history' },
+          entry.revision,
+          randomUUID(),
+        );
       let v = await documents.create(
         owner.actor,
         m.id,
@@ -1300,12 +1339,24 @@ describe('P5-06 privacy lifecycle and REST recovery', () => {
         },
         randomUUID(),
       );
+      const schedule = await app.get(AnnouncementSchedulesService).schedule(
+        owner.actor,
+        a.id,
+        av.id,
+        {
+          scheduledAt: new Date(Date.now() + 3600000).toISOString(),
+          timezone: 'UTC',
+          audience: { audience: 'ALL' },
+        },
+        av.revision,
+        randomUUID(),
+      );
       await announcements.publish(
         owner.actor,
         a.id,
         av.id,
         { audience: 'ALL' },
-        av.revision,
+        schedule.revision,
         randomUUID(),
       );
       for (const who of [alice, owner]) {
@@ -1352,6 +1403,12 @@ describe('P5-06 privacy lifecycle and REST recovery', () => {
         await db.meetingVersion.count({ where: { meetingId: m.id } }),
       ).toBe(0);
       expect(await db.meeting.findUnique({ where: { id: m.id } })).toBeNull();
+      expect(
+        await db.meetingAgendaRevision.count({ where: { meetingId: m.id } }),
+      ).toBe(0);
+      expect(
+        await db.announcementSchedule.count({ where: { versionId: av.id } }),
+      ).toBe(0);
       expect(
         await db.announcement.findUnique({ where: { id: a.id } }),
       ).toBeNull();

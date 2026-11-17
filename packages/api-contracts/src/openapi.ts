@@ -1,3 +1,4 @@
+import { messagesMeetingsGapPaths } from './messages-meetings-gap-openapi.js';
 import { companyGapPaths } from './company-gap-closure-openapi.js';
 import { teamGapPaths } from './team-gap-closure-openapi.js';
 import { meetingPaths } from './meetings-openapi.js';
@@ -314,6 +315,7 @@ export function createOpenApiDocument() {
     ...projectGapPaths(),
     ...teamGapPaths(),
     ...companyGapPaths(),
+    ...messagesMeetingsGapPaths(),
   }))
     paths[path] = { ...paths[path], ...operations };
   return document;

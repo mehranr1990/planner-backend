@@ -7,7 +7,9 @@ import {
   companyGapMigrationHashes,
   assertReviewedCompanyGapMigration,
 } from './reviewed-company-gap-migration.ts';
-import { SHARED_CLEANUP_FK_SHA256 } from '../../apps/api/src/platform/lifecycle/shared-cleanup-catalog.ts';
+import { verifyMessagesMeetingsGapUpgrade } from './messages-meetings-gap-upgrade.ts';
+const SHARED_CLEANUP_FK_SHA256 =
+  '958a5063f1f5aee880e8881441134a31b5c1979e00d33bfb51782a4c939cb2c3';
 export async function verifyCompanyGapUpgrade(input: {
   client: Client;
   schema: string;
@@ -134,4 +136,5 @@ export async function verifyCompanyGapUpgrade(input: {
   process.stdout.write(
     `PASS: Company gap populated 97→99 upgrade preserves ${tables.size} predecessor datasets and all historical checksums; interruption rollback, repeat deploy and 1,067-FK cleanup catalog.\n`,
   );
+  await verifyMessagesMeetingsGapUpgrade(input);
 }

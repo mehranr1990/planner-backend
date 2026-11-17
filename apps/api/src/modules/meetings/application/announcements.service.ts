@@ -4,6 +4,7 @@ import {
   NotFoundException,
   ConflictException,
   PayloadTooLargeException,
+  BadRequestException,
 } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import type { z } from 'zod';
@@ -12,6 +13,7 @@ import type {
   Announcement,
   AnnouncementVersion,
   AnnouncementTarget,
+  Prisma,
 } from '../../../generated/prisma/client.js';
 import type { RequestActor } from '../../../platform/auth/request-actor.js';
 import { writeAudit } from '../../../platform/audit/audit.service.js';
@@ -76,7 +78,7 @@ export class AnnouncementsService {
       throw error;
     }
   }
-  private async once(
+  async once(
     s: Op,
     a: Announcement,
     key: string | undefined,
@@ -144,7 +146,7 @@ export class AnnouncementsService {
           )
       : null;
   }
-  private async version(s: Op, a: Announcement, id: string, manage = false) {
+  async version(s: Op, a: Announcement, id: string, manage = false) {
     const row = await s.tx.announcementVersion.findFirst({
       where: { id, announcementId: a.id },
     });
@@ -179,6 +181,7 @@ export class AnnouncementsService {
       acknowledgement: v.acknowledgement,
       state: v.state,
       pinned: v.pinned,
+      pinnedAt: v.pinnedAt?.toISOString() ?? null,
       revision: v.revision,
       publishedAt: v.publishedAt?.toISOString() ?? null,
       createdAt: v.createdAt.toISOString(),
@@ -348,7 +351,12 @@ export class AnnouncementsService {
       );
     });
   }
-  list(actor: RequestActor, scopeId: string, kind: Kind, q: Page) {
+  list(
+    actor: RequestActor,
+    scopeId: string,
+    kind: Kind,
+    q: z.infer<typeof c.AnnouncementListQuerySchema>,
+  ) {
     return this.op.source(
       actor,
       scopeId,
@@ -357,10 +365,54 @@ export class AnnouncementsService {
       scopeId,
       async (s) => {
         const manage = await this.manager(s),
-          stamp = await this.op.authority.frame(s.tx, scopeId, actor.userId),
-          context = 'announcements:' + scopeId,
-          after = this.op.after(actor, context, stamp, q.cursor),
+          ordered = q.order === 'PINNED_FIRST',
           p = s.proof!;
+        const visibility: Prisma.AnnouncementVersionWhereInput = {
+          announcement: { scopeId, spaceId: s.spaceId },
+          ...(!manage
+            ? {
+                state: 'PUBLISHED',
+                AnnouncementTarget_version: {
+                  some: {
+                    accessId: p.accessId,
+                    generation: p.generation,
+                    restoreGeneration: p.restoreGeneration,
+                  },
+                },
+              }
+            : {}),
+        };
+        const frame = await this.op.authority.frame(
+            s.tx,
+            scopeId,
+            actor.userId,
+          ),
+          stamp = ordered
+            ? meetingHash([
+                frame,
+                await s.tx.announcementVersion.aggregate({
+                  where: visibility,
+                  _count: true,
+                  _sum: { revision: true },
+                }),
+              ])
+            : frame,
+          context =
+            (ordered ? 'announcements-pinned:' : 'announcements:') + scopeId,
+          after = ordered
+            ? this.op.shared.opaquePosition(
+                context,
+                stamp,
+                actor.userId,
+                q.cursor,
+              )
+            : this.op.after(actor, context, stamp, q.cursor);
+        if (
+          ordered &&
+          after !== undefined &&
+          !/^[01]:[a-f0-9-]{36}$/i.test(after)
+        )
+          throw new BadRequestException();
         const rows = await s.tx.announcementVersion.findMany({
             where: {
               announcement: { scopeId, spaceId: s.spaceId },
@@ -376,16 +428,37 @@ export class AnnouncementsService {
                     },
                   }
                 : {}),
-              ...(after ? { id: { gt: after } } : {}),
+              ...(after
+                ? ordered
+                  ? after.startsWith('0:')
+                    ? {
+                        OR: [
+                          { pinned: true, id: { gt: after.slice(2) } },
+                          { pinned: false },
+                        ],
+                      }
+                    : { pinned: false, id: { gt: after.slice(2) } }
+                  : { id: { gt: after } }
+                : {}),
             },
-            orderBy: { id: 'asc' },
+            orderBy: ordered
+              ? [{ pinned: 'desc' }, { id: 'asc' }]
+              : { id: 'asc' },
             take: q.limit + 1,
           }),
           items = [];
         for (const v of rows) items.push(await this.versionDto(s, v));
-        return c.AnnouncementVersionPageSchema.parse(
-          this.op.page(actor, context, stamp, items, q.limit),
-        );
+        const result = this.op.page(actor, context, stamp, items, q.limit);
+        if (ordered && rows.length > q.limit) {
+          const last = rows[q.limit - 1]!;
+          result.nextCursor = this.op.shared.opaqueCursor(
+            context,
+            stamp,
+            actor.userId,
+            (last.pinned ? '0:' : '1:') + last.id,
+          );
+        }
+        return c.AnnouncementVersionPageSchema.parse(result);
       },
     );
   }
@@ -412,6 +485,72 @@ export class AnnouncementsService {
       throw error;
     }
   }
+  /** One publisher for immediate and scheduled transitions, always inside the custody fence. */
+  async publishWithin(
+    s: Op,
+    a: Announcement,
+    versionId: string,
+    body: z.infer<typeof c.AnnouncementPublishSchema>,
+    expected: number | undefined,
+  ) {
+    await this.op.sourceManager(s);
+    const v = await this.version(s, a, versionId, true);
+    meetingRevision(expected, v.revision);
+    if (v.state !== 'DRAFT') throw new ConflictException();
+    const all = await this.op.authority.sourceMembers(s.scopeId, s.tx);
+    if (all.length > 1000) throw new PayloadTooLargeException();
+    const selection =
+      body.audience === 'ALL'
+        ? all.map((x) => ({ accessId: x.id, generation: x.generation }))
+        : body.members;
+    const targets = [];
+    for (const selected of selection) {
+      const target = {
+        ...selected,
+        versionId,
+        spaceId: s.spaceId,
+        scopeId: s.scopeId,
+        restoreGeneration: s.proof!.restoreGeneration,
+      };
+      if (await this.eligible(s, target, true)) targets.push(target);
+      else if (body.audience === 'NAMED') throw new NotFoundException();
+    }
+    if (!targets.length)
+      throw new ConflictException({ code: 'EMPTY_AUDIENCE' });
+    await this.files.validateAnnouncementVersion(s, a.id, versionId);
+    await s.tx.announcementVersion.updateMany({
+      where: { announcementId: a.id, state: 'PUBLISHED' },
+      data: {
+        state: 'WITHDRAWN',
+        pinned: false,
+        pinnedAt: null,
+        revision: { increment: 1 },
+      },
+    });
+    for (const target of targets)
+      await s.tx.announcementTarget.create({ data: target });
+    await s.tx.announcementVersion.update({
+      where: { id: versionId },
+      data: {
+        state: 'PUBLISHED',
+        publishedAt: s.now,
+        revision: { increment: 1 },
+      },
+    });
+    await s.tx.announcementSchedule.updateMany({
+      where: { versionId, status: 'SCHEDULED' },
+      data: {
+        status: 'PUBLISHED',
+        publishedAt: s.now,
+        revision: { increment: 1 },
+      },
+    });
+    await s.tx.announcement.update({
+      where: { id: a.id },
+      data: { revision: { increment: 1 } },
+    });
+    return versionId;
+  }
   publish(
     actor: RequestActor,
     id: string,
@@ -433,56 +572,7 @@ export class AnnouncementsService {
           key,
           { versionId, expected, body },
           'announcement.publish',
-          async () => {
-            const v = await this.version(s, a, versionId, true);
-            meetingRevision(expected, v.revision);
-            if (v.state !== 'DRAFT') throw new ConflictException();
-            const all = await this.op.authority.sourceMembers(s.scopeId, s.tx);
-            if (all.length > 1000) throw new PayloadTooLargeException();
-            const selection =
-              body.audience === 'ALL'
-                ? all.map((x) => ({ accessId: x.id, generation: x.generation }))
-                : body.members;
-            const restoreGeneration = s.proof!.restoreGeneration,
-              targets = [];
-            for (const selected of selection) {
-              const target = {
-                ...selected,
-                versionId,
-                spaceId: s.spaceId,
-                scopeId: s.scopeId,
-                restoreGeneration,
-              };
-              if (await this.eligible(s, target, true)) targets.push(target);
-              else if (body.audience === 'NAMED') throw new NotFoundException();
-            }
-            if (!targets.length)
-              throw new ConflictException({ code: 'EMPTY_AUDIENCE' });
-            await this.files.validateAnnouncementVersion(s, id, versionId);
-            await s.tx.announcementVersion.updateMany({
-              where: { announcementId: id, state: 'PUBLISHED' },
-              data: {
-                state: 'WITHDRAWN',
-                pinned: false,
-                revision: { increment: 1 },
-              },
-            });
-            for (const target of targets)
-              await s.tx.announcementTarget.create({ data: target });
-            await s.tx.announcementVersion.update({
-              where: { id: versionId },
-              data: {
-                state: 'PUBLISHED',
-                publishedAt: s.now,
-                revision: { increment: 1 },
-              },
-            });
-            await s.tx.announcement.update({
-              where: { id },
-              data: { revision: { increment: 1 } },
-            });
-            return versionId;
-          },
+          () => this.publishWithin(s, a, versionId, body, expected),
         );
         return this.versionDto(s, await this.version(s, a, versionId, true));
       },
@@ -513,6 +603,7 @@ export class AnnouncementsService {
             data: {
               state: 'WITHDRAWN',
               pinned: false,
+              pinnedAt: null,
               revision: { increment: 1 },
             },
           });
@@ -548,7 +639,11 @@ export class AnnouncementsService {
           if (v.state !== 'PUBLISHED') throw new ConflictException();
           await s.tx.announcementVersion.update({
             where: { id: versionId },
-            data: { pinned, revision: { increment: 1 } },
+            data: {
+              pinned,
+              pinnedAt: pinned ? (v.pinned ? v.pinnedAt : s.now) : null,
+              revision: { increment: 1 },
+            },
           });
           return versionId;
         },

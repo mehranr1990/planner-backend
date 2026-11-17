@@ -2039,6 +2039,7 @@ model ContextAccess {
 
 // SQL enforces additional branch, lifecycle and immutable-history constraints.
 model ContextAccessInterval {
+ announcementSchedules AnnouncementSchedule[] @relation("AnnouncementSchedule_issuer_fk")
  AnnouncementMutation_interval AnnouncementMutation[] @relation("AnnouncementMutation_interval_fk")
  AnnouncementTarget_interval AnnouncementTarget[] @relation("AnnouncementTarget_interval_fk")
  MeetingAttachment_interval MeetingAttachment[] @relation("MeetingAttachment_interval_fk")
@@ -5753,6 +5754,7 @@ model MeetingMember {
 
 // P5-05 / ADR 0048: typed meeting and publication owner data.
 model MeetingAdmission {
+ agendaRevisions MeetingAgendaRevision[] @relation("MeetingAgendaRevision_actor_fk")
  MeetingDecision_proposedByMemberId MeetingDecision[] @relation("MeetingDecision_proposedByMemberId_fk")
  MeetingAction_assigneeMemberId MeetingAction[] @relation("MeetingAction_assigneeMemberId_fk")
  MeetingAttachment_memberId MeetingAttachment[] @relation("MeetingAttachment_memberId_fk")
@@ -5811,16 +5813,54 @@ model MeetingInvitation {
 
 // P5-05 / ADR 0048: typed meeting and publication owner data.
 model MeetingAgendaEntry {
+ history MeetingAgendaRevision[] @relation("MeetingAgendaRevision_entry_fk")
  memberRelation MeetingAdmission @relation("MeetingAgendaEntry_memberId_fk",fields:[meetingId,memberId,generation],references:[meetingId,memberId,generation],onDelete:NoAction,onUpdate:NoAction,map:"MeetingAgendaEntry_memberId_fk")
  id String @id @db.Uuid
  meetingId String @db.Uuid
  memberId String @db.Uuid
  generation Int
  text String
+ plannedMinutes Int?
+ completedAt DateTime? @db.Timestamptz(3)
+ notes String @default("")
  state String @default("PROPOSED") @db.VarChar(10)
  revision Int @default(1)
  createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
  @@unique([meetingId,id])
+}
+
+model MeetingAgendaRevision {
+ id String @id @db.Uuid
+ meetingId String @db.Uuid
+ entryId String @db.Uuid
+ revision Int
+ plannedMinutes Int?
+ completedAt DateTime? @db.Timestamptz(3)
+ notes String
+ actorMemberId String @db.Uuid
+ actorGeneration Int
+ createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+ entry MeetingAgendaEntry @relation("MeetingAgendaRevision_entry_fk",fields:[meetingId,entryId],references:[meetingId,id],onDelete:NoAction,onUpdate:NoAction,map:"MeetingAgendaRevision_entry_fk")
+ actor MeetingAdmission @relation("MeetingAgendaRevision_actor_fk",fields:[meetingId,actorMemberId,actorGeneration],references:[meetingId,memberId,generation],onDelete:NoAction,onUpdate:NoAction,map:"MeetingAgendaRevision_actor_fk")
+ @@unique([entryId,revision])
+ @@index([meetingId,entryId,id])
+}
+
+model AnnouncementSchedule {
+ versionId String @id @db.Uuid
+ scheduledAt DateTime @db.Timestamptz(3)
+ timezone String @db.VarChar(100)
+ audience Json
+ status String @default("SCHEDULED") @db.VarChar(10)
+ revision Int @default(1)
+ versionRevision Int
+ accessId String @db.Uuid
+ generation Int
+ restoreGeneration Int
+ publishedAt DateTime? @db.Timestamptz(3)
+ version AnnouncementVersion @relation("AnnouncementSchedule_version_fk",fields:[versionId],references:[id],onDelete:NoAction,onUpdate:NoAction,map:"AnnouncementSchedule_version_fk")
+ issuer ContextAccessInterval @relation("AnnouncementSchedule_issuer_fk",fields:[accessId,generation],references:[accessId,generation],onDelete:NoAction,onUpdate:NoAction,map:"AnnouncementSchedule_issuer_fk")
+ @@index([status,scheduledAt,versionId])
 }
 
 // P5-05 / ADR 0048: typed meeting and publication owner data.
@@ -6034,6 +6074,7 @@ model Announcement {
 
 // P5-05 / ADR 0048: typed meeting and publication owner data.
 model AnnouncementVersion {
+ schedule AnnouncementSchedule? @relation("AnnouncementSchedule_version_fk")
  AnnouncementVersionAttachment_version AnnouncementVersionAttachment[] @relation("AnnouncementVersionAttachment_version_fk")
  AnnouncementTarget_version AnnouncementTarget[] @relation("AnnouncementTarget_version_fk")
  publisher SharedActor @relation("AnnouncementVersion_publisher_fk",fields:[publisherSpaceId,publisherActorId],references:[spaceId,id],onDelete:NoAction,onUpdate:NoAction,map:"AnnouncementVersion_publisher_fk")
@@ -6046,6 +6087,7 @@ model AnnouncementVersion {
  acknowledgement Boolean @default(false)
  state String @default("DRAFT") @db.VarChar(10)
  pinned Boolean @default(false)
+ pinnedAt DateTime? @db.Timestamptz(3)
  revision Int @default(1)
  publisherActorId String @db.Uuid
  publisherSpaceId String @db.Uuid

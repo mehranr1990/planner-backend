@@ -317,6 +317,9 @@ export const AnnouncementPublishSchema = z.discriminatedUnion('audience', [
   }),
 ]);
 export const AnnouncementPinSchema = z.strictObject({ pinned: z.boolean() });
+export const AnnouncementListQuerySchema = MeetingPageQuerySchema.extend({
+  order: z.enum(['ID', 'PINNED_FIRST']).optional(),
+});
 export const AnnouncementVersionSchema = z.strictObject({
   /** Display name of the version author; null when no longer resolvable. */
   authorDisplayName: z.string().nullable().optional(),
@@ -328,6 +331,7 @@ export const AnnouncementVersionSchema = z.strictObject({
   acknowledgement: z.boolean(),
   state: z.enum(['DRAFT', 'PUBLISHED', 'WITHDRAWN']),
   pinned: z.boolean(),
+  pinnedAt: z.iso.datetime().nullable().optional(),
   revision,
   publishedAt: z.iso.datetime().nullable(),
   createdAt: z.iso.datetime(),

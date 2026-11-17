@@ -10,6 +10,7 @@ import {
 import {
   MeetingFiles,
   MeetingLifecycle,
+  AnnouncementSchedulesService,
 } from './modules/meetings/public/index.js';
 import { RewardsPort } from './modules/rewards/public/index.js';
 import { PersonalLifecycle } from './modules/account/public/index.js';
@@ -62,6 +63,7 @@ try {
     const sync = await app.get(SyncService).maintain();
     const messaging = await app.get(MessageNoticeWorker).consume();
     const meetings = await app.get(MeetingFiles).consume();
+    const announcements = await app.get(AnnouncementSchedulesService).consume();
     return (
       rewards ||
       lifecycle ||
@@ -77,7 +79,8 @@ try {
       grants ||
       sync ||
       messaging ||
-      meetings
+      meetings ||
+      announcements
     );
   });
   process.stdout.write('Planner notification worker ready\n');

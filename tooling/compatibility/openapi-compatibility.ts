@@ -250,6 +250,19 @@ export function approvedCompanyHash(contract: string, previous: string) {
   const change = companyGapExtensions[contract];
   return change?.previous.includes(previous) ? change.approved : previous;
 }
+const messagesMeetingsExtensions = JSON.parse(
+  fs.readFileSync(
+    new URL('./messages-meetings-gap-api-extensions.json', import.meta.url),
+    'utf8',
+  ),
+) as Record<string, { previous: string[]; approved: string }>;
+export function approvedMessagesMeetingsHash(
+  contract: string,
+  previous: string,
+) {
+  const change = messagesMeetingsExtensions[contract];
+  return change?.previous.includes(previous) ? change.approved : previous;
+}
 export function assertApiCompatible(
   document: unknown,
   baseline: Record<string, string>,
@@ -259,15 +272,21 @@ export function assertApiCompatible(
     const extension = responseExtensions[contract];
     if (
       current[contract] !==
-        approvedCompanyHash(
+        approvedMessagesMeetingsHash(
           contract,
-          approvedTeamHash(contract, approvedProjectHash(contract, hash)),
+          approvedCompanyHash(
+            contract,
+            approvedTeamHash(contract, approvedProjectHash(contract, hash)),
+          ),
         ) &&
       !(
         extension?.previous === hash &&
-        approvedCompanyHash(
+        approvedMessagesMeetingsHash(
           contract,
-          approvedTeamHash(contract, extension.approved),
+          approvedCompanyHash(
+            contract,
+            approvedTeamHash(contract, extension.approved),
+          ),
         ) === current[contract]
       )
     )

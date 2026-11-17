@@ -40,7 +40,8 @@ export class AnnouncementsController {
     )
     kind: 'PROJECT' | 'TEAM' | 'COMPANY',
     @Param('scopeId', uuid) scopeId: string,
-    @Query(page) q: z.infer<typeof c.MeetingPageQuerySchema>,
+    @Query(new ZodValidationPipe(c.AnnouncementListQuerySchema))
+    q: z.infer<typeof c.AnnouncementListQuerySchema>,
   ) {
     return this.announcements.list(a, scopeId, kind, q);
   }

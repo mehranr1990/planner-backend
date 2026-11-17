@@ -13,6 +13,13 @@ export async function purgeMeetings(
     announcement = [{ table: 'Announcement', foreignKey: 'announcementId' }];
   if (!(await sharedDeleteBatch(tx, s, ['AnnouncementReminder']))) return false;
   if (
+    !(await sharedChildDeleteBatch(tx, s, 'AnnouncementSchedule', [
+      { table: 'AnnouncementVersion', foreignKey: 'versionId' },
+      ...announcement,
+    ]))
+  )
+    return false;
+  if (
     !(await sharedChildDeleteBatch(tx, s, 'AnnouncementAcknowledgement', [
       { table: 'AnnouncementVersion', foreignKey: 'versionId' },
       ...announcement,
@@ -75,6 +82,7 @@ export async function purgeMeetings(
   if (!(await sharedDeleteBatch(tx, s, ['MeetingAttachment']))) return false;
   for (const table of [
     'MeetingBusySetting',
+    'MeetingAgendaRevision',
     'MeetingAgendaEntry',
     'MeetingInvitation',
     'MeetingMutation',

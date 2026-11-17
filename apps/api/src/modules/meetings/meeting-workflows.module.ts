@@ -1,4 +1,7 @@
 import { Module, type DynamicModule } from '@nestjs/common';
+import { AgendaDetailsService } from './application/agenda-details.service.js';
+import { AnnouncementSchedulesService } from './application/announcement-schedules.service.js';
+import { MessagesMeetingsGapController } from './http/messages-meetings-gap.controller.js';
 import { MeetingsModule } from './meetings.module.js';
 import { AuditModule } from '../../platform/audit/audit.service.js';
 import { MeetingsService } from './application/meetings.service.js';
@@ -34,6 +37,8 @@ export class MeetingWorkflowsModule {
         storage,
       ],
       providers: [
+        AgendaDetailsService,
+        AnnouncementSchedulesService,
         MeetingLifecycle,
         MeetingsService,
         MeetingDocuments,
@@ -43,6 +48,7 @@ export class MeetingWorkflowsModule {
         MeetingsGuard,
       ],
       controllers: [
+        MessagesMeetingsGapController,
         MeetingLifecycleController,
         MeetingsController,
         MeetingDocumentsController,
@@ -52,6 +58,8 @@ export class MeetingWorkflowsModule {
         AnnouncementAttachmentsController,
       ],
       exports: [
+        AgendaDetailsService,
+        AnnouncementSchedulesService,
         MeetingLifecycle,
         MeetingsService,
         MeetingDocuments,

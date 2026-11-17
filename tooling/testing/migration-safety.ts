@@ -1,4 +1,8 @@
 import {
+  messagesMeetingsGapMigrationName,
+  assertReviewedMessagesMeetingsGapMigration,
+} from './reviewed-messages-meetings-gap-migration.ts';
+import {
   companyGapMigrationHashes,
   assertReviewedCompanyGapMigration,
 } from './reviewed-company-gap-migration.ts';
@@ -208,7 +212,9 @@ export function reviewMigrations(directory = 'prisma/migrations'): string[] {
       path.join(directory, name, 'migration.sql'),
       'utf8',
     );
-    if (Object.hasOwn(companyGapMigrationHashes, name))
+    if (name === messagesMeetingsGapMigrationName)
+      assertReviewedMessagesMeetingsGapMigration(sql);
+    else if (Object.hasOwn(companyGapMigrationHashes, name))
       assertReviewedCompanyGapMigration(name, sql);
     else if (Object.hasOwn(teamGapMigrationHashes, name))
       assertReviewedTeamGapMigration(name, sql);

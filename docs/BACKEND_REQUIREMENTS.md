@@ -110,3 +110,25 @@ development 97 migrations, isolated test 99, no checksum drift or unresolved
 entries. Canonical OpenAPI contains 1,185 operations. Operational recovery and
 retention activation remain policy-gated; neither database currently contains a
 Company-approved retention catalog entry.
+
+## P5 Messages & Meetings gap closure (2026-11-17)
+
+The owner approved MB-1 Channels & Member IDs, MB-2 scheduled/pinned/audience
+announcements, MB-3 Messaging Privacy, MB-4 Personal invitees and OD-16 advanced
+agenda. P5-04 WebSocket/Presence/Typing remains **DEFERRED BY OWNER**.
+See [ADR 0056](adr/0056-messages-meetings-gap-closure.md), the
+[frontend contract](frontend-handoff/MESSAGES_MEETINGS_GAP_CLOSURE.md) and
+[verification report](p5-gap-closure-report.md).
+
+Reuse Conversations/admission generations, existing receipt/block/notification
+privacy, independent Meetings/Calendar and publication-time audience snapshots.
+Extend only durable announcement scheduling/pin discovery, organizer invitation
+visibility and revisioned agenda duration/completion/shared notes. No new engine,
+dependency, frontend work, Shared activation, deployment or Phase 6 implementation.
+Initial verification applied the new migrations only to mehran_test. The later
+owner-approved [integrity checkpoint](p5-database-integrity-checkpoint.md) proved
+the two reported development checksum differences belonged only to retained
+rolled-back attempts. Both successful successors match canonical SQL and original
+Git history. Normal authorized deployment of M075/M076 completed; both development
+and test now have 101 successful matching migrations, with no pending or unresolved
+entries. Historical rollback evidence remains unchanged. No tests were rerun.

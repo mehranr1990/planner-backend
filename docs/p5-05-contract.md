@@ -1,5 +1,10 @@
 # P5-05 meeting and announcement contract
 
+Later additive changes: [P5-GAP-CLOSURE frontend contract](frontend-handoff/MESSAGES_MEETINGS_GAP_CLOSURE.md)
+documents scheduled publication, pin metadata/ordering, organizer invitation
+visibility and advanced agenda details. Existing publication/RSVP/minutes policies
+below remain authoritative. P5-04 remains DEFERRED BY OWNER.
+
 Authority: approved ADR 0048 and V3 Phase 5 specifications. P5-03 was published at
 `4515f1516f9dcdb4274c4a20b5981f444d7b019d` before this local implementation.
 The generated [OpenAPI](api/openapi.json) defines 52 additive operations.

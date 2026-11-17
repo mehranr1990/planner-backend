@@ -672,6 +672,47 @@ export class MeetingsService {
           : [],
     );
   }
+  organizerInvitations(actor: RequestActor, id: string, q: Page) {
+    return this.op.operation(
+      actor,
+      id,
+      'meeting.invitations.organizer',
+      async (s) => {
+        await this.op.organizer(s, true);
+        const stamp = await this.op.stamp(s),
+          context = 'meeting-organizer-invitations:' + id,
+          after = this.op.after(actor, context, stamp, q.cursor);
+        const rows = await s.tx.meetingInvitation.findMany({
+          where: { meetingId: id, ...(after ? { id: { gt: after } } : {}) },
+          orderBy: { id: 'asc' },
+          take: q.limit + 1,
+        });
+        const event = await this.event(s);
+        return c.OrganizerInvitationPageSchema.parse(
+          this.op.page(
+            actor,
+            context,
+            stamp,
+            rows.map((row) => ({
+              id: row.id,
+              meetingId: id,
+              title: event.title,
+              schedule: event.schedule,
+              state:
+                row.state === 'PENDING' && row.expiresAt <= s.now
+                  ? 'EXPIRED'
+                  : row.state,
+              revision: row.revision,
+              expiresAt: row.expiresAt.toISOString(),
+              recipientActorId: row.recipientActorId,
+              acceptedMemberId: row.acceptedMemberId,
+            })),
+            q.limit,
+          ),
+        );
+      },
+    );
+  }
   async invitations(actor: RequestActor, q: Page) {
     const actors = await this.op.authority.actors(actor),
       stamp = meetingHash(actors.sort()),

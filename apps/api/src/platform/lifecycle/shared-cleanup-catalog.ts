@@ -34,9 +34,12 @@ import type { Prisma } from '../../generated/prisma/client.js';
 // maintenance, observations, grant assignments and recovery drafts before their
 // members/resources; alert occurrences before rules/budgets; financial events and
 // approvals before delegations/policies. No new User FK blocks Personal erasure.
-// Future FK changes still fail closed until reviewed.
+// P5-GAP-CLOSURE adds four typed edges (1,071 total): schedules are removed
+// before announcement versions and source intervals; immutable agenda revisions
+// are removed under the actual lifecycle claim before entries and admissions.
+// None references User or Personal custody. Future FK changes fail closed.
 export const SHARED_CLEANUP_FK_SHA256 =
-  '958a5063f1f5aee880e8881441134a31b5c1979e00d33bfb51782a4c939cb2c3';
+  'e7581b5e95a60c1c55322ab57b541fbf58353cab38dd9c3e76a8b8e33bc9bdec';
 export async function assertSharedCleanupCatalog(tx: Prisma.TransactionClient) {
   const rows = await tx.$queryRaw<
     { table: string; name: string; target: string; definition: string }[]

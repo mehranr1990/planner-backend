@@ -200,7 +200,7 @@ export const meetingOperations: Operation[] = [
     path: '/announcements/scopes/{kind}/{scopeId}',
     method: 'get',
     output: c.AnnouncementVersionPageSchema,
-    query: c.MeetingPageQuerySchema,
+    query: c.AnnouncementListQuerySchema,
   },
   {
     path: '/announcements',

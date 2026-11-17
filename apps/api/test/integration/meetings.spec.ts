@@ -43,6 +43,8 @@ import {
   MeetingDocuments,
   MeetingFiles,
   AnnouncementsService,
+  AnnouncementSchedulesService,
+  AgendaDetailsService,
 } from '../../src/modules/meetings/public/index.js';
 type Person = { actor: RequestActor; email: string };
 describe('P5-05 meetings decisions and announcements', () => {
@@ -1583,6 +1585,482 @@ describe('P5-05 meetings decisions and announcements', () => {
         authorMemberId: randomUUID(),
       })
       .expect(400);
+  });
+
+  it('P5-GAP: personal invitation ledger preserves pending, tentative, declined and revoked responses without Personal access', async () => {
+    const m = await meeting([alice, bob]);
+    const ledger = await meetings.organizerInvitations(owner.actor, m.id, page);
+    expect(ledger.items).toHaveLength(2);
+    await expect(
+      meetings.organizerInvitations(alice.actor, m.id, page),
+    ).rejects.toThrow();
+    const invite = await admit(m.id, alice, 'TENTATIVE');
+    expect(
+      (await meetings.organizerInvitations(owner.actor, m.id, page)).items.find(
+        (x) => x.id === invite.id,
+      )?.state,
+    ).toBe('TENTATIVE');
+    await meetings.rsvp(
+      alice.actor,
+      invite.id,
+      invite.revision,
+      'DECLINED',
+      randomUUID(),
+    );
+    expect(
+      (await meetings.organizerInvitations(owner.actor, m.id, page)).items.find(
+        (x) => x.id === invite.id,
+      )?.state,
+    ).toBe('DECLINED');
+    await expect(meetings.get(alice.actor, m.id)).rejects.toThrow();
+    const pending = ledger.items.find((x) => x.id !== invite.id)!;
+    await meetings.revokeInvitation(
+      owner.actor,
+      m.id,
+      pending.id,
+      pending.revision,
+      randomUUID(),
+    );
+    expect(
+      (await meetings.organizerInvitations(owner.actor, m.id, page)).items.find(
+        (x) => x.id === pending.id,
+      )?.state,
+    ).toBe('REVOKED');
+    const personal = await db.space.findFirstOrThrow({
+      where: { ownerUserId: owner.actor.userId, kind: 'PERSONAL' },
+    });
+    expect(
+      await db.contextAccess.count({ where: { spaceId: personal.id } }),
+    ).toBe(0);
+  });
+
+  it('P5-GAP: agenda durations, shared note revisions, races, attribution and review lock preserve task independence', async () => {
+    const m = await meeting();
+    await admit(m.id);
+    const agenda = app.get(AgendaDetailsService);
+    let item = await meetings.propose(
+      owner.actor,
+      m.id,
+      { id: randomUUID(), text: 'Existing ordered entry' },
+      randomUUID(),
+    );
+    item = await meetings.selectAgenda(
+      owner.actor,
+      m.id,
+      item.id,
+      'ACCEPTED',
+      item.revision,
+      randomUUID(),
+    );
+    expect(
+      (await agenda.get(owner.actor, m.id, item.id)).plannedMinutes,
+    ).toBeNull();
+    const key = randomUUID(),
+      body = {
+        plannedMinutes: 45,
+        completed: true,
+        notes: 'Shared agenda note',
+      };
+    const detail = await agenda.patch(
+      owner.actor,
+      m.id,
+      item.id,
+      body,
+      item.revision,
+      key,
+    );
+    expect(
+      (await agenda.patch(owner.actor, m.id, item.id, body, item.revision, key))
+        .revision,
+    ).toBe(detail.revision);
+    expect(detail.completedAt).not.toBeNull();
+    expect((await agenda.summary(owner.actor, m.id)).totalPlannedMinutes).toBe(
+      45,
+    );
+    await expect(
+      agenda.patch(
+        alice.actor,
+        m.id,
+        item.id,
+        { completed: false },
+        detail.revision,
+        randomUUID(),
+      ),
+    ).rejects.toThrow();
+    const results = await Promise.allSettled(
+      ['One', 'Two'].map((notes) =>
+        agenda.patch(
+          alice.actor,
+          m.id,
+          item.id,
+          { notes },
+          detail.revision,
+          randomUUID(),
+        ),
+      ),
+    );
+    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    const history = await agenda.history(alice.actor, m.id, item.id, page);
+    expect(history.items).toHaveLength(2);
+    expect(history.items.some((x) => x.notes === 'Shared agenda note')).toBe(
+      true,
+    );
+    await expect(agenda.get(outsider.actor, m.id, item.id)).rejects.toThrow();
+    const before = await db.task.count();
+    await expect(
+      db.meetingAgendaRevision.update({
+        where: { id: history.items[0]!.id },
+        data: { notes: 'tamper' },
+      }),
+    ).rejects.toThrow();
+    await expect(
+      db.meetingAgendaRevision.delete({ where: { id: history.items[0]!.id } }),
+    ).rejects.toThrow();
+    const v = await draft(m.id, await memberId(m.id));
+    await documents.submit(owner.actor, m.id, v.id, v.revision, randomUUID());
+    const current = await agenda.get(owner.actor, m.id, item.id);
+    await expect(
+      agenda.patch(
+        owner.actor,
+        m.id,
+        item.id,
+        { notes: 'Locked' },
+        current.revision,
+        randomUUID(),
+      ),
+    ).rejects.toThrow();
+    expect(await db.task.count()).toBe(before);
+  });
+
+  it('P5-GAP: agenda HTTP headers, timed advisory and source Viewer boundaries', async () => {
+    const source = await work();
+    await join(source.id, viewer, 'VIEWER');
+    const m = await meetings.create(
+      owner.actor,
+      c.MeetingCreateSchema.parse({
+        id: randomUUID(),
+        kind: 'PROJECT',
+        sourceId: source.id,
+        participants: [viewer.actor.userId],
+        event: {
+          title: 'Timed',
+          schedule: {
+            kind: 'TIMED',
+            timezone: 'UTC',
+            localStart: '2026-12-01T10:00',
+            localEnd: '2026-12-01T10:30',
+          },
+        },
+      }),
+      randomUUID(),
+    );
+    await admit(m.id, viewer);
+    let entry = await meetings.propose(
+      owner.actor,
+      m.id,
+      { id: randomUUID(), text: 'Timed agenda' },
+      randomUUID(),
+    );
+    entry = await meetings.selectAgenda(
+      owner.actor,
+      m.id,
+      entry.id,
+      'ACCEPTED',
+      entry.revision,
+      randomUUID(),
+    );
+    const agenda = app.get(AgendaDetailsService);
+    await expect(
+      agenda.patch(
+        viewer.actor,
+        m.id,
+        entry.id,
+        { notes: 'No shared Viewer writes' },
+        entry.revision,
+        randomUUID(),
+      ),
+    ).rejects.toThrow();
+    expect((await agenda.get(viewer.actor, m.id, entry.id)).notes).toBe('');
+    const url = '/api/v1/meetings/' + m.id + '/agenda/' + entry.id + '/details',
+      server = app.getHttpServer();
+    await request(server).get(url).expect(401);
+    const session = await cookie(owner);
+    const current = await request(server)
+      .get(url)
+      .set('Cookie', session)
+      .expect(200);
+    expect(current.headers.etag).toBe('"' + entry.revision + '"');
+    await request(server)
+      .patch(url)
+      .set('Cookie', session)
+      .set('Origin', origin)
+      .set('Idempotency-Key', randomUUID())
+      .send({ plannedMinutes: 45 })
+      .expect(400);
+    await request(server)
+      .patch(url)
+      .set('Cookie', session)
+      .set('Origin', origin)
+      .set('If-Match', current.headers.etag as string)
+      .set('Idempotency-Key', randomUUID())
+      .send({ plannedMinutes: 45 })
+      .expect(200);
+    expect(await agenda.summary(owner.actor, m.id)).toEqual({
+      totalPlannedMinutes: 45,
+      meetingMinutes: 30,
+      exceedsMeetingLength: true,
+    });
+    expect((await meetings.get(owner.actor, m.id)).event.schedule).toEqual(
+      m.event.schedule,
+    );
+  });
+
+  async function scheduledFixture(audience: 'ALL' | 'NAMED' = 'ALL') {
+    const source = await work();
+    const seat = await join(source.id);
+    const a = await announcements.create(
+      owner.actor,
+      { id: randomUUID(), kind: 'PROJECT', sourceId: source.id },
+      randomUUID(),
+    );
+    const v = await announcements.createVersion(
+      owner.actor,
+      a.id,
+      {
+        id: randomUUID(),
+        title: 'Scheduled',
+        text: 'Private body',
+        acknowledgement: false,
+        attachments: [],
+      },
+      randomUUID(),
+    );
+    const schedules = new AnnouncementSchedulesService(
+      meetings.op,
+      announcements,
+    );
+    const input = {
+      scheduledAt: new Date(Date.now() + 3600000).toISOString(),
+      timezone: 'Asia/Tehran',
+      audience:
+        audience === 'ALL'
+          ? { audience: 'ALL' as const }
+          : {
+              audience: 'NAMED' as const,
+              members: [{ accessId: seat.id, generation: seat.generation }],
+            },
+    };
+    const s = await schedules.schedule(
+      owner.actor,
+      a.id,
+      v.id,
+      input,
+      v.revision,
+      randomUUID(),
+    );
+    return { source, seat, a, v, s, schedules, input };
+  }
+  async function due(versionId: string) {
+    // Explicit synthetic clock fixture in this owned schema; no configured data touched.
+    await db.announcementSchedule.update({
+      where: { versionId },
+      data: { scheduledAt: new Date(Date.now() - 10000) },
+    });
+  }
+  it('P5-GAP: scheduled publisher survives recreation, competing workers and retry with one atomic publication effect', async () => {
+    const { a, v, schedules } = await scheduledFixture();
+    await expect(
+      announcements.getVersion(alice.actor, a.id, v.id),
+    ).rejects.toThrow();
+    await expect(schedules.read(alice.actor, a.id, v.id)).rejects.toThrow();
+    await due(v.id);
+    await Promise.all([
+      schedules.consume(),
+      new AnnouncementSchedulesService(meetings.op, announcements).consume(),
+    ]);
+    expect(
+      (await announcements.getVersion(alice.actor, a.id, v.id)).state,
+    ).toBe('PUBLISHED');
+    expect((await schedules.read(owner.actor, a.id, v.id))?.status).toBe(
+      'PUBLISHED',
+    );
+    await schedules.consume();
+    expect(
+      await db.sharedOutboxEvent.count({
+        where: {
+          SharedAuditEvent: { resourceId: v.id },
+          action: 'announcement.scheduled.publish',
+        },
+      }),
+    ).toBe(1);
+    const targets = await db.announcementTarget.count({
+      where: { versionId: v.id },
+    });
+    expect(targets).toBe(2);
+    expect(
+      await db.messageNotice.count({ where: { spaceId: a.sourceId } }),
+    ).toBe(0);
+  });
+  it('P5-GAP: revised/canceled schedules reject stale writes and never publish after cancellation', async () => {
+    const { a, v, s, schedules, input } = await scheduledFixture();
+    const key = randomUUID(),
+      revised = await schedules.schedule(
+        owner.actor,
+        a.id,
+        v.id,
+        input,
+        s.revision,
+        key,
+      );
+    expect(
+      (
+        await schedules.schedule(
+          owner.actor,
+          a.id,
+          v.id,
+          input,
+          s.revision,
+          key,
+        )
+      ).revision,
+    ).toBe(revised.revision);
+    await expect(
+      schedules.cancel(owner.actor, a.id, v.id, s.revision, randomUUID()),
+    ).rejects.toThrow();
+    await schedules.cancel(
+      owner.actor,
+      a.id,
+      v.id,
+      revised.revision,
+      randomUUID(),
+    );
+    await due(v.id);
+    await schedules.consume();
+    expect(
+      (await announcements.getVersion(owner.actor, a.id, v.id)).state,
+    ).toBe('DRAFT');
+  });
+  it('P5-GAP: named recipient revocation fails closed without broadening the audience or publishing effects', async () => {
+    const { source, seat, a, v, schedules } = await scheduledFixture('NAMED');
+    await collaboration.leave(alice.actor, source.id, seat.revision);
+    await due(v.id);
+    await schedules.consume();
+    expect(
+      (await announcements.getVersion(owner.actor, a.id, v.id)).state,
+    ).toBe('DRAFT');
+    expect(
+      await db.announcementTarget.count({ where: { versionId: v.id } }),
+    ).toBe(0);
+  });
+
+  it('P5-GAP: scheduling manager revocation prevents deferred authority reuse', async () => {
+    const { source, a, v, s, schedules, input } = await scheduledFixture();
+    const seat = await join(source.id, bob, 'ADMIN');
+    await schedules.schedule(
+      bob.actor,
+      a.id,
+      v.id,
+      input,
+      s.revision,
+      randomUUID(),
+    );
+    await collaboration.leave(bob.actor, source.id, seat.revision);
+    await due(v.id);
+    await schedules.consume();
+    expect(
+      (await announcements.getVersion(owner.actor, a.id, v.id)).state,
+    ).toBe('DRAFT');
+  });
+  it('P5-GAP: pin priority is audience-filtered, paginated and invalidated on changes', async () => {
+    const { source, a, v, schedules } = await scheduledFixture('NAMED');
+    let published = await announcements.publish(
+      owner.actor,
+      a.id,
+      v.id,
+      { audience: 'ALL' },
+      (await announcements.getVersion(owner.actor, a.id, v.id)).revision,
+      randomUUID(),
+    );
+    const other = await announcements.create(
+      owner.actor,
+      { id: randomUUID(), kind: 'PROJECT', sourceId: source.id },
+      randomUUID(),
+    );
+    let second = await announcements.createVersion(
+      owner.actor,
+      other.id,
+      {
+        id: randomUUID(),
+        title: 'Another',
+        text: 'Allowed',
+        attachments: [],
+        acknowledgement: false,
+      },
+      randomUUID(),
+    );
+    second = await announcements.publish(
+      owner.actor,
+      other.id,
+      second.id,
+      { audience: 'ALL' },
+      second.revision,
+      randomUUID(),
+    );
+    published = await announcements.pin(
+      owner.actor,
+      a.id,
+      v.id,
+      true,
+      published.revision,
+      randomUUID(),
+    );
+    expect(published.pinnedAt).not.toBeNull();
+    await expect(
+      announcements.pin(
+        alice.actor,
+        a.id,
+        v.id,
+        false,
+        published.revision,
+        randomUUID(),
+      ),
+    ).rejects.toThrow();
+    const first = await announcements.list(alice.actor, source.id, 'PROJECT', {
+      limit: 1,
+      order: 'PINNED_FIRST',
+    });
+    expect(first.items[0]!.id).toBe(v.id);
+    const next = await announcements.list(alice.actor, source.id, 'PROJECT', {
+      limit: 1,
+      order: 'PINNED_FIRST',
+      cursor: first.nextCursor!,
+    });
+    expect(next.items[0]!.id).toBe(second.id);
+    published = await announcements.pin(
+      owner.actor,
+      a.id,
+      v.id,
+      false,
+      published.revision,
+      randomUUID(),
+    );
+    expect(published.pinnedAt).toBeNull();
+    await expect(
+      announcements.list(alice.actor, source.id, 'PROJECT', {
+        limit: 1,
+        order: 'PINNED_FIRST',
+        cursor: first.nextCursor!,
+      }),
+    ).rejects.toThrow();
+    expect((await schedules.read(owner.actor, a.id, v.id))?.status).toBe(
+      'PUBLISHED',
+    );
+    await expect(
+      announcements.list(outsider.actor, source.id, 'PROJECT', {
+        limit: 1,
+        order: 'PINNED_FIRST',
+      }),
+    ).rejects.toThrow();
   });
 
   it('OD-12: organizer-chosen busy-only blocks show source members schedule and recurrence only', async () => {

@@ -7,3 +7,5 @@ export { MeetingDocuments } from '../application/meeting-documents.js';
 export { MeetingFiles } from '../application/meeting-files.js';
 export { AnnouncementsService } from '../application/announcements.service.js';
 export { MeetingLifecycle } from '../application/meetings-lifecycle.service.js';
+export { AgendaDetailsService } from '../application/agenda-details.service.js';
+export { AnnouncementSchedulesService } from '../application/announcement-schedules.service.js';

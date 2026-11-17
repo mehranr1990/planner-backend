@@ -41,6 +41,9 @@ export default defineConfig({
         extends: true,
         test: {
           name: 'integration',
+          // Owned-schema deployment now replays 101 migrations. Keep assertion
+          // timeouts unchanged; allow bounded Windows/PostgreSQL bootstrap time.
+          hookTimeout: 60000,
           globalSetup: ['tooling/testing/integration-setup.ts'],
           include: ['apps/api/test/integration/**/*.spec.ts'],
           fileParallelism: false,
