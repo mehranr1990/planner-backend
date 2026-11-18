@@ -2937,12 +2937,26 @@ export class SharedKernel {
   ) {
     return this.contextLifecycle(actor, spaceId, action, write, 'COMPANY');
   }
+  /** P6-06: Social Group deletion only; archive/restore are not Social actions. */
+  socialGroupDelete<T>(
+    actor: RequestActor,
+    spaceId: string,
+    write: (tx: Prisma.TransactionClient) => Promise<T>,
+  ) {
+    return this.contextLifecycle(
+      actor,
+      spaceId,
+      'delete',
+      write,
+      'SOCIAL_GROUP',
+    );
+  }
   private async contextLifecycle<T>(
     actor: RequestActor,
     spaceId: string,
     action: 'archive' | 'restore' | 'delete',
     write: (tx: Prisma.TransactionClient) => Promise<T>,
-    kind: 'PROJECT' | 'TEAM' | 'COMPANY',
+    kind: 'PROJECT' | 'TEAM' | 'COMPANY' | 'SOCIAL_GROUP',
   ) {
     return this.restrictive(
       actor,
@@ -2953,7 +2967,7 @@ export class SharedKernel {
           action === 'delete' ? 'custody.dissolve' : 'custody.archive',
         allowArchived: true,
       },
-      kind.toLowerCase() + '.' + action,
+      kind.toLowerCase().replace('_', '.') + '.' + action,
       spaceId,
       async (tx, a, auditId) => {
         const custody = await this.lifecycleCustody(tx, spaceId);
@@ -2966,7 +2980,52 @@ export class SharedKernel {
         const now = (
           await tx.$queryRaw<{ now: Date }[]>`SELECT clock_timestamp() now`
         )[0]!.now;
-        if (action === 'delete') {
+        if (action === 'delete' && kind === 'SOCIAL_GROUP') {
+          // P6-06: the Owner's deletion revokes every other seat immediately.
+          // Recovery restores only the Owner seat; nobody regains access implicitly.
+          const seats = await tx.contextAccess.findMany({
+            where: {
+              spaceId,
+              scopeId: spaceId,
+              state: { in: ['ACTIVE', 'SUSPENDED'] },
+              id: { not: a.accessId },
+            },
+            orderBy: { id: 'asc' },
+          });
+          for (const seat of seats) {
+            await tx.contextAccess.update({
+              where: { id: seat.id },
+              data: {
+                state: 'REVOKED',
+                endedAt: now,
+                revision: { increment: 1 },
+              },
+            });
+            await tx.contextAccessInterval.updateMany({
+              where: {
+                accessId: seat.id,
+                generation: seat.generation,
+                endedAt: null,
+              },
+              data: { endedAt: now },
+            });
+            await this.effects(
+              tx,
+              actor,
+              a,
+              'membership.change',
+              seat.id,
+              undefined,
+              seat.memberRole
+                ? {
+                    actorId: seat.actorId,
+                    feature: 'shared.membership',
+                    delta: -1,
+                  }
+                : undefined,
+            );
+          }
+        } else if (action === 'delete') {
           // A deletion request is the sole full custodian's explicit last departure.
           if (
             (await this.lifecycleMemberRows(tx, spaceId)).some(
@@ -3038,7 +3097,7 @@ export class SharedKernel {
           tx,
           actor,
           a,
-          kind.toLowerCase() + '.' + action,
+          kind.toLowerCase().replace('_', '.') + '.' + action,
           spaceId,
           auditId,
           action === 'delete'
@@ -3248,6 +3307,8 @@ export class SharedKernel {
   async depart(
     actor: RequestActor,
     input: { spaceId: string; scopeId: string; revision: number },
+    /** Runs under the custody lock before the seat ends (P6-06 confirmations). */
+    guard?: (tx: Prisma.TransactionClient) => Promise<void>,
   ) {
     return this.restrictive(
       actor,
@@ -3259,6 +3320,7 @@ export class SharedKernel {
           where: { id: a.accessId },
         });
         if (access.revision !== input.revision) throw new ConflictException();
+        await guard?.(tx);
         const remaining = (
           await this.lifecycleMemberRows(tx, input.scopeId)
         ).filter((member) => member.id !== a.accessId).length;

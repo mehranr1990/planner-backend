@@ -1,0 +1,8 @@
+{
+  "post /api/v1/social-groups/{id}/leave request": {
+    "previous": [
+      "49bc7ce612c1f38e135773147b15cf32938a7cdb8f140beb1f10bbe249b89007"
+    ],
+    "approved": "c98c61dcd0f40fd9b8b1ce306049faec4edde01116a760b7c9f8009da67c4ff7"
+  }
+}

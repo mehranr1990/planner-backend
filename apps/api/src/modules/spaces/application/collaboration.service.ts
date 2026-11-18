@@ -1623,8 +1623,17 @@ export class CollaborationService {
       (tx, access) => this.memberView(tx, access),
     );
   }
-  leave(actor: RequestActor, spaceId: string, revision: number) {
-    return this.kernel.depart(actor, { spaceId, scopeId: spaceId, revision });
+  leave(
+    actor: RequestActor,
+    spaceId: string,
+    revision: number,
+    guard?: (tx: Prisma.TransactionClient) => Promise<void>,
+  ) {
+    return this.kernel.depart(
+      actor,
+      { spaceId, scopeId: spaceId, revision },
+      guard,
+    );
   }
   async createHandover(
     actor: RequestActor,

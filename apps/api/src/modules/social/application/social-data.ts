@@ -64,14 +64,15 @@ export class SocialDataOwner extends SocialData {
     });
     const ids = mine.map((p) => p.id);
     // ADR 0060 decision A: erasure is never blocked and never silently promotes
-    // anyone. An independent Activity losing its last organizer is closed and
-    // marked orphaned; participants keep their content and ledger rights.
+    // anyone. An Activity losing its last organizer is closed and marked
+    // orphaned; participants keep their content and ledger rights. P6-06
+    // (ADR 0066) applies this to Group-linked Activities too and ends the
+    // pending actions that needed the organizer.
     const organizing = await tx.socialActivityParticipant.findMany({
       where: { userId, state: 'ACTIVE', role: 'ORGANIZER' },
       include: { activity: true },
     });
     for (const p of organizing) {
-      if (p.activity.groupId) continue;
       const others = await tx.socialActivityParticipant.count({
         where: {
           activityId: p.activityId,
@@ -91,6 +92,7 @@ export class SocialDataOwner extends SocialData {
           revision: { increment: 1 },
         },
       });
+      await this.endOrganizerActions(tx, p.activityId, !p.activity.groupId);
     }
     await tx.socialActivity.updateMany({
       where: { successorParticipantId: { in: ids } },
@@ -150,6 +152,50 @@ export class SocialDataOwner extends SocialData {
     await tx.socialAuditEvent.updateMany({
       where: { actorUserId: userId },
       data: { actorUserId: null },
+    });
+  }
+  /**
+   * P6-06: outstanding invitations of an orphaned Activity end. Without a Group
+   * no approver remains, so pending expense revisions are withdrawn and pending
+   * goal reports retracted; effective amounts and settlements are untouched.
+   * Group Activities keep their ADR 0051 Group Owner/Admin approvers.
+   */
+  private async endOrganizerActions(
+    tx: Prisma.TransactionClient,
+    activityId: string,
+    noApprover: boolean,
+  ) {
+    const now = new Date();
+    await tx.socialActivityParticipant.updateMany({
+      where: { activityId, state: 'INVITED' },
+      data: { state: 'DECLINED', rsvp: 'DECLINED', revision: { increment: 1 } },
+    });
+    if (!noApprover) return;
+    const pending = await tx.socialExpenseRevision.findMany({
+      where: { state: 'PENDING', expense: { activityId } },
+      select: { id: true, expenseId: true },
+    });
+    for (const r of pending) {
+      await tx.socialExpenseRevision.update({
+        where: { id: r.id },
+        data: { state: 'WITHDRAWN' },
+      });
+      await tx.socialExpense.updateMany({
+        where: { id: r.expenseId, effectiveRevisionId: null },
+        data: { state: 'WITHDRAWN' },
+      });
+      await tx.socialExpense.update({
+        where: { id: r.expenseId },
+        data: { revision: { increment: 1 }, updatedAt: now },
+      });
+    }
+    const goals = await tx.socialGoal.findMany({
+      where: { activityId },
+      select: { id: true },
+    });
+    await tx.socialGoalEntry.updateMany({
+      where: { state: 'PENDING', goalId: { in: goals.map((g) => g.id) } },
+      data: { state: 'RETRACTED', revision: { increment: 1 }, updatedAt: now },
     });
   }
   /**
@@ -551,6 +597,67 @@ export class SocialDataOwner extends SocialData {
         tx.socialGoalEntry.findMany({
           where: { submittedByUserId: userId, ...after(a) },
           ...page,
+        }),
+      id,
+    );
+    // P6-06 (ADR 0066): the person's own ledger obligations, minimized to
+    // amounts and states. No titles, notes or counterparties' shares, so
+    // content of a Group they left cannot reappear through an export.
+    await budget.collect(
+      'socialExpenseShares',
+      (a: { revisionId: string; position: number } | undefined) =>
+        tx.socialExpenseShare.findMany({
+          where: {
+            userId,
+            ...(a
+              ? {
+                  OR: [
+                    { revisionId: { gt: a.revisionId } },
+                    { revisionId: a.revisionId, position: { gt: a.position } },
+                  ],
+                }
+              : {}),
+          },
+          orderBy: [{ revisionId: 'asc' }, { position: 'asc' }],
+          take: 100,
+          select: {
+            revisionId: true,
+            position: true,
+            shareMinor: true,
+            revision: {
+              select: {
+                expenseId: true,
+                number: true,
+                state: true,
+                currency: true,
+                incurredOn: true,
+              },
+            },
+          },
+        }),
+      (r) => ({ revisionId: r.revisionId, position: r.position }),
+    );
+    await budget.collect(
+      'socialSettlements',
+      (a: string | undefined) =>
+        tx.socialSettlement.findMany({
+          where: {
+            OR: [{ payerUserId: userId }, { payeeUserId: userId }],
+            ...after(a),
+          },
+          ...page,
+          select: {
+            id: true,
+            groupId: true,
+            activityId: true,
+            payerUserId: true,
+            payeeUserId: true,
+            currency: true,
+            amountMinor: true,
+            state: true,
+            createdAt: true,
+            decidedAt: true,
+          },
         }),
       id,
     );

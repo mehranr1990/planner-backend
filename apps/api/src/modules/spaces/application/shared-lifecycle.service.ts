@@ -621,7 +621,13 @@ export class SharedLifecycleService {
           return wait(
             'BLOCKED_POLICY',
             blockedContent,
-            new Date(now.getTime() + 3600000),
+            // P6-06 (ADR 0066 B): protected Social records never become
+            // disposable by time alone, so the job is parked instead of
+            // re-checked hourly. Only an approved disposal policy (an operator
+            // re-arm of nextAt) can make it eligible again.
+            kind === 'SOCIAL_GROUP'
+              ? new Date('9999-12-31T00:00:00.000Z')
+              : new Date(now.getTime() + 3600000),
           );
         const configuration = parsed.data;
         if (

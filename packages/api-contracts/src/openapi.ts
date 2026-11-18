@@ -6,6 +6,7 @@ import { socialPaths } from './social-openapi.js';
 import { socialActivityPaths } from './social-activities-openapi.js';
 import { socialLendingPaths } from './social-lending-openapi.js';
 import { socialGoalPaths } from './social-goals-openapi.js';
+import { socialLifecyclePaths } from './social-lifecycle-openapi.js';
 import { communicationLifecyclePaths } from './communication-lifecycle-openapi.js';
 import { companyAssociationPaths } from './company-associations-openapi.js';
 import { companyLifecyclePaths } from './company-lifecycle-openapi.js';
@@ -284,6 +285,7 @@ export function createOpenApiDocument() {
       ...socialActivityPaths(),
       ...socialLendingPaths(),
       ...socialGoalPaths(),
+      ...socialLifecyclePaths(),
       ...communicationLifecyclePaths(),
       ...advancedMessagingPaths(),
       ...messagingMediaPaths(),

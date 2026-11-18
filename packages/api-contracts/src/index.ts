@@ -99,6 +99,7 @@ export * from './social.js';
 export * from './social-activities.js';
 export * from './social-lending.js';
 export * from './social-goals.js';
+export * from './social-lifecycle.js';
 export * from './scope-access.js';
 export * from './backend-completion.js';
 export * from './team-files.js';

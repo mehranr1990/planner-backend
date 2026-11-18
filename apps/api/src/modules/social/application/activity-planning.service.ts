@@ -870,11 +870,15 @@ export class SocialPlanningService {
             resourceId: p.activityId,
             dedupe: `${p.activityId}:${p.activity.startsAt.toISOString()}:${p.reminderMinutes}`,
           });
-      const rows = await tx.socialNotice.findMany({
-        where: { userId: actor.userId },
-        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-        take: 1000,
-      });
+      const rows = await this.visible(
+        tx,
+        actor.userId,
+        await tx.socialNotice.findMany({
+          where: { userId: actor.userId },
+          orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+          take: 1000,
+        }),
+      );
       rows.sort((x, y) => x.id.localeCompare(y.id));
       return this.rt.context.page(
         actor,
@@ -884,6 +888,47 @@ export class SocialPlanningService {
         rows.map((r) => this.noticeView(r)),
       );
     });
+  }
+  /**
+   * P6-06 (ADR 0066): Group-derived notices follow current Group membership,
+   * so departure, removal or Group deletion hides them at once. Independent
+   * and guest Activity notices are unaffected; a notice about the person's
+   * own settlement stays with the retained obligation.
+   */
+  private async visible(tx: Tx, userId: string, rows: NoticeRow[]) {
+    const groups = new Map<string, boolean>();
+    const member = async (groupId: string) => {
+      if (!groups.has(groupId))
+        groups.set(
+          groupId,
+          (await this.rt.groupUsers(tx, groupId)).has(userId),
+        );
+      return groups.get(groupId)!;
+    };
+    const out: NoticeRow[] = [];
+    for (const r of rows) {
+      let groupId = r.groupId;
+      if (r.activityId) {
+        const p = await tx.socialActivityParticipant.findFirst({
+          where: { activityId: r.activityId, userId },
+          select: { guest: true, activity: { select: { groupId: true } } },
+        });
+        groupId = p && !p.guest ? p.activity.groupId : null;
+      }
+      if (groupId && !(await member(groupId))) {
+        const own =
+          r.kind.startsWith('SETTLEMENT_') &&
+          (await tx.socialSettlement.count({
+            where: {
+              id: r.resourceId,
+              OR: [{ payerUserId: userId }, { payeeUserId: userId }],
+            },
+          }));
+        if (!own) continue;
+      }
+      out.push(r);
+    }
+    return out;
   }
   private noticeView(r: NoticeRow) {
     return c.SocialNoticeSchema.parse({
@@ -914,7 +959,8 @@ export class SocialPlanningService {
           const row = await tx.socialNotice.findFirst({
             where: { id: noticeId, userId: actor.userId },
           });
-          if (!row) throw new NotFoundException();
+          if (!row || !(await this.visible(tx, actor.userId, [row])).length)
+            throw new NotFoundException();
           const read = row.readAt
             ? row
             : await tx.socialNotice.update({

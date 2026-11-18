@@ -272,15 +272,21 @@ export function assertApiCompatible(
     const extension = responseExtensions[contract];
     if (
       current[contract] !==
-        approvedSocialGoalsHash(
+        approvedSocialLifecycleHash(
           contract,
-          approvedSocialLendingHash(
+          approvedSocialGoalsHash(
             contract,
-            approvedMessagesMeetingsHash(
+            approvedSocialLendingHash(
               contract,
-              approvedCompanyHash(
+              approvedMessagesMeetingsHash(
                 contract,
-                approvedTeamHash(contract, approvedProjectHash(contract, hash)),
+                approvedCompanyHash(
+                  contract,
+                  approvedTeamHash(
+                    contract,
+                    approvedProjectHash(contract, hash),
+                  ),
+                ),
               ),
             ),
           ),
@@ -323,5 +329,20 @@ const socialGoalsExtensions = JSON.parse(
 ) as Record<string, { previous: string[]; approved: string }>;
 export function approvedSocialGoalsHash(contract: string, previous: string) {
   const change = socialGoalsExtensions[contract];
+  return change?.previous.includes(previous) ? change.approved : previous;
+}
+// ADR 0066: the leave request gains one optional confirmation field; an empty
+// or absent body stays valid. No response, status or other contract changed.
+const socialLifecycleExtensions = JSON.parse(
+  fs.readFileSync(
+    new URL('./social-lifecycle-api-extensions.json', import.meta.url),
+    'utf8',
+  ),
+) as Record<string, { previous: string[]; approved: string }>;
+export function approvedSocialLifecycleHash(
+  contract: string,
+  previous: string,
+) {
+  const change = socialLifecycleExtensions[contract];
   return change?.previous.includes(previous) ? change.approved : previous;
 }

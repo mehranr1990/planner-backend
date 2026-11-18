@@ -7,7 +7,9 @@ import {
   SocialGroupsController,
   SocialGroupInvitationsController,
 } from '../../src/modules/social/http/groups.controller.js';
+import { SocialGroupExitController } from '../../src/modules/social/http/group-exit.controller.js';
 import { socialPaths } from '../../../../packages/api-contracts/src/social-openapi.js';
+import { socialLifecyclePaths } from '../../../../packages/api-contracts/src/social-lifecycle-openapi.js';
 describe('P6-01 implemented OpenAPI operation parity', () => {
   it('documents exactly registered Social routes with no invented future operations', () => {
     const actual: string[] = [];
@@ -15,6 +17,8 @@ describe('P6-01 implemented OpenAPI operation parity', () => {
       SocialController,
       SocialGroupsController,
       SocialGroupInvitationsController,
+      // P6-06: leave moved here; exit-check, delete and recovery added.
+      SocialGroupExitController,
     ]) {
       const prefix = Reflect.getMetadata(PATH_METADATA, controller) as string;
       for (const name of Object.getOwnPropertyNames(controller.prototype)) {
@@ -38,7 +42,10 @@ describe('P6-01 implemented OpenAPI operation parity', () => {
         actual.push(RequestMethod[method]!.toLowerCase() + ' ' + route);
       }
     }
-    const documented = Object.entries(socialPaths()).flatMap(([path, verbs]) =>
+    const documented = Object.entries({
+      ...socialPaths(),
+      ...socialLifecyclePaths(),
+    }).flatMap(([path, verbs]) =>
       Object.keys(verbs).map((verb) => verb + ' ' + path),
     );
     expect(actual.sort()).toEqual(documented.sort());

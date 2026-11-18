@@ -32,6 +32,8 @@ import {
 } from './http/lending.controller.js';
 import { SocialGoalsService } from './application/goals.service.js';
 import { SocialGoalsController } from './http/goals.controller.js';
+import { SocialGroupExitService } from './application/group-exit.service.js';
+import { SocialGroupExitController } from './http/group-exit.controller.js';
 /** P6-02/P6-03 (and P6-04 lending, Lost & Found; P6-05 goals): needs the composed Task and Calendar owners, as Meetings does. */
 @Module({})
 export class SocialActivitiesModule implements OnModuleInit {
@@ -71,6 +73,7 @@ export class SocialActivitiesModule implements OnModuleInit {
         SocialLendingService,
         SocialLostFoundService,
         SocialGoalsService,
+        SocialGroupExitService,
       ],
       controllers: [
         SocialActivitiesController,
@@ -81,6 +84,7 @@ export class SocialActivitiesModule implements OnModuleInit {
         SocialLoansController,
         SocialLostFoundController,
         SocialGoalsController,
+        SocialGroupExitController,
       ],
       exports: [
         SocialActivitiesService,

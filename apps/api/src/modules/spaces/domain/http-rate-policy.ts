@@ -44,6 +44,8 @@ export function sharedRatePolicy(traffic?: SharedTraffic, preview = false) {
       )) ||
     (traffic?.method === 'DELETE' &&
       /^\/social-activities\/[^/]+$/.test(route)) ||
+    // P6-06 Social Group deletion is a custody lifecycle action (ADR 0066).
+    (!read && /^\/social-groups\/[^/]+\/delete$/.test(route)) ||
     (!read &&
       (/\/(?:invitations|[^/]*invitations|ownership-handovers|memberships|members|participants|organizer|grants|resource-grants|access|roles|capabilities|permissions|policy|settings|retention|lifecycle|lifecycle-job|restore-replay|restore-admission|discovery|blocks|contact-block|connections)(?:\/|$)/.test(
         route,

@@ -30,7 +30,20 @@ type Ledger = {
   approver: boolean;
   member: boolean;
   open: boolean;
+  /** P6-06: a departed party keeps only their own balance and settlements. */
+  former: boolean;
+  /** Settlement counterparties: current participants plus open-balance parties. */
+  parties: () => Promise<Set<string>>;
 };
+export type SocialObligation = {
+  ledgerKind: 'GROUP' | 'ACTIVITY';
+  ledgerId: string;
+  currency: string;
+  netMinor: string;
+  owedMinor: string;
+  receivableMinor: string;
+};
+type Where = { groupId: string } | { activityId: string };
 type ExpenseRow = Prisma.SocialExpenseGetPayload<{
   include: { revisions: { include: { shares: true } } };
 }>;
@@ -58,10 +71,26 @@ export class SocialExpensesService {
     ref: LedgerRef,
     users: string[],
     work: (tx: Tx, now: Date, l: Ledger, locked: string[]) => Promise<T>,
+    former = false,
   ) {
     const groupId = ref.id;
+    const parties = (tx: Tx, where: Where, eligible: Set<string>) => async () =>
+      new Set([
+        ...eligible,
+        ...(await this.open(tx, where)).map((r) => r.userId),
+      ]);
     if (ref.kind === 'ACTIVITY') {
       const h = await this.rt.hint(ref.id);
+      if (former && h.groupId && (await this.retained(h.groupId)))
+        return this.retainedLedger(
+          actor,
+          users,
+          { activityId: h.id },
+          work,
+          async (tx) => {
+            await this.rt.lock(tx, h.id);
+          },
+        );
       return this.rt.run(actor, h.groupId, users, async (tx, now, locked) => {
         const { act, a } = await this.activities.enter(
           tx,
@@ -71,16 +100,23 @@ export class SocialExpensesService {
           locked,
           true,
         );
-        this.activities.require(a);
+        // P6-06: Group departure ends Activity access; an open balance keeps
+        // only the person's own balance and settlements reachable.
+        const formerParty =
+          !(a.active || a.manage) &&
+          former &&
+          (await this.owes(tx, { activityId: act.id }, actor.userId));
+        if (!formerParty) this.activities.require(a);
         const eligible = await this.rt.eligible(tx, act);
         const organizers = eligible.filter((p) => p.role === 'ORGANIZER');
+        const ids = new Set(eligible.map((p) => p.userId!));
         return work(
           tx,
           now,
           {
             groupId: null,
             activityId: act.id,
-            eligible: new Set(eligible.map((p) => p.userId!)),
+            eligible: ids,
             approvers: [
               ...organizers.map((p) => p.userId!),
               ...(act.groupId ? await this.groupAdmins(tx, act.groupId) : []),
@@ -90,36 +126,180 @@ export class SocialExpensesService {
             member: a.active,
             // Deleted Activities keep their ledger readable and settleable (decision B).
             open: act.state !== 'CANCELED' && act.state !== 'DELETED',
+            former: formerParty,
+            parties: parties(tx, { activityId: act.id }, ids),
           },
           locked,
         );
       });
     }
     this.rt.kernel.assertEnabled();
+    if (former && (await this.retained(groupId)))
+      return this.retainedLedger(actor, users, { groupId }, work);
     return this.rt.run(actor, groupId, users, async (tx, now, locked) => {
-      if (!(await this.rt.can(tx, actor, groupId, 'task.read', locked)))
-        throw new NotFoundException();
+      const member = await this.rt.can(tx, actor, groupId, 'task.read', locked);
+      const formerParty =
+        !member && former && (await this.owes(tx, { groupId }, actor.userId));
+      if (!member && !formerParty) throw new NotFoundException();
+      const eligible = await this.rt.groupUsers(tx, groupId);
       return work(
         tx,
         now,
         {
           groupId,
           activityId: null,
-          eligible: await this.rt.groupUsers(tx, groupId),
+          eligible,
           approvers: await this.groupAdmins(tx, groupId),
-          approver: await this.rt.can(
-            tx,
-            actor,
-            groupId,
-            'settings.manage',
-            locked,
-          ),
-          member: true,
+          approver:
+            member &&
+            (await this.rt.can(tx, actor, groupId, 'settings.manage', locked)),
+          member,
           open: true,
+          former: formerParty,
+          parties: parties(tx, { groupId }, eligible),
         },
         locked,
       );
     });
+  }
+  /** A deleted (or policy-blocked) Group whose ledger records are retained. */
+  private async retained(groupId: string) {
+    const custody = await this.rt.db.client.sharedCustody.findUnique({
+      where: { spaceId: groupId },
+      select: { kind: true, state: true },
+    });
+    return custody?.kind === 'SOCIAL_GROUP' && custody.state !== 'ACTIVE';
+  }
+  /**
+   * P6-06 owner decision (ADR 0066 C): after Group deletion — including after
+   * the recovery deadline — a party with a nonzero balance keeps only their own
+   * balance, settlements and settlement recording/decisions. No Group fence
+   * applies (nobody holds a seat); the verified-account fence and the existing
+   * counterparty, revision, idempotency and audit rules do. Everyone else: 404.
+   */
+  private retainedLedger<T>(
+    actor: RequestActor,
+    users: string[],
+    where: Where,
+    work: (tx: Tx, now: Date, l: Ledger, locked: string[]) => Promise<T>,
+    lock?: (tx: Tx) => Promise<void>,
+  ) {
+    return this.rt.kernel.contactOperation(
+      actor,
+      users,
+      async (tx, now, locked) => {
+        await this.rt.context.owner(tx, actor.userId);
+        await lock?.(tx);
+        if (!(await this.owes(tx, where, actor.userId)))
+          throw new NotFoundException();
+        const none = new Set<string>();
+        return work(
+          tx,
+          now,
+          {
+            groupId: 'groupId' in where ? where.groupId : null,
+            activityId: 'activityId' in where ? where.activityId : null,
+            eligible: none,
+            approvers: [],
+            approver: false,
+            member: false,
+            open: true,
+            former: true,
+            parties: async () =>
+              new Set((await this.open(tx, where)).map((r) => r.userId)),
+          },
+          locked,
+        );
+      },
+    );
+  }
+  /** Effective balances of one ledger (approved revisions, confirmed settlements). */
+  private async ledger(tx: Tx, where: Where) {
+    const effective = await tx.socialExpenseRevision.findMany({
+      where: {
+        state: 'APPROVED',
+        effectiveFor: { is: { ...where, state: 'APPROVED' } },
+      },
+      include: { shares: true },
+      take: LIMIT + 1,
+    });
+    const settled = await tx.socialSettlement.findMany({
+      where: { ...where, state: 'CONFIRMED' },
+      take: LIMIT + 1,
+    });
+    if (effective.length > LIMIT || settled.length > LIMIT)
+      throw new PayloadTooLargeException();
+    return balances(effective, settled);
+  }
+  private async open(tx: Tx, where: Where) {
+    return (await this.ledger(tx, where)).filter((r) => r.netMinor !== 0n);
+  }
+  private async owes(tx: Tx, where: Where, userId: string) {
+    return (await this.open(tx, where)).some((r) => r.userId === userId);
+  }
+  /** Group ledger plus the Group's Activity ledgers, bounded. */
+  private async groupLedgers(tx: Tx, groupId: string, userId?: string) {
+    const acts = await tx.socialActivity.findMany({
+      where: {
+        groupId,
+        // A departing person's guest participation is independent of the Group.
+        ...(userId ? { participants: { some: { userId, guest: false } } } : {}),
+      },
+      select: { id: true },
+      orderBy: { id: 'asc' },
+      take: LIMIT + 1,
+    });
+    if (acts.length > LIMIT) throw new PayloadTooLargeException();
+    return [
+      { kind: 'GROUP' as const, id: groupId, where: { groupId } },
+      ...acts.map((a) => ({
+        kind: 'ACTIVITY' as const,
+        id: a.id,
+        where: { activityId: a.id },
+      })),
+    ];
+  }
+  /**
+   * P6-06: the person's own nonzero balances that Group departure affects.
+   * Amounts only; never counterparties, names or expense content.
+   */
+  async departureObligations(
+    tx: Tx,
+    groupId: string,
+    userId: string,
+  ): Promise<SocialObligation[]> {
+    const out: SocialObligation[] = [];
+    for (const l of await this.groupLedgers(tx, groupId, userId))
+      for (const r of await this.open(tx, l.where))
+        if (r.userId === userId)
+          out.push({
+            ledgerKind: l.kind,
+            ledgerId: l.id,
+            currency: r.currency,
+            netMinor: r.netMinor.toString(),
+            owedMinor: r.owedMinor.toString(),
+            receivableMinor: r.receivableMinor.toString(),
+          });
+    return out;
+  }
+  /** P6-06: Group-wide open balances (counts only) for the deleting owner. */
+  async groupOutstanding(tx: Tx, groupId: string) {
+    const ledgers: string[] = [],
+      parties = new Set<string>(),
+      fingerprint: string[] = [];
+    for (const l of await this.groupLedgers(tx, groupId)) {
+      const rows = await this.open(tx, l.where);
+      if (rows.length) ledgers.push(l.id);
+      for (const r of rows) {
+        parties.add(r.userId);
+        fingerprint.push(`${l.id}:${r.userId}:${r.currency}:${r.netMinor}`);
+      }
+    }
+    return {
+      ledgerCount: ledgers.length,
+      partyCount: parties.size,
+      fingerprint: fingerprint.sort(),
+    };
   }
   private async groupAdmins(tx: Tx, groupId: string) {
     const custody = await tx.sharedCustody.findUnique({
@@ -577,47 +757,39 @@ export class SocialExpensesService {
     });
   }
   async balances(actor: RequestActor, ref: LedgerRef, all: boolean) {
-    return this.run(actor, ref, [], async (tx, _now, l) => {
-      // ADR 0051: members see their own balances; administrators see their whole scope.
-      if (all && !l.approver)
-        throw new ForbiddenException({ code: 'BALANCE_PERMISSION_REQUIRED' });
-      const effective = await tx.socialExpenseRevision.findMany({
-        where: {
-          state: 'APPROVED',
-          effectiveFor: { is: { ...this.where(l), state: 'APPROVED' } },
-        },
-        include: { shares: true },
-        take: LIMIT + 1,
-      });
-      const settled = await tx.socialSettlement.findMany({
-        where: { ...this.where(l), state: 'CONFIRMED' },
-        take: LIMIT + 1,
-      });
-      if (effective.length > LIMIT || settled.length > LIMIT)
-        throw new PayloadTooLargeException();
-      const rows = balances(effective, settled).filter(
-        (r) => all || r.userId === actor.userId,
-      );
-      const names = new Map<string, string | null>();
-      if (all)
-        for (const r of rows)
-          if (!names.has(r.userId))
-            names.set(r.userId, await this.rt.displayName(tx, r.userId));
-      return c.SocialBalanceListSchema.parse({
-        items: rows.map((r) => ({
-          userId: r.userId,
-          displayName: all ? (names.get(r.userId) ?? null) : null,
-          currency: r.currency,
-          paidMinor: r.paidMinor.toString(),
-          shareMinor: r.shareMinor.toString(),
-          settledOutMinor: r.settledOutMinor.toString(),
-          settledInMinor: r.settledInMinor.toString(),
-          netMinor: r.netMinor.toString(),
-          owedMinor: r.owedMinor.toString(),
-          receivableMinor: r.receivableMinor.toString(),
-        })),
-      });
-    });
+    return this.run(
+      actor,
+      ref,
+      [],
+      async (tx, _now, l) => {
+        // ADR 0051: members see their own balances; administrators see their whole scope.
+        if (all && !l.approver)
+          throw new ForbiddenException({ code: 'BALANCE_PERMISSION_REQUIRED' });
+        const rows = (await this.ledger(tx, this.where(l))).filter(
+          (r) => all || r.userId === actor.userId,
+        );
+        const names = new Map<string, string | null>();
+        if (all)
+          for (const r of rows)
+            if (!names.has(r.userId))
+              names.set(r.userId, await this.rt.displayName(tx, r.userId));
+        return c.SocialBalanceListSchema.parse({
+          items: rows.map((r) => ({
+            userId: r.userId,
+            displayName: all ? (names.get(r.userId) ?? null) : null,
+            currency: r.currency,
+            paidMinor: r.paidMinor.toString(),
+            shareMinor: r.shareMinor.toString(),
+            settledOutMinor: r.settledOutMinor.toString(),
+            settledInMinor: r.settledInMinor.toString(),
+            netMinor: r.netMinor.toString(),
+            owedMinor: r.owedMinor.toString(),
+            receivableMinor: r.receivableMinor.toString(),
+          })),
+        });
+      },
+      true,
+    );
   }
   private settlementView(r: Prisma.SocialSettlementGetPayload<object>) {
     return c.SocialSettlementSchema.parse({
@@ -645,91 +817,110 @@ export class SocialExpensesService {
     key: string | undefined,
   ) {
     const keyHash = socialKey(key);
-    return this.run(actor, ref, [body.payeeUserId], async (tx, now, l) => {
-      if (!l.member)
-        throw new ForbiddenException({ code: 'LEDGER_PARTICIPATION_REQUIRED' });
-      return this.rt.once(
-        tx,
-        actor,
-        'social.settlement.create',
-        key,
-        { ref, body },
-        now,
-        async () => {
-          if (
-            body.payeeUserId === actor.userId ||
-            !l.eligible.has(body.payeeUserId) ||
-            !l.eligible.has(actor.userId)
-          )
-            throw new UnprocessableEntityException({
-              code: 'PARTICIPANT_INELIGIBLE',
+    return this.run(
+      actor,
+      ref,
+      [body.payeeUserId],
+      async (tx, now, l) => {
+        if (!l.member && !l.former)
+          throw new ForbiddenException({
+            code: 'LEDGER_PARTICIPATION_REQUIRED',
+          });
+        return this.rt.once(
+          tx,
+          actor,
+          'social.settlement.create',
+          key,
+          { ref, body },
+          now,
+          async () => {
+            // P6-06: a departed party with an open balance stays a counterparty.
+            const parties = await l.parties();
+            if (
+              body.payeeUserId === actor.userId ||
+              !parties.has(body.payeeUserId) ||
+              !parties.has(actor.userId)
+            )
+              throw new UnprocessableEntityException({
+                code: 'PARTICIPANT_INELIGIBLE',
+              });
+            if (
+              await tx.socialSettlement.findUnique({ where: { id: body.id } })
+            )
+              throw new ConflictException({ code: 'SETTLEMENT_EXISTS' });
+            if (
+              (await tx.socialSettlement.count({ where: this.where(l) })) >=
+              LIMIT
+            )
+              throw new PayloadTooLargeException();
+            const row = await tx.socialSettlement.create({
+              data: {
+                id: body.id,
+                ...this.where(l),
+                payerUserId: actor.userId,
+                payeeUserId: body.payeeUserId,
+                currency: body.currency,
+                scale: c.financeCurrencyScales[body.currency]!,
+                amountMinor: BigInt(body.amountMinor),
+                note: body.note ?? null,
+                creationKeyHash: keyHash,
+                creationFingerprint: socialHash(body),
+              },
             });
-          if (await tx.socialSettlement.findUnique({ where: { id: body.id } }))
-            throw new ConflictException({ code: 'SETTLEMENT_EXISTS' });
-          if (
-            (await tx.socialSettlement.count({ where: this.where(l) })) >= LIMIT
-          )
-            throw new PayloadTooLargeException();
-          const row = await tx.socialSettlement.create({
-            data: {
-              id: body.id,
-              ...this.where(l),
-              payerUserId: actor.userId,
-              payeeUserId: body.payeeUserId,
-              currency: body.currency,
-              scale: c.financeCurrencyScales[body.currency]!,
-              amountMinor: BigInt(body.amountMinor),
-              note: body.note ?? null,
-              creationKeyHash: keyHash,
-              creationFingerprint: socialHash(body),
-            },
-          });
-          await this.rt.notify(tx, [body.payeeUserId], {
-            activityId: l.activityId,
-            groupId: l.groupId,
-            kind: 'SETTLEMENT_RECORDED',
-            resourceId: row.id,
-            dedupe: row.id,
-          });
-          await this.rt.record(
-            tx,
-            actor,
-            l,
-            'social.settlement.record',
-            row.id,
-          );
-          return { resultId: row.id, value: this.settlementView(row) };
-        },
-      );
-    });
+            await this.rt.notify(tx, [body.payeeUserId], {
+              activityId: l.activityId,
+              groupId: l.groupId,
+              kind: 'SETTLEMENT_RECORDED',
+              resourceId: row.id,
+              dedupe: row.id,
+            });
+            await this.rt.record(
+              tx,
+              actor,
+              l,
+              'social.settlement.record',
+              row.id,
+            );
+            return { resultId: row.id, value: this.settlementView(row) };
+          },
+        );
+      },
+      true,
+    );
   }
   async settlements(actor: RequestActor, ref: LedgerRef, q: Page) {
-    return this.run(actor, ref, [], async (tx, _now, l) => {
-      const rows = await tx.socialSettlement.findMany({
-        where: {
-          ...this.where(l),
-          ...(l.approver
-            ? {}
-            : {
-                OR: [
-                  { payerUserId: actor.userId },
-                  { payeeUserId: actor.userId },
-                ],
-              }),
-        },
-        orderBy: { id: 'asc' },
-        take: LIMIT + 1,
-      });
-      if (rows.length > LIMIT) throw new PayloadTooLargeException();
-      const items = rows.map((r) => this.settlementView(r));
-      return this.rt.context.page(
-        actor,
-        'social.settlements:' + ref.kind + ':' + ref.id,
-        socialHash([l.approver, items.map((i) => [i.id, i.revision])]),
-        q,
-        items,
-      );
-    });
+    return this.run(
+      actor,
+      ref,
+      [],
+      async (tx, _now, l) => {
+        const rows = await tx.socialSettlement.findMany({
+          where: {
+            ...this.where(l),
+            ...(l.approver
+              ? {}
+              : {
+                  OR: [
+                    { payerUserId: actor.userId },
+                    { payeeUserId: actor.userId },
+                  ],
+                }),
+          },
+          orderBy: { id: 'asc' },
+          take: LIMIT + 1,
+        });
+        if (rows.length > LIMIT) throw new PayloadTooLargeException();
+        const items = rows.map((r) => this.settlementView(r));
+        return this.rt.context.page(
+          actor,
+          'social.settlements:' + ref.kind + ':' + ref.id,
+          socialHash([l.approver, items.map((i) => [i.id, i.revision])]),
+          q,
+          items,
+        );
+      },
+      true,
+    );
   }
   async decideSettlement(
     actor: RequestActor,
@@ -740,78 +931,84 @@ export class SocialExpensesService {
     revision: number,
     key: string | undefined,
   ) {
-    return this.run(actor, ref, [], async (tx, now, l) =>
-      this.rt.once(
-        tx,
-        actor,
-        'social.settlement.' + action,
-        key,
-        { ref, settlementId, body, revision },
-        now,
-        async () => {
-          await tx.$queryRaw`SELECT id FROM "SocialSettlement" WHERE id=${settlementId}::uuid FOR UPDATE`;
-          const row = await tx.socialSettlement.findFirst({
-            where: { id: settlementId, ...this.where(l) },
-          });
-          if (
-            !row ||
-            (row.payerUserId !== actor.userId &&
-              row.payeeUserId !== actor.userId &&
-              !l.approver)
-          )
-            throw new NotFoundException();
-          // Only the counterparty confirms or disputes; only the recording payer cancels.
-          const party = action === 'cancel' ? row.payerUserId : row.payeeUserId;
-          if (party !== actor.userId)
-            throw new ForbiddenException({
-              code: 'SETTLEMENT_COUNTERPARTY_REQUIRED',
+    return this.run(
+      actor,
+      ref,
+      [],
+      async (tx, now, l) =>
+        this.rt.once(
+          tx,
+          actor,
+          'social.settlement.' + action,
+          key,
+          { ref, settlementId, body, revision },
+          now,
+          async () => {
+            await tx.$queryRaw`SELECT id FROM "SocialSettlement" WHERE id=${settlementId}::uuid FOR UPDATE`;
+            const row = await tx.socialSettlement.findFirst({
+              where: { id: settlementId, ...this.where(l) },
             });
-          socialRevision(revision, row.revision);
-          if (
-            !['RECORDED', 'DISPUTED'].includes(row.state) ||
-            (action === 'dispute' && row.state !== 'RECORDED')
-          )
-            throw new ConflictException({ code: 'SETTLEMENT_NOT_PENDING' });
-          if (action === 'dispute' && !body.note?.trim())
-            throw new UnprocessableEntityException({
-              code: 'DISPUTE_NOTE_REQUIRED',
+            if (
+              !row ||
+              (row.payerUserId !== actor.userId &&
+                row.payeeUserId !== actor.userId &&
+                !l.approver)
+            )
+              throw new NotFoundException();
+            // Only the counterparty confirms or disputes; only the recording payer cancels.
+            const party =
+              action === 'cancel' ? row.payerUserId : row.payeeUserId;
+            if (party !== actor.userId)
+              throw new ForbiddenException({
+                code: 'SETTLEMENT_COUNTERPARTY_REQUIRED',
+              });
+            socialRevision(revision, row.revision);
+            if (
+              !['RECORDED', 'DISPUTED'].includes(row.state) ||
+              (action === 'dispute' && row.state !== 'RECORDED')
+            )
+              throw new ConflictException({ code: 'SETTLEMENT_NOT_PENDING' });
+            if (action === 'dispute' && !body.note?.trim())
+              throw new UnprocessableEntityException({
+                code: 'DISPUTE_NOTE_REQUIRED',
+              });
+            if (action === 'confirm' && !(await l.parties()).has(actor.userId))
+              throw new ConflictException({ code: 'PARTICIPANT_INELIGIBLE' });
+            const changed = await tx.socialSettlement.update({
+              where: { id: settlementId },
+              data: {
+                state:
+                  action === 'confirm'
+                    ? 'CONFIRMED'
+                    : action === 'dispute'
+                      ? 'DISPUTED'
+                      : 'CANCELED',
+                ...(action === 'dispute'
+                  ? { disputeNote: body.note!.trim() }
+                  : {}),
+                decidedAt: action === 'cancel' ? row.decidedAt : now,
+                revision: { increment: 1 },
+              },
             });
-          if (action === 'confirm' && !l.eligible.has(actor.userId))
-            throw new ConflictException({ code: 'PARTICIPANT_INELIGIBLE' });
-          const changed = await tx.socialSettlement.update({
-            where: { id: settlementId },
-            data: {
-              state:
-                action === 'confirm'
-                  ? 'CONFIRMED'
-                  : action === 'dispute'
-                    ? 'DISPUTED'
-                    : 'CANCELED',
-              ...(action === 'dispute'
-                ? { disputeNote: body.note!.trim() }
-                : {}),
-              decidedAt: action === 'cancel' ? row.decidedAt : now,
-              revision: { increment: 1 },
-            },
-          });
-          if (action !== 'cancel')
-            await this.rt.notify(tx, [row.payerUserId], {
-              activityId: l.activityId,
-              groupId: l.groupId,
-              kind: 'SETTLEMENT_DECIDED',
-              resourceId: row.id,
-              dedupe: `${row.id}:${changed.revision}`,
-            });
-          await this.rt.record(
-            tx,
-            actor,
-            l,
-            'social.settlement.' + action,
-            row.id,
-          );
-          return { resultId: row.id, value: this.settlementView(changed) };
-        },
-      ),
+            if (action !== 'cancel')
+              await this.rt.notify(tx, [row.payerUserId], {
+                activityId: l.activityId,
+                groupId: l.groupId,
+                kind: 'SETTLEMENT_DECIDED',
+                resourceId: row.id,
+                dedupe: `${row.id}:${changed.revision}`,
+              });
+            await this.rt.record(
+              tx,
+              actor,
+              l,
+              'social.settlement.' + action,
+              row.id,
+            );
+            return { resultId: row.id, value: this.settlementView(changed) };
+          },
+        ),
+      true,
     );
   }
   /**

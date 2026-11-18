@@ -26,6 +26,8 @@ const projectConflictReasons = new Set([
   'TASK_HAS_ACTIVE_CHILDREN',
   'WORKFLOW_DRAFT_TERMINAL',
   'WORKFLOW_PUBLICATION_CONFLICT',
+  // P6-06: Social Group leave/delete needs a fresh balance confirmation.
+  'OUTSTANDING_BALANCE_CONFIRMATION_REQUIRED',
 ]);
 
 @Catch()

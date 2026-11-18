@@ -196,6 +196,30 @@ describe('Shared endpoint-aware request budgets', () => {
       }).actor,
     ).toBe(600);
   });
+  it('classifies P6-06 Social Group exit and recovery routes', () => {
+    for (const route of [
+      '/social-groups/:id/delete',
+      '/social-groups/:id/leave',
+      '/social-groups/:id/lifecycle-job/recovery-proof',
+      '/social-groups/:id/lifecycle-job/recover',
+    ])
+      expect(sharedRatePolicy({ method: 'POST', route })).toMatchObject({
+        family: 'social',
+        actor: 20,
+      });
+    expect(
+      sharedRatePolicy({
+        method: 'GET',
+        route: '/social-groups/:id/exit-check',
+      }).actor,
+    ).toBe(600);
+    expect(
+      sharedRatePolicy({
+        method: 'GET',
+        route: '/social-groups/:id/lifecycle-job',
+      }).kind,
+    ).toBe('sensitive');
+  });
   it('allows ordinary membership reads and caps aggregation aliases', () => {
     expect(
       sharedRatePolicy({

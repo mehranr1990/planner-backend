@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import * as c from './social.js';
 import * as shared from './collaboration.js';
+import { SocialGroupLeaveSchema } from './social-lifecycle.js';
 import {
   DmContactBlockSchema,
   DmContactPageSchema,
@@ -141,7 +142,10 @@ export function socialPaths(): Record<string, Record<string, unknown>> {
       ...(input
         ? {
             requestBody: {
-              required: input !== c.SocialEmptySchema,
+              // P6-06: the leave confirmation stays optional (no balances, no body).
+              required:
+                input !== c.SocialEmptySchema &&
+                input !== SocialGroupLeaveSchema,
               content: {
                 'application/json': {
                   schema: json(
@@ -336,7 +340,7 @@ export function socialPaths(): Record<string, Record<string, unknown>> {
     '/social-groups/{id}/leave',
     'post',
     shared.SharedDepartureSchema,
-    empty,
+    SocialGroupLeaveSchema,
     { revision: true },
   );
   add(

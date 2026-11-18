@@ -1,4 +1,5 @@
 import { Injectable, Inject, ConflictException } from '@nestjs/common';
+import type { Prisma } from '../../../generated/prisma/client.js';
 import { SharedLifecycleService } from '../../spaces/public/index.js';
 import {
   sharedDeleteBatch,
@@ -36,7 +37,26 @@ export class SocialLifecycle {
         throw new ConflictException({ code: 'UNKNOWN_CLEANUP_STAGE' });
       },
       'SOCIAL_GROUP',
+      (tx, spaceId) => this.protectedRecords(tx, spaceId),
     );
     return Boolean(result);
+  }
+  /**
+   * P6-06 (ADR 0066): the 30-day window only makes eligible Social content
+   * disposable. Expenses, settlements, Social audit, goal history and
+   * Lost & Found evidence (including Group Activities') have no approved
+   * disposal policy, so the purge fails closed: the job stays BLOCKED_POLICY,
+   * nobody holds a seat, and the worker re-checks hourly. Nothing is deleted.
+   */
+  async protectedRecords(tx: Prisma.TransactionClient, spaceId: string) {
+    const [row] = await tx.$queryRaw<{ held: boolean }[]>`
+      WITH g AS (SELECT id FROM "SocialGroup" WHERE "spaceId"=${spaceId}::uuid),
+      a AS (SELECT s.id FROM "SocialActivity" s JOIN g ON s."groupId"=g.id)
+      SELECT EXISTS(SELECT 1 FROM "SocialExpense" WHERE "groupId" IN (SELECT id FROM g) OR "activityId" IN (SELECT id FROM a))
+        OR EXISTS(SELECT 1 FROM "SocialSettlement" WHERE "groupId" IN (SELECT id FROM g) OR "activityId" IN (SELECT id FROM a))
+        OR EXISTS(SELECT 1 FROM "SocialAuditEvent" WHERE "groupId" IN (SELECT id FROM g) OR "activityId" IN (SELECT id FROM a))
+        OR EXISTS(SELECT 1 FROM "SocialGoal" WHERE "groupId" IN (SELECT id FROM g) OR "activityId" IN (SELECT id FROM a))
+        OR EXISTS(SELECT 1 FROM "SocialLostFoundReport" WHERE "groupId" IN (SELECT id FROM g)) AS held`;
+    return row?.held ? 'SOCIAL_PROTECTED_RECORDS_RETAINED' : null;
   }
 }

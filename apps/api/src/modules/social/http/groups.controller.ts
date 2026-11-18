@@ -187,15 +187,7 @@ export class SocialGroupsController {
   ) {
     return this.service.decideJoin(a, id, requestId, action, socialExpected(v));
   }
-  @Post(':id/leave') async leave(
-    @CurrentActor() a: RequestActor,
-    @Param('id', socialId) id: string,
-    @Body(socialBody) _b: unknown,
-    @Headers('if-match') v: string | undefined,
-  ) {
-    await this.service.hint(id);
-    return this.service.collaboration.leave(a, id, socialExpected(v));
-  }
+  // P6-06: POST :id/leave moved to SocialGroupExitController (balance confirmation).
   @Post(':id/handovers') async handover(
     @CurrentActor() a: RequestActor,
     @Param('id', socialId) id: string,
