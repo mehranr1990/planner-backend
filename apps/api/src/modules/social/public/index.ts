@@ -9,3 +9,4 @@ export { SocialPlanningService } from '../application/activity-planning.service.
 export { SocialExpensesService } from '../application/expenses.service.js';
 export { SocialLendingService } from '../application/lending.service.js';
 export { SocialLostFoundService } from '../application/lost-found.service.js';
+export { SocialGoalsService } from '../application/goals.service.js';

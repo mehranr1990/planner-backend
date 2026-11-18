@@ -21,6 +21,15 @@ X1/X2/M1/X4/M2/Company export reads are implemented; X3 reuses the existing
 privacy-safe `POST /api/v1/social/discovery`. Shared remains disabled; this work
 does not resolve OD-1–OD-14 or authorize Frontend activation, live tests or P6-02.
 
+### Social Goals and Challenges (P6-05) — 2026-11-18
+
+On `main`; contract now **1,295 operations** (+13). Goals (collective target) and
+Challenges (individual targets) in exactly one Social Group or Activity; voluntary opt-in,
+self-reported progress with optional organizer review, audited corrections, deterministic
+completion badges, no rankings. Notices use `/social-notices` (5 new `GOAL_*` kinds).
+**Albums are deferred**; no album routes exist.
+Details: [`frontend-handoff/SOCIAL_GOALS_CHALLENGES.md`](frontend-handoff/SOCIAL_GOALS_CHALLENGES.md).
+
 ### Social lending and Lost & Found (P6-04) — 2026-11-18
 
 On `main`; contract now **1,282 operations** (+27). Personal assets with owner-controlled
@@ -33,7 +42,7 @@ Details: [`frontend-handoff/SOCIAL_LENDING_LOST_FOUND.md`](frontend-handoff/SOCI
 
 ### Local Social Activities and shared expenses (P6-02/P6-03) — 2026-11-17
 
-Local, uncommitted; contract now **1,255 operations** (62 additions incl. the 2026-11-18 gap closure). Activities,
+Committed and pushed as `2020f62`; contract now **1,255 operations** (62 additions incl. the 2026-11-18 gap closure). Activities,
 RSVP/capacity/waitlist, itineraries, polls, consented Free/Busy, checklists with
 Personal Task creation, notices, and Group/Activity expense proposals, approvals,
 revisions, balances and settlement confirmation. Personal Finance posting, Activity

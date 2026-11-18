@@ -30,7 +30,9 @@ import {
   SocialLoansController,
   SocialLostFoundController,
 } from './http/lending.controller.js';
-/** P6-02/P6-03 (and P6-04 lending, Lost & Found): needs the composed Task and Calendar owners, as Meetings does. */
+import { SocialGoalsService } from './application/goals.service.js';
+import { SocialGoalsController } from './http/goals.controller.js';
+/** P6-02/P6-03 (and P6-04 lending, Lost & Found; P6-05 goals): needs the composed Task and Calendar owners, as Meetings does. */
 @Module({})
 export class SocialActivitiesModule implements OnModuleInit {
   constructor(
@@ -68,6 +70,7 @@ export class SocialActivitiesModule implements OnModuleInit {
         LendingKit,
         SocialLendingService,
         SocialLostFoundService,
+        SocialGoalsService,
       ],
       controllers: [
         SocialActivitiesController,
@@ -77,6 +80,7 @@ export class SocialActivitiesModule implements OnModuleInit {
         SocialAssetsController,
         SocialLoansController,
         SocialLostFoundController,
+        SocialGoalsController,
       ],
       exports: [
         SocialActivitiesService,
@@ -84,6 +88,7 @@ export class SocialActivitiesModule implements OnModuleInit {
         SocialExpensesService,
         SocialLendingService,
         SocialLostFoundService,
+        SocialGoalsService,
       ],
     };
   }

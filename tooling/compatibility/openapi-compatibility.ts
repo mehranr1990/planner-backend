@@ -272,13 +272,16 @@ export function assertApiCompatible(
     const extension = responseExtensions[contract];
     if (
       current[contract] !==
-        approvedSocialLendingHash(
+        approvedSocialGoalsHash(
           contract,
-          approvedMessagesMeetingsHash(
+          approvedSocialLendingHash(
             contract,
-            approvedCompanyHash(
+            approvedMessagesMeetingsHash(
               contract,
-              approvedTeamHash(contract, approvedProjectHash(contract, hash)),
+              approvedCompanyHash(
+                contract,
+                approvedTeamHash(contract, approvedProjectHash(contract, hash)),
+              ),
             ),
           ),
         ) &&
@@ -308,5 +311,17 @@ const socialLendingExtensions = JSON.parse(
 ) as Record<string, { previous: string[]; approved: string }>;
 export function approvedSocialLendingHash(contract: string, previous: string) {
   const change = socialLendingExtensions[contract];
+  return change?.previous.includes(previous) ? change.approved : previous;
+}
+// ADR 0065: the reviewed SocialNotice kind enum widening (P6-05 Social goal kinds);
+// no field, status or request contract changed.
+const socialGoalsExtensions = JSON.parse(
+  fs.readFileSync(
+    new URL('./social-goals-api-extensions.json', import.meta.url),
+    'utf8',
+  ),
+) as Record<string, { previous: string[]; approved: string }>;
+export function approvedSocialGoalsHash(contract: string, previous: string) {
+  const change = socialGoalsExtensions[contract];
   return change?.previous.includes(previous) ? change.approved : previous;
 }

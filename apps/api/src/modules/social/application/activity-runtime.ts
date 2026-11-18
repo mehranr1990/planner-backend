@@ -91,6 +91,8 @@ export class ActivityRuntime {
       await tx.socialActivityPoll.deleteMany({ where: { activityId: id } });
       await tx.socialActivityBusy.deleteMany({ where: { activityId: id } });
       await tx.socialNotice.deleteMany({ where: { activityId: id } });
+      // P6-05 goals are Activity content: disposed with it (participants, entries, history).
+      await tx.socialGoal.deleteMany({ where: { activityId: id } });
       await tx.socialActivity.update({
         where: { id },
         data: {

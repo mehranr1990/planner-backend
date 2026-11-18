@@ -313,6 +313,12 @@ export const SocialNoticeKindSchema = z.enum([
   'CLAIM_HANDOVER',
   'CLAIM_RESOLVED',
   'CLAIM_DISPUTED',
+  // P6-05 Social Goals and Challenges (Group or Activity context; resourceId = goal).
+  'GOAL_ENTRY_SUBMITTED',
+  'GOAL_ENTRY_DECIDED',
+  'GOAL_CORRECTED',
+  'GOAL_COMPLETED',
+  'GOAL_ENDED',
 ]);
 export const SocialNoticeSchema = z.strictObject({
   id,

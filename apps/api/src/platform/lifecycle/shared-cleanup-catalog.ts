@@ -54,9 +54,13 @@ import type { Prisma } from '../../generated/prisma/client.js';
 // block Personal erasure.
 // P6-04 gap closure (0080) adds 3 edges (1,134 total): SocialNotice.loanId and
 // .lostFoundReportId CASCADE from their (never deleted, or Group-cascaded) parent;
-// SocialLoan.dueProposedByUserId is SET NULL. Future FK changes fail closed.
+// SocialLoan.dueProposedByUserId is SET NULL.
+// P6-05 (0081) adds 13 Social goal edges (1,147 total). SocialGoal CASCADEs from
+// its one SocialGroup or SocialActivity; participants, entries and history
+// CASCADE from the goal through same-goal composite keys. User edges are
+// SET NULL and never block Personal erasure. Future FK changes fail closed.
 export const SHARED_CLEANUP_FK_SHA256 =
-  'd0e57df1823d173ab9dc8141da93b39ffa6129dbe5672f0dca42a2c6a4526400';
+  'b1b0f646a453e995b104342fc800fb63426a6eb188d3e09114b82fb6e78baee5';
 export async function assertSharedCleanupCatalog(tx: Prisma.TransactionClient) {
   const rows = await tx.$queryRaw<
     { table: string; name: string; target: string; definition: string }[]

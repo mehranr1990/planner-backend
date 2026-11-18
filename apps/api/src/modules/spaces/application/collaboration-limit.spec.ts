@@ -173,6 +173,29 @@ describe('Shared endpoint-aware request budgets', () => {
         .actor,
     ).toBe(600);
   });
+  it('classifies P6-05 Social goal routes', () => {
+    for (const route of ['/social-goals', '/social-goals/:id/entries'])
+      expect(sharedRatePolicy({ method: 'POST', route })).toMatchObject({
+        family: 'social',
+        actor: 120,
+      });
+    for (const route of [
+      '/social-goals/:id/actions/:action',
+      '/social-goals/:id/entries/:entryId/actions/:action',
+      '/social-goals/:id/corrections',
+      '/social-goals/:id/join',
+    ])
+      expect(sharedRatePolicy({ method: 'POST', route })).toMatchObject({
+        family: 'social',
+        actor: 20,
+      });
+    expect(
+      sharedRatePolicy({
+        method: 'GET',
+        route: '/social-goals/:id/participants',
+      }).actor,
+    ).toBe(600);
+  });
   it('allows ordinary membership reads and caps aggregation aliases', () => {
     expect(
       sharedRatePolicy({

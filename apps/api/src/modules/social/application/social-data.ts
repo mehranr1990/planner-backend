@@ -321,6 +321,49 @@ export class SocialDataOwner extends SocialData {
       data: { actorUserId: null, note: null },
     });
   }
+  /**
+   * P6-05 erasure detaches the identity from Social goal history. Active
+   * participation ends and undecided reports are retracted; approved amounts
+   * stay as anonymous contributions so other participants' collective totals
+   * and badges remain reconcilable. The person's notes and review notes are
+   * removed. Final disposal is POLICY-GATED (P6-06).
+   */
+  private async eraseGoals(tx: Prisma.TransactionClient, userId: string) {
+    const now = new Date();
+    await tx.socialGoalParticipant.updateMany({
+      where: { userId, state: 'ACTIVE' },
+      data: {
+        state: 'WITHDRAWN',
+        withdrawnAt: now,
+        revision: { increment: 1 },
+        updatedAt: now,
+      },
+    });
+    await tx.socialGoalParticipant.updateMany({
+      where: { userId },
+      data: { userId: null },
+    });
+    await tx.socialGoalEntry.updateMany({
+      where: { submittedByUserId: userId, state: 'PENDING' },
+      data: { state: 'RETRACTED', revision: { increment: 1 }, updatedAt: now },
+    });
+    await tx.socialGoalEntry.updateMany({
+      where: { submittedByUserId: userId },
+      data: { submittedByUserId: null, note: null },
+    });
+    await tx.socialGoalEntry.updateMany({
+      where: { reviewedByUserId: userId },
+      data: { reviewedByUserId: null, reviewNote: null },
+    });
+    await tx.socialGoal.updateMany({
+      where: { createdByUserId: userId },
+      data: { createdByUserId: null },
+    });
+    await tx.socialGoalEvent.updateMany({
+      where: { actorUserId: userId },
+      data: { actorUserId: null },
+    });
+  }
   async erase(tx: Prisma.TransactionClient, scope: AuthorizedSpace) {
     await tx.socialPrivacy.deleteMany({
       where: { ownerUserId: scope.actor.userId },
@@ -341,6 +384,7 @@ export class SocialDataOwner extends SocialData {
     });
     await this.eraseActivities(tx, scope.actor.userId);
     await this.eraseLending(tx, scope.actor.userId);
+    await this.eraseGoals(tx, scope.actor.userId);
   }
   async snapshot(
     tx: Prisma.TransactionClient,
@@ -488,6 +532,24 @@ export class SocialDataOwner extends SocialData {
       (a: string | undefined) =>
         tx.socialEvidence.findMany({
           where: { addedByUserId: userId, ...after(a) },
+          ...page,
+        }),
+      id,
+    );
+    await budget.collect(
+      'socialGoalParticipations',
+      (a: string | undefined) =>
+        tx.socialGoalParticipant.findMany({
+          where: { userId, ...after(a) },
+          ...page,
+        }),
+      id,
+    );
+    await budget.collect(
+      'socialGoalEntries',
+      (a: string | undefined) =>
+        tx.socialGoalEntry.findMany({
+          where: { submittedByUserId: userId, ...after(a) },
           ...page,
         }),
       id,

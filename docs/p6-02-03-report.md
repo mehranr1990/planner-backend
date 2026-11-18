@@ -3,7 +3,7 @@
 Date: 2026-11-17. Baseline: `7a027da` on `main` (clean tree before this work).
 Status: **P6-02 PARTIAL, P6-03 PARTIAL** — core behavior implemented and verified;
 specific approved capabilities are dependency-gated and listed below.
-All changes are local and **uncommitted**; nothing was pushed or deployed.
+All changes were later committed and pushed as `2020f62` (on `origin/main`); nothing was deployed.
 
 ## Phase 6 reconciliation (before implementation)
 

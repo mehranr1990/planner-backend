@@ -32,6 +32,11 @@ model User {
   socialLoanOutcomes SocialLoan[] @relation("SocialLoan_pendingOutcomeBy")
   socialLoanDisputes SocialLoan[] @relation("SocialLoan_disputedBy")
   socialLoanDueProposals SocialLoan[] @relation("SocialLoan_dueProposedBy")
+  socialGoalsCreated SocialGoal[] @relation("SocialGoal_creator")
+  socialGoalParticipations SocialGoalParticipant[] @relation("SocialGoalParticipant_user")
+  socialGoalEntriesSubmitted SocialGoalEntry[] @relation("SocialGoalEntry_submittedBy")
+  socialGoalEntriesReviewed SocialGoalEntry[] @relation("SocialGoalEntry_reviewedBy")
+  socialGoalEvents SocialGoalEvent[] @relation("SocialGoalEvent_actor")
   socialLostFoundReports SocialLostFoundReport[] @relation("SocialLostFoundReport_reporter")
   socialLostFoundClaims SocialLostFoundClaim[] @relation("SocialLostFoundClaim_claimant")
   socialLostFoundDisputes SocialLostFoundClaim[] @relation("SocialLostFoundClaim_disputedBy")
@@ -6262,6 +6267,7 @@ model SocialGroup {
   auditEvents SocialAuditEvent[]
   assets SocialAsset[]
   lostFoundReports SocialLostFoundReport[]
+  goals SocialGoal[]
   @@unique([spaceId,scopeId])
   @@index([discoverable,id])
 }
@@ -7231,6 +7237,7 @@ model SocialActivity {
   expenses SocialExpense[]
   settlements SocialSettlement[]
   auditEvents SocialAuditEvent[]
+  goals SocialGoal[]
   @@index([groupId,id])
 }
 model SocialActivityParticipant {
@@ -7617,6 +7624,99 @@ model SocialEvidence {
   @@index([loanId,id])
   @@index([reportId,id])
   @@index([claimId,id])
+}
+
+// P6-05 / ADR 0065: Social Goals and Challenges with exactly one Group or Activity context.
+model SocialGoal {
+  id String @id @db.Uuid
+  kind String @db.VarChar(10)
+  groupId String? @db.Uuid
+  activityId String? @db.Uuid
+  title String @db.VarChar(200)
+  description String? @db.VarChar(2000)
+  unit String @db.VarChar(40)
+  target Int
+  startsOn DateTime @db.Date
+  endsOn DateTime @db.Date
+  timezone String @db.VarChar(100)
+  reviewRequired Boolean @default(false)
+  state String @default("ACTIVE") @db.VarChar(10)
+  completedAt DateTime? @db.Timestamptz(3)
+  closedAt DateTime? @db.Timestamptz(3)
+  createdByUserId String? @db.Uuid
+  revision Int @default(1)
+  createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+  updatedAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+  group SocialGroup? @relation(fields:[groupId],references:[id],onDelete:Cascade,onUpdate:NoAction)
+  activity SocialActivity? @relation(fields:[activityId],references:[id],onDelete:Cascade,onUpdate:NoAction)
+  creator User? @relation("SocialGoal_creator",fields:[createdByUserId],references:[id],onDelete:SetNull,onUpdate:NoAction)
+  participants SocialGoalParticipant[]
+  events SocialGoalEvent[]
+  @@index([groupId,id])
+  @@index([activityId,id])
+}
+model SocialGoalParticipant {
+  id String @id @db.Uuid
+  goalId String @db.Uuid
+  userId String? @db.Uuid
+  state String @default("ACTIVE") @db.VarChar(10)
+  joinedAt DateTime @db.Timestamptz(3)
+  withdrawnAt DateTime? @db.Timestamptz(3)
+  completedAt DateTime? @db.Timestamptz(3)
+  revision Int @default(1)
+  createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+  updatedAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+  goal SocialGoal @relation(fields:[goalId],references:[id],onDelete:Cascade,onUpdate:NoAction)
+  user User? @relation("SocialGoalParticipant_user",fields:[userId],references:[id],onDelete:SetNull,onUpdate:NoAction)
+  entries SocialGoalEntry[]
+  events SocialGoalEvent[]
+  @@unique([goalId,userId])
+  @@unique([goalId,id])
+  @@index([userId,id])
+}
+model SocialGoalEntry {
+  id String @id @db.Uuid
+  goalId String @db.Uuid
+  participantId String @db.Uuid
+  kind String @db.VarChar(10)
+  amount Int
+  occurredOn DateTime? @db.Date
+  note String? @db.VarChar(1000)
+  state String @db.VarChar(10)
+  submittedByUserId String? @db.Uuid
+  submittedAt DateTime @db.Timestamptz(3)
+  reviewedByUserId String? @db.Uuid
+  reviewedAt DateTime? @db.Timestamptz(3)
+  reviewNote String? @db.VarChar(1000)
+  correctsEntryId String? @db.Uuid
+  revision Int @default(1)
+  updatedAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+  participant SocialGoalParticipant @relation(fields:[goalId,participantId],references:[goalId,id],onDelete:Cascade,onUpdate:NoAction)
+  corrects SocialGoalEntry? @relation("SocialGoalEntry_corrects",fields:[goalId,correctsEntryId],references:[goalId,id],onDelete:Cascade,onUpdate:NoAction)
+  corrections SocialGoalEntry[] @relation("SocialGoalEntry_corrects")
+  submittedBy User? @relation("SocialGoalEntry_submittedBy",fields:[submittedByUserId],references:[id],onDelete:SetNull,onUpdate:NoAction)
+  reviewedBy User? @relation("SocialGoalEntry_reviewedBy",fields:[reviewedByUserId],references:[id],onDelete:SetNull,onUpdate:NoAction)
+  events SocialGoalEvent[]
+  @@unique([goalId,id])
+  @@index([goalId,participantId,id])
+  @@index([goalId,state,id])
+}
+model SocialGoalEvent {
+  id String @id @db.Uuid
+  goalId String @db.Uuid
+  participantId String? @db.Uuid
+  entryId String? @db.Uuid
+  actorUserId String? @db.Uuid
+  action String @db.VarChar(40)
+  fromState String? @db.VarChar(10)
+  toState String? @db.VarChar(10)
+  amount Int?
+  occurredAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+  goal SocialGoal @relation(fields:[goalId],references:[id],onDelete:Cascade,onUpdate:NoAction)
+  participant SocialGoalParticipant? @relation(fields:[goalId,participantId],references:[goalId,id],onDelete:Cascade,onUpdate:NoAction)
+  entry SocialGoalEntry? @relation(fields:[goalId,entryId],references:[goalId,id],onDelete:Cascade,onUpdate:NoAction)
+  actor User? @relation("SocialGoalEvent_actor",fields:[actorUserId],references:[id],onDelete:SetNull,onUpdate:NoAction)
+  @@index([goalId,occurredAt,id])
 }
 
 // ADR 0061: Finance-owned source link for explicit external (Social) postings.

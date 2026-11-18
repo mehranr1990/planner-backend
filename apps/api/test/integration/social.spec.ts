@@ -1267,18 +1267,28 @@ describe('P6-01 private social graph and approved Group admission', () => {
       .set('Origin', 'https://untrusted.example')
       .send({ email: bob.email })
       .expect(403);
-    for (let i = 0; i < 22; i++)
-      await request(app.getHttpServer())
+    // ADR 0058 budgets are fixed UTC minutes (sensitive: 20/user/minute). A
+    // sequential burst may straddle one boundary, where the count correctly
+    // resets, so exhaust the budget (at most 2 × 20 + 1 requests) instead of
+    // assuming a fixed number of requests share one window.
+    const discover = () =>
+      request(app.getHttpServer())
         .post('/api/v1/social/discovery')
         .set('Cookie', cookie)
         .set('Origin', origin)
         .send({ email: bob.email });
-    await request(app.getHttpServer())
-      .post('/api/v1/social/discovery')
-      .set('Cookie', cookie)
-      .set('Origin', origin)
-      .send({ email: bob.email })
-      .expect(429);
+    let previous: Awaited<ReturnType<typeof discover>> | undefined,
+      response = await discover();
+    for (let i = 1; i < 41 && response.status !== 429; i++) {
+      previous = response;
+      response = await discover();
+    }
+    expect(response.status).toBe(429);
+    expect(response.headers['ratelimit-limit']).toBe('20');
+    expect(response.headers['ratelimit-remaining']).toBe('0');
+    // The request before the rejection consumed the last unit of that window.
+    expect(previous?.status).toBe(201);
+    expect(previous?.headers['ratelimit-remaining']).toBe('0');
   });
   it('succession needs named successor acceptance and fresh provider-backed reauthentication before old Owner leaves', async () => {
     const g = await group(),

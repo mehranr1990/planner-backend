@@ -1,0 +1,14 @@
+{
+  "get /api/v1/social-notices response 200": {
+    "previous": [
+      "27e0aa359eeb9765733f276873abc8cb28a00fa9bcd33c1e247fd2c679bd5583"
+    ],
+    "approved": "274c368a4cd2b4b6e4b0f9215fbb790b89012146930bec3d225daed2e4adbf35"
+  },
+  "post /api/v1/social-notices/{id}/read response 201": {
+    "previous": [
+      "75338cc126898beafec1898346ff1b517fe0dae8d1379e2ee76dfe886b0ee959"
+    ],
+    "approved": "60059daae470ebff70db1617297a416ef6f86965833ebd73ba1409ff76026db0"
+  }
+}
