@@ -45,6 +45,8 @@ export type MessageOperation = {
   locked: string[];
   begin: (resourceId?: string) => Promise<string>;
   proof: Proof | null;
+  /** Sourced conversations: memberships admitted before this are stale. */
+  since?: Date | null;
 };
 type Operation = MessageOperation;
 const hash = (value: string) =>
@@ -100,6 +102,17 @@ export class MessagingService {
     @Inject(MessagingAuthority) private readonly authority: MessagingAuthority,
     @Inject(ConversationSources) readonly sources: ConversationSources,
   ) {}
+  /** ADR 0067: the conversation bound to an owner source, if any (no authority implied). */
+  async sourcedConversationId(kind: ConversationSourceKind, sourceId: string) {
+    return (
+      (
+        await this.db.client.conversation.findUnique({
+          where: { sourceKind_sourceId: { sourceKind: kind, sourceId } },
+          select: { id: true },
+        })
+      )?.id ?? null
+    );
+  }
   /** ADR 0062: open (once) the Messaging-owned private conversation bound to an owner source. */
   async openSourced(
     actor: RequestActor,
@@ -160,8 +173,10 @@ export class MessagingService {
       id,
       SOURCED_ADMIT,
       async (s) => {
-        const role = await this.sources.check(s.tx, s.conv, actor.userId);
-        if (!role) throw new NotFoundException();
+        const grant = await this.sources.grant(s.tx, s.conv, actor.userId);
+        if (!grant) throw new NotFoundException();
+        const role = grant.role;
+        s.since = grant.since;
         await this.authority.independentSeat(
           s.tx,
           s.conv.spaceId,
@@ -331,9 +346,17 @@ export class MessagingService {
         },
       },
     });
-    if (!member || member.state !== 'ACTIVE' || !sameAdmission(member, proof))
+    if (
+      !member ||
+      member.state !== 'ACTIVE' ||
+      !sameAdmission(member, proof) ||
+      this.stale(s, member)
+    )
       throw new NotFoundException();
     return member;
+  }
+  private stale(s: Operation, member: { joinedAt: Date }) {
+    return !!s.since && member.joinedAt < s.since;
   }
   async administer(s: Operation, proof = s.proof) {
     if (!proof) throw new NotFoundException();
@@ -511,7 +534,8 @@ export class MessagingService {
           s.proof = await this.proof(s);
         // ADR 0062: sourced conversations recheck the owning context on every user operation.
         if (!background && action !== SOURCED_ADMIT)
-          await this.sources.check(tx, conv, actor.userId);
+          s.since =
+            (await this.sources.grant(tx, conv, actor.userId))?.since ?? null;
         try {
           return await work(s);
         } finally {
@@ -602,7 +626,12 @@ export class MessagingService {
         },
       },
     });
-    if (old && old.state === 'ACTIVE' && sameAdmission(old, proof))
+    if (
+      old &&
+      old.state === 'ACTIVE' &&
+      sameAdmission(old, proof) &&
+      !this.stale(s, old)
+    )
       throw new ConflictException({ code: 'ALREADY_PARTICIPATING' });
     if (old)
       await s.tx.conversationAdmission.updateMany({

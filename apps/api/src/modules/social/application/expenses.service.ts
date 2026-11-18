@@ -21,6 +21,13 @@ import { SpacesService } from '../../spaces/public/index.js';
 import { ExternalExpensePosting } from '../../finance/public/index.js';
 type Page = z.infer<typeof c.SocialPageQuerySchema>;
 type Input = z.infer<typeof c.SocialExpenseInputSchema>;
+/** Canonical input after Group actor references are resolved to user IDs. */
+type Resolved = Omit<Input, 'payerUserId' | 'payerActorId' | 'shares'> & {
+  payerUserId: string;
+  shares: { userId: string; value?: string }[];
+};
+/** Never an eligible user ID: unresolvable actor references fail eligibility. */
+const UNRESOLVED = 'unresolved';
 export type LedgerRef = { kind: 'GROUP' | 'ACTIVITY'; id: string };
 type Ledger = {
   groupId: string | null;
@@ -34,6 +41,8 @@ type Ledger = {
   former: boolean;
   /** Settlement counterparties: current participants plus open-balance parties. */
   parties: () => Promise<Set<string>>;
+  /** Group ledgers: user ID to Group-scoped actor ID (empty for Activities). */
+  actors: Map<string, string>;
 };
 export type SocialObligation = {
   ledgerKind: 'GROUP' | 'ACTIVITY';
@@ -123,6 +132,7 @@ export class SocialExpensesService {
             ],
             // ADR 0051: Owner/Admin and the Activity organizer approve in the Activity scope.
             approver: a.manage,
+            actors: new Map(),
             member: a.active,
             // Deleted Activities keep their ledger readable and settleable (decision B).
             open: act.state !== 'CANCELED' && act.state !== 'DELETED',
@@ -150,6 +160,7 @@ export class SocialExpensesService {
           activityId: null,
           eligible,
           approvers: await this.groupAdmins(tx, groupId),
+          actors: await this.actorIndex(tx, groupId),
           approver:
             member &&
             (await this.rt.can(tx, actor, groupId, 'settings.manage', locked)),
@@ -201,6 +212,10 @@ export class SocialExpensesService {
             activityId: 'activityId' in where ? where.activityId : null,
             eligible: none,
             approvers: [],
+            actors:
+              'groupId' in where
+                ? await this.actorIndex(tx, where.groupId)
+                : new Map(),
             approver: false,
             member: false,
             open: true,
@@ -334,7 +349,58 @@ export class SocialExpensesService {
       ? { activityId: l.activityId }
       : { groupId: l.groupId! };
   }
-  private allocate(l: Ledger, body: Input) {
+  private async actorIndex(tx: Tx, groupId: string) {
+    const rows = await tx.sharedActor.findMany({
+      where: { spaceId: groupId, userId: { not: null } },
+      select: { id: true, userId: true },
+    });
+    return new Map(rows.map((a) => [a.userId!, a.id]));
+  }
+  /**
+   * D3: Group-scoped actor IDs resolve server-side to the account behind that
+   * actor in this Group only. Unknown, erased or other-Group actors resolve to
+   * a sentinel that fails the in-transaction eligibility check (422) after
+   * authorization, so non-members cannot probe actor IDs.
+   */
+  private async resolve(
+    ref: LedgerRef,
+    refs: (string | undefined)[],
+  ): Promise<Map<string, string>> {
+    const ids = [...new Set(refs.filter((v): v is string => !!v))];
+    if (!ids.length) return new Map();
+    if (ref.kind !== 'GROUP')
+      throw new UnprocessableEntityException({
+        code: 'ACTOR_REFERENCE_UNSUPPORTED',
+      });
+    const rows = await this.rt.db.client.sharedActor.findMany({
+      where: { spaceId: ref.id, id: { in: ids } },
+      select: { id: true, userId: true },
+    });
+    return new Map(rows.flatMap((a) => (a.userId ? [[a.id, a.userId]] : [])));
+  }
+  private async canonical(ref: LedgerRef, body: Input): Promise<Resolved> {
+    const map = await this.resolve(ref, [
+      body.payerActorId,
+      ...body.shares.map((s) => s.actorId),
+    ]);
+    const user = (userId?: string, actorId?: string) =>
+      userId ?? map.get(actorId!) ?? UNRESOLVED;
+    const { payerActorId: _payer, payerUserId: _user, ...rest } = body;
+    return {
+      ...rest,
+      payerUserId: user(body.payerUserId, body.payerActorId),
+      shares: body.shares.map((s) => ({
+        userId: user(s.userId, s.actorId),
+        ...(s.value === undefined ? {} : { value: s.value }),
+      })),
+    };
+  }
+  private people(body: Resolved) {
+    return [body.payerUserId, ...body.shares.map((s) => s.userId)].filter(
+      (u) => u !== UNRESOLVED,
+    );
+  }
+  private allocate(l: Ledger, body: Resolved) {
     const people = [body.payerUserId, ...body.shares.map((s) => s.userId)];
     if (people.some((u) => !l.eligible.has(u)))
       throw new UnprocessableEntityException({
@@ -361,7 +427,7 @@ export class SocialExpensesService {
     actor: RequestActor,
     expenseId: string,
     number: number,
-    body: Input,
+    body: Resolved,
     shares: ReturnType<typeof split>,
   ) {
     return tx.socialExpenseRevision.create({
@@ -389,7 +455,13 @@ export class SocialExpensesService {
       },
     });
   }
-  private revisionView(r: Revision | null, me: string, full: boolean) {
+  private revisionView(
+    r: Revision | null,
+    me: string,
+    full: boolean,
+    actors: Map<string, string>,
+  ) {
+    const actorOf = (u: string | null) => (u && actors.get(u)) || null;
     if (!r) return null;
     return c.SocialExpenseRevisionSchema.parse({
       id: r.id,
@@ -401,6 +473,7 @@ export class SocialExpensesService {
       scale: r.scale,
       amountMinor: r.amountMinor.toString(),
       payerUserId: r.payerUserId,
+      payerActorId: actorOf(r.payerUserId),
       method: r.method,
       incurredOn: r.incurredOn.toISOString().slice(0, 10),
       proposedByUserId: r.proposedByUserId,
@@ -416,6 +489,7 @@ export class SocialExpensesService {
         .map((s) => ({
           position: s.position,
           userId: s.userId,
+          actorId: actorOf(s.userId),
           input: s.input === null ? null : s.input.toString(),
           shareMinor: s.shareMinor.toString(),
         })),
@@ -457,8 +531,8 @@ export class SocialExpensesService {
       createdAt: row.createdAt.toISOString(),
       updatedAt: row.updatedAt.toISOString(),
       canDecide: l.approver && !!pending,
-      effective: this.revisionView(effective, me, l.approver),
-      pending: this.revisionView(pending, me, l.approver),
+      effective: this.revisionView(effective, me, l.approver, l.actors),
+      pending: this.revisionView(pending, me, l.approver, l.actors),
     });
   }
   private readable(row: ExpenseRow, l: Ledger, me: string) {
@@ -471,7 +545,9 @@ export class SocialExpensesService {
     key: string | undefined,
   ) {
     const keyHash = socialKey(key);
-    const users = [body.payerUserId, ...body.shares.map((s) => s.userId)];
+    const { id, ...input } = body,
+      resolved = await this.canonical(ref, input);
+    const users = this.people(resolved);
     return this.run(actor, ref, users, async (tx, now, l) => {
       // Any verified current Group member or accepted Activity participant may propose.
       if (!l.member)
@@ -486,12 +562,11 @@ export class SocialExpensesService {
         async () => {
           if (!l.open)
             throw new ConflictException({ code: 'ACTIVITY_NOT_OPEN' });
-          if (await tx.socialExpense.findUnique({ where: { id: body.id } }))
+          if (await tx.socialExpense.findUnique({ where: { id } }))
             throw new ConflictException({ code: 'EXPENSE_EXISTS' });
           if ((await tx.socialExpense.count({ where: this.where(l) })) >= LIMIT)
             throw new PayloadTooLargeException();
-          const { id, ...input } = body;
-          const shares = this.allocate(l, input);
+          const shares = this.allocate(l, resolved);
           await tx.socialExpense.create({
             data: {
               id,
@@ -501,7 +576,7 @@ export class SocialExpensesService {
               creationFingerprint: socialHash(body),
             },
           });
-          await this.addRevision(tx, actor, id, 1, input, shares);
+          await this.addRevision(tx, actor, id, 1, resolved, shares);
           await this.rt.notify(
             tx,
             l.approvers.filter((u) => u !== actor.userId),
@@ -558,7 +633,7 @@ export class SocialExpensesService {
       this.readable(row, l, actor.userId);
       return c.SocialExpenseHistorySchema.parse({
         items: row.revisions.map((r) =>
-          this.revisionView(r, actor.userId, l.approver),
+          this.revisionView(r, actor.userId, l.approver, l.actors),
         ),
       });
     });
@@ -576,7 +651,8 @@ export class SocialExpensesService {
     revision: number,
     key: string | undefined,
   ) {
-    const users = [body.payerUserId, ...body.shares.map((s) => s.userId)];
+    const resolved = await this.canonical(ref, body);
+    const users = this.people(resolved);
     return this.run(actor, ref, users, async (tx, now, l) => {
       if (!l.member && !l.approver) throw new NotFoundException();
       return this.rt.once(
@@ -604,13 +680,13 @@ export class SocialExpensesService {
               where: { id: pending.id },
               data: { state: 'WITHDRAWN' },
             });
-          const shares = this.allocate(l, body);
+          const shares = this.allocate(l, resolved);
           await this.addRevision(
             tx,
             actor,
             expenseId,
             row.revisions.length + 1,
-            body,
+            resolved,
             shares,
           );
           await tx.socialExpense.update({
@@ -776,6 +852,7 @@ export class SocialExpensesService {
         return c.SocialBalanceListSchema.parse({
           items: rows.map((r) => ({
             userId: r.userId,
+            actorId: l.actors.get(r.userId) ?? null,
             displayName: all ? (names.get(r.userId) ?? null) : null,
             currency: r.currency,
             paidMinor: r.paidMinor.toString(),
@@ -791,13 +868,19 @@ export class SocialExpensesService {
       true,
     );
   }
-  private settlementView(r: Prisma.SocialSettlementGetPayload<object>) {
+  private settlementView(
+    r: Prisma.SocialSettlementGetPayload<object>,
+    l: Ledger,
+  ) {
+    const actorOf = (u: string | null) => (u && l.actors.get(u)) || null;
     return c.SocialSettlementSchema.parse({
       id: r.id,
       groupId: r.groupId,
       activityId: r.activityId,
       payerUserId: r.payerUserId,
       payeeUserId: r.payeeUserId,
+      payerActorId: actorOf(r.payerUserId),
+      payeeActorId: actorOf(r.payeeUserId),
       currency: r.currency,
       scale: r.scale,
       amountMinor: r.amountMinor.toString(),
@@ -817,10 +900,14 @@ export class SocialExpensesService {
     key: string | undefined,
   ) {
     const keyHash = socialKey(key);
+    const payeeUserId =
+      body.payeeUserId ??
+      (await this.resolve(ref, [body.payeeActorId])).get(body.payeeActorId!) ??
+      UNRESOLVED;
     return this.run(
       actor,
       ref,
-      [body.payeeUserId],
+      payeeUserId === UNRESOLVED ? [] : [payeeUserId],
       async (tx, now, l) => {
         if (!l.member && !l.former)
           throw new ForbiddenException({
@@ -837,8 +924,8 @@ export class SocialExpensesService {
             // P6-06: a departed party with an open balance stays a counterparty.
             const parties = await l.parties();
             if (
-              body.payeeUserId === actor.userId ||
-              !parties.has(body.payeeUserId) ||
+              payeeUserId === actor.userId ||
+              !parties.has(payeeUserId) ||
               !parties.has(actor.userId)
             )
               throw new UnprocessableEntityException({
@@ -858,7 +945,7 @@ export class SocialExpensesService {
                 id: body.id,
                 ...this.where(l),
                 payerUserId: actor.userId,
-                payeeUserId: body.payeeUserId,
+                payeeUserId: payeeUserId,
                 currency: body.currency,
                 scale: c.financeCurrencyScales[body.currency]!,
                 amountMinor: BigInt(body.amountMinor),
@@ -867,7 +954,7 @@ export class SocialExpensesService {
                 creationFingerprint: socialHash(body),
               },
             });
-            await this.rt.notify(tx, [body.payeeUserId], {
+            await this.rt.notify(tx, [payeeUserId], {
               activityId: l.activityId,
               groupId: l.groupId,
               kind: 'SETTLEMENT_RECORDED',
@@ -881,7 +968,7 @@ export class SocialExpensesService {
               'social.settlement.record',
               row.id,
             );
-            return { resultId: row.id, value: this.settlementView(row) };
+            return { resultId: row.id, value: this.settlementView(row, l) };
           },
         );
       },
@@ -910,7 +997,7 @@ export class SocialExpensesService {
           take: LIMIT + 1,
         });
         if (rows.length > LIMIT) throw new PayloadTooLargeException();
-        const items = rows.map((r) => this.settlementView(r));
+        const items = rows.map((r) => this.settlementView(r, l));
         return this.rt.context.page(
           actor,
           'social.settlements:' + ref.kind + ':' + ref.id,
@@ -1005,7 +1092,7 @@ export class SocialExpensesService {
               'social.settlement.' + action,
               row.id,
             );
-            return { resultId: row.id, value: this.settlementView(changed) };
+            return { resultId: row.id, value: this.settlementView(changed, l) };
           },
         ),
       true,

@@ -49,6 +49,7 @@ for (const batch of [
   'p6-04-social-lending',
   'p6-05-social-goals',
   'p6-06-social-lifecycle',
+  'p6-07-social-group-chat',
   'company-completion',
   'backend-completion',
   'team-files',

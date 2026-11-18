@@ -1,4 +1,8 @@
 import {
+  socialGroupConversationMigrationName,
+  assertReviewedSocialGroupConversationMigration,
+} from './reviewed-social-group-conversation-migration.ts';
+import {
   socialGoalNoticesMigrationName,
   assertReviewedSocialGoalNoticesMigration,
 } from './reviewed-social-goal-notices-migration.ts';
@@ -224,7 +228,9 @@ export function reviewMigrations(directory = 'prisma/migrations'): string[] {
       path.join(directory, name, 'migration.sql'),
       'utf8',
     );
-    if (name === socialGoalNoticesMigrationName)
+    if (name === socialGroupConversationMigrationName)
+      assertReviewedSocialGroupConversationMigration(sql);
+    else if (name === socialGoalNoticesMigrationName)
       assertReviewedSocialGoalNoticesMigration(sql);
     else if (name === socialLendingGapMigrationName)
       assertReviewedSocialLendingGapMigration(sql);

@@ -42,7 +42,6 @@ Because a closed Space is purged at its longest class window, the 2-year audit w
 | Category                                                                                   | Reason                                                                                                                                                                                                    |
 | ------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **COMPANY production policy** (financial records, proposed 7 years; sealed employee files) | Waiting for legal review. No class exists for finance or employee files. The general catalog seeds no Company policy. The separate local synthetic policy below supplies no legal or production approval. |
-| **SOCIAL_GROUP**                                                                           | v1.0 defines no rule for it.                                                                                                                                                                              |
 
 ## Local Company testing decision (2026-11-17)
 
@@ -105,7 +104,7 @@ Local Company focused checks (2026-11-17):
 
 - `tooling/compatibility/retention-catalog-v1.spec.ts` checks:
   - schema validity and PURGE-only policies;
-  - one default per Space type, with no Company or Social Group entry;
+  - one default per Space type, with no Company entry;
   - that only longer comparable policies can be selected;
   - refusals for shortening, inapplicable contexts and dropped holds.
 - `apps/api/test/integration/retention-catalog.spec.ts` checks, against an isolated database:
@@ -114,3 +113,13 @@ Local Company focused checks (2026-11-17):
   - the catalog read per context, including that holds and obligations are not disclosed;
   - 401 without a session;
   - the immutability trigger, and that a differing row aborts the seed without being overwritten.
+
+## Social Group policy (owner decision D1, 2026-11-18)
+
+Version `mp-rpc-v1.1-social-group`, seeded by the same tool. Context `SOCIAL_GROUP`;
+30-day recovery; every class 0 seconds, PURGE, OWNER/ADMIN audience, OWNER export, no holds
+or obligations. It ends recoverability and allows disposal of eligible Social content only.
+Protected expense, settlement, loan, dispute, audit and shared-history records stay retained
+and access-restricted (ADR 0066 G/H content guard, `BLOCKED_POLICY`); no legal retention
+period is inferred. Conversations keep `mp-rpc-v1.0-conversation`. See
+[ADR 0067](adr/0067-social-group-chat-ledger-actors-and-group-retention.md).

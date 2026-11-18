@@ -23,7 +23,9 @@ const rule = (retainAfterClosureSeconds: number) => ({
 });
 const policy = (
   policyVersion: string,
-  applicableContexts: ('PROJECT' | 'TEAM' | 'CONVERSATION' | 'MEETING')[],
+  applicableContexts: (
+    'PROJECT' | 'TEAM' | 'CONVERSATION' | 'MEETING' | 'SOCIAL_GROUP'
+  )[],
   content: number,
 ) => ({
   policyVersion,
@@ -46,6 +48,27 @@ const policy = (
   backupPolicyReference:
     'docs/architecture/SHARED_RESOURCES_AND_LIFECYCLE.md (consistent PostgreSQL + file volume backup)',
 });
+/**
+ * Owner decision D1 (2026-11-18, ADR 0067): a deleted Social Group is
+ * recoverable for 30 days; afterwards eligible Social content may be disposed.
+ * Every class is 0 so whole-Space disposal is not deferred past the recovery
+ * window. This does NOT approve disposal of protected expense, settlement,
+ * loan, dispute, audit or shared-history records: the Social content guard
+ * keeps such Groups in BLOCKED_POLICY (ADR 0066 G/H), and lifecycle evidence
+ * disposal still needs a separate operator approval reference.
+ */
+const SOCIAL_GROUP_POLICY = {
+  ...policy('mp-rpc-v1.1-social-group', ['SOCIAL_GROUP'], 0),
+  approvalReference:
+    'RPC-v1.1 owner decision D1 2026-11-18: Social Group 30-day recovery, then eligible content disposal; protected records retained; production operator approval pending',
+  classRules: {
+    workContent: rule(0),
+    commentsHistory: rule(0),
+    filesDerivatives: rule(0),
+    exports: rule(0),
+    accessAuditLifecycle: rule(0),
+  },
+};
 /** Seedable entries; every one validates against SharedRetentionSchema. */
 export const RETENTION_CATALOG_V1 = [
   // Project/Team work: retained while active; cleanup after closure.
@@ -54,6 +77,7 @@ export const RETENTION_CATALOG_V1 = [
   policy('mp-rpc-v1.0-conversation', ['CONVERSATION'], 3 * year),
   // Meeting minutes and decisions: 5 years.
   policy('mp-rpc-v1.0-meeting', ['MEETING'], 5 * year),
+  SOCIAL_GROUP_POLICY,
 ].map((p) => SharedRetentionSchema.parse(p));
 
 /**
@@ -66,11 +90,6 @@ export const RETENTION_CATALOG_V1_PENDING = [
     status: 'PENDING_LEGAL_REVIEW',
     reason:
       'Financial records (proposed 7 years) and sealed employee files (operator legal policy) have no confirmed legal basis; the model has no per-category class for them and a Company policy would authorize whole-Space PURGE.',
-  },
-  {
-    context: 'SOCIAL_GROUP',
-    status: 'NO_APPROVED_RULE',
-    reason: 'The v1.0 product configuration defines no Social Group rule.',
   },
 ] as const;
 

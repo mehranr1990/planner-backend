@@ -21,6 +21,8 @@ import {
   SocialData,
 } from '../../src/modules/social/public/index.js';
 import { SocialGroupExitService } from '../../src/modules/social/application/group-exit.service.js';
+import { SocialGroupConversationService } from '../../src/modules/social/application/group-conversation.service.js';
+import { MessagingService } from '../../src/modules/messaging/public/index.js';
 import { ExportBudget } from '../../src/platform/lifecycle/personal-data.js';
 import { testApplication } from '../support/application.js';
 import { migrationSandbox } from '../../../../tooling/testing/migration-sandbox.js';
@@ -834,6 +836,239 @@ describe('P6-06 Social hardening: deletion, recovery, departure, erasure', () =>
       .get(`/api/v1/social-groups/${g.id}/lifecycle-job`)
       .set('Cookie', cookie)
       .expect((r) => expect([403, 404]).toContain(r.status));
+  });
+
+  it('D3: Group ledgers resolve Group actor IDs server-side without leaking identities', async () => {
+    const g = await group(bob, carol),
+      other = await group(dave);
+    const ref = { kind: 'GROUP' as const, id: g.id },
+      actorOf = async (who: Person, id = g.id) => (await seat(id, who)).actorId;
+    const [a, b, cc] = [
+      await actorOf(alice),
+      await actorOf(bob),
+      await actorOf(carol),
+    ];
+    const input = (shares: { actorId?: string; userId?: string }[]) => ({
+      id: randomUUID(),
+      title: 'Actor split',
+      currency: 'USD',
+      amountMinor: '1000',
+      payerActorId: a,
+      method: 'EQUAL' as const,
+      incurredOn: '2030-12-01',
+      shares,
+    });
+    const e = await expenses.create(
+      bob.actor,
+      ref,
+      input([{ actorId: a }, { actorId: b }, { actorId: cc }]),
+      key(),
+    );
+    expect(e.pending!.payerUserId).toBe(alice.actor.userId);
+    expect(e.pending!.payerActorId).toBe(a);
+    const ok = await expenses.decide(
+      alice.actor,
+      ref,
+      e.id,
+      'approve',
+      {},
+      e.revision,
+      key(),
+    );
+    const shares = ok.effective!.shares;
+    expect(shares.map((s) => s.actorId)).toEqual([a, b, cc]);
+    // Exact minor units: 1000 split three ways reconciles to the total.
+    expect(shares.reduce((t, s) => t + BigInt(s.shareMinor), 0n)).toBe(1000n);
+    // Cross-Group, duplicate and Activity actor references are rejected.
+    await reason(
+      expenses.create(
+        bob.actor,
+        ref,
+        input([{ actorId: a }, { actorId: await actorOf(dave, other.id) }]),
+        key(),
+      ),
+      'PARTICIPANT_INELIGIBLE',
+    );
+    await reason(
+      expenses.create(
+        bob.actor,
+        ref,
+        input([{ actorId: a }, { userId: alice.actor.userId }]),
+        key(),
+      ),
+      'SHARES_DUPLICATE',
+    );
+    const act = await activity(null);
+    await reason(
+      expenses.create(
+        alice.actor,
+        { kind: 'ACTIVITY', id: act.id },
+        input([{ actorId: a }]),
+        key(),
+      ),
+      'ACTOR_REFERENCE_UNSUPPORTED',
+    );
+    // A non-member cannot probe actor IDs: authorization fails first.
+    await denied(
+      expenses.create(
+        dave.actor,
+        ref,
+        input([{ actorId: randomUUID() }]),
+        key(),
+      ),
+    );
+    // Balances and settlements carry actor references; payee by actor ID.
+    const mine = await expenses.balances(bob.actor, ref, false);
+    expect(mine.items).toEqual([
+      expect.objectContaining({ userId: bob.actor.userId, actorId: b }),
+    ]);
+    const settled = await expenses.settle(
+      bob.actor,
+      ref,
+      {
+        id: randomUUID(),
+        payeeActorId: a,
+        currency: 'USD',
+        amountMinor: mine.items[0]!.owedMinor,
+      },
+      key(),
+    );
+    expect(settled).toMatchObject({
+      payerUserId: bob.actor.userId,
+      payeeUserId: alice.actor.userId,
+      payerActorId: b,
+      payeeActorId: a,
+    });
+    await reason(
+      expenses.settle(
+        bob.actor,
+        ref,
+        {
+          id: randomUUID(),
+          payeeActorId: await actorOf(dave, other.id),
+          currency: 'USD',
+          amountMinor: '1',
+        },
+        key(),
+      ),
+      'PARTICIPANT_INELIGIBLE',
+    );
+  });
+
+  it('D7: one primary Group chat with join-time history, revocation and no resurrection', async () => {
+    const chat = app.get(SocialGroupConversationService),
+      messaging = app.get(MessagingService);
+    const g = await group(bob);
+    const open = (who: Person, revision = g.revision) =>
+      chat.open(
+        who.actor,
+        g.id,
+        { id: randomUUID(), retentionPolicyVersion: version },
+        revision,
+        key(),
+      );
+    const send = (who: Person, conversationId: string, text: string) =>
+      messaging.send(
+        who.actor,
+        conversationId,
+        { id: randomUUID(), text },
+        key(),
+      );
+    const texts = async (who: Person, conversationId: string) =>
+      (
+        await messaging.messages(who.actor, conversationId, { limit: 50 })
+      ).items.map((m) => (m as { text?: string | null }).text);
+    const admit = async (who: Person) => {
+      const offer = await groups.invite(
+        alice.actor,
+        g.id,
+        {
+          kind: 'MEMBERSHIP',
+          memberRole: 'MEMBER',
+          recipient: { userId: who.actor.userId },
+        },
+        key(),
+      );
+      await groups.decideInvitation(
+        who.actor,
+        offer.invitation.id,
+        offer.proof!,
+        1,
+        true,
+      );
+    };
+    expect(await chat.read(alice.actor, g.id)).toEqual({
+      groupId: g.id,
+      conversationId: null,
+      canOpen: true,
+    });
+    expect((await chat.read(bob.actor, g.id)).canOpen).toBe(false);
+    await status(open(bob), 403);
+    await reason(chat.join(bob.actor, g.id, key()), 'CONVERSATION_NOT_OPEN');
+    await denied(chat.read(dave.actor, g.id));
+    // Concurrent opens converge on exactly one primary conversation.
+    const settled = await Promise.allSettled([open(alice), open(alice)]);
+    const ids = settled.flatMap((r) =>
+      r.status === 'fulfilled' ? [r.value.conversationId] : [],
+    );
+    expect(ids.length).toBeGreaterThan(0);
+    const conversationId = (await chat.read(alice.actor, g.id)).conversationId!;
+    expect(new Set(ids)).toEqual(new Set([conversationId]));
+    expect(
+      await db.conversation.count({
+        where: { sourceKind: 'SOCIAL_GROUP', sourceId: g.id },
+      }),
+    ).toBe(1);
+    expect((await open(alice, g.revision + 1)).conversationId).toBe(
+      conversationId,
+    );
+    await send(alice, conversationId, 'before bob');
+    await status(messaging.get(bob.actor, conversationId), 404);
+    await chat.join(bob.actor, g.id, key());
+    expect(await texts(bob, conversationId)).toEqual([]);
+    await send(bob, conversationId, 'hello');
+    // A newly admitted member sees only messages from their join point.
+    await admit(carol);
+    await chat.join(carol.actor, g.id, key());
+    expect(await texts(carol, conversationId)).toEqual([]);
+    // Departure revokes reads, sends and list visibility immediately.
+    const before = await exit.check(bob.actor, g.id);
+    await exit.leave(bob.actor, g.id, before.membershipRevision, undefined);
+    await status(messaging.get(bob.actor, conversationId), 404);
+    await status(send(bob, conversationId, 'x'), 404);
+    expect(
+      (await messaging.list(bob.actor, { limit: 50 })).items.map((v) => v.id),
+    ).not.toContain(conversationId);
+    await send(alice, conversationId, 'while bob was away');
+    // Re-admission never revives the old Messaging membership.
+    await admit(bob);
+    await status(messaging.get(bob.actor, conversationId), 404);
+    await chat.join(bob.actor, g.id, key());
+    expect(await texts(bob, conversationId)).toEqual([]);
+    // Deletion disables the chat for everyone; recovery restores no member.
+    const current = await groups.read(alice.actor, g.id);
+    await exit.delete(alice.actor, g.id, current.revision, { password });
+    for (const who of [alice, bob, carol]) {
+      await status(messaging.get(who.actor, conversationId), 404);
+      await status(send(who, conversationId, 'deleted'), 404);
+    }
+    const job = c(await exit.job(alice.actor, g.id));
+    const proof = await exit.proof(alice.actor, g.id, job.revision, password);
+    await exit.recover(
+      alice.actor,
+      g.id,
+      proof.revision,
+      proof.generation,
+      proof.proof,
+      password,
+    );
+    for (const who of [bob, carol])
+      await status(messaging.get(who.actor, conversationId), 404);
+    await denied(chat.join(carol.actor, g.id, key()));
+    // The recovered Owner re-joins explicitly; history restarts there.
+    await status(messaging.get(alice.actor, conversationId), 404);
+    await chat.join(alice.actor, g.id, key());
+    expect(await texts(alice, conversationId)).toEqual([]);
   });
 });
 function c<T>(v: T) {

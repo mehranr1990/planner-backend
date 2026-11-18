@@ -6252,6 +6252,8 @@ model SocialGroup {
   publicSummary String @default("") @db.VarChar(500)
   discoverable Boolean @default(false)
   revision Int @default(1)
+  /// ADR 0067: reserved/bound primary Messaging conversation (no cross-module FK).
+  conversationId String? @unique @db.Uuid
   creationKey String @db.Char(64)
   creationFingerprint String @db.Char(64)
   createdAt DateTime @default(now()) @db.Timestamptz(3)

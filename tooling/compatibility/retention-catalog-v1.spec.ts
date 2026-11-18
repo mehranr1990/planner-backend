@@ -22,6 +22,7 @@ describe('Retention Policy Catalog v1.0', () => {
       'mp-rpc-v1.0-work',
       'mp-rpc-v1.0-conversation',
       'mp-rpc-v1.0-meeting',
+      'mp-rpc-v1.1-social-group',
     ]);
     for (const p of catalog) {
       expect(SharedRetentionSchema.parse(p)).toEqual(p);
@@ -34,7 +35,7 @@ describe('Retention Policy Catalog v1.0', () => {
       for (const r of Object.values(p.classRules))
         expect(r.disposalAction).toBe('PURGE');
       expect(p.classRules.accessAuditLifecycle.retainAfterClosureSeconds).toBe(
-        2 * year,
+        p.applicableContexts.includes('SOCIAL_GROUP') ? 0 : 2 * year,
       );
       expect(p.classRules.filesDerivatives.retainAfterClosureSeconds).toBe(0);
     }
@@ -50,17 +51,28 @@ describe('Retention Policy Catalog v1.0', () => {
         .retainAfterClosureSeconds,
     ).toBe(5 * year);
   });
-  it('gives each supported Space type exactly one default and seeds no legal-sensitive or undefined context', () => {
+  it('gives each supported Space type exactly one default and seeds no legal-sensitive context', () => {
     const contexts = catalog.flatMap((p) => p.applicableContexts);
     expect([...contexts].sort()).toEqual([
       'CONVERSATION',
       'MEETING',
       'PROJECT',
+      'SOCIAL_GROUP',
       'TEAM',
     ]);
     expect(contexts).not.toContain('COMPANY');
-    expect(contexts).not.toContain('SOCIAL_GROUP');
-    expect(pending.map((p) => p.context)).toEqual(['COMPANY', 'SOCIAL_GROUP']);
+    expect(pending.map((p) => p.context)).toEqual(['COMPANY']);
+  });
+  it('D1: Social Group policy only ends recoverability at 30 days and never substitutes the Conversation policy', () => {
+    const g = find('mp-rpc-v1.1-social-group');
+    expect(g.applicableContexts).toEqual(['SOCIAL_GROUP']);
+    expect(g.sharedRecoverySeconds).toBe(30 * 86400);
+    for (const r of Object.values(g.classRules))
+      expect(r.retainAfterClosureSeconds).toBe(0);
+    expect(g.approvalReference).toMatch(/protected records retained/);
+    expect(find('mp-rpc-v1.0-conversation').applicableContexts).toEqual([
+      'CONVERSATION',
+    ]);
   });
   it('allows only longer comparable approved policies and refuses decreases, mismatches and inapplicable contexts', () => {
     const work = find('mp-rpc-v1.0-work'),

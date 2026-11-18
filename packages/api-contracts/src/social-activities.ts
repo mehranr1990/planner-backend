@@ -348,22 +348,47 @@ export const SocialSplitMethodSchema = z.enum([
   'FIXED',
   'WEIGHTED',
 ]);
-export const SocialExpenseInputSchema = z.strictObject({
+/**
+ * Group ledgers also accept Group-scoped actor IDs (`payerActorId`,
+ * `shares[].actorId`, `payeeActorId`) so clients need no account user IDs;
+ * exactly one form per reference. Actor IDs are resolved server-side to
+ * active Group members and are rejected on Activity ledgers.
+ */
+const exactlyOne = (a: unknown, b: unknown) =>
+  (a === undefined) !== (b === undefined);
+export const SocialExpenseShareInputSchema = z
+  .strictObject({
+    userId: id.optional(),
+    actorId: id.optional(),
+    value: MinorOrZero.optional(),
+  })
+  .refine((v) => exactlyOne(v.userId, v.actorId), {
+    message: 'Exactly one of userId or actorId is required',
+  });
+const expenseInput = {
   title: Text(200),
   note: Optional(2000),
   currency: Currency,
   amountMinor: Minor,
-  payerUserId: id,
+  payerUserId: id.optional(),
+  payerActorId: id.optional(),
   method: SocialSplitMethodSchema,
   incurredOn: z.iso.date(),
-  shares: z
-    .array(z.strictObject({ userId: id, value: MinorOrZero.optional() }))
-    .min(1)
-    .max(200),
-});
-export const SocialExpenseCreateSchema = SocialExpenseInputSchema.extend({
-  id,
-});
+  shares: z.array(SocialExpenseShareInputSchema).min(1).max(200),
+};
+const onePayer = [
+  (v: {
+    payerUserId?: string | undefined;
+    payerActorId?: string | undefined;
+  }) => exactlyOne(v.payerUserId, v.payerActorId),
+  { message: 'Exactly one of payerUserId or payerActorId is required' },
+] as const;
+export const SocialExpenseInputSchema = z
+  .strictObject(expenseInput)
+  .refine(...onePayer);
+export const SocialExpenseCreateSchema = z
+  .strictObject({ ...expenseInput, id })
+  .refine(...onePayer);
 export const SocialExpenseDecisionActionSchema = z.enum([
   'approve',
   'reject',
@@ -375,6 +400,8 @@ export const SocialExpenseDecisionSchema = z.strictObject({
 export const SocialExpenseShareSchema = z.strictObject({
   position: z.number().int().positive(),
   userId: id.nullable(),
+  /** Group-scoped actor ID (Group ledgers); null on Activity ledgers. */
+  actorId: id.nullable(),
   input: MinorOrZero.nullable(),
   shareMinor: MinorOrZero,
 });
@@ -388,6 +415,7 @@ export const SocialExpenseRevisionSchema = z.strictObject({
   scale: z.number().int().min(0).max(4),
   amountMinor: Minor,
   payerUserId: id.nullable(),
+  payerActorId: id.nullable(),
   method: SocialSplitMethodSchema,
   incurredOn: z.iso.date(),
   proposedByUserId: id.nullable(),
@@ -417,6 +445,7 @@ export const SocialExpenseHistorySchema = z.strictObject({
 });
 export const SocialBalanceSchema = z.strictObject({
   userId: id,
+  actorId: id.nullable(),
   displayName: z.string().nullable(),
   currency: z.string(),
   paidMinor: MinorOrZero,
@@ -430,13 +459,18 @@ export const SocialBalanceSchema = z.strictObject({
 export const SocialBalanceListSchema = z.strictObject({
   items: z.array(SocialBalanceSchema).max(10000),
 });
-export const SocialSettlementCreateSchema = z.strictObject({
-  id,
-  payeeUserId: id,
-  currency: Currency,
-  amountMinor: Minor,
-  note: Optional(2000),
-});
+export const SocialSettlementCreateSchema = z
+  .strictObject({
+    id,
+    payeeUserId: id.optional(),
+    payeeActorId: id.optional(),
+    currency: Currency,
+    amountMinor: Minor,
+    note: Optional(2000),
+  })
+  .refine((v) => exactlyOne(v.payeeUserId, v.payeeActorId), {
+    message: 'Exactly one of payeeUserId or payeeActorId is required',
+  });
 export const SocialSettlementActionSchema = z.enum([
   'confirm',
   'dispute',
@@ -451,6 +485,8 @@ export const SocialSettlementSchema = z.strictObject({
   activityId: id.nullable(),
   payerUserId: id.nullable(),
   payeeUserId: id.nullable(),
+  payerActorId: id.nullable(),
+  payeeActorId: id.nullable(),
   currency: z.string(),
   scale: z.number().int().min(0).max(4),
   amountMinor: Minor,
@@ -475,6 +511,17 @@ export const SocialActivitySuccessionActionSchema = z.enum([
 export const SocialActivityConversationOpenSchema = z.strictObject({
   id,
   retentionPolicyVersion: z.string().regex(/^[A-Za-z0-9._-]{1,80}$/),
+});
+/**
+ * D7 Social Group Chat: one primary Messaging-owned conversation per Group
+ * (ADR 0067). `conversationId` is null until an Owner/Admin opens it.
+ */
+export const SocialGroupConversationOpenSchema =
+  SocialActivityConversationOpenSchema;
+export const SocialGroupConversationSchema = z.strictObject({
+  groupId: id,
+  conversationId: id.nullable(),
+  canOpen: z.boolean(),
 });
 export const SocialFinancePostingRequestSchema = z.strictObject({
   accountId: id,

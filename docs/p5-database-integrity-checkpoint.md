@@ -19,9 +19,9 @@ environment values match the configuration files. Credentials were not disclosed
 Investigation connections enforced default_transaction_read_only=on and explicit
 read-only transactions where multiple queries were needed.
 
-| Migration | Retained rolled-back attempt SHA-256 | Successful/current SQL SHA-256 |
-| --- | --- | --- |
-| 202610280013_p1_09_finance | `cb4186278e3f90f5cc265b989791b7a05afb52b43819bd69e19b035944cc7a4d` | `e31dcb994b477ec6f737ba48d176f23af84ced52bf9cbc7ae7a07d3783fca6c5` |
+| Migration                        | Retained rolled-back attempt SHA-256                               | Successful/current SQL SHA-256                                     |
+| -------------------------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------ |
+| 202610280013_p1_09_finance       | `cb4186278e3f90f5cc265b989791b7a05afb52b43819bd69e19b035944cc7a4d` | `e31dcb994b477ec6f737ba48d176f23af84ced52bf9cbc7ae7a07d3783fca6c5` |
 | 202610290001_p1_10_notifications | `df5e3a309d2a459432ddf52a3fddb24471171746f6231ab4245abd7e7782f355` | `9ef22bc64e6bbc1df3382bc732b72bae3c3fcad1184d6ff6093342d3d0683524` |
 
 Finance's failed attempt started at 2026-10-28T20:30:13.345Z and was marked rolled
@@ -73,10 +73,10 @@ reported 101 migrations and "Database schema is up to date!".
 
 Final read-only ledger reconciliation:
 
-| Database | Successful migrations | Matching successful checksums | Unresolved | Pending | Historical rolled-back attempts |
-| --- | --- | --- | --- | --- | --- |
-| mehran_dev | 101 | 101 | 0 | 0 | 2, preserved unchanged |
-| mehran_test | 101 | 101 | 0 | 0 | 0 |
+| Database    | Successful migrations | Matching successful checksums | Unresolved | Pending | Historical rolled-back attempts |
+| ----------- | --------------------- | ----------------------------- | ---------- | ------- | ------------------------------- |
+| mehran_dev  | 101                   | 101                           | 0          | 0       | 2, preserved unchanged          |
+| mehran_test | 101                   | 101                           | 0          | 0       | 0                               |
 
 No migration SQL, historical checksum or historical ledger row was edited. No
 checksum repair, migrate resolve, bypass, reset, rebuild or application-data

@@ -36,6 +36,37 @@ const applicationUserRelations: Readonly<Record<string, string>> = {
     'socialSettlementsReceivedSocialSettlement[]@relation("SocialSettlement_payee")',
   socialAuditEvents:
     'socialAuditEventsSocialAuditEvent[]@relation("SocialAuditEvent_actor")',
+  // P6-04/P6-05 (ADR 0064/0065): relation-only Social links; registered with ADR 0067.
+  socialAssets: 'socialAssetsSocialAsset[]@relation("SocialAsset_owner")',
+  socialLoansLent: 'socialLoansLentSocialLoan[]@relation("SocialLoan_lender")',
+  socialLoansBorrowed:
+    'socialLoansBorrowedSocialLoan[]@relation("SocialLoan_borrower")',
+  socialLoanOutcomes:
+    'socialLoanOutcomesSocialLoan[]@relation("SocialLoan_pendingOutcomeBy")',
+  socialLoanDisputes:
+    'socialLoanDisputesSocialLoan[]@relation("SocialLoan_disputedBy")',
+  socialLoanDueProposals:
+    'socialLoanDueProposalsSocialLoan[]@relation("SocialLoan_dueProposedBy")',
+  socialGoalsCreated:
+    'socialGoalsCreatedSocialGoal[]@relation("SocialGoal_creator")',
+  socialGoalParticipations:
+    'socialGoalParticipationsSocialGoalParticipant[]@relation("SocialGoalParticipant_user")',
+  socialGoalEntriesSubmitted:
+    'socialGoalEntriesSubmittedSocialGoalEntry[]@relation("SocialGoalEntry_submittedBy")',
+  socialGoalEntriesReviewed:
+    'socialGoalEntriesReviewedSocialGoalEntry[]@relation("SocialGoalEntry_reviewedBy")',
+  socialGoalEvents:
+    'socialGoalEventsSocialGoalEvent[]@relation("SocialGoalEvent_actor")',
+  socialLostFoundReports:
+    'socialLostFoundReportsSocialLostFoundReport[]@relation("SocialLostFoundReport_reporter")',
+  socialLostFoundClaims:
+    'socialLostFoundClaimsSocialLostFoundClaim[]@relation("SocialLostFoundClaim_claimant")',
+  socialLostFoundDisputes:
+    'socialLostFoundDisputesSocialLostFoundClaim[]@relation("SocialLostFoundClaim_disputedBy")',
+  socialLendingEvents:
+    'socialLendingEventsSocialLendingEvent[]@relation("SocialLendingEvent_actor")',
+  socialEvidence:
+    'socialEvidenceSocialEvidence[]@relation("SocialEvidence_addedBy")',
 };
 /** Ignore only exact reviewed application-owned inverse relations, never provider columns/indexes. */
 export function normalizedAuthModel(source: string, name: string): string {

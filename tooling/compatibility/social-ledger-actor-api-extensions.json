@@ -1,0 +1,170 @@
+{
+  "get /api/v1/social-groups/{id}/expenses response 200": {
+    "previous": [
+      "b809aa31e37f66305f9fa644881a967fc4361307ecc39ba09e286eb9fcba933f"
+    ],
+    "approved": "d38a9ee879c0106fd3d893d5b50beefb2582345c42e73c56c625f646e1108e6e"
+  },
+  "post /api/v1/social-groups/{id}/expenses request": {
+    "previous": [
+      "b37292e2ac4be832510413d7ddddd58124574509cf308b15ae24d25456657e1f"
+    ],
+    "approved": "daed429330a6fc75cdd234af12610588c6e1656b3180cdbb8d727b30a8af96cc"
+  },
+  "post /api/v1/social-groups/{id}/expenses response 201": {
+    "previous": [
+      "5a7fc50e783af4bc78f5ffd12f2b7f34c0d02f40ac21a130bc1e16459664addb"
+    ],
+    "approved": "3104c3dcf0012133c60a91b8ac4ce0e931d8aac5fa3e80feab35b7fd986b3551"
+  },
+  "get /api/v1/social-groups/{id}/expenses/{expenseId} response 200": {
+    "previous": [
+      "5a7fc50e783af4bc78f5ffd12f2b7f34c0d02f40ac21a130bc1e16459664addb"
+    ],
+    "approved": "3104c3dcf0012133c60a91b8ac4ce0e931d8aac5fa3e80feab35b7fd986b3551"
+  },
+  "get /api/v1/social-groups/{id}/expenses/{expenseId}/history response 200": {
+    "previous": [
+      "be8364a00296ef33ee9e59742fea201428bb9b4279e9f214eeaf4409ebd4b7ee"
+    ],
+    "approved": "3acf19f42547d609ae02a854702d601c50620ee05fdf619df296d7777a974c6d"
+  },
+  "post /api/v1/social-groups/{id}/expenses/{expenseId}/revisions request": {
+    "previous": [
+      "6e883b4f51f4bd03da1de49c44f908878ef8e99490cada036e53f0fee011c9dc"
+    ],
+    "approved": "4071288f61cb271e32c77212c1036d2bf339dbda1541fe67a2329926e13ddeae"
+  },
+  "post /api/v1/social-groups/{id}/expenses/{expenseId}/revisions response 201": {
+    "previous": [
+      "5a7fc50e783af4bc78f5ffd12f2b7f34c0d02f40ac21a130bc1e16459664addb"
+    ],
+    "approved": "3104c3dcf0012133c60a91b8ac4ce0e931d8aac5fa3e80feab35b7fd986b3551"
+  },
+  "post /api/v1/social-groups/{id}/expenses/{expenseId}/decisions/{action} response 201": {
+    "previous": [
+      "5a7fc50e783af4bc78f5ffd12f2b7f34c0d02f40ac21a130bc1e16459664addb"
+    ],
+    "approved": "3104c3dcf0012133c60a91b8ac4ce0e931d8aac5fa3e80feab35b7fd986b3551"
+  },
+  "get /api/v1/social-groups/{id}/balances response 200": {
+    "previous": [
+      "0e9af724af399636b9238d8318d4842a21c240289f1473b67dd909df7cd0378d"
+    ],
+    "approved": "81b4d106efd22f455bcf54f87fdcd5b4f334b37ab89d7fc25d324818dcaadfa2"
+  },
+  "get /api/v1/social-groups/{id}/balances/me response 200": {
+    "previous": [
+      "0e9af724af399636b9238d8318d4842a21c240289f1473b67dd909df7cd0378d"
+    ],
+    "approved": "81b4d106efd22f455bcf54f87fdcd5b4f334b37ab89d7fc25d324818dcaadfa2"
+  },
+  "get /api/v1/social-groups/{id}/settlements response 200": {
+    "previous": [
+      "661ddc02db202b3d1e96dae634bff947aec625a3894e471b8b8c92cf59404b35"
+    ],
+    "approved": "1acf18bfbd309c1cf942a20db83936d7624b7336bb358039ab18232333e04594"
+  },
+  "post /api/v1/social-groups/{id}/settlements request": {
+    "previous": [
+      "e383745bbc431fe293fc60a45595ffc61369852feb324abbceb778fdc8df2b0b"
+    ],
+    "approved": "0c313f9614409dbb3e1510462f6dc1a0c14c3b8738eaf128e5511a3015767f4d"
+  },
+  "post /api/v1/social-groups/{id}/settlements response 201": {
+    "previous": [
+      "4cfedfb0abc67d353267aa46b71fd9b1ce3948b75fc1415d062dc8cd21de0c7e"
+    ],
+    "approved": "88c68bc27754f7c5e2f71975a2d03a63f42297e7c2a699e42a5128e2a48c7c24"
+  },
+  "post /api/v1/social-groups/{id}/settlements/{settlementId}/decisions/{action} response 201": {
+    "previous": [
+      "4cfedfb0abc67d353267aa46b71fd9b1ce3948b75fc1415d062dc8cd21de0c7e"
+    ],
+    "approved": "88c68bc27754f7c5e2f71975a2d03a63f42297e7c2a699e42a5128e2a48c7c24"
+  },
+  "get /api/v1/social-activities/{id}/expenses response 200": {
+    "previous": [
+      "b809aa31e37f66305f9fa644881a967fc4361307ecc39ba09e286eb9fcba933f"
+    ],
+    "approved": "d38a9ee879c0106fd3d893d5b50beefb2582345c42e73c56c625f646e1108e6e"
+  },
+  "post /api/v1/social-activities/{id}/expenses request": {
+    "previous": [
+      "b37292e2ac4be832510413d7ddddd58124574509cf308b15ae24d25456657e1f"
+    ],
+    "approved": "daed429330a6fc75cdd234af12610588c6e1656b3180cdbb8d727b30a8af96cc"
+  },
+  "post /api/v1/social-activities/{id}/expenses response 201": {
+    "previous": [
+      "5a7fc50e783af4bc78f5ffd12f2b7f34c0d02f40ac21a130bc1e16459664addb"
+    ],
+    "approved": "3104c3dcf0012133c60a91b8ac4ce0e931d8aac5fa3e80feab35b7fd986b3551"
+  },
+  "get /api/v1/social-activities/{id}/expenses/{expenseId} response 200": {
+    "previous": [
+      "5a7fc50e783af4bc78f5ffd12f2b7f34c0d02f40ac21a130bc1e16459664addb"
+    ],
+    "approved": "3104c3dcf0012133c60a91b8ac4ce0e931d8aac5fa3e80feab35b7fd986b3551"
+  },
+  "get /api/v1/social-activities/{id}/expenses/{expenseId}/history response 200": {
+    "previous": [
+      "be8364a00296ef33ee9e59742fea201428bb9b4279e9f214eeaf4409ebd4b7ee"
+    ],
+    "approved": "3acf19f42547d609ae02a854702d601c50620ee05fdf619df296d7777a974c6d"
+  },
+  "post /api/v1/social-activities/{id}/expenses/{expenseId}/revisions request": {
+    "previous": [
+      "6e883b4f51f4bd03da1de49c44f908878ef8e99490cada036e53f0fee011c9dc"
+    ],
+    "approved": "4071288f61cb271e32c77212c1036d2bf339dbda1541fe67a2329926e13ddeae"
+  },
+  "post /api/v1/social-activities/{id}/expenses/{expenseId}/revisions response 201": {
+    "previous": [
+      "5a7fc50e783af4bc78f5ffd12f2b7f34c0d02f40ac21a130bc1e16459664addb"
+    ],
+    "approved": "3104c3dcf0012133c60a91b8ac4ce0e931d8aac5fa3e80feab35b7fd986b3551"
+  },
+  "post /api/v1/social-activities/{id}/expenses/{expenseId}/decisions/{action} response 201": {
+    "previous": [
+      "5a7fc50e783af4bc78f5ffd12f2b7f34c0d02f40ac21a130bc1e16459664addb"
+    ],
+    "approved": "3104c3dcf0012133c60a91b8ac4ce0e931d8aac5fa3e80feab35b7fd986b3551"
+  },
+  "get /api/v1/social-activities/{id}/balances response 200": {
+    "previous": [
+      "0e9af724af399636b9238d8318d4842a21c240289f1473b67dd909df7cd0378d"
+    ],
+    "approved": "81b4d106efd22f455bcf54f87fdcd5b4f334b37ab89d7fc25d324818dcaadfa2"
+  },
+  "get /api/v1/social-activities/{id}/balances/me response 200": {
+    "previous": [
+      "0e9af724af399636b9238d8318d4842a21c240289f1473b67dd909df7cd0378d"
+    ],
+    "approved": "81b4d106efd22f455bcf54f87fdcd5b4f334b37ab89d7fc25d324818dcaadfa2"
+  },
+  "get /api/v1/social-activities/{id}/settlements response 200": {
+    "previous": [
+      "661ddc02db202b3d1e96dae634bff947aec625a3894e471b8b8c92cf59404b35"
+    ],
+    "approved": "1acf18bfbd309c1cf942a20db83936d7624b7336bb358039ab18232333e04594"
+  },
+  "post /api/v1/social-activities/{id}/settlements request": {
+    "previous": [
+      "e383745bbc431fe293fc60a45595ffc61369852feb324abbceb778fdc8df2b0b"
+    ],
+    "approved": "0c313f9614409dbb3e1510462f6dc1a0c14c3b8738eaf128e5511a3015767f4d"
+  },
+  "post /api/v1/social-activities/{id}/settlements response 201": {
+    "previous": [
+      "4cfedfb0abc67d353267aa46b71fd9b1ce3948b75fc1415d062dc8cd21de0c7e"
+    ],
+    "approved": "88c68bc27754f7c5e2f71975a2d03a63f42297e7c2a699e42a5128e2a48c7c24"
+  },
+  "post /api/v1/social-activities/{id}/settlements/{settlementId}/decisions/{action} response 201": {
+    "previous": [
+      "4cfedfb0abc67d353267aa46b71fd9b1ce3948b75fc1415d062dc8cd21de0c7e"
+    ],
+    "approved": "88c68bc27754f7c5e2f71975a2d03a63f42297e7c2a699e42a5128e2a48c7c24"
+  }
+}

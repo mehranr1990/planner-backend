@@ -115,19 +115,19 @@ it('dry run writes nothing; apply is idempotent and touches no Space, job or cus
   ]);
   expect(
     (await seedRetentionCatalog(client, false)).map((r) => r.status),
-  ).toEqual(['PLANNED', 'PLANNED', 'PLANNED']);
+  ).toEqual(['PLANNED', 'PLANNED', 'PLANNED', 'PLANNED']);
   expect(await client.sharedRetentionPolicy.count()).toBe(0);
   expect((await catalog('PROJECT').expect(200)).body.items).toEqual([]);
   expect(
     (await seedRetentionCatalog(client, true)).map((r) => r.status),
-  ).toEqual(['INSERTED', 'INSERTED', 'INSERTED']);
+  ).toEqual(['INSERTED', 'INSERTED', 'INSERTED', 'INSERTED']);
   const rows = await client.sharedRetentionPolicy.findMany({
     orderBy: { version: 'asc' },
   });
   expect(rows.map((r) => r.version)).toEqual([...versions].sort());
   expect(
     (await seedRetentionCatalog(client, true)).map((r) => r.status),
-  ).toEqual(['UNCHANGED', 'UNCHANGED', 'UNCHANGED']);
+  ).toEqual(['UNCHANGED', 'UNCHANGED', 'UNCHANGED', 'UNCHANGED']);
   expect(
     await client.sharedRetentionPolicy.findMany({
       orderBy: { version: 'asc' },
@@ -140,7 +140,7 @@ it('dry run writes nothing; apply is idempotent and touches no Space, job or cus
     ]),
   ).toEqual(before);
 });
-it('serves seeded defaults per Space type and none for Company or Social Group', async () => {
+it('serves seeded defaults per Space type (Social Group per D1) and none for Company', async () => {
   const items = async (context: string) =>
     (
       (await catalog(context).expect(200)).body.items as { version: string }[]
@@ -150,7 +150,7 @@ it('serves seeded defaults per Space type and none for Company or Social Group',
   expect(await items('CONVERSATION')).toEqual(['mp-rpc-v1.0-conversation']);
   expect(await items('MEETING')).toEqual(['mp-rpc-v1.0-meeting']);
   expect(await items('COMPANY')).toEqual([]);
-  expect(await items('SOCIAL_GROUP')).toEqual([]);
+  expect(await items('SOCIAL_GROUP')).toEqual(['mp-rpc-v1.1-social-group']);
   const body = (await catalog('MEETING').expect(200)).body.items[0];
   expect(body.classRules.workContent).toEqual({
     retainAfterClosureSeconds: 5 * 365 * 86400,

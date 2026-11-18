@@ -330,6 +330,17 @@ export function socialActivityPaths(): Record<string, Record<string, unknown>> {
     edit,
   );
   add(a + '/conversation/join', 'post', ConversationSchema, empty, write);
+  // ADR 0067 (D7): the primary Social Group conversation.
+  const g = '/social-groups/{id}/conversation';
+  add(g, 'get', c.SocialGroupConversationSchema);
+  add(
+    g + '/open',
+    'post',
+    c.SocialGroupConversationSchema,
+    c.SocialGroupConversationOpenSchema,
+    { key: true, revision: true },
+  );
+  add(g + '/join', 'post', ConversationSchema, empty, write);
   add('/social-notices', 'get', c.SocialNoticePageSchema, undefined, {
     page: true,
   });

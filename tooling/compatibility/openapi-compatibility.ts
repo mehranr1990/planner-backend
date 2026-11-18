@@ -272,19 +272,22 @@ export function assertApiCompatible(
     const extension = responseExtensions[contract];
     if (
       current[contract] !==
-        approvedSocialLifecycleHash(
+        approvedSocialLedgerActorHash(
           contract,
-          approvedSocialGoalsHash(
+          approvedSocialLifecycleHash(
             contract,
-            approvedSocialLendingHash(
+            approvedSocialGoalsHash(
               contract,
-              approvedMessagesMeetingsHash(
+              approvedSocialLendingHash(
                 contract,
-                approvedCompanyHash(
+                approvedMessagesMeetingsHash(
                   contract,
-                  approvedTeamHash(
+                  approvedCompanyHash(
                     contract,
-                    approvedProjectHash(contract, hash),
+                    approvedTeamHash(
+                      contract,
+                      approvedProjectHash(contract, hash),
+                    ),
                   ),
                 ),
               ),
@@ -344,5 +347,21 @@ export function approvedSocialLifecycleHash(
   previous: string,
 ) {
   const change = socialLifecycleExtensions[contract];
+  return change?.previous.includes(previous) ? change.approved : previous;
+}
+// ADR 0067 (owner decision D3): additive Group ledger actor references
+// (payerActorId, payeeActorId, shares[].actorId, balance actorId); every
+// existing userId field and request form is unchanged and still accepted.
+const socialLedgerActorExtensions = JSON.parse(
+  fs.readFileSync(
+    new URL('./social-ledger-actor-api-extensions.json', import.meta.url),
+    'utf8',
+  ),
+) as Record<string, { previous: string[]; approved: string }>;
+export function approvedSocialLedgerActorHash(
+  contract: string,
+  previous: string,
+) {
+  const change = socialLedgerActorExtensions[contract];
   return change?.previous.includes(previous) ? change.approved : previous;
 }

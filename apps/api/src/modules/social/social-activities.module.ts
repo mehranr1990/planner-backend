@@ -34,6 +34,11 @@ import { SocialGoalsService } from './application/goals.service.js';
 import { SocialGoalsController } from './http/goals.controller.js';
 import { SocialGroupExitService } from './application/group-exit.service.js';
 import { SocialGroupExitController } from './http/group-exit.controller.js';
+import {
+  SocialGroupConversationService,
+  GroupConversationGuard,
+} from './application/group-conversation.service.js';
+import { SocialGroupConversationController } from './http/group-conversation.controller.js';
 /** P6-02/P6-03 (and P6-04 lending, Lost & Found; P6-05 goals): needs the composed Task and Calendar owners, as Meetings does. */
 @Module({})
 export class SocialActivitiesModule implements OnModuleInit {
@@ -41,10 +46,13 @@ export class SocialActivitiesModule implements OnModuleInit {
     @Inject(ConversationSources) private readonly sources: ConversationSources,
     @Inject(ActivityConversationGuard)
     private readonly guard: ActivityConversationGuard,
+    @Inject(GroupConversationGuard)
+    private readonly groupGuard: GroupConversationGuard,
   ) {}
   /** ADR 0062: Messaging asks this guard on every Activity chat operation. */
   onModuleInit() {
     this.sources.register('SOCIAL_ACTIVITY', this.guard);
+    this.sources.register('SOCIAL_GROUP', this.groupGuard);
   }
   static register(
     tasks: DynamicModule,
@@ -74,6 +82,8 @@ export class SocialActivitiesModule implements OnModuleInit {
         SocialLostFoundService,
         SocialGoalsService,
         SocialGroupExitService,
+        GroupConversationGuard,
+        SocialGroupConversationService,
       ],
       controllers: [
         SocialActivitiesController,
@@ -85,6 +95,7 @@ export class SocialActivitiesModule implements OnModuleInit {
         SocialLostFoundController,
         SocialGoalsController,
         SocialGroupExitController,
+        SocialGroupConversationController,
       ],
       exports: [
         SocialActivitiesService,
