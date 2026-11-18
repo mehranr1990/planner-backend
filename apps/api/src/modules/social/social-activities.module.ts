@@ -22,7 +22,15 @@ import {
   SocialGroupLedgerController,
   SocialActivityLedgerController,
 } from './http/activities.controller.js';
-/** P6-02/P6-03: needs the composed Task and Calendar owners, as Meetings does. */
+import { LendingKit } from './application/lending-kit.js';
+import { SocialLendingService } from './application/lending.service.js';
+import { SocialLostFoundService } from './application/lost-found.service.js';
+import {
+  SocialAssetsController,
+  SocialLoansController,
+  SocialLostFoundController,
+} from './http/lending.controller.js';
+/** P6-02/P6-03 (and P6-04 lending, Lost & Found): needs the composed Task and Calendar owners, as Meetings does. */
 @Module({})
 export class SocialActivitiesModule implements OnModuleInit {
   constructor(
@@ -57,17 +65,25 @@ export class SocialActivitiesModule implements OnModuleInit {
         SocialActivitiesService,
         SocialPlanningService,
         SocialExpensesService,
+        LendingKit,
+        SocialLendingService,
+        SocialLostFoundService,
       ],
       controllers: [
         SocialActivitiesController,
         SocialNoticesController,
         SocialGroupLedgerController,
         SocialActivityLedgerController,
+        SocialAssetsController,
+        SocialLoansController,
+        SocialLostFoundController,
       ],
       exports: [
         SocialActivitiesService,
         SocialPlanningService,
         SocialExpensesService,
+        SocialLendingService,
+        SocialLostFoundService,
       ],
     };
   }

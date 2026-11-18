@@ -7,3 +7,5 @@ export { SocialActivitiesModule } from '../social-activities.module.js';
 export { SocialActivitiesService } from '../application/activities.service.js';
 export { SocialPlanningService } from '../application/activity-planning.service.js';
 export { SocialExpensesService } from '../application/expenses.service.js';
+export { SocialLendingService } from '../application/lending.service.js';
+export { SocialLostFoundService } from '../application/lost-found.service.js';

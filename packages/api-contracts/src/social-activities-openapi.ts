@@ -3,14 +3,15 @@ import * as c from './social-activities.js';
 import { SocialEmptySchema } from './social.js';
 import { ConversationSchema } from './messaging.js';
 import { embeddedJsonSchema, pointerSegment } from './embedded-json-schema.js';
-type Options = {
+export type SocialPathOptions = {
   page?: boolean;
   key?: boolean;
   revision?: boolean;
   etag?: boolean;
   query?: Record<string, unknown>;
 };
-const actions: Record<string, string[]> = {
+type Options = SocialPathOptions;
+const activityActions: Record<string, string[]> = {
   '/lifecycle/{action}': ['cancel', 'close'],
   '/succession/{action}': ['accept', 'decline', 'cancel'],
   '/expenses/{expenseId}/decisions/{action}': ['approve', 'reject', 'withdraw'],
@@ -20,10 +21,14 @@ const actions: Record<string, string[]> = {
     'cancel',
   ],
 };
-/** P6-02/P6-03 Activity and recordkeeping-only expense operations. */
-export function socialActivityPaths(): Record<string, Record<string, unknown>> {
-  const paths: Record<string, Record<string, unknown>> = {};
-  function add(
+/** Shared Social operation builder; `{action}` path values come from `actions`. */
+export function socialPathBuilder(
+  paths: Record<string, Record<string, unknown>>,
+  operationPrefix: string,
+  actions: Record<string, string[]>,
+  text: { success: string; absent: string },
+) {
+  return function add(
     path: string,
     method: string,
     output: z.ZodType,
@@ -102,8 +107,7 @@ export function socialActivityPaths(): Record<string, Record<string, unknown>> {
       });
     const responses: Record<string, unknown> = {
       [success]: {
-        description:
-          'Authorized P6-02/P6-03 result; records never move money or grant Group access',
+        description: text.success,
         headers: {
           'Cache-Control': { schema: { type: 'string', const: 'no-store' } },
           ...(options.etag ? { ETag: { schema: { type: 'string' } } } : {}),
@@ -120,10 +124,7 @@ export function socialActivityPaths(): Record<string, Record<string, unknown>> {
     };
     for (const status of [400, 401, 403, 404, 409, 413, 422, 429, 500, 503])
       responses[status] = {
-        description:
-          status === 404
-            ? 'Safe absence; unauthorized Activity or ledger data is indistinguishable'
-            : 'Safe error',
+        description: status === 404 ? text.absent : 'Safe error',
         content: {
           'application/json': {
             schema: { $ref: '#/components/schemas/ApiError' },
@@ -132,7 +133,7 @@ export function socialActivityPaths(): Record<string, Record<string, unknown>> {
       };
     paths[route] ??= {};
     paths[route]![method] = {
-      operationId: 'socialActivity' + method + path.replace(/[^a-zA-Z]/g, ''),
+      operationId: operationPrefix + method + path.replace(/[^a-zA-Z]/g, ''),
       tags: ['social'],
       security: [{ sessionCookie: [] }],
       parameters,
@@ -153,7 +154,17 @@ export function socialActivityPaths(): Record<string, Record<string, unknown>> {
           }
         : {}),
     };
-  }
+  };
+}
+/** P6-02/P6-03 Activity and recordkeeping-only expense operations. */
+export function socialActivityPaths(): Record<string, Record<string, unknown>> {
+  const paths: Record<string, Record<string, unknown>> = {};
+  const add = socialPathBuilder(paths, 'socialActivity', activityActions, {
+    success:
+      'Authorized P6-02/P6-03 result; records never move money or grant Group access',
+    absent:
+      'Safe absence; unauthorized Activity or ledger data is indistinguishable',
+  });
   const empty = SocialEmptySchema,
     write = { key: true },
     edit = { key: true, revision: true, etag: true },

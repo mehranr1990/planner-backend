@@ -18,7 +18,7 @@ export function sharedRatePolicy(traffic?: SharedTraffic, preview = false) {
           ? 'messages'
           : /^(meetings|announcements)$/.test(root)
             ? 'meetings'
-            : /^(social|social-groups|social-group-invitations|social-activities|social-notices)$/.test(
+            : /^(social|social-groups|social-group-invitations|social-activities|social-notices|social-assets|social-loans|social-lost-found)$/.test(
                   root,
                 )
               ? 'social'
@@ -32,6 +32,11 @@ export function sharedRatePolicy(traffic?: SharedTraffic, preview = false) {
     (!read && /\/(?:expenses|settlements)\/[^/]+\/decisions\//.test(route)) ||
     // ADR 0060 organizer succession and Activity deletion are ownership/lifecycle actions.
     (!read && /^\/social-activities\/[^/]+\/succession(?:\/|$)/.test(route)) ||
+    // P6-04 custody, claim, dispute and moderation transitions are sensitive (ADR 0058).
+    (!read &&
+      /^\/(?:social-loans|social-lost-found|social-assets)\/[^/]+\/(?:actions|claims(?:\/[^/]+\/actions)?)(?:\/|$)/.test(
+        route,
+      )) ||
     (traffic?.method === 'DELETE' &&
       /^\/social-activities\/[^/]+$/.test(route)) ||
     (!read &&

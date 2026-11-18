@@ -121,6 +121,11 @@ describe('Shared endpoint-aware request budgets', () => {
     '/social-activities/:id/succession',
     '/social-activities/:id/succession/:action',
     '/social-activities/:id/restore',
+    '/social-loans/:id/actions/:action',
+    '/social-lost-found/:id/actions/:action',
+    '/social-lost-found/:id/claims',
+    '/social-lost-found/:id/claims/:claimId/actions/:action',
+    '/social-assets/:id/actions/:action',
   ])('keeps %s in the sensitive class', (route) => {
     expect(sharedRatePolicy({ method: 'POST', route }).actor).toBe(20);
   });
@@ -151,6 +156,21 @@ describe('Shared endpoint-aware request budgets', () => {
         method: 'GET',
         route: '/social-activities/:id/expenses/:expenseId',
       }).actor,
+    ).toBe(600);
+  });
+  it('keeps P6-04 lending and Lost & Found in the Social family', () => {
+    for (const route of [
+      '/social-assets',
+      '/social-loans/:id',
+      '/social-lost-found/:id/evidence',
+    ])
+      expect(sharedRatePolicy({ method: 'POST', route })).toMatchObject({
+        family: 'social',
+        actor: 120,
+      });
+    expect(
+      sharedRatePolicy({ method: 'GET', route: '/social-loans/:id/history' })
+        .actor,
     ).toBe(600);
   });
   it('allows ordinary membership reads and caps aggregation aliases', () => {

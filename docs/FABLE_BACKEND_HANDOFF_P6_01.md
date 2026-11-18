@@ -21,6 +21,16 @@ X1/X2/M1/X4/M2/Company export reads are implemented; X3 reuses the existing
 privacy-safe `POST /api/v1/social/discovery`. Shared remains disabled; this work
 does not resolve OD-1–OD-14 or authorize Frontend activation, live tests or P6-02.
 
+### Social lending and Lost & Found (P6-04) — 2026-11-18
+
+On `main`; contract now **1,282 operations** (+27). Personal assets with owner-controlled
+audience (private / connections / one Social Group), loans with borrower-confirmed custody,
+returns, overdue, disputes, lost/damaged outcomes and due-date changes by mutual agreement;
+Lost & Found posts, private claims, matches and two-party resolution without any loan.
+Notices use the existing Social inbox (`/social-notices`, 17 new kinds), with
+`actionRequired` polling as the fallback. File evidence and retention are **not** implemented.
+Details: [`frontend-handoff/SOCIAL_LENDING_LOST_FOUND.md`](frontend-handoff/SOCIAL_LENDING_LOST_FOUND.md).
+
 ### Local Social Activities and shared expenses (P6-02/P6-03) — 2026-11-17
 
 Local, uncommitted; contract now **1,255 operations** (62 additions incl. the 2026-11-18 gap closure). Activities,

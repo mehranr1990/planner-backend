@@ -26,6 +26,17 @@ model User {
   socialSettlementsPaid SocialSettlement[] @relation("SocialSettlement_payer")
   socialSettlementsReceived SocialSettlement[] @relation("SocialSettlement_payee")
   socialAuditEvents SocialAuditEvent[] @relation("SocialAuditEvent_actor")
+  socialAssets SocialAsset[] @relation("SocialAsset_owner")
+  socialLoansLent SocialLoan[] @relation("SocialLoan_lender")
+  socialLoansBorrowed SocialLoan[] @relation("SocialLoan_borrower")
+  socialLoanOutcomes SocialLoan[] @relation("SocialLoan_pendingOutcomeBy")
+  socialLoanDisputes SocialLoan[] @relation("SocialLoan_disputedBy")
+  socialLoanDueProposals SocialLoan[] @relation("SocialLoan_dueProposedBy")
+  socialLostFoundReports SocialLostFoundReport[] @relation("SocialLostFoundReport_reporter")
+  socialLostFoundClaims SocialLostFoundClaim[] @relation("SocialLostFoundClaim_claimant")
+  socialLostFoundDisputes SocialLostFoundClaim[] @relation("SocialLostFoundClaim_disputedBy")
+  socialLendingEvents SocialLendingEvent[] @relation("SocialLendingEvent_actor")
+  socialEvidence SocialEvidence[] @relation("SocialEvidence_addedBy")
   receivedDmBlocks DmContactBlock[] @relation("DmContactBlock_target_fk")
   ContextInvitation   ContextInvitation[]
   sharedActors        SharedActor[]
@@ -6249,6 +6260,8 @@ model SocialGroup {
   expenses SocialExpense[]
   settlements SocialSettlement[]
   auditEvents SocialAuditEvent[]
+  assets SocialAsset[]
+  lostFoundReports SocialLostFoundReport[]
   @@unique([spaceId,scopeId])
   @@index([discoverable,id])
 }
@@ -7343,10 +7356,16 @@ model SocialNotice {
   dedupeKey String @db.VarChar(160)
   createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
   readAt DateTime? @db.Timestamptz(3)
+  loanId String? @db.Uuid
+  lostFoundReportId String? @db.Uuid
   user User @relation("SocialNotice_user",fields:[userId],references:[id],onDelete:Cascade,onUpdate:NoAction)
   activity SocialActivity? @relation(fields:[activityId],references:[id],onDelete:Cascade,onUpdate:NoAction)
   group SocialGroup? @relation(fields:[groupId],references:[id],onDelete:Cascade,onUpdate:NoAction)
+  loan SocialLoan? @relation(fields:[loanId],references:[id],onDelete:Cascade,onUpdate:NoAction)
+  lostFoundReport SocialLostFoundReport? @relation(fields:[lostFoundReportId],references:[id],onDelete:Cascade,onUpdate:NoAction)
   @@unique([userId,dedupeKey])
+  @@index([loanId])
+  @@index([lostFoundReportId])
   @@index([userId,id])
 }
 
@@ -7448,6 +7467,156 @@ model SocialAuditEvent {
   actor User? @relation("SocialAuditEvent_actor",fields:[actorUserId],references:[id],onDelete:SetNull,onUpdate:NoAction)
   @@index([activityId,id])
   @@index([groupId,id])
+}
+model SocialAsset {
+  id String @id @db.Uuid
+  ownerUserId String? @db.Uuid
+  audience String @db.VarChar(12)
+  groupId String? @db.Uuid
+  title String @db.VarChar(200)
+  description String? @db.VarChar(2000)
+  state String @default("ACTIVE") @db.VarChar(10)
+  orphanedAt DateTime? @db.Timestamptz(3)
+  revision Int @default(1)
+  createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+  updatedAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+  owner User? @relation("SocialAsset_owner",fields:[ownerUserId],references:[id],onDelete:SetNull,onUpdate:NoAction)
+  group SocialGroup? @relation(fields:[groupId],references:[id],onDelete:SetNull,onUpdate:NoAction)
+  loans SocialLoan[]
+  lostReports SocialLostFoundReport[]
+  @@index([ownerUserId,id])
+  @@index([groupId,id])
+}
+model SocialLoan {
+  id String @id @db.Uuid
+  assetId String @db.Uuid
+  lenderUserId String? @db.Uuid
+  borrowerUserId String? @db.Uuid
+  origin String @db.VarChar(8)
+  state String @db.VarChar(16)
+  dueAt DateTime? @db.Timestamptz(3)
+  note String? @db.VarChar(2000)
+  lenderHandoverAt DateTime? @db.Timestamptz(3)
+  borrowerReceiptAt DateTime? @db.Timestamptz(3)
+  handedOverAt DateTime? @db.Timestamptz(3)
+  returnRequestedAt DateTime? @db.Timestamptz(3)
+  returnedAt DateTime? @db.Timestamptz(3)
+  closedAt DateTime? @db.Timestamptz(3)
+  pendingOutcome String? @db.VarChar(8)
+  pendingOutcomeByUserId String? @db.Uuid
+  stateBeforeDispute String? @db.VarChar(16)
+  disputedByUserId String? @db.Uuid
+  disputeNote String? @db.VarChar(2000)
+  orphanedAt DateTime? @db.Timestamptz(3)
+  proposedDueAt DateTime? @db.Timestamptz(3)
+  dueProposedByUserId String? @db.Uuid
+  dueProposedAt DateTime? @db.Timestamptz(3)
+  revision Int @default(1)
+  createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+  updatedAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+  asset SocialAsset @relation(fields:[assetId],references:[id],onDelete:NoAction,onUpdate:NoAction)
+  lender User? @relation("SocialLoan_lender",fields:[lenderUserId],references:[id],onDelete:SetNull,onUpdate:NoAction)
+  borrower User? @relation("SocialLoan_borrower",fields:[borrowerUserId],references:[id],onDelete:SetNull,onUpdate:NoAction)
+  pendingOutcomeBy User? @relation("SocialLoan_pendingOutcomeBy",fields:[pendingOutcomeByUserId],references:[id],onDelete:SetNull,onUpdate:NoAction)
+  disputedBy User? @relation("SocialLoan_disputedBy",fields:[disputedByUserId],references:[id],onDelete:SetNull,onUpdate:NoAction)
+  dueProposedBy User? @relation("SocialLoan_dueProposedBy",fields:[dueProposedByUserId],references:[id],onDelete:SetNull,onUpdate:NoAction)
+  events SocialLendingEvent[]
+  evidence SocialEvidence[]
+  notices SocialNotice[]
+  @@index([assetId,id])
+  @@index([lenderUserId,id])
+  @@index([borrowerUserId,id])
+}
+model SocialLostFoundReport {
+  id String @id @db.Uuid
+  kind String @db.VarChar(5)
+  reporterUserId String? @db.Uuid
+  audience String @db.VarChar(12)
+  groupId String? @db.Uuid
+  assetId String? @db.Uuid
+  title String? @db.VarChar(200)
+  description String? @db.VarChar(2000)
+  occurredOn DateTime? @db.Date
+  state String @default("OPEN") @db.VarChar(10)
+  erasedAt DateTime? @db.Timestamptz(3)
+  closedAt DateTime? @db.Timestamptz(3)
+  revision Int @default(1)
+  createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+  updatedAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+  reporter User? @relation("SocialLostFoundReport_reporter",fields:[reporterUserId],references:[id],onDelete:SetNull,onUpdate:NoAction)
+  group SocialGroup? @relation(fields:[groupId],references:[id],onDelete:Cascade,onUpdate:NoAction)
+  asset SocialAsset? @relation(fields:[assetId],references:[id],onDelete:SetNull,onUpdate:NoAction)
+  claims SocialLostFoundClaim[] @relation("SocialLostFoundClaim_report")
+  linkedClaims SocialLostFoundClaim[] @relation("SocialLostFoundClaim_linked")
+  events SocialLendingEvent[]
+  evidence SocialEvidence[]
+  notices SocialNotice[]
+  @@index([reporterUserId,id])
+  @@index([groupId,id])
+  @@index([assetId])
+}
+model SocialLostFoundClaim {
+  id String @id @db.Uuid
+  reportId String @db.Uuid
+  claimantUserId String? @db.Uuid
+  linkedReportId String? @db.Uuid
+  note String? @db.VarChar(2000)
+  state String @default("PENDING") @db.VarChar(12)
+  handoverAt DateTime? @db.Timestamptz(3)
+  receiptAt DateTime? @db.Timestamptz(3)
+  resolvedAt DateTime? @db.Timestamptz(3)
+  stateBeforeDispute String? @db.VarChar(12)
+  disputedByUserId String? @db.Uuid
+  disputeNote String? @db.VarChar(2000)
+  revision Int @default(1)
+  createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+  updatedAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+  report SocialLostFoundReport @relation("SocialLostFoundClaim_report",fields:[reportId],references:[id],onDelete:Cascade,onUpdate:NoAction)
+  linkedReport SocialLostFoundReport? @relation("SocialLostFoundClaim_linked",fields:[linkedReportId],references:[id],onDelete:SetNull,onUpdate:NoAction)
+  claimant User? @relation("SocialLostFoundClaim_claimant",fields:[claimantUserId],references:[id],onDelete:SetNull,onUpdate:NoAction)
+  disputedBy User? @relation("SocialLostFoundClaim_disputedBy",fields:[disputedByUserId],references:[id],onDelete:SetNull,onUpdate:NoAction)
+  events SocialLendingEvent[]
+  evidence SocialEvidence[]
+  @@index([reportId,id])
+  @@index([claimantUserId,id])
+  @@index([linkedReportId])
+}
+model SocialLendingEvent {
+  id String @id @db.Uuid
+  loanId String? @db.Uuid
+  reportId String? @db.Uuid
+  claimId String? @db.Uuid
+  actorUserId String? @db.Uuid
+  action String @db.VarChar(32)
+  fromState String? @db.VarChar(16)
+  toState String? @db.VarChar(16)
+  note String? @db.VarChar(2000)
+  occurredAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+  loan SocialLoan? @relation(fields:[loanId],references:[id],onDelete:Cascade,onUpdate:NoAction)
+  report SocialLostFoundReport? @relation(fields:[reportId],references:[id],onDelete:Cascade,onUpdate:NoAction)
+  claim SocialLostFoundClaim? @relation(fields:[claimId],references:[id],onDelete:Cascade,onUpdate:NoAction)
+  actor User? @relation("SocialLendingEvent_actor",fields:[actorUserId],references:[id],onDelete:SetNull,onUpdate:NoAction)
+  @@index([loanId,id])
+  @@index([reportId,id])
+}
+model SocialEvidence {
+  id String @id @db.Uuid
+  loanId String? @db.Uuid
+  reportId String? @db.Uuid
+  claimId String? @db.Uuid
+  addedByUserId String? @db.Uuid
+  kind String @db.VarChar(12)
+  label String @db.VarChar(200)
+  note String? @db.VarChar(2000)
+  observedAt DateTime? @db.Timestamptz(3)
+  createdAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+  loan SocialLoan? @relation(fields:[loanId],references:[id],onDelete:Cascade,onUpdate:NoAction)
+  report SocialLostFoundReport? @relation(fields:[reportId],references:[id],onDelete:Cascade,onUpdate:NoAction)
+  claim SocialLostFoundClaim? @relation(fields:[claimId],references:[id],onDelete:Cascade,onUpdate:NoAction)
+  addedBy User? @relation("SocialEvidence_addedBy",fields:[addedByUserId],references:[id],onDelete:SetNull,onUpdate:NoAction)
+  @@index([loanId,id])
+  @@index([reportId,id])
+  @@index([claimId,id])
 }
 
 // ADR 0061: Finance-owned source link for explicit external (Social) postings.

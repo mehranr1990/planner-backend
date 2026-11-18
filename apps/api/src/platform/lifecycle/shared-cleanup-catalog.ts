@@ -46,9 +46,17 @@ import type { Prisma } from '../../generated/prisma/client.js';
 // ADR 0060-0062 gap closure adds two edges (1,109 total): the Activity nominee
 // reference is same-Activity, deferrable NO ACTION inside the Activity cascade;
 // FinanceExternalPosting cascades from its Personal Transaction (Space cascade on
-// erasure). Neither joins shared custody content. Future FK changes fail closed.
+// erasure). Neither joins shared custody content.
+// P6-04 adds 22 lending/Lost & Found edges (1,131 total). SocialAsset.groupId is
+// SET NULL (a purge detaches personally owned assets); Group Lost & Found posts
+// CASCADE from SocialGroup with their claims, events and evidence; loans reference
+// assets NO ACTION (assets are never deleted). User edges are SET NULL and never
+// block Personal erasure.
+// P6-04 gap closure (0080) adds 3 edges (1,134 total): SocialNotice.loanId and
+// .lostFoundReportId CASCADE from their (never deleted, or Group-cascaded) parent;
+// SocialLoan.dueProposedByUserId is SET NULL. Future FK changes fail closed.
 export const SHARED_CLEANUP_FK_SHA256 =
-  '79d45783f36fc4f3b2356994806ae87bb49f5e32389b516f6b5bded6ea6e2097';
+  'd0e57df1823d173ab9dc8141da93b39ffa6129dbe5672f0dca42a2c6a4526400';
 export async function assertSharedCleanupCatalog(tx: Prisma.TransactionClient) {
   const rows = await tx.$queryRaw<
     { table: string; name: string; target: string; definition: string }[]

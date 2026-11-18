@@ -272,11 +272,14 @@ export function assertApiCompatible(
     const extension = responseExtensions[contract];
     if (
       current[contract] !==
-        approvedMessagesMeetingsHash(
+        approvedSocialLendingHash(
           contract,
-          approvedCompanyHash(
+          approvedMessagesMeetingsHash(
             contract,
-            approvedTeamHash(contract, approvedProjectHash(contract, hash)),
+            approvedCompanyHash(
+              contract,
+              approvedTeamHash(contract, approvedProjectHash(contract, hash)),
+            ),
           ),
         ) &&
       !(
@@ -294,4 +297,16 @@ export function assertApiCompatible(
         `Approved API compatibility contract changed: ${contract}`,
       );
   }
+}
+// ADR 0064 decision B: the reviewed SocialNotice kind enum widening (P6-04 lending
+// and Lost & Found kinds); no field, status or request contract changed.
+const socialLendingExtensions = JSON.parse(
+  fs.readFileSync(
+    new URL('./social-lending-gap-api-extensions.json', import.meta.url),
+    'utf8',
+  ),
+) as Record<string, { previous: string[]; approved: string }>;
+export function approvedSocialLendingHash(contract: string, previous: string) {
+  const change = socialLendingExtensions[contract];
+  return change?.previous.includes(previous) ? change.approved : previous;
 }

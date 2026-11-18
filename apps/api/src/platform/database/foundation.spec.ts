@@ -302,6 +302,8 @@ describe('scoped persistence and API conventions', () => {
       '202611170076_announcement_pin_metadata',
       '202611170077_social_activities_expenses',
       '202611180078_social_gap_closure',
+      '202611180079_social_lending_lost_found',
+      '202611180080_social_lending_gap_closure',
     ]);
     for (const sql of [
       '',
