@@ -9,7 +9,7 @@ Source: owner product configuration, 2026-11-14. Data: `tooling/retention/catalo
 `SharedRetentionPolicy` covers **Shared Spaces only**: `PROJECT`, `TEAM`, `COMPANY`, `CONVERSATION`, `MEETING` and `SOCIAL_GROUP`.
 
 - Each policy has five data classes: `workContent`, `commentsHistory`, `filesDerivatives`, `exports` and `accessAuditLifecycle`.
-- Each class keeps its data for `retainAfterClosureSeconds` after the Space closes or its owner departs. This comes on top of the fixed 30-day recovery window.
+- Each class keeps its data for `retainAfterClosureSeconds` after the Space closes or its owner departs. This comes on top of the fixed recovery window: 7 days for Company/Team/Project, 30 days for Social Group/Conversation/Meeting ([ADR 0029 amendment](adr/0029-shared-departure-erasure-and-closure.md)).
 - A closed Space is purged, as a whole, when its **longest** class window ends.
 - Policies are immutable. A database trigger refuses any `UPDATE`.
 - After a Space is created, its Manager can only switch to an applicable, comparable policy that is longer. Holds and obligations are kept, and nothing gets shorter.

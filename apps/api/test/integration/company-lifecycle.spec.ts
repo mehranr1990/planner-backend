@@ -570,7 +570,7 @@ describe('P4-06 Company lifecycle and preservation', () => {
             where: { id: job.jobId },
           })
         ).effectiveDepartureAt.getTime(),
-    ).toBe(2592000000);
+    ).toBe(604800000);
     await expect(
       life.proof(outsider.actor, co.id, job.revision, password),
     ).rejects.toHaveProperty('status', 404);

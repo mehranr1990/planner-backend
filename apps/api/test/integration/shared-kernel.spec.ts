@@ -929,7 +929,7 @@ describe('P2-01 shared kernel acceptance in an exclusively owned schema', () => 
       }),
     ).toBe(1);
   });
-  it('last full-member departure excludes guests, records one 30-day job and never purges synchronously', async () => {
+  it('last full-member departure excludes guests, records one 7-day job and never purges synchronously', async () => {
     const sole = await person(),
       guest = await person(),
       b = await boundary(sole);
@@ -965,7 +965,7 @@ describe('P2-01 shared kernel acceptance in an exclusively owned schema', () => 
     expect(custody.state).toBe('CLOSING_GRACE');
     expect(
       job.recoveryDeadline.getTime() - job.effectiveDepartureAt.getTime(),
-    ).toBe(2592000000);
+    ).toBe(604800000);
     await expect(authority(sole, b.spaceId)).rejects.toThrow();
     expect(await client.space.count({ where: { id: b.spaceId } })).toBe(1);
     expect(

@@ -1878,7 +1878,7 @@ describe('P2-02 verified invitations and accepted custody succession', () => {
     expect(
       jobs[1]!.recoveryDeadline.getTime() -
         jobs[1]!.effectiveDepartureAt.getTime(),
-    ).toBe(2592000000);
+    ).toBe(604800000);
   });
   it('preserves the narrow last-member departure from archived custody', async () => {
     const a = await person(),

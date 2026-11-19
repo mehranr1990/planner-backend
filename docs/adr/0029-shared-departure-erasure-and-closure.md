@@ -27,6 +27,17 @@ not creator identity or UI association, determines which resources may be cleane
 The shared recovery window is 30 elapsed UTC days from the effective last-member
 departure, not processing time. It is distinct from Personal's seven-day grace.
 
+**Amendment (owner-approved 2026-11-19):** Company, Team and Project closures use a
+7-day (604,800 s) recovery window. Social Group ([0066](0066-social-exit-retention-and-recovery.md)),
+Conversation and Meeting closures keep 30 days. The window is fixed when a closure
+job is created (`recoveryWindowMs` in `shared-kernel.service.ts`); jobs already in
+progress keep their stored `recoveryDeadline`. Holds, obligations and per-class
+retention are unchanged, so protected financial, audit and legally retained records
+still wait for their own gates after recovery ends. Immutable `SharedRetentionPolicy`
+versions still declare `sharedRecoverySeconds` 2,592,000; that field is declarative
+and does not drive the runtime window. A new policy version (and schema change)
+declaring 604,800 for Company/Team/Project needs separate owner approval.
+
 ```text
 ACTIVE / ARCHIVED -> CLOSING_GRACE -> ACTIVE through authorized recovery
 CLOSING_GRACE -> CLEANUP_PENDING at deadline

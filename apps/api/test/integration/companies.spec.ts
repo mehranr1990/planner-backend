@@ -1090,7 +1090,7 @@ describe('P4-01 Company contexts, corporate admission and bounded policy inherit
     expect(job.state).toBe('CLOSING_GRACE');
     expect(
       job.recoveryDeadline.getTime() - job.effectiveDepartureAt.getTime(),
-    ).toBe(2592000000);
+    ).toBe(604800000);
     expect(
       (await sandbox.query('SELECT shared_purge_allowed($1::uuid) ok', [co.id]))
         .rows[0].ok,

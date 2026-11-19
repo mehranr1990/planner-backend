@@ -1,4 +1,8 @@
 import {
+  recoveryWindowMigrationName,
+  assertReviewedRecoveryWindowMigration,
+} from './reviewed-recovery-window-migration.ts';
+import {
   socialGroupConversationMigrationName,
   assertReviewedSocialGroupConversationMigration,
 } from './reviewed-social-group-conversation-migration.ts';
@@ -228,7 +232,9 @@ export function reviewMigrations(directory = 'prisma/migrations'): string[] {
       path.join(directory, name, 'migration.sql'),
       'utf8',
     );
-    if (name === socialGroupConversationMigrationName)
+    if (name === recoveryWindowMigrationName)
+      assertReviewedRecoveryWindowMigration(sql);
+    else if (name === socialGroupConversationMigrationName)
       assertReviewedSocialGroupConversationMigration(sql);
     else if (name === socialGoalNoticesMigrationName)
       assertReviewedSocialGoalNoticesMigration(sql);

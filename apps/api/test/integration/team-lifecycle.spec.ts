@@ -846,7 +846,7 @@ describe('P3-05 independent Team lifecycle, preservation and local performance',
       .get('/api/v1/teams/' + t.id + '/lifecycle-job')
       .expect(401);
   });
-  it('closes sole-owner Team into a 30-day recoverable window and checks current proof, password and generation', async () => {
+  it('closes sole-owner Team into a 7-day recoverable window and checks current proof, password and generation', async () => {
     const t = await team(),
       source = await task(t.id);
     await expect(
@@ -856,9 +856,9 @@ describe('P3-05 independent Team lifecycle, preservation and local performance',
     const status = await life.status(owner.actor, t.id),
       job = await life.job(owner.actor, t.id);
     expect(status.state).toBe('CLOSING_GRACE');
-    expect(Date.parse(status.recoveryDeadline!) - Date.now()).toBeGreaterThan(
-      29 * 86400000,
-    );
+    const window = Date.parse(status.recoveryDeadline!) - Date.now();
+    expect(window).toBeGreaterThan(7 * 86400000 - 120000);
+    expect(window).toBeLessThanOrEqual(7 * 86400000);
     await expect(teams.read(owner.actor, t.id)).rejects.toHaveProperty(
       'status',
       404,

@@ -136,7 +136,7 @@ future implementation, not a new environment setting or a policy fabricated here
 | ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
 | policyVersion, approvalReference, accountableOperator | Required nonempty stable values                                                                                  |
 | applicableContexts and marketScope                    | Explicit applicability; P2 enables PROJECT only                                                                  |
-| sharedRecoverySeconds                                 | Exactly 2,592,000 (30 elapsed days), separate from Personal grace                                                |
+| sharedRecoverySeconds                                 | Exactly 2,592,000 (30 elapsed days), separate from Personal grace; declarative only, see ADR 0029 amendment      |
 | classRules                                            | Complete entries for work content, comments/history, files/derivatives, exports, access/audit/lifecycle evidence |
 | classRules.retainAfterClosureSeconds                  | Explicit nonnegative integer; no invented default or implicit forever                                            |
 | classRules.audience/exportAuthority                   | Explicit current-capability allowlist; retained does not mean publicly readable                                  |

@@ -2013,7 +2013,7 @@ describe('P2-03 independent Projects and authorized shared sources', () => {
     });
     expect(
       job.recoveryDeadline!.getTime() - job.effectiveDepartureAt.getTime(),
-    ).toBe(2592000000);
+    ).toBe(604800000);
     expect(await client.task.count({ where: { id: t.id } })).toBe(1);
     await expect(
       projects.source(sole.actor, p.id, 'TASK', t.id),
