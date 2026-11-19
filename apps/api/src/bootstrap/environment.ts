@@ -122,6 +122,28 @@ const EnvironmentSchema = z.object({
   PUSH_VAPID_PRIVATE_KEY: z.string().optional(),
   PUSH_VAPID_SUBJECT: z.string().optional(),
   FILE_LINK_TTL_SECONDS: z.coerce.number().int().min(30).max(900).default(300),
+  // Business file bytes move only with a CLEAN verdict; disabled blocks them.
+  MALWARE_SCANNER: z.enum(['disabled', 'clamav']).default('disabled'),
+  CLAMAV_HOST: z.string().min(1).default('127.0.0.1'),
+  CLAMAV_PORT: z.coerce.number().int().min(1).max(65535).default(3310),
+  MALWARE_SCAN_TIMEOUT_MS: z.coerce
+    .number()
+    .int()
+    .min(1000)
+    .max(300000)
+    .default(30000),
+  MALWARE_SCAN_MAX_BYTES: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(1073741824)
+    .default(67108864),
+  MALWARE_SIGNATURE_MAX_AGE_HOURS: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(168)
+    .default(48),
 });
 export type AppConfig = Readonly<z.infer<typeof EnvironmentSchema>>;
 
@@ -162,6 +184,13 @@ export function parseEnvironment(environment: NodeJS.ProcessEnv): AppConfig {
         'Invalid configuration: SHARED_LOCAL_DEVELOPMENT_TEST_MODE requires explicit development, loopback binding/origins and local mehran_dev without URL options.',
       );
   }
+  if (
+    config.MALWARE_SCANNER === 'clamav' &&
+    config.MALWARE_SCAN_MAX_BYTES < config.FILE_MAX_BYTES
+  )
+    throw new Error(
+      'Invalid configuration: MALWARE_SCAN_MAX_BYTES must cover FILE_MAX_BYTES.',
+    );
   if (
     config.NODE_ENV === 'production' &&
     (config.PUSH_MODE === 'sink' || config.JOBS_SCHEMA !== 'planner_jobs')

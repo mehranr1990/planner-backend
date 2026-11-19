@@ -54,6 +54,13 @@ Generic file routes support text/plain, application/pdf, image/png and image/jpe
    same deletion safely. Never interpret a failed download as authorization to
    fall back to another user's ID or a physical file path.
 
+Every upload and download is malware-scanned server-side (ADR 0068). An infected
+upload completes with 400 and the file becomes REJECTED; a scanner outage or timeout
+returns 503 (upload REJECTED: start a new upload later; download: retry later). With
+no scanner configured, file routes return 403 `UNSCANNED_FILES_BLOCKED`. There is no
+separate scan-status field: READY means scanned clean at publication; verified
+files are not rescanned per download.
+
 Downloads use attachment Content-Disposition and no-store/nosniff protections;
 range requests and inline rendering are not exposed. Default signed URL lifetime
 is 300 seconds (server configurable 30–900). A copied link cannot authorize an

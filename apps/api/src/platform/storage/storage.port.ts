@@ -12,6 +12,14 @@ export type FileEvidence = {
   size: number;
   sha256: string;
   durationMs?: number;
+  /** Present only when the exact written bytes received a CLEAN scan. */
+  scan?: { engine: string };
+};
+/** ADR 0068: `verified` means a persisted CLEAN verdict for exactly `sha256`.
+ * Stored bytes are always re-hashed; unverified bytes are scanned first. */
+export type ReadExpectation = FileEvidence & {
+  verified?: boolean;
+  onVerified?: (engine: string) => Promise<void>;
 };
 export class StorageFailure extends Error {
   constructor(readonly code: 'INVALID' | 'LIMIT' | 'UNAVAILABLE') {
@@ -27,6 +35,6 @@ export interface StoragePort {
     expected: FileExpectation,
     signal: AbortSignal,
   ): Promise<FileEvidence>;
-  open(key: string, expected: FileEvidence): Promise<Readable>;
+  open(key: string, expected: ReadExpectation): Promise<Readable>;
   remove(key: string, attempt?: string | null): Promise<void>;
 }

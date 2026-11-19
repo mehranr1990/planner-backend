@@ -21,6 +21,15 @@ import type { StoragePort } from '../../src/platform/storage/storage.port.js';
 import { SpacesService } from '../../src/modules/spaces/public/index.js';
 import { AuditService } from '../../src/platform/audit/audit.service.js';
 import { StoredFileSchema } from '@mehran/api-contracts';
+import { MALWARE_SCANNER } from '../../src/platform/storage/malware-scanner.port.js';
+import { EICAR } from '../support/malware-scanner-double.js';
+import { LocalFileStorage } from '../../src/platform/storage/local-storage.js';
+import {
+  MalwareRescan,
+  ScannerUnavailableError,
+} from '../../src/platform/storage/malware-rescan.js';
+import { APP_CONFIG } from '../../src/bootstrap/configuration.module.js';
+import type { MalwareScannerDouble } from '../support/malware-scanner-double.js';
 
 const databaseUrl = isolatedTestDatabaseUrl(process.env),
   origin = 'http://localhost:3000';
@@ -542,6 +551,114 @@ describe('P0-04 private file lifecycle and security', () => {
     ).toBe('INITIATED');
   });
 
+  it('admits only CLEAN-scanned bytes, fails closed on scanner faults and rescans READY files on read (scanner double)', async () => {
+    const a = await identity(),
+      b = await identity(),
+      scanner = app.get<MalwareScannerDouble>(MALWARE_SCANNER),
+      blobs = async () =>
+        (await fs.readdir(root)).filter((name) => !name.startsWith('.'));
+    const infected = Buffer.from(`notes ${EICAR}`);
+    const rejected = await initiate(a, metadata(infected)).expect(201);
+    await complete(a, rejected.body.id, infected).expect(400);
+    expect(
+      (
+        await db.client.storedFile.findUniqueOrThrow({
+          where: { id: rejected.body.id },
+        })
+      ).status,
+    ).toBe('REJECTED');
+    expect(await blobs()).toEqual([]);
+    scanner.outcome = 'UNAVAILABLE';
+    const offline = await initiate(
+      a,
+      metadata(Buffer.from('clean while offline')),
+    ).expect(201);
+    await complete(
+      a,
+      offline.body.id,
+      Buffer.from('clean while offline'),
+    ).expect(503);
+    expect(offline.body.download).toBeNull();
+    expect(await blobs()).toEqual([]);
+    scanner.outcome = null;
+    const stored = await upload(a, Buffer.from('clean after recovery'));
+    const served = await request(app.getHttpServer())
+      .get(stored.download.url)
+      .set('Cookie', a.cookie)
+      .expect(200);
+    expect(served.body).toEqual(Buffer.from('clean after recovery'));
+    await request(app.getHttpServer())
+      .get(stored.download.url)
+      .set('Cookie', b.cookie)
+      .expect(404);
+  });
+  it('scans once: persisted hash-bound verdicts serve unchanged files, unverified files scan first, rescan withdraws (scanner double)', async () => {
+    const a = await identity(),
+      scanner = app.get<MalwareScannerDouble>(MALWARE_SCANNER),
+      get = (url: string) =>
+        request(app.getHttpServer()).get(url).set('Cookie', a.cookie);
+    const stored = await upload(a, Buffer.from('scan me once'));
+    const row = await db.client.storedFile.findUniqueOrThrow({
+      where: { id: stored.id },
+      include: { scan: true },
+    });
+    expect(row.scan).toMatchObject({
+      sha256: row.sha256,
+      engine: 'test-double',
+    });
+    const afterUpload = scanner.calls;
+    await get(stored.download.url).expect(200);
+    await get(stored.download.url).expect(200);
+    expect(scanner.calls).toBe(afterUpload);
+    // Verified unchanged files stay available while the scanner is down.
+    scanner.outcome = 'UNAVAILABLE';
+    expect((await get(stored.download.url).expect(200)).body).toEqual(
+      Buffer.from('scan me once'),
+    );
+    // A verdict for other content is not trusted (legacy/changed): fail closed.
+    await db.client.storedFileScan.update({
+      where: { fileId: stored.id },
+      data: { sha256: 'f'.repeat(64) },
+    });
+    await get(stored.download.url).expect(503);
+    scanner.outcome = null;
+    await db.client.storedFileScan.delete({ where: { fileId: stored.id } });
+    await get(stored.download.url).expect(200);
+    expect(scanner.calls).toBe(afterUpload + 2);
+    expect(
+      (
+        await db.client.storedFileScan.findUniqueOrThrow({
+          where: { fileId: stored.id },
+        })
+      ).sha256,
+    ).toBe(row.sha256);
+    await get(stored.download.url).expect(200);
+    expect(scanner.calls).toBe(afterUpload + 2);
+    // Operator rescan after signature updates.
+    const plain = new LocalFileStorage(app.get(APP_CONFIG));
+    await plain.onModuleInit();
+    const rescan = new MalwareRescan(db.client, plain, scanner);
+    scanner.outcome = 'TIMEOUT';
+    await expect(
+      rescan.run({ unverifiedOnly: false, limit: 100000 }),
+    ).rejects.toBeInstanceOf(ScannerUnavailableError);
+    expect(
+      await db.client.storedFileScan.count({ where: { fileId: stored.id } }),
+    ).toBe(1);
+    scanner.outcome = 'INFECTED';
+    const summary = await rescan.run({ unverifiedOnly: false, limit: 100000 });
+    expect(summary.refused).toContain(stored.id);
+    expect(
+      await db.client.storedFileScan.count({ where: { fileId: stored.id } }),
+    ).toBe(0);
+    await get(stored.download.url).expect(503);
+    scanner.outcome = null;
+    const restored = await rescan.run({ unverifiedOnly: true, limit: 100000 });
+    expect(restored.refused).not.toContain(stored.id);
+    expect(
+      await db.client.storedFileScan.count({ where: { fileId: stored.id } }),
+    ).toBe(1);
+  });
   it('hides corrupt/missing bytes and permits safe retry after physical delete failure', async () => {
     const a = await identity(),
       stored = await upload(a),

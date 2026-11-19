@@ -1,6 +1,7 @@
 # 0057: Temporary local Shared business test mode
 
 Status: **Owner-approved**, 2026-11-17, by explicit execution request.
+File-content gating amended by [ADR 0068](0068-clamav-malware-scanning.md).
 
 For local application integration testing only, defer actual malware-engine
 integration to final infrastructure/security hardening. This narrows ADR 0049's

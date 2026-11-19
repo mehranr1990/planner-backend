@@ -9,9 +9,17 @@ import { ThrottlerModule } from '@nestjs/throttler';
 import { DatabaseModule } from '../database/database.module.js';
 import { AuditModule } from '../audit/audit.service.js';
 import { STORAGE_PORT } from './storage.port.js';
+import {
+  MALWARE_SCANNER,
+  DisabledMalwareScanner,
+} from './malware-scanner.port.js';
+import { ClamAvScanner } from './clamav-scanner.js';
+import { APP_CONFIG } from '../../bootstrap/configuration.module.js';
+import type { AppConfig } from '../../bootstrap/environment.js';
 import { BusinessFileStorage } from './file-content-policy.js';
 import { FilesRepository } from './files.repository.js';
 import { FilesService } from './files.service.js';
+import { FileScanRecords } from './file-scan-records.js';
 import { FileThrottleGuard, FilesController } from './files.controller.js';
 
 @Module({})
@@ -39,7 +47,16 @@ export class StorageModule {
         FileCatalog,
         FileThrottleGuard,
         FilesRepository,
+        FileScanRecords,
         FilesService,
+        {
+          provide: MALWARE_SCANNER,
+          inject: [APP_CONFIG],
+          useFactory: (config: AppConfig) =>
+            config.MALWARE_SCANNER === 'clamav'
+              ? new ClamAvScanner(config)
+              : new DisabledMalwareScanner(),
+        },
         { provide: STORAGE_PORT, useClass: BusinessFileStorage },
       ],
       exports: [

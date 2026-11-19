@@ -11,6 +11,7 @@ import {
   BusinessFileStorage,
 } from './file-content-policy.js';
 import { SharedFiles } from './public/shared-files.js';
+import { DisabledMalwareScanner } from './malware-scanner.port.js';
 import type { SharedFileScope } from './public/shared-files.js';
 import { FileCatalog } from './public/file-catalog.js';
 import { FilesService } from './files.service.js';
@@ -48,10 +49,13 @@ it('retains real signed independent control IO while business file bytes are blo
       floor: '1970-01-01T00:00:00.000Z',
     });
     await expect(
-      new BusinessFileStorage(controlConfig).open('unused', {
-        size: 1,
-        sha256: 'a'.repeat(64),
-      }),
+      new BusinessFileStorage(controlConfig, new DisabledMalwareScanner()).open(
+        'unused',
+        {
+          size: 1,
+          sha256: 'a'.repeat(64),
+        },
+      ),
     ).rejects.toHaveProperty('status', 403);
   } finally {
     if (!root.startsWith(path.resolve('.tools') + path.sep))
@@ -60,7 +64,7 @@ it('retains real signed independent control IO while business file bytes are blo
   }
 });
 it('blocks business byte reads/writes before IO, without inventing any scan result', async () => {
-  const storage = new BusinessFileStorage(config);
+  const storage = new BusinessFileStorage(config, new DisabledMalwareScanner());
   await expect(
     storage.write(
       'unused',
@@ -73,17 +77,22 @@ it('blocks business byte reads/writes before IO, without inventing any scan resu
   await expect(
     storage.open('unused', { size: 1, sha256: 'a'.repeat(64) }),
   ).rejects.toHaveProperty('status', 403);
+  // ADR 0068: the scanner, not the test-mode flag, decides availability.
   expect(() =>
     assertFileContentAvailable({
       ...config,
       SHARED_LOCAL_DEVELOPMENT_TEST_MODE: false,
     }),
+  ).toThrow();
+  expect(() =>
+    assertFileContentAvailable({ ...config, MALWARE_SCANNER: 'clamav' }),
   ).not.toThrow();
 });
 it('blocks Shared admission, READY publication and existing-file references without querying or mutating rows', async () => {
   const files = new SharedFiles(
       {} as ConstructorParameters<typeof SharedFiles>[0],
       config,
+      {} as ConstructorParameters<typeof SharedFiles>[2],
     ),
     verify = vi.fn(),
     scope = { verify } as unknown as SharedFileScope,

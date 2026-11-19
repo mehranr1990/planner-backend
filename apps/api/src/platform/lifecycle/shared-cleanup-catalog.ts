@@ -59,8 +59,11 @@ import type { Prisma } from '../../generated/prisma/client.js';
 // its one SocialGroup or SocialActivity; participants, entries and history
 // CASCADE from the goal through same-goal composite keys. User edges are
 // SET NULL and never block Personal erasure. Future FK changes fail closed.
+// ADR 0068 (0085) adds one edge (1,148 total): StoredFileScan CASCADEs from its
+// StoredFile, so Shared STORAGE purge and Personal Space erasure remove the
+// verdict with the file row. It references no User, Space or custody content.
 export const SHARED_CLEANUP_FK_SHA256 =
-  'b1b0f646a453e995b104342fc800fb63426a6eb188d3e09114b82fb6e78baee5';
+  '2d1de9cad1fd0eb139b44e49e7706123655661207f4274b7614fd7078d457397';
 export async function assertSharedCleanupCatalog(tx: Prisma.TransactionClient) {
   const rows = await tx.$queryRaw<
     { table: string; name: string; target: string; definition: string }[]

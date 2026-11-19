@@ -25,6 +25,7 @@ import { STORAGE_PORT, StorageFailure } from './storage.port.js';
 import type { StoragePort } from './storage.port.js';
 import { fileDownloadLink, verifyFileLink } from './download-links.js';
 import { assertFileContentAvailable } from './file-content-policy.js';
+import { FileScanRecords } from './file-scan-records.js';
 
 function mapped(error: unknown): unknown {
   if (!(error instanceof StorageFailure)) return error;
@@ -43,6 +44,7 @@ export class FilesService {
     @Inject(STORAGE_PORT) private readonly storage: StoragePort,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
     @Inject(AuditService) private readonly audit: AuditService,
+    @Inject(FileScanRecords) private readonly scans: FileScanRecords,
   ) {}
   private family(file: StoredFile, voice: boolean) {
     if ((file.mimeType === 'audio/wav') !== voice)
@@ -51,7 +53,7 @@ export class FilesService {
   private view(scope: AuthorizedSpace, file: StoredFile, voice = false) {
     this.family(file, voice);
     const link =
-      file.status === 'READY' && !this.config.SHARED_LOCAL_DEVELOPMENT_TEST_MODE
+      file.status === 'READY' && this.config.MALWARE_SCANNER === 'clamav'
         ? fileDownloadLink(this.config, scope, file.id)
         : null;
     if (voice && link) link.url = link.url.replace('/files/', '/files/voice/');
@@ -202,10 +204,10 @@ export class FilesService {
     try {
       return {
         file,
-        stream: await this.storage.open(file.objectKey, {
-          size: file.actualSize,
-          sha256: file.sha256,
-        }),
+        stream: await this.storage.open(
+          file.objectKey,
+          await this.scans.expectation(file),
+        ),
         auditId: audit.id,
       };
     } catch (error) {

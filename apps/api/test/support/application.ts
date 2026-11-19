@@ -15,6 +15,9 @@ import { AuthService } from '../../src/platform/auth/auth.service.js';
 import { IdentityMailService } from '../../src/platform/auth/mail.service.js';
 import { ErasureControl } from '../../src/platform/storage/public/index.js';
 import { PersonalLifecycle } from '../../src/modules/account/public/index.js';
+import { MALWARE_SCANNER } from '../../src/platform/storage/malware-scanner.port.js';
+import type { MalwareScannerPort } from '../../src/platform/storage/malware-scanner.port.js';
+import { MalwareScannerDouble } from './malware-scanner-double.js';
 
 const ProbeSchema = z.strictObject({ title: z.string().trim().min(1).max(30) });
 
@@ -41,6 +44,8 @@ export async function testApplication(
     mail?: IdentityMailService;
     environment?: NodeJS.ProcessEnv;
     restoredControl?: boolean;
+    /** Defaults to the in-process double; integration suites are not live ClamAV. */
+    scanner?: MalwareScannerPort;
   } = {},
 ) {
   fs.mkdirSync('.tools', { recursive: true });
@@ -57,6 +62,7 @@ export async function testApplication(
       'test-only-secret-for-foundation-contracts-at-least-32-characters',
     BETTER_AUTH_URL: 'http://localhost:3000',
     STORAGE_ROOT: storageRoot,
+    MALWARE_SCANNER: 'clamav',
     ...options.environment,
   });
   const builder = Test.createTestingModule({
@@ -76,6 +82,9 @@ export async function testApplication(
     builder
       .overrideProvider(DatabaseService)
       .useValue(options.databaseInstance);
+  builder
+    .overrideProvider(MALWARE_SCANNER)
+    .useValue(options.scanner ?? new MalwareScannerDouble());
   if (options.mail)
     builder.overrideProvider(IdentityMailService).useValue(options.mail);
   const fixture = await builder.compile();

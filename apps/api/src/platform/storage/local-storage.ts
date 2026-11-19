@@ -20,6 +20,7 @@ import type {
   StoragePort,
   FileExpectation,
   FileEvidence,
+  ReadExpectation,
 } from './storage.port.js';
 import { validContent } from './content-policy.js';
 import { wavDurationMs } from './wav-policy.js';
@@ -83,6 +84,16 @@ export class LocalFileStorage implements StoragePort, OnModuleInit {
       result.push({ key: parts[1]!, attempt: parts[2] ?? null });
     }
     return result;
+  }
+  /** Content admission hook over exact staged or published bytes. Signed
+   * control stores keep IO unchanged; business storage scans for malware. */
+  protected readonly inspectsContent: boolean = false;
+  protected async inspect(
+    _handle: FileHandle,
+    _size: number,
+    _signal?: AbortSignal,
+  ): Promise<string | undefined> {
+    return undefined;
   }
   private location(key: string, attempt?: string) {
     if (!uuid.test(key) || (attempt !== undefined && !uuid.test(attempt)))
@@ -201,6 +212,18 @@ export class LocalFileStorage implements StoragePort, OnModuleInit {
       await handle.sync();
       await handle.close();
       handle = undefined;
+      // The private .part is the quarantine: it is never served, and only
+      // inspected bytes are atomically published under the readable name.
+      let engine: string | undefined;
+      if (this.inspectsContent) {
+        const staged = await open(temporary, 'r');
+        try {
+          engine = await this.inspect(staged, size, signal);
+        } finally {
+          await staged.close();
+        }
+        if (signal.aborted) throw new StorageFailure('INVALID');
+      }
       await this.checkRoot();
       // Same-volume hard-link publication is atomic and refuses overwriting an existing blob.
       await link(temporary, this.location(key));
@@ -213,6 +236,7 @@ export class LocalFileStorage implements StoragePort, OnModuleInit {
         ...(durationMs === undefined || durationMs === null
           ? {}
           : { durationMs }),
+        ...(engine ? { scan: { engine } } : {}),
       };
     } catch (error) {
       if (published) await this.remove(key, attempt).catch(() => undefined);
@@ -223,7 +247,7 @@ export class LocalFileStorage implements StoragePort, OnModuleInit {
       await this.removeOne(temporary).catch(() => undefined);
     }
   }
-  async open(key: string, expected: FileEvidence): Promise<Readable> {
+  async open(key: string, expected: ReadExpectation): Promise<Readable> {
     let handle: FileHandle | undefined;
     try {
       await this.checkRoot();
@@ -256,12 +280,20 @@ export class LocalFileStorage implements StoragePort, OnModuleInit {
       }
       if (hash.digest('hex') !== expected.sha256)
         throw new StorageFailure('UNAVAILABLE');
+      // The re-verified hash binds a persisted CLEAN verdict to these exact
+      // bytes. Unverified content (legacy, restored, never recorded) is scanned
+      // once, then its verdict is recorded best-effort for later reads.
+      if (this.inspectsContent && !expected.verified) {
+        const engine = await this.inspect(handle, expected.size);
+        if (engine) await expected.onVerified?.(engine).catch(() => undefined);
+      }
       const stream = handle.createReadStream({ start: 0, autoClose: true });
       handle = undefined;
       return stream;
-    } catch (error) {
+    } catch {
       await handle?.close().catch(() => undefined);
-      throw unavailable(error);
+      // Refused reads (corrupt, infected, unscannable) are indistinguishable.
+      throw new StorageFailure('UNAVAILABLE');
     }
   }
   async remove(key: string, attempt?: string | null): Promise<void> {

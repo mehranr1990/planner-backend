@@ -13,12 +13,14 @@ import { scopedWhere } from '../database/scoped-where.js';
 import { writeAudit, AuditService } from '../audit/audit.service.js';
 import type { AuthorizedSpace } from '../authorization/authorized-space.js';
 import type { FileEvidence } from './storage.port.js';
+import { FileScanRecords } from './file-scan-records.js';
 
 @Injectable()
 export class FilesRepository {
   constructor(
     @Inject(DatabaseService) private readonly database: DatabaseService,
     @Inject(AuditService) private readonly auditSink: AuditService,
+    @Inject(FileScanRecords) private readonly scans: FileScanRecords,
   ) {}
   private where(scope: AuthorizedSpace, id: string) {
     return scopedWhere(scope, { id, ownerUserId: scope.actor.userId });
@@ -160,6 +162,7 @@ export class FilesRepository {
         },
       });
       if (update.count !== 1) throw new ConflictException();
+      await this.scans.recordUpload(tx, id, evidence);
       await tx.securityAuditEvent.update({
         where: { id: auditId },
         data: { outcome: 'SUCCEEDED' },

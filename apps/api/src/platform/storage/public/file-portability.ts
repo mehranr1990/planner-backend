@@ -8,6 +8,7 @@ import type { Prisma } from '../../../generated/prisma/client.js';
 import type { AuthorizedSpace } from '../../authorization/authorized-space.js';
 import { STORAGE_PORT } from '../storage.port.js';
 import type { StoragePort } from '../storage.port.js';
+import { FileScanRecords } from '../file-scan-records.js';
 export type AttachmentManifest = {
   id: string;
   filename: string;
@@ -18,7 +19,10 @@ export type AttachmentManifest = {
 };
 @Injectable()
 export class FilePortability {
-  constructor(@Inject(STORAGE_PORT) private readonly storage: StoragePort) {}
+  constructor(
+    @Inject(STORAGE_PORT) private readonly storage: StoragePort,
+    @Inject(FileScanRecords) private readonly scans: FileScanRecords,
+  ) {}
   async manifest(
     tx: Prisma.TransactionClient,
     scope: AuthorizedSpace,
@@ -63,10 +67,10 @@ export class FilePortability {
       throw new NotFoundException({ code: 'ATTACHMENT_UNAVAILABLE' });
     if (row.sha256 !== item.sha256 || row.actualSize !== item.size)
       throw new ConflictException({ code: 'ATTACHMENT_CHANGED' });
-    return this.storage.open(row.objectKey, {
-      size: item.size,
-      sha256: item.sha256,
-    });
+    return this.storage.open(
+      row.objectKey,
+      await this.scans.expectation(row, tx),
+    );
   }
   async eraseBatch(
     tx: Prisma.TransactionClient,

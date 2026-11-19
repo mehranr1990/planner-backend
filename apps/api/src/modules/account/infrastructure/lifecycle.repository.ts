@@ -332,9 +332,18 @@ export class LifecycleRepository
       return { stream, mimeType: item.mimeType };
     }
     await this.db.client.$transaction((tx) => scope.fence(tx));
+    const hash = job.artifactHash!;
     const stream = await this.storage.open(job.objectKey, {
-      size: job.artifactSize,
-      sha256: job.artifactHash,
+      size: job.artifactSize!,
+      sha256: hash,
+      // ADR 0068: trusted only for the exact archive hash; re-hashed on read.
+      verified: job.artifactScanSha256 === hash,
+      onVerified: async () => {
+        await this.db.client.userExportJob.updateMany({
+          where: { id: job.id, artifactHash: hash },
+          data: { artifactScanSha256: hash },
+        });
+      },
     });
     return { stream, mimeType: 'application/json' };
   }
@@ -782,6 +791,7 @@ export class LifecycleRepository
             failureCode: null,
             artifactSize: evidence.size,
             artifactHash: evidence.sha256,
+            artifactScanSha256: evidence.scan ? evidence.sha256 : null,
             manifest: snapshot.manifest,
             completedAt: new Date(),
             expiresAt: new Date(Date.now() + day),
@@ -1156,6 +1166,7 @@ export class LifecycleRepository
           manifest: Prisma.DbNull,
           artifactKeys: [],
           artifactHash: null,
+          artifactScanSha256: null,
           artifactSize: null,
         },
       });

@@ -20,7 +20,12 @@ import type { CustodyGraphScope } from '../../database/custody-graph.js';
 import { APP_CONFIG } from '../../../bootstrap/configuration.module.js';
 import type { AppConfig } from '../../../bootstrap/environment.js';
 import { STORAGE_PORT, StorageFailure } from '../storage.port.js';
-import type { StoragePort, FileEvidence } from '../storage.port.js';
+import type {
+  StoragePort,
+  FileEvidence,
+  ReadExpectation,
+} from '../storage.port.js';
+import { FileScanRecords } from '../file-scan-records.js';
 import { safeCommunicationContent } from '../communication-content.js';
 import { assertFileContentAvailable } from '../file-content-policy.js';
 import { sharedDeleteBatch } from '../../lifecycle/shared-cleanup.js';
@@ -91,6 +96,7 @@ export class SharedFiles {
   constructor(
     @Inject(STORAGE_PORT) private readonly storage: StoragePort,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
+    @Inject(FileScanRecords) private readonly scans: FileScanRecords,
   ) {}
   async restoreDeleted(
     tx: Prisma.TransactionClient,
@@ -397,8 +403,13 @@ export class SharedFiles {
         },
         signal,
       );
+      // Just written and scanned CLEAN: the structural pass needs no rescan.
       if (limits.communication)
-        await this.inspect(ticket.file, evidence, signal);
+        await this.inspect(
+          ticket.file,
+          { ...evidence, verified: !!evidence.scan },
+          signal,
+        );
       return evidence;
     } catch (error) {
       if (error instanceof StorageFailure) {
@@ -426,7 +437,7 @@ export class SharedFiles {
       file.uploadExpiresAt <= now
     )
       throw new ConflictException();
-    return tx.storedFile.update({
+    const ready = await tx.storedFile.update({
       where: { id: file.id },
       data: {
         status: 'READY',
@@ -438,6 +449,8 @@ export class SharedFiles {
         revision: { increment: 1 },
       },
     });
+    await this.scans.recordUpload(tx, file.id, e);
+    return ready;
   }
   async reject(
     tx: Prisma.TransactionClient,
@@ -475,7 +488,7 @@ export class SharedFiles {
   }
   private async inspect(
     file: StoredFile,
-    evidence: FileEvidence,
+    evidence: ReadExpectation,
     signal?: AbortSignal,
   ) {
     if (evidence.size > 20 * 1024 * 1024) throw new PayloadTooLargeException();
@@ -502,15 +515,13 @@ export class SharedFiles {
     if (file.status !== 'READY' || file.actualSize === null || !file.sha256)
       throw new NotFoundException();
     try {
-      if (communication)
-        await this.inspect(file, {
-          size: file.actualSize,
-          sha256: file.sha256,
-        });
-      return await this.storage.open(file.objectKey, {
-        size: file.actualSize,
-        sha256: file.sha256,
-      });
+      const expected = await this.scans.expectation(file);
+      if (communication) {
+        await this.inspect(file, expected);
+        // The structural pass already scanned and recorded unverified bytes.
+        expected.verified = true;
+      }
+      return await this.storage.open(file.objectKey, expected);
     } catch (error) {
       if (error instanceof StorageFailure)
         throw new ServiceUnavailableException();

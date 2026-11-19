@@ -1,0 +1,57 @@
+# ADR 0068 malware-scanning overlay. Deployment only; never publishes clamd.
+#   docker compose -f compose.yaml -f compose.clamav.yaml up -d
+# Runtime verification (startup, freshclam, EICAR smoke) is a release gate.
+services:
+  clamav:
+    image: clamav/clamav:1.4.3
+    environment:
+      # Signature check interval: 12 checks per day (every 2 hours).
+      FRESHCLAM_CHECKS: '12'
+      # First start downloads signatures (~300 MB) before clamd is ready.
+      CLAMD_STARTUP_TIMEOUT: '1800'
+    volumes:
+      - clamav_signatures:/var/lib/clamav
+      - ./deploy/clamav/clamd.conf:/etc/clamav/clamd.conf:ro
+    # scanner: private, internal-only API/worker access. clamav_updates: egress
+    # for freshclam only; no other service joins it.
+    networks: [scanner, clamav_updates]
+    restart: unless-stopped
+    init: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    # Image entrypoint prepares runtime directories as root, then drops to clamav.
+    cap_add: [CHOWN, SETUID, SETGID, DAC_OVERRIDE, FOWNER]
+    security_opt: [no-new-privileges:true]
+    # Signatures need ~1.2 GB; concurrent reload briefly doubles it.
+    mem_limit: 3g
+    cpus: 1.0
+    healthcheck:
+      test: [CMD, clamdcheck.sh]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30m
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+  api:
+    environment: &scanner-environment
+      MALWARE_SCANNER: clamav
+      CLAMAV_HOST: clamav
+      CLAMAV_PORT: '3310'
+      MALWARE_SCAN_TIMEOUT_MS: ${MALWARE_SCAN_TIMEOUT_MS:-30000}
+      MALWARE_SCAN_MAX_BYTES: ${MALWARE_SCAN_MAX_BYTES:-67108864}
+      MALWARE_SIGNATURE_MAX_AGE_HOURS: ${MALWARE_SIGNATURE_MAX_AGE_HOURS:-48}
+    networks: [scanner]
+    # The API starts without the scanner; file IO fails closed until clamd is healthy.
+  worker:
+    environment: *scanner-environment
+    networks: [scanner]
+networks:
+  scanner:
+    internal: true
+  clamav_updates: {}
+volumes:
+  clamav_signatures: {}
