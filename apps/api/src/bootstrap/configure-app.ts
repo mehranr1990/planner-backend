@@ -12,7 +12,7 @@ import type { ContextRequest } from './request-context.js';
 import type { Request, Response, NextFunction } from 'express';
 import { APP_CONFIG } from './configuration.module.js';
 import type { AppConfig } from './environment.js';
-import { trustedOrigins } from './environment.js';
+import { applyTrustedProxies, trustedOrigins } from './environment.js';
 
 export async function configureApp(app: NestExpressApplication): Promise<void> {
   app.use(requestContext);
@@ -20,6 +20,10 @@ export async function configureApp(app: NestExpressApplication): Promise<void> {
   const errors = new ApiExceptionFilter();
   const config = app.get<AppConfig>(APP_CONFIG);
   const origins = trustedOrigins(config);
+  applyTrustedProxies(
+    app.getHttpAdapter().getInstance(),
+    config.TRUSTED_PROXY_ADDRESSES,
+  );
   app.enableCors({
     origin: origins,
     credentials: true,

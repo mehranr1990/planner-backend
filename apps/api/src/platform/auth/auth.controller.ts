@@ -145,8 +145,12 @@ export class AuthController {
       await this.identity.requireFreshSession(req.headers);
     headers.delete('host');
     headers.delete('content-length');
-    // Overwrite caller-controlled proxy headers with the actual connecting IP.
-    headers.set('x-mehran-client-ip', req.socket.remoteAddress ?? '127.0.0.1');
+    // Overwrite caller-controlled proxy headers with the resolved client IP:
+    // the socket address unless it is an explicitly trusted proxy hop.
+    headers.set(
+      'x-mehran-client-ip',
+      req.ip ?? req.socket.remoteAddress ?? '127.0.0.1',
+    );
     const result = await this.identity.auth.handler(
       new globalThis.Request(url, {
         method: req.method,

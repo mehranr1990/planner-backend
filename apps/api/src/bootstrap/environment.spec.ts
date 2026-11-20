@@ -119,6 +119,8 @@ describe('configuration safety', () => {
         BETTER_AUTH_SECRET: 'REPLACE_WITH_RANDOM_SECRET_AT_LEAST_32_CHARACTERS',
       },
       { CORS_ORIGINS: '*' },
+      { TRUSTED_PROXY_ADDRESSES: 'true' },
+      { TRUSTED_PROXY_ADDRESSES: '0.0.0.0/0' },
       { NODE_ENV: 'production' },
       { MAIL_MODE: 'smtp' },
     ])

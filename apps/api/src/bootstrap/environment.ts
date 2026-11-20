@@ -2,6 +2,7 @@ import { z } from 'zod';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createECDH } from 'node:crypto';
+import { isIP } from 'node:net';
 
 const DatabaseUrlSchema = z
   .string()
@@ -54,6 +55,7 @@ const EnvironmentSchema = z.object({
       }
     }),
   CORS_ORIGINS: z.string().default(''),
+  TRUSTED_PROXY_ADDRESSES: z.string().default(''),
   MAIL_MODE: z.enum(['sink', 'smtp']).default('sink'),
   MAIL_SINK_DIR: z.string().min(1).default('.tools/mail'),
   MAIL_FROM: z.string().email().default('no-reply@localhost.invalid'),
@@ -159,6 +161,7 @@ export function parseEnvironment(environment: NodeJS.ProcessEnv): AppConfig {
     );
   }
   const config = result.data;
+  parseTrustedProxies(config.TRUSTED_PROXY_ADDRESSES);
   if (config.SHARED_LOCAL_DEVELOPMENT_TEST_MODE) {
     const database = new URL(config.DATABASE_URL);
     const loopback = (host: string) =>
@@ -302,4 +305,41 @@ export function trustedOrigins(config: AppConfig): string[] {
       .map((value) => value.trim())
       .filter(Boolean),
   ];
+}
+
+/**
+ * Explicit reverse-proxy hops (IP or CIDR) whose X-Forwarded-For is honoured.
+ * Never `true`, hop counts, named ranges or /0: an unlisted peer's forwarded
+ * headers are ignored and req.ip stays the connecting socket address.
+ */
+export function parseTrustedProxies(value: string): string[] {
+  const entries = value
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+  for (const entry of entries) {
+    const [address = '', prefix, extra] = entry.split('/');
+    const family = isIP(address);
+    if (
+      !family ||
+      extra !== undefined ||
+      (prefix !== undefined &&
+        (!/^[0-9]{1,3}$/.test(prefix) ||
+          Number(prefix) < 1 ||
+          Number(prefix) > (family === 4 ? 32 : 128)))
+    )
+      throw new Error(
+        'Invalid configuration: TRUSTED_PROXY_ADDRESSES. See .env.example.',
+      );
+  }
+  return entries;
+}
+
+/** Express resolves req.ip from the right, stopping at the first untrusted hop. */
+export function applyTrustedProxies(
+  app: { set(setting: string, value: unknown): unknown },
+  value: string,
+): void {
+  const proxies = parseTrustedProxies(value);
+  app.set('trust proxy', proxies.length ? proxies : false);
 }

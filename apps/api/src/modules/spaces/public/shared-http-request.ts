@@ -25,7 +25,7 @@ export async function sharedHttpRequest(
   preview = false,
 ) {
   const state = await (request[admission] ??= service.request(
-    request.socket.remoteAddress ?? 'unknown',
+    request.ip ?? request.socket.remoteAddress ?? 'unknown',
     request.actor,
     preview,
     { method: request.method, route: String(request.route?.path ?? '') },
