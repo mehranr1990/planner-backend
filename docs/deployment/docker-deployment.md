@@ -35,6 +35,12 @@ Nginx Proxy Manager (NPM). Plaintext HTTP is never published.
   is NPM, and NPM overwrites that header with its own peer address. Better Auth,
   the Throttler limits and the Shared rate limits all key on that address.
   Forged headers from any other peer are ignored.
+  NPM's global `nginx.conf` trusts `X-Real-IP` from every private range
+  (`10/8`, `172.16/12`, `192.168/16`). That would let a LAN client, or the
+  Docker Desktop host gateway, choose its own address. The Planner advanced
+  config therefore sets `set_real_ip_from 127.0.0.1/32;`. At server level this
+  replaces the inherited list, so NPM trusts no forwarded hop and
+  `$remote_addr` stays the real peer. Never remove it.
 - Migrations never run on startup. If they have not been applied, the API
   refuses to start (pg-boss schema verification).
 - Always use the wrapper. It adds the operator env file and the ClamAV overlay:
@@ -146,15 +152,29 @@ or `db push`.
 
 1. **Certificate.** Run this in Git Bash on Windows or a shell on Linux. Keep
    the output outside the repository:
-   - Local: `sh deploy/tls/make-private-cert.sh "$HOME/mehran-planner-tls"`
-     (names `localhost` and `127.0.0.1`)
-   - Server: `sh deploy/tls/make-private-cert.sh ~/mehran-planner-tls <server-private-ip>`
+   - Local: `sh deploy/tls/make-private-cert.sh "$HOME/mehran-planner-tls-planner" planner.localhost localhost 127.0.0.1`
+   - Server: `sh deploy/tls/make-private-cert.sh ~/mehran-planner-tls <private-hostname> <server-private-ip>`
 
-   Let's Encrypt cannot issue certificates for `localhost` or a bare IP, so do
-   not use it until a domain exists.
+   Let's Encrypt cannot issue certificates for `*.localhost` or a bare IP, so
+   do not use it until a domain exists.
+
+   **The NPM `localhost` catch-all limitation.** NPM 2.12.6 ships
+   `/etc/nginx/conf.d/default.conf`, which defines the first 443 server with
+   `server_name localhost` and `ssl_reject_handshake on`. It loads before any
+   proxy host, so a proxy host named `localhost` is never selected (TLS alert
+   "unrecognized name"). Connections without SNI, such as `https://<bare-IP>`,
+   also land on that server and are rejected. Therefore:
+   - Locally, use **`https://planner.localhost`**. Browsers resolve every
+     `*.localhost` name to loopback, and it is a secure context. Command-line
+     tools may need `--resolve planner.localhost:443:127.0.0.1`.
+   - On a server, use a hostname (local DNS or a hosts-file entry pointing at
+     the private IP), not a bare IP.
+   - Do not edit NPM's built-in files or add hidden `custom/*.conf` server
+     blocks to work around this.
 
 2. **Trust `ca.crt`** on every client device:
-   - Windows: `Import-Certificate -FilePath "$HOME\mehran-planner-tls\ca.crt" -CertStoreLocation Cert:\CurrentUser\Root`
+   - Windows: `Import-Certificate -FilePath "$HOME\mehran-planner-tls-planner\ca.crt" -CertStoreLocation Cert:\CurrentUser\Root`
+     (confirm the Windows security prompt)
    - Firefox: also set `security.enterprise_roots.enabled=true`.
    - macOS, Android and iOS: import it as a trusted root CA.
 3. **Open the NPM admin UI.** It is loopback only:
@@ -169,18 +189,20 @@ or `db push`.
    Certificate.
 5. **Add the proxy host.** Go to Hosts → Proxy Hosts → Add:
    - Details tab:
-     - Domain Names: `localhost`, or the server's private IP.
+     - Domain Names: `planner.localhost`, or the server's private hostname.
+       Never use `localhost` or a bare IP (see the limitation above).
      - Scheme: `http`. Forward Hostname: `web`. Forward Port: `3000`.
      - Enable Block Common Exploits. Leave Cache Assets off.
    - SSL tab: the custom certificate, with Force SSL and HTTP/2 on. Leave HSTS
      off while there is no domain.
    - Advanced tab: paste [`deploy/nginx-proxy-manager/planner-advanced.conf`](../../deploy/nginx-proxy-manager/planner-advanced.conf).
-     It routes `/api/` to `api:3000`, overwrites forwarded IPs, blocks
-     `/health/` and sets the body limit.
+     It routes `/api/` to `api:3000`, overwrites forwarded IPs, disables
+     NPM's private-range `X-Real-IP` trust, blocks `/health/` and sets the body
+     limit.
 6. **Do not create** any proxy host for `api`, `postgres`, `clamav` or the
    admin port. Do not publish port 80.
 7. **Verify:**
-   - `curl --cacert ~/mehran-planner-tls/ca.crt https://localhost/` should return HTML.
+   - `curl --cacert ~/mehran-planner-tls-planner/ca.crt --resolve planner.localhost:443:127.0.0.1 https://planner.localhost/` should return HTML.
    - `…/api/v1/auth/get-session` should return JSON.
    - `…/health/ready` should return `404`.
    - `…/sw.js` should return JavaScript with `Cache-Control: no-cache`.
@@ -299,20 +321,21 @@ from the owner. None may be invented:
 
 ## 9. Troubleshooting
 
-| Symptom                                      | Check                                                                                                                                                   |
-| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Invalid configuration: <keys>`              | Run `$P run --rm --no-deps ops` and fix the named keys. Values are withheld. An empty optional value also fails, so comment it out.                     |
-| `production requires HTTPS origins and SMTP` | Origins must be `https://…`, and the SMTP settings must be complete.                                                                                    |
-| API unhealthy after an update                | Run `$P run --rm migrate`.                                                                                                                              |
-| `TRUSTED_PROXY_ADDRESSES` invalid            | Only explicit IPs or CIDRs are accepted (no `true`, hop counts, names or `/0`).                                                                         |
-| Every user is rate-limited together          | Check the NPM Advanced config is applied and that `proxy` has `172.30.240.10` (`docker network inspect mehran-planner_app`).                            |
-| `Pool overlaps with other one on this host`  | Another network uses `172.30.240.0/24`. Change the subnet, the proxy `ipv4_address` and `TRUSTED_PROXY_ADDRESSES` together.                             |
-| Port 443 or 81 already in use (Windows)      | Change `PROXY_HTTPS_PORT` (and the origins) or `NPM_ADMIN_PORT`.                                                                                        |
-| Browser certificate warning                  | The CA is not trusted on that device, or the certificate's names do not match the URL.                                                                  |
-| Cookies lost or `403` on POST                | The browser URL must exactly match `BETTER_AUTH_URL` and `CORS_ORIGINS`.                                                                                |
-| NPM shows the proxy host offline             | Check `$P logs proxy`. The `api` and `web` services must be healthy.                                                                                    |
-| Upload scanner error                         | ClamAV is not healthy yet, or its signatures are stale. Check `$P logs clamav`.                                                                         |
-| `413` on upload                              | Raise `client_max_body_size` in the NPM Advanced config (and `FILE_MAX_BYTES` within the approved limit).                                               |
-| `EACCES` on volumes                          | The volumes must be owned by uid 1000. Take a backup first, then run `docker run --rm -v mehran-planner_private_files:/d alpine chown -R 1000:1000 /d`. |
-| `EROFS` in `web` logs                        | Report it. As a temporary measure, remove `read_only` from `web`.                                                                                       |
-| No verification email                        | Expected for anyone other than the Resend owner address until a domain is verified.                                                                     |
+| Symptom                                          | Check                                                                                                                                                   |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Invalid configuration: <keys>`                  | Run `$P run --rm --no-deps ops` and fix the named keys. Values are withheld. An empty optional value also fails, so comment it out.                     |
+| `production requires HTTPS origins and SMTP`     | Origins must be `https://…`, and the SMTP settings must be complete.                                                                                    |
+| API unhealthy after an update                    | Run `$P run --rm migrate`.                                                                                                                              |
+| `TRUSTED_PROXY_ADDRESSES` invalid                | Only explicit IPs or CIDRs are accepted (no `true`, hop counts, names or `/0`).                                                                         |
+| Every user is rate-limited together              | Check the NPM Advanced config is applied and that `proxy` has `172.30.240.10` (`docker network inspect mehran-planner_app`).                            |
+| `Pool overlaps with other one on this host`      | Another network uses `172.30.240.0/24`. Change the subnet, the proxy `ipv4_address` and `TRUSTED_PROXY_ADDRESSES` together.                             |
+| Port 443 or 81 already in use (Windows)          | Change `PROXY_HTTPS_PORT` (and the origins) or `NPM_ADMIN_PORT`.                                                                                        |
+| TLS alert "unrecognized name" / connection reset | The proxy host is named `localhost` or a bare IP, which NPM's built-in catch-all rejects. Use `planner.localhost` or a hostname.                        |
+| Browser certificate warning                      | The CA is not trusted on that device, or the certificate's names do not match the URL.                                                                  |
+| Cookies lost or `403` on POST                    | The browser URL must exactly match `BETTER_AUTH_URL` and `CORS_ORIGINS`.                                                                                |
+| NPM shows the proxy host offline                 | Check `$P logs proxy`. The `api` and `web` services must be healthy.                                                                                    |
+| Upload scanner error                             | ClamAV is not healthy yet, or its signatures are stale. Check `$P logs clamav`.                                                                         |
+| `413` on upload                                  | Raise `client_max_body_size` in the NPM Advanced config (and `FILE_MAX_BYTES` within the approved limit).                                               |
+| `EACCES` on volumes                              | The volumes must be owned by uid 1000. Take a backup first, then run `docker run --rm -v mehran-planner_private_files:/d alpine chown -R 1000:1000 /d`. |
+| `EROFS` in `web` logs                            | Report it. As a temporary measure, remove `read_only` from `web`.                                                                                       |
+| No verification email                            | Expected for anyone other than the Resend owner address until a domain is verified.                                                                     |

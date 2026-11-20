@@ -1,14 +1,14 @@
 #!/bin/sh
 # Private CA + server certificate for Nginx Proxy Manager ("Custom" SSL).
-# No public CA issues certificates for localhost or a bare private IP.
+# No public CA issues certificates for *.localhost or a bare private IP.
 # Keep the output directory OUTSIDE the repository; never commit it.
 #   sh deploy/tls/make-private-cert.sh <out-dir> [dns-or-ip ...]
-# Default names: localhost 127.0.0.1. Works in Git Bash and Linux (OpenSSL 1.1.1+).
+# Default names: planner.localhost localhost 127.0.0.1. Works in Git Bash and Linux (OpenSSL 1.1.1+).
 set -eu
 export MSYS_NO_PATHCONV=1 # keep "/CN=..." intact under Git Bash
 out=${1:?Usage: make-private-cert.sh <out-dir> [dns-or-ip ...]}
 shift
-[ "$#" -gt 0 ] || set -- localhost 127.0.0.1
+[ "$#" -gt 0 ] || set -- planner.localhost localhost 127.0.0.1
 umask 077
 mkdir -p "$out"
 if [ -e "$out/ca.key" ]; then

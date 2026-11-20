@@ -144,6 +144,9 @@ services:
     tmpfs:
       - /tmp
       - /app/.next/cache:uid=1000,gid=1000,mode=0700
+      # next.config.ts is compiled at start; SWC materializes its native
+      # binding here (needs exec; /tmp stays noexec, root stays read-only).
+      - /home/node/.cache:uid=1000,gid=1000,mode=0700,exec
     mem_limit: 768m
     cpus: 1.0
     healthcheck:
