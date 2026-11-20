@@ -40,7 +40,7 @@ it('keeps class retention separate from the recovery window', () => {
   ).toBe(5 * 365 * 86400);
 });
 
-it('never defaults or accepts placeholder approvals and seeds no Company policy', () => {
+it('never defaults or accepts placeholder approvals; Company purges after recovery', () => {
   for (const bad of [
     '',
     'SYNTHETIC',
@@ -54,9 +54,14 @@ it('never defaults or accepts placeholder approvals and seeds no Company policy'
   expect(() =>
     buildRetentionCatalogV2({ ...approval, accountableOperator: 'TODO' }),
   ).toThrow();
-  const contexts = buildRetentionCatalogV2(approval).flatMap(
-    (p) => p.applicableContexts as string[],
-  );
-  expect(contexts).not.toContain('COMPANY');
-  expect(RETENTION_CATALOG_V2_PENDING[0].context).toBe('COMPANY');
+  const company = buildRetentionCatalogV2(approval).find((p) =>
+    p.applicableContexts.includes('COMPANY'),
+  )!;
+  expect(company.policyVersion).toBe('mp-rpc-v2.0-company');
+  expect(company.sharedRecoverySeconds).toBe(7 * 86400);
+  for (const rule of Object.values(company.classRules)) {
+    expect(rule.retainAfterClosureSeconds).toBe(0);
+    expect(rule.disposalAction).toBe('PURGE');
+  }
+  expect(RETENTION_CATALOG_V2_PENDING).toEqual([]);
 });

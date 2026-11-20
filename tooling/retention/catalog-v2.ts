@@ -17,7 +17,8 @@ const rule = (retainAfterClosureSeconds: number) => ({
   exportAuthority: ['OWNER'],
   disposalAction: 'PURGE' as const,
 });
-type Context = 'PROJECT' | 'TEAM' | 'CONVERSATION' | 'MEETING' | 'SOCIAL_GROUP';
+type Context =
+  'PROJECT' | 'TEAM' | 'COMPANY' | 'CONVERSATION' | 'MEETING' | 'SOCIAL_GROUP';
 export type CatalogApproval = {
   approvalReference: string;
   accountableOperator: string;
@@ -30,6 +31,7 @@ export const RETENTION_CATALOG_V2_VERSIONS = [
   'mp-rpc-v2.0-conversation',
   'mp-rpc-v2.0-meeting',
   'mp-rpc-v2.0-social-group',
+  'mp-rpc-v2.0-company',
 ] as const;
 
 export function buildRetentionCatalogV2(approval: CatalogApproval) {
@@ -74,15 +76,17 @@ export function buildRetentionCatalogV2(approval: CatalogApproval) {
     // Social Group: protected expense/settlement/loan/dispute/audit records stay
     // guarded by the Social content guard (ADR 0066 G/H), as in v1.1.
     policy('mp-rpc-v2.0-social-group', ['SOCIAL_GROUP'], 0, 0),
+    // Owner decision 2026-11-20T12:12:58Z: everything exclusively owned by a
+    // closed Company (work, finance, projects, teams, operational audit) is
+    // purged after the 7-day recovery; holds/obligations still block disposal,
+    // shared/independent records are detached, sealed employee files keep
+    // their access protection until purge.
+    policy('mp-rpc-v2.0-company', ['COMPANY'], 0, 0),
   ].map((p) => SharedRetentionSchema.parse(p));
 }
 
-/** Not seedable until the listed legal/operator inputs exist. */
-export const RETENTION_CATALOG_V2_PENDING = [
-  {
-    context: 'COMPANY',
-    status: 'PENDING_LEGAL_REVIEW',
-    required:
-      'Jurisdiction(s); legal basis and minimum retention for financial records, payroll/settlements and sealed employee files; accountable operator; legal approval reference. The current model has no per-category finance/employee class and a Company policy authorizes whole-Space PURGE, so a schema decision is also required.',
-  },
-] as const;
+/** Every v2.0 context is defined; nothing is pending. */
+export const RETENTION_CATALOG_V2_PENDING: readonly {
+  context: string;
+  status: string;
+}[] = [];

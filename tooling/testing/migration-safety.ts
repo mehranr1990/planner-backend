@@ -1,4 +1,8 @@
 import {
+  retentionPolicyRecoveryMigrationName,
+  assertReviewedRetentionPolicyRecoveryMigration,
+} from './reviewed-retention-policy-recovery-migration.ts';
+import {
   taskRestoreDeadlineMigrationName,
   assertReviewedTaskRestoreDeadlineMigration,
 } from './reviewed-task-restore-deadline-migration.ts';
@@ -236,7 +240,9 @@ export function reviewMigrations(directory = 'prisma/migrations'): string[] {
       path.join(directory, name, 'migration.sql'),
       'utf8',
     );
-    if (name === taskRestoreDeadlineMigrationName)
+    if (name === retentionPolicyRecoveryMigrationName)
+      assertReviewedRetentionPolicyRecoveryMigration(sql);
+    else if (name === taskRestoreDeadlineMigrationName)
       assertReviewedTaskRestoreDeadlineMigration(sql);
     else if (name === recoveryWindowMigrationName)
       assertReviewedRecoveryWindowMigration(sql);

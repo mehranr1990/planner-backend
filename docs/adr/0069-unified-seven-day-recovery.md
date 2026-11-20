@@ -24,7 +24,9 @@ retention, legal or security approval (see docs/retention-policy-catalog-v2.md).
    CHECK already accepts exactly 168 h or 720 h (migration 0084).
 3. `SharedRetentionSchema.sharedRecoverySeconds` accepts `604800` for new policy
    versions and still parses `2592000` so immutable historical versions remain
-   valid. New catalog versions (`mp-rpc-v2.0-*`) declare 604800.
+   valid. New catalog versions (`mp-rpc-v2.0-*`) declare 604800. Migration
+   `202611200087_retention_policy_seven_day_recovery` widens the matching
+   database CHECK to exactly 604800 or 2592000 (no data change).
 4. Recovery is separate from retention. Class retention (conversation 3 years,
    meeting 5 years, audit 2 years), obligations, legal holds, protected Social
    financial records (ADR 0066 G/H), backup expiry (30 days), evidence/audit
