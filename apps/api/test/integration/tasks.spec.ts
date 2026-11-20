@@ -325,7 +325,14 @@ describe('P1-01 tasks, organization and ownership', () => {
         restoreUntil: new Date(Date.now() - 86400000),
       },
     });
-    await call(a, 'post', `/tasks/${task.id}/restore`, 2).send({}).expect(409);
+    const expired = await call(a, 'post', `/tasks/${task.id}/restore`, 2)
+      .send({})
+      .expect(409);
+    expect(expired.body.error).toMatchObject({
+      code: 'CONFLICT',
+      message: 'Resource conflict',
+      details: [{ path: '', code: 'RESTORE_EXPIRED' }],
+    });
     await call(a, 'get', '/tasks/' + task.id + '?includeDeleted=true').expect(
       404,
     );

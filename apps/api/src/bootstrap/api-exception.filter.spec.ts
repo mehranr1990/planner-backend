@@ -29,6 +29,9 @@ it.each([
   'TASK_HAS_ACTIVE_CHILDREN',
   'WORKFLOW_DRAFT_TERMINAL',
   'WORKFLOW_PUBLICATION_CONFLICT',
+  'RESTORE_EXPIRED',
+  'RECOVERY_EXPIRED',
+  'RECOVERY_UNAVAILABLE',
 ])(
   'exposes only the reviewed %s reason with the existing conflict envelope',
   (code) => {
@@ -51,6 +54,24 @@ it.each([
   },
 );
 
+it.each(['SHARED_ACTIVATION_GATED', 'SHARED_RETENTION_UNAVAILABLE'])(
+  'exposes only the reviewed %s gate with the generic forbidden envelope',
+  (code) => {
+    const { status, body, id } = reply(
+      new ForbiddenException({ code, message: 'private policy', spaceId: 'x' }),
+    );
+    expect(status).toHaveBeenCalledWith(403);
+    expect(body).toEqual({
+      error: {
+        code: 'FORBIDDEN',
+        message: 'Access denied',
+        requestId: id,
+        details: [{ path: '', code }],
+      },
+    });
+  },
+);
+
 it('keeps unknown, unstructured and non-conflict exceptions private', () => {
   for (const exception of [
     new ConflictException({
@@ -60,11 +81,15 @@ it('keeps unknown, unstructured and non-conflict exceptions private', () => {
     new ConflictException('private SQL'),
     new ForbiddenException({ code: 'PROJECT_KEY_CONFLICT' }),
     new BadRequestException({ code: 'PROJECT_KEY_CONFLICT' }),
+    new ForbiddenException({ code: 'SHARED_PRIVATE_POLICY' }),
+    new ConflictException({ code: 'SHARED_ACTIVATION_GATED' }),
+    new BadRequestException({ code: 'RECOVERY_EXPIRED' }),
+    new HttpException({ code: 'RESTORE_EXPIRED' }, 404),
   ]) {
     const { body } = reply(exception);
     expect(body.error.details).toBeUndefined();
     expect(JSON.stringify(body)).not.toMatch(
-      /private|SQL|password|secret|PROJECT_KEY_CONFLICT/,
+      /private|SQL|password|secret|PROJECT_KEY_CONFLICT|SHARED_|RE(STORE|COVERY)_/,
     );
   }
 });

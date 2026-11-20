@@ -134,7 +134,9 @@ export class TasksService {
       if (error instanceof TaskRuleError) {
         if (error.code === 'HIERARCHY' || error.code === 'POSITION')
           throw new BadRequestException();
-        throw new ConflictException();
+        throw new ConflictException(
+          error.code === 'RESTORE_EXPIRED' ? { code: error.code } : undefined,
+        );
       }
       throw error;
     }

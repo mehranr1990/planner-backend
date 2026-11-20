@@ -28,7 +28,20 @@ const projectConflictReasons = new Set([
   'WORKFLOW_PUBLICATION_CONFLICT',
   // P6-06: Social Group leave/delete needs a fresh balance confirmation.
   'OUTSTANDING_BALANCE_CONFIRMATION_REQUIRED',
+  // Retention v2 recovery window outcomes.
+  'RESTORE_EXPIRED',
+  'RECOVERY_EXPIRED',
+  'RECOVERY_UNAVAILABLE',
 ]);
+// Feature-level Shared gates; they reveal no resource, member or policy content.
+const forbiddenReasons = new Set([
+  'SHARED_ACTIVATION_GATED',
+  'SHARED_RETENTION_UNAVAILABLE',
+]);
+const publicReasons: Partial<Record<number, Set<string>>> = {
+  403: forbiddenReasons,
+  409: projectConflictReasons,
+};
 
 @Catch()
 export class ApiExceptionFilter implements ExceptionFilter {
@@ -85,13 +98,14 @@ export class ApiExceptionFilter implements ExceptionFilter {
       );
     }
     const body: ApiError = { error: { code, message, requestId: request.id } };
-    if (exception instanceof HttpException && status === 409) {
+    const reasons = publicReasons[status];
+    if (exception instanceof HttpException && reasons) {
       const detail = exception.getResponse();
       if (
         typeof detail === 'object' &&
         'code' in detail &&
         typeof detail.code === 'string' &&
-        projectConflictReasons.has(detail.code)
+        reasons.has(detail.code)
       )
         body.error.details = [{ path: '', code: detail.code }];
     }
