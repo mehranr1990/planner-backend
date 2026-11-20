@@ -311,9 +311,19 @@ describe('P1-01 tasks, organization and ownership', () => {
   it('rejects expired restoration and never purges records while hiding expired trash', async () => {
     const task = await create();
     await call(a, 'delete', '/tasks/' + task.id, 1).expect(200);
+    const stored = await db.client.task.findUniqueOrThrow({
+      where: { id: task.id },
+    });
+    // ADR 0069: the deletion stores exactly a 7-day restore deadline.
+    expect(stored.restoreUntil!.getTime() - stored.deletedAt!.getTime()).toBe(
+      7 * 86400000,
+    );
     await db.client.task.update({
       where: { id: task.id },
-      data: { deletedAt: new Date(Date.now() - 31 * 86400000) },
+      data: {
+        deletedAt: new Date(Date.now() - 8 * 86400000),
+        restoreUntil: new Date(Date.now() - 86400000),
+      },
     });
     await call(a, 'post', `/tasks/${task.id}/restore`, 2).send({}).expect(409);
     await call(a, 'get', '/tasks/' + task.id + '?includeDeleted=true').expect(

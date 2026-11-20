@@ -1239,7 +1239,7 @@ describe('P6-02 Activities and P6-03 shared expenses', () => {
         (await expenses.balances(bob.actor, ref(a.id), false)).items[0],
       ).toMatchObject({ owedMinor: '33' });
     });
-    it('deleted content is recoverable for 30 days while financial records stay', async () => {
+    it('deleted content is recoverable for 7 days while financial records stay', async () => {
       const { a, e } = await shared();
       const item = await planning.createItem(
         bob.actor,
@@ -1278,7 +1278,7 @@ describe('P6-02 Activities and P6-03 shared expenses', () => {
       expect(deleted.state).toBe('DELETED');
       expect(
         Date.parse(deleted.recoverUntil!) - Date.parse(deleted.deletedAt!),
-      ).toBe(30 * 86400000);
+      ).toBe(7 * 86400000);
       await status(activities.read(bob.actor, a.id), 404);
       await status(planning.items(bob.actor, a.id, page), 404);
       expect((await expenses.read(bob.actor, ref(a.id), e.id)).state).toBe(

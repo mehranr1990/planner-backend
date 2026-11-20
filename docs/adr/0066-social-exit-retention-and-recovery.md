@@ -88,3 +88,10 @@ General Group access is never restored.
 | Erased accounts have no session and cannot use this path; erasure detaches identities from the retained rows (P6-03) without deleting them.                                                                                                                                                                               | IMPLEMENTED AND VERIFIED    |
 | A Social job blocked by protected records is **parked** (`nextAt` = 9999-12-31) instead of being re-checked hourly: those records never become disposable by time alone. Only a future approved disposal policy and an operator re-arm can make it eligible. Other contexts keep the hourly re-check.                     | ACCEPTED ENGINEERING DESIGN |
 | The recovery deadline only ends recoverability; it never authorizes disposal of protected financial or audit records.                                                                                                                                                                                                     | APPROVED OWNER POLICY       |
+
+## Amendment: ADR 0069 (2026-11-20)
+
+Every recovery window in this ADR is superseded by [ADR 0069](0069-unified-seven-day-recovery.md):
+exactly 7 days for all recoverable user-initiated deletions, applied to new
+deletions only (persisted deadlines are never shortened). Retention classes,
+holds, obligations and protected-record rules here are unchanged.

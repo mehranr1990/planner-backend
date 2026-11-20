@@ -62,3 +62,10 @@ client on open and validated by Messaging). The Group policy is never used for c
   and admissions. History stays under the Conversation policy after Group disposal.
 - Limits: Messaging's existing 200-member conversation cap applies. No files/media
   (ADR 0057/0063), WebSockets, presence or typing (ADR 0044).
+
+## Amendment: ADR 0069 (2026-11-20)
+
+Every recovery window in this ADR is superseded by [ADR 0069](0069-unified-seven-day-recovery.md):
+exactly 7 days for all recoverable user-initiated deletions, applied to new
+deletions only (persisted deadlines are never shortened). Retention classes,
+holds, obligations and protected-record rules here are unchanged.

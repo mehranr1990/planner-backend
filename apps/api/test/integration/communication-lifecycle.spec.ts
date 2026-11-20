@@ -1900,8 +1900,9 @@ describe('P5-06 privacy lifecycle and REST recovery', () => {
       where: { id: j.jobId },
     });
     expect(record.effectiveDepartureAt).toEqual(endedAt);
+    // ADR 0069: unified 7-day recovery from the effective departure.
     expect(record.recoveryDeadline.getTime() - endedAt.getTime()).toBe(
-      30 * 86400000,
+      7 * 86400000,
     );
   });
   it('reconciles a pre-P5-06 ended meeting admission with the same recorded departure date', async () => {

@@ -7,6 +7,7 @@ import {
   history,
   changedFields,
   TASK_RESTORE_MS,
+  restoreExpired,
 } from './tasks.js';
 import type { TaskRecord, TaskNode } from './tasks.js';
 import {
@@ -24,6 +25,7 @@ const node = (id: string, parentTaskId: string | null = null): TaskNode => ({
   revision: 1,
   updatedAt: now,
   deletedAt: null,
+  restoreUntil: null,
   deletionBatchId: null,
 });
 const task = {
@@ -70,18 +72,30 @@ describe('task domain and boundary invariants', () => {
     });
     expect(transition(task, 'reopen', now)).toEqual({});
   });
-  it('enforces the exact thirty-day restoration boundary', () => {
+  it('enforces the exact stored seven-day restore deadline', () => {
+    expect(TASK_RESTORE_MS).toBe(7 * 86400000);
+    const deletedAt = new Date(now.getTime() - TASK_RESTORE_MS + 1);
     const deleted = {
       ...task,
-      deletedAt: new Date(now.getTime() - TASK_RESTORE_MS + 1),
+      deletedAt,
+      restoreUntil: new Date(deletedAt.getTime() + TASK_RESTORE_MS),
     };
     expect(() => requireRestorable(deleted, now)).not.toThrow();
     expect(() =>
-      requireRestorable(
-        { ...deleted, deletedAt: new Date(now.getTime() - TASK_RESTORE_MS) },
-        now,
-      ),
+      requireRestorable({ ...deleted, restoreUntil: now }, now),
     ).toThrow();
+    // A deletion recorded before ADR 0069 keeps its persisted 30-day deadline.
+    const legacy = {
+      ...task,
+      deletedAt: new Date(now.getTime() - 20 * 86400000),
+      restoreUntil: new Date(now.getTime() + 10 * 86400000),
+    };
+    expect(restoreExpired(legacy, now)).toBe(false);
+    expect(() => requireRestorable(legacy, now)).not.toThrow();
+    // Missing deadline fails closed.
+    expect(restoreExpired({ deletedAt: now, restoreUntil: null }, now)).toBe(
+      true,
+    );
   });
   it('normalizes Unicode names without altering rich content and never copies text into history', () => {
     expect(normalizeTitle('  cafe\u0301  plan\nnext ')).toBe('café plan next');

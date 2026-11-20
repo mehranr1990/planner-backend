@@ -24,7 +24,9 @@ import { requestSeat, seatCounts } from '../domain/seats.js';
 type Page = z.infer<typeof c.SocialPageQuerySchema>;
 const MAX_PARTICIPANTS = 1000;
 /** ADR 0060 decision B: owner-approved Social content recovery window. */
-export const RECOVERY_MS = 30 * 86400000;
+// Unified 7-day recovery (ADR 0069). Stored per row as recoverUntil, so
+// activities deleted earlier keep their original deadline.
+export const RECOVERY_MS = 7 * 86400000;
 export const iso = (d: Date | null) => (d ? d.toISOString() : null);
 export function participation(p: ParticipantRow | null) {
   if (!p) return null;

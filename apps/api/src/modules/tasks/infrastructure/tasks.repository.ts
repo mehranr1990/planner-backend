@@ -46,7 +46,7 @@ import type {
   TaskReader,
   TaskTransaction,
 } from '../application/tasks.port.js';
-import { TASK_RESTORE_MS, TaskRuleError } from '../domain/tasks.js';
+import { TaskRuleError } from '../domain/tasks.js';
 import type {
   TaskRecord,
   TaskNode,
@@ -66,6 +66,7 @@ const nodeSelect = {
   priority: true,
   revision: true,
   deletedAt: true,
+  restoreUntil: true,
   deletionBatchId: true,
   updatedAt: true,
 } as const;
@@ -95,6 +96,7 @@ function taskRecord(row: DatabaseTask): TaskRecord {
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     deletedAt: row.deletedAt,
+    restoreUntil: row.restoreUntil,
     deletionBatchId: row.deletionBatchId,
   };
 }
@@ -118,6 +120,7 @@ function taskData(patch: TaskWrite): Prisma.TaskUncheckedUpdateManyInput {
       : null;
   if (patch.completedAt !== undefined) data.completedAt = patch.completedAt;
   if (patch.deletedAt !== undefined) data.deletedAt = patch.deletedAt;
+  if (patch.restoreUntil !== undefined) data.restoreUntil = patch.restoreUntil;
   if (patch.deletionBatchId !== undefined)
     data.deletionBatchId = patch.deletionBatchId;
   return data;
@@ -209,11 +212,11 @@ export class ScopedTasksStore
       ? Prisma.sql`next."id"=nodes."parentTaskId"`
       : Prisma.sql`next."parentTaskId"=nodes."id"`;
     return this.db.$queryRaw<TaskNode[]>(Prisma.sql`WITH RECURSIVE nodes AS (
-      SELECT "id","parentTaskId","status","priority","revision","deletedAt","deletionBatchId","updatedAt",ARRAY["id"] AS path
+      SELECT "id","parentTaskId","status","priority","revision","deletedAt","restoreUntil","deletionBatchId","updatedAt",ARRAY["id"] AS path
       FROM "Task" WHERE "id"=${id}::uuid AND "spaceId"=${this.scope.spaceId}::uuid
-      UNION ALL SELECT next."id",next."parentTaskId",next."status",next."priority",next."revision",next."deletedAt",next."deletionBatchId",next."updatedAt",nodes.path||next."id"
+      UNION ALL SELECT next."id",next."parentTaskId",next."status",next."priority",next."revision",next."deletedAt",next."restoreUntil",next."deletionBatchId",next."updatedAt",nodes.path||next."id"
       FROM "Task" next JOIN nodes ON ${edge} WHERE next."spaceId"=${this.scope.spaceId}::uuid AND NOT next."id"=ANY(nodes.path)
-    ) SELECT "id","parentTaskId","status","priority","revision","deletedAt","deletionBatchId","updatedAt" FROM nodes`);
+    ) SELECT "id","parentTaskId","status","priority","revision","deletedAt","restoreUntil","deletionBatchId","updatedAt" FROM nodes`);
   }
   ancestors(id: string) {
     return this.walk(id, true);
@@ -240,10 +243,9 @@ export class ScopedTasksStore
       limit = Number(query.limit ?? 25);
     const conditions: Prisma.TaskWhereInput = {
       masterRecurrence: { is: null },
-      deletedAt:
-        query.deleted === 'true'
-          ? { gt: new Date(Date.now() - TASK_RESTORE_MS) }
-          : null,
+      ...(query.deleted === 'true'
+        ? { deletedAt: { not: null }, restoreUntil: { gt: new Date() } }
+        : { deletedAt: null }),
       ...(query.status ? { status: query.status } : {}),
       ...(query.priority ? { priority: query.priority } : {}),
       ...(query.parentTaskId

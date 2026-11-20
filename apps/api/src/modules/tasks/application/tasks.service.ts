@@ -34,6 +34,7 @@ import { AuditService } from '../../../platform/audit/audit.service.js';
 import {
   TaskRuleError,
   TASK_RESTORE_MS,
+  restoreExpired,
   normalizeTitle,
   validateHierarchy,
   transition,
@@ -70,9 +71,7 @@ export function taskView(task: TaskRecord) {
     updatedAt: iso(task.updatedAt),
     revision: task.revision,
     deletedAt: iso(task.deletedAt),
-    restoreUntil: task.deletedAt
-      ? new Date(task.deletedAt.getTime() + TASK_RESTORE_MS).toISOString()
-      : null,
+    restoreUntil: task.deletedAt ? iso(task.restoreUntil) : null,
   });
 }
 const labelView = (label: LabelRecord) =>
@@ -230,11 +229,7 @@ export class TasksService {
   get(scope: AuthorizedSpace, id: string, includeDeleted = false) {
     return this.operation(scope, id, async () => {
       const task = await this.repository.read(scope).task(id, includeDeleted);
-      if (
-        task.deletedAt &&
-        Date.now() - task.deletedAt.getTime() >= TASK_RESTORE_MS
-      )
-        throw new NotFoundException();
+      if (restoreExpired(task, new Date())) throw new NotFoundException();
       return taskView(task);
     });
   }
@@ -353,7 +348,11 @@ export class TasksService {
           const before = (await tx.subtree(id)).filter(
               (task) => !task.deletedAt,
             ),
-            patch = { deletedAt: new Date(), deletionBatchId: randomUUID() };
+            patch = {
+              deletedAt: new Date(),
+              restoreUntil: new Date(Date.now() + TASK_RESTORE_MS),
+              deletionBatchId: randomUUID(),
+            };
           const after = await tx.updateTasks(before, patch);
           const old = new Map(before.map((task) => [task.id, task]));
           await tx.record(
@@ -393,6 +392,7 @@ export class TasksService {
           );
           const after = await tx.updateTasks(before, {
             deletedAt: null,
+            restoreUntil: null,
             deletionBatchId: null,
           });
           const old = new Map(before.map((task) => [task.id, task]));
@@ -647,11 +647,7 @@ export class TasksService {
     return this.operation(scope, id, async () => {
       const reader = this.repository.read(scope),
         task = await reader.task(id, true);
-      if (
-        task.deletedAt &&
-        Date.now() - task.deletedAt.getTime() >= TASK_RESTORE_MS
-      )
-        throw new NotFoundException();
+      if (restoreExpired(task, new Date())) throw new NotFoundException();
       const page = await reader.history(id, query);
       return TaskChangePageSchema.parse({
         ...page,

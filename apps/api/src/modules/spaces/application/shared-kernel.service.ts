@@ -71,13 +71,11 @@ type AccessChange = {
 const uuid = z.uuid();
 const hash = (s: string) => createHash('sha256').update(s).digest('hex');
 /**
- * Owner-approved 2026-11-19 (ADR 0029 amendment): Company, Team and Project
- * closures are recoverable for 7 days; Social Groups (ADR 0066) and other
- * shared kinds keep 30. Applied only when a closure job is created, so jobs
- * already in progress keep their stored recoveryDeadline.
+ * Unified recovery window (owner decision 2026-11-20, ADR 0069): every shared
+ * kind recovers for exactly 7 days. Applied only when a lifecycle job is
+ * created, so jobs already in progress keep their stored recoveryDeadline.
  */
-export const recoveryWindowMs = (kind: string) =>
-  ['PROJECT', 'TEAM', 'COMPANY'].includes(kind) ? 604800000 : 2592000000;
+export const RECOVERY_WINDOW_MS = 604800000;
 function retryable(error: unknown) {
   if (!error || typeof error !== 'object') return false;
   const e = error as {
@@ -1830,7 +1828,7 @@ export class SharedKernel {
       if (effective && effective > now) now = effective;
     }
     const generation = c.closureGeneration + 1,
-      deadline = new Date(now.getTime() + recoveryWindowMs(c.kind));
+      deadline = new Date(now.getTime() + RECOVERY_WINDOW_MS);
     await tx.sharedLifecycleJob.updateMany({
       where: { custodyId: spaceId, state: 'OWNER_EXIT_FROZEN' },
       data: {
@@ -3056,7 +3054,7 @@ export class SharedKernel {
         const result = await write(tx);
         if (action === 'delete') {
           const generation = custody.closureGeneration + 1,
-            deadline = new Date(now.getTime() + recoveryWindowMs(custody.kind));
+            deadline = new Date(now.getTime() + RECOVERY_WINDOW_MS);
           await tx.contextAccess.update({
             where: { id: a.accessId },
             data: { state: 'LEFT', endedAt: now, revision: { increment: 1 } },
@@ -3355,7 +3353,7 @@ export class SharedKernel {
         if (remaining === 0) {
           const custody = await this.lifecycleCustody(tx, input.scopeId),
             generation = custody.closureGeneration + 1,
-            deadline = new Date(now.getTime() + recoveryWindowMs(custody.kind));
+            deadline = new Date(now.getTime() + RECOVERY_WINDOW_MS);
           await tx.sharedLifecycleJob.create({
             data: {
               id: randomUUID(),
@@ -3860,9 +3858,7 @@ export class SharedKernel {
                 effective = exit.closedAt;
             }
             const generation = custody.closureGeneration + 1,
-              deadline = new Date(
-                effective.getTime() + recoveryWindowMs(custody.kind),
-              );
+              deadline = new Date(effective.getTime() + RECOVERY_WINDOW_MS);
             await tx.sharedLifecycleJob.create({
               data: {
                 id: randomUUID(),

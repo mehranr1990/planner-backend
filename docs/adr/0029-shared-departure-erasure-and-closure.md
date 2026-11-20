@@ -112,3 +112,10 @@ counts, parent preservation, deadline/recovery, recovery/purge winner, downtime,
 holds, resumable files/DB work, retained attribution and unchanged Personal erasure.
 
 Owner approval: explicit approval of revised A01–A08 for implementation planning.
+
+## Amendment: ADR 0069 (2026-11-20)
+
+Every recovery window in this ADR is superseded by [ADR 0069](0069-unified-seven-day-recovery.md):
+exactly 7 days for all recoverable user-initiated deletions, applied to new
+deletions only (persisted deadlines are never shortened). Retention classes,
+holds, obligations and protected-record rules here are unchanged.

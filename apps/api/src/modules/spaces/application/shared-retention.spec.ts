@@ -61,6 +61,22 @@ it('rejects duplicate IDs within holds, within obligations and across their comp
     }).success,
   ).toBe(true);
 });
+it('accepts the unified 7-day window and historical 30-day versions only', () => {
+  const base = SharedRetentionSchema.safeParse(policy());
+  expect(base.success).toBe(true);
+  for (const [seconds, ok] of [
+    [604800, true],
+    [2592000, true],
+    [1209600, false],
+    [0, false],
+  ] as const)
+    expect(
+      SharedRetentionSchema.safeParse({
+        ...policy(),
+        sharedRecoverySeconds: seconds,
+      }).success,
+    ).toBe(ok);
+});
 it('requires explicit complete shared retention without Personal-policy fallback', () => {
   for (const value of [
     {},

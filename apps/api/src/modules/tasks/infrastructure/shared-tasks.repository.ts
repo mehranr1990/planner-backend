@@ -18,6 +18,7 @@ import {
   history,
   validateHierarchy,
   TaskRuleError,
+  TASK_RESTORE_MS,
 } from '../domain/tasks.js';
 import { DatabaseService } from '../../../platform/database/database.service.js';
 import {
@@ -152,6 +153,7 @@ export class SharedTasksRepository extends SharedTasks {
       where: { id },
       data: {
         deletedAt: now,
+        restoreUntil: new Date(now.getTime() + TASK_RESTORE_MS),
         deletionBatchId: randomUUID(),
         revision: { increment: 1 },
       },

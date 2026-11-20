@@ -23,6 +23,8 @@ export type TaskRecord = {
   createdAt: Date;
   updatedAt: Date;
   deletedAt: Date | null;
+  /** Persisted restore deadline; set with deletedAt (ADR 0069). */
+  restoreUntil: Date | null;
   deletionBatchId: string | null;
 };
 export type TaskNode = Pick<
@@ -33,6 +35,7 @@ export type TaskNode = Pick<
   | 'priority'
   | 'revision'
   | 'deletedAt'
+  | 'restoreUntil'
   | 'deletionBatchId'
   | 'updatedAt'
 >;
@@ -110,6 +113,7 @@ export type TaskWrite = Partial<
     | 'scheduledDate'
     | 'completedAt'
     | 'deletedAt'
+    | 'restoreUntil'
     | 'deletionBatchId'
   >
 >;
@@ -124,7 +128,17 @@ export type AttachmentRecord = {
 export type Page<T> = { items: T[]; nextCursor: string | null };
 
 export const MAX_TASK_DEPTH = 5;
-export const TASK_RESTORE_MS = 30 * 86400000;
+/** Unified 7-day recovery (ADR 0069), stored per deletion as restoreUntil. */
+export const TASK_RESTORE_MS = 7 * 86400000;
+export function restoreExpired(
+  task: Pick<TaskRecord, 'deletedAt' | 'restoreUntil'>,
+  now: Date,
+): boolean {
+  return (
+    !!task.deletedAt &&
+    (!task.restoreUntil || now.getTime() >= task.restoreUntil.getTime())
+  );
+}
 export class TaskRuleError extends Error {
   constructor(
     readonly code: 'HIERARCHY' | 'STATE' | 'RESTORE_EXPIRED' | 'POSITION',
@@ -170,16 +184,14 @@ export function transition(
   return task.status === 'OPEN' ? {} : { status: 'OPEN', completedAt: null };
 }
 export function requireRestorable(task: TaskRecord, now: Date): void {
-  if (
-    !task.deletedAt ||
-    now.getTime() - task.deletedAt.getTime() >= TASK_RESTORE_MS
-  )
+  if (!task.deletedAt || restoreExpired(task, now))
     throw new TaskRuleError('RESTORE_EXPIRED');
 }
 export function changedFields(task: TaskRecord, patch: TaskWrite): TaskField[] {
   return (Object.keys(patch) as Array<keyof TaskWrite>).filter(
     (key) =>
       key !== 'deletionBatchId' &&
+      key !== 'restoreUntil' &&
       JSON.stringify(task[key]) !== JSON.stringify(patch[key]),
   ) as TaskField[];
 }

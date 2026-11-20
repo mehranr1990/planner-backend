@@ -55,7 +55,9 @@ export const SharedRetentionSchema = z
       .max(6)
       .refine((v) => new Set(v).size === v.length),
     marketScope: name,
-    sharedRecoverySeconds: z.literal(2592000),
+    // 604800 (7 days) is the unified recovery window (ADR 0069). 2592000 stays
+    // valid only so immutable historical policy versions keep parsing.
+    sharedRecoverySeconds: z.union([z.literal(604800), z.literal(2592000)]),
     classRules: z.strictObject({
       workContent: rule,
       commentsHistory: rule,

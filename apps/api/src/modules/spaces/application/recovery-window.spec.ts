@@ -1,9 +1,6 @@
 import { it, expect } from 'vitest';
-import { recoveryWindowMs } from './shared-kernel.service.js';
+import { RECOVERY_WINDOW_MS } from './shared-kernel.service.js';
 
-it('recovers Company, Team and Project closures for 7 days and keeps 30 for other kinds', () => {
-  for (const kind of ['PROJECT', 'TEAM', 'COMPANY'])
-    expect(recoveryWindowMs(kind)).toBe(7 * 86400000);
-  for (const kind of ['SOCIAL_GROUP', 'CONVERSATION', 'MEETING'])
-    expect(recoveryWindowMs(kind)).toBe(30 * 86400000);
+it('uses one 7-day recovery window for every shared kind (ADR 0069)', () => {
+  expect(RECOVERY_WINDOW_MS).toBe(7 * 86400000);
 });

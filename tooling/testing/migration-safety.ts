@@ -1,4 +1,8 @@
 import {
+  taskRestoreDeadlineMigrationName,
+  assertReviewedTaskRestoreDeadlineMigration,
+} from './reviewed-task-restore-deadline-migration.ts';
+import {
   recoveryWindowMigrationName,
   assertReviewedRecoveryWindowMigration,
 } from './reviewed-recovery-window-migration.ts';
@@ -232,7 +236,9 @@ export function reviewMigrations(directory = 'prisma/migrations'): string[] {
       path.join(directory, name, 'migration.sql'),
       'utf8',
     );
-    if (name === recoveryWindowMigrationName)
+    if (name === taskRestoreDeadlineMigrationName)
+      assertReviewedTaskRestoreDeadlineMigration(sql);
+    else if (name === recoveryWindowMigrationName)
       assertReviewedRecoveryWindowMigration(sql);
     else if (name === socialGroupConversationMigrationName)
       assertReviewedSocialGroupConversationMigration(sql);
