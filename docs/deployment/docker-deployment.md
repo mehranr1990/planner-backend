@@ -210,6 +210,45 @@ or `db push`.
 `BETTER_AUTH_URL` and `CORS_ORIGINS` must exactly match the URL in the browser,
 including the port if it is not 443.
 
+### LAN access from other computers (optional)
+
+This exposes only HTTPS 443 on the host LAN IP. The NPM admin UI, PostgreSQL, the
+API and ClamAV stay unpublished.
+
+1. **Find the host IP and subnet:**
+   `Get-NetIPConfiguration | ? IPv4DefaultGateway` (for example `192.168.1.20/24`).
+   Reserve this IP in the router (DHCP reservation) so it does not change.
+2. **Configure the env file:**
+   - Set `PROXY_LAN_BIND=<LAN IP>`. The wrappers then add `compose.lan.yaml`.
+   - Append the LAN origin:
+     `CORS_ORIGINS=https://planner.localhost,https://planner.home.arpa`.
+   - Keep `BETTER_AUTH_URL` as the primary origin. Better Auth trusts every
+     `CORS_ORIGINS` entry for Origin/CSRF checks. Cookies are host-only, so each
+     origin keeps its own session. Email links always use `BETTER_AUTH_URL`.
+   - Then run `$P up -d`. This recreates only `proxy`, `api` and `worker`.
+3. **Issue the certificate.** Use the same CA, so clients trust a single root:
+   `CA_DIR=~/mehran-planner-tls-planner sh deploy/tls/make-private-cert.sh ~/mehran-planner-tls-planner/lan planner.localhost planner.home.arpa localhost 127.0.0.1`.
+   Upload `lan/server.crt` and `lan/server.key` to NPM as a Custom
+   certificate. Set the proxy host's Domain Names to `planner.localhost` and
+   `planner.home.arpa`, and select that certificate.
+4. **Open the firewall.** In an elevated PowerShell, run
+   `.deploywindowslan-firewall.ps1 -LanIp <LAN IP> -Subnet <subnet/prefix> -SetPrivateProfile`.
+   This allows only TCP 443 to that IP from that subnet, on the Private profile.
+   Use `-SetPrivateProfile` only on your own trusted network.
+5. **Set up each client:**
+   - **Resolve the name.** Add `<LAN IP>  planner.home.arpa` to the hosts file:
+     - Windows: `C:WindowsSystem32driversetchosts` (edit as Administrator)
+     - macOS/Linux: `/etc/hosts`
+
+     Or add a local DNS record on the router (`home.arpa` is reserved for
+     home networks, RFC 8375). Phones and tablets need the router DNS option.
+
+   - **Trust the CA.** Import `ca.crt` as described above. Do not import
+     `ca.key`, which never leaves the host.
+   - **Open** `https://planner.home.arpa`.
+
+**Client-IP limitation on Docker Desktop:** requests to the LAN IP from the host itself reached NPM as the Docker gateway (for example `172.20.0.1`), and Docker Desktop port forwarding is expected to hide LAN source addresses in the same way (check the NPM access log's `[Client …]` field from a second computer). Rate limits stay enforced and cannot be spoofed, but all such clients then share one rate-limit bucket. A Linux host with Docker Engine preserves real client IPs.
+
 ## 5. Health and smoke checks
 
 ```sh

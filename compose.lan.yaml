@@ -1,0 +1,8 @@
+# Optional LAN listener for the proxy's HTTPS port only. The wrappers apply this
+# file only when PROXY_LAN_BIND is set in the env file. The loopback binding from
+# compose.yaml stays; the NPM admin UI (81) is never added here.
+# Restrict the host firewall to the trusted subnet (deploy/windows/lan-firewall.ps1).
+services:
+  proxy:
+    ports:
+      - ${PROXY_LAN_BIND:?Set PROXY_LAN_BIND to the host LAN IP}:${PROXY_HTTPS_PORT:-443}:443
