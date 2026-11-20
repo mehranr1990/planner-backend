@@ -7,10 +7,59 @@ import { ProjectCleanupService } from '../../apps/api/dist/modules/projects/publ
 import { TeamCleanupService } from '../../apps/api/dist/modules/teams/public/index.js';
 import { DatabaseService } from '../../apps/api/dist/platform/database/database.service.js';
 import * as c from '../../packages/api-contracts/dist/index.js';
+import { SharedControl } from '../../apps/api/dist/platform/storage/shared-control.js';
 const [command, ...args] = process.argv.slice(2);
 const uuid = c.ProjectCreateSchema.shape.id;
+if (command === 'init-control') {
+  // One-time provisioning of the signed Shared control checkpoint for a NEW
+  // installation. Idempotent; never rewrites an existing checkpoint, never
+  // activates Shared features (SHARED_SECURITY_ACCEPTANCE_REFERENCE still gates
+  // them) and refuses when shared custody already exists, because a missing
+  // checkpoint there means lost/restored control that needs restore-replay.
+  if (args.length) throw new Error('Expected init-control without arguments');
+  const config = parseEnvironment(process.env);
+  if (!config.SHARED_CONTROL_ACTIVE_KEY_ID || !config.SHARED_CONTROL_KEYS)
+    throw new Error(
+      'init-control requires SHARED_CONTROL_KEYS and SHARED_CONTROL_ACTIVE_KEY_ID',
+    );
+  const control = new SharedControl(config);
+  const state = await control.records().then(
+    () => 'present' as const,
+    (error: unknown) =>
+      error instanceof Error &&
+      error.message === 'Missing current shared checkpoint'
+        ? ('missing' as const)
+        : Promise.reject(error),
+  );
+  if (state === 'present') {
+    process.stdout.write(
+      'PASS: shared control checkpoint already initialized and verified; nothing changed.\n',
+    );
+    process.exit(0);
+  }
+  const database = new DatabaseService(config);
+  try {
+    const existing =
+      (await database.client.sharedCustody.count()) +
+      (await database.client.sharedLifecycleJob.count());
+    if (existing)
+      throw new Error(
+        'Shared custody exists without a control checkpoint; use the restore-replay procedure, never init-control',
+      );
+  } finally {
+    await database.onApplicationShutdown();
+  }
+  await control.initialize();
+  await control.records();
+  process.stdout.write(
+    `PASS: shared control checkpoint initialized with key ID ${config.SHARED_CONTROL_ACTIVE_KEY_ID} at ${new Date().toISOString()}; Shared features remain gated by the security acceptance reference.\n`,
+  );
+  process.exit(0);
+}
 if (!['release', 'restore-replay', 'dispose-evidence'].includes(command ?? ''))
-  throw new Error('Expected release, restore-replay or dispose-evidence');
+  throw new Error(
+    'Expected init-control, release, restore-replay or dispose-evidence',
+  );
 const spaceId = uuid.parse(args[0]);
 if (command === 'restore-replay' && args.length !== 1)
   throw new Error('Expected restore-replay spaceId');

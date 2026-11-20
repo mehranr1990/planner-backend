@@ -106,18 +106,21 @@ export type SeedResult = {
 export async function seedRetentionCatalog(
   client: Client,
   apply: boolean,
+  catalog: readonly ReturnType<
+    typeof SharedRetentionSchema.parse
+  >[] = RETENTION_CATALOG_V1,
 ): Promise<SeedResult> {
   return client.$transaction(async (tx) => {
     const existing = new Map(
       (
         await tx.sharedRetentionPolicy.findMany({
           where: {
-            version: { in: RETENTION_CATALOG_V1.map((p) => p.policyVersion) },
+            version: { in: catalog.map((p) => p.policyVersion) },
           },
         })
       ).map((r) => [r.version, r]),
     );
-    const result: SeedResult = RETENTION_CATALOG_V1.map((p) => {
+    const result: SeedResult = catalog.map((p) => {
       const row = existing.get(p.policyVersion);
       if (!row)
         return {
@@ -134,7 +137,7 @@ export async function seedRetentionCatalog(
       };
     });
     if (!apply || result.some((r) => r.status === 'CONFLICT')) return result;
-    for (const p of RETENTION_CATALOG_V1)
+    for (const p of catalog)
       if (!existing.has(p.policyVersion))
         await tx.sharedRetentionPolicy.create({
           data: {
