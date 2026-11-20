@@ -1,4 +1,22 @@
-# Deployment only. Verify startup and named-volume persistence before release.
+# Deployment only. Run through deploy/planner-compose.ps1 (Windows Docker Desktop)
+# or deploy/planner-compose.sh (Linux); both add compose.clamav.yaml and the operator
+# env file. See docs/deployment/docker-deployment.md.
+# Migrations never run on startup: `planner-compose.sh run --rm migrate` is a controlled step.
+name: mehran-planner
+
+x-app-hardening: &app-hardening
+  init: true
+  read_only: true
+  tmpfs: [/tmp]
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+
+# One-shot operator containers keep a writable root for CLI caches.
+x-ops-hardening: &ops-hardening
+  init: true
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+
 services:
   postgres:
     image: postgres:18.6-bookworm
@@ -24,24 +42,40 @@ services:
       options:
         max-size: 10m
         max-file: '3'
+
   api:
-    build: .
+    build: &runtime-build
+      context: .
+      target: runtime
+    image: mehran-planner/api:local
     environment: &application-environment
       NODE_ENV: production
       HOST: 0.0.0.0
       PORT: '3000'
-      LOG_LEVEL: info
+      LOG_LEVEL: ${LOG_LEVEL:-info}
       DATABASE_URL: ${DOCKER_DATABASE_URL:?Set DOCKER_DATABASE_URL with postgres as host}
-      BETTER_AUTH_URL: ${BETTER_AUTH_URL:?Set public HTTPS API origin}
+      BETTER_AUTH_URL: ${BETTER_AUTH_URL:?Set public HTTPS origin}
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?Set strong auth secret}
       CORS_ORIGINS: ${CORS_ORIGINS:-}
+      # Only the Nginx Proxy Manager hop (fixed address on the app network).
+      TRUSTED_PROXY_ADDRESSES: 172.30.240.10
       MAIL_MODE: smtp
-      MAIL_FROM: ${MAIL_FROM:?Set verified sender}
+      MAIL_FROM: ${MAIL_FROM:?Set sender address}
       SMTP_HOST: ${SMTP_HOST:?Set SMTP host}
-      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_PORT: ${SMTP_PORT:-465}
       SMTP_USER: ${SMTP_USER:?Set SMTP user}
       SMTP_PASSWORD: ${SMTP_PASSWORD:?Set SMTP password}
       STORAGE_ROOT: /var/lib/mehran/files
+      ERASURE_CONTROL_ROOT: /var/lib/mehran/erasure-control
+      SHARED_CONTROL_ROOT: /var/lib/mehran/shared-control
+      # Optional security settings: passed only when set in the env file
+      # (an empty value fails validation by design).
+      SHARED_CONTROL_KEYS:
+      SHARED_CONTROL_ACTIVE_KEY_ID:
+      SHARED_SECURITY_ACCEPTANCE_REFERENCE:
+      PERSONAL_EVIDENCE_KEYS:
+      PERSONAL_EVIDENCE_ACTIVE_KEY_ID:
+      PERSONAL_ERASURE_POLICY_VERSION:
       FILE_MAX_BYTES: ${FILE_MAX_BYTES:-10485760}
       FILE_UPLOAD_TIMEOUT_MS: ${FILE_UPLOAD_TIMEOUT_MS:-120000}
       FILE_UPLOAD_TTL_SECONDS: ${FILE_UPLOAD_TTL_SECONDS:-3600}
@@ -52,20 +86,17 @@ services:
       PUSH_VAPID_PUBLIC_KEY: ${PUSH_VAPID_PUBLIC_KEY:-}
       PUSH_VAPID_PRIVATE_KEY: ${PUSH_VAPID_PRIVATE_KEY:-}
       PUSH_VAPID_SUBJECT: ${PUSH_VAPID_SUBJECT:-}
-    volumes:
+    volumes: &private-volumes
       - private_files:/var/lib/mehran/files
-    ports:
-      - 127.0.0.1:3000:3000
-    networks: [database, edge]
+      - erasure_control:/var/lib/mehran/erasure-control
+      - shared_control:/var/lib/mehran/shared-control
+    # No host port: only the proxy reaches the API. egress = SMTP and Web Push.
+    networks: [database, app, egress]
     depends_on:
       postgres:
         condition: service_healthy
     restart: unless-stopped
-    init: true
-    read_only: true
-    tmpfs: [/tmp]
-    cap_drop: [ALL]
-    security_opt: [no-new-privileges:true]
+    <<: *app-hardening
     mem_limit: 512m
     cpus: 1.0
     healthcheck:
@@ -81,27 +112,146 @@ services:
       retries: 3
       start_period: 30s
     logging: *bounded-logs
+
   worker:
-    build: .
+    build: *runtime-build
+    image: mehran-planner/api:local
     command: [node, dist/worker.js]
     environment: *application-environment
-    networks: [database, edge]
+    volumes: *private-volumes
+    networks: [database, egress]
     depends_on:
       postgres:
         condition: service_healthy
     restart: unless-stopped
-    init: true
-    read_only: true
-    tmpfs: [/tmp]
-    cap_drop: [ALL]
-    security_opt: [no-new-privileges:true]
+    <<: *app-hardening
     mem_limit: 512m
     cpus: 1.0
     logging: *bounded-logs
+
+  web:
+    build:
+      context: ${FRONTEND_CONTEXT:-../planner}
+      args:
+        NEXT_PUBLIC_API_MODE: live
+        # Empty = same origin: the proxy routes /api/* to the API.
+        NEXT_PUBLIC_API_ORIGIN: ''
+        NEXT_PUBLIC_ERASURE_POLICY_VERSION: ${PERSONAL_ERASURE_POLICY_VERSION:-}
+    image: mehran-planner/web:local
+    networks: [app]
+    restart: unless-stopped
+    <<: *app-hardening
+    tmpfs:
+      - /tmp
+      - /app/.next/cache:uid=1000,gid=1000,mode=0700
+    mem_limit: 768m
+    cpus: 1.0
+    healthcheck:
+      test:
+        [
+          CMD,
+          node,
+          -e,
+          "fetch('http://127.0.0.1:3000/',{redirect:'manual'}).then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    logging: *bounded-logs
+
+  # Nginx Proxy Manager: HTTPS 443 for the app, admin UI on loopback only.
+  # Port 80 is never published (no plaintext login/API traffic).
+  proxy:
+    image: jc21/nginx-proxy-manager:2.12.6
+    environment:
+      DISABLE_IPV6: 'true'
+    volumes:
+      - npm_data:/data
+      - npm_letsencrypt:/etc/letsencrypt
+    ports:
+      - ${PROXY_BIND:-127.0.0.1}:${PROXY_HTTPS_PORT:-443}:443
+      # Admin UI: loopback only (SSH tunnel on a server). Never a public bind.
+      - 127.0.0.1:${NPM_ADMIN_PORT:-81}:81
+    networks:
+      app:
+        # Fixed address: the API trusts X-Forwarded-For from this hop only.
+        ipv4_address: 172.30.240.10
+      edge: {}
+    depends_on:
+      api:
+        condition: service_healthy
+      web:
+        condition: service_healthy
+    restart: unless-stopped
+    security_opt: [no-new-privileges:true]
+    mem_limit: 256m
+    cpus: 0.5
+    healthcheck:
+      test: [CMD, /usr/bin/check-health]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    logging: *bounded-logs
+
+  # One-shot: reviewed Prisma migrations, then the pinned pg-boss schema.
+  migrate:
+    build: &ops-build
+      context: .
+      target: ops
+    image: mehran-planner/ops:local
+    profiles: [ops]
+    command:
+      - sh
+      - -c
+      - node node_modules/prisma/build/index.js migrate deploy --config prisma.config.ts && node tooling/scripts/jobs-migrate.ts
+    environment: &ops-environment
+      <<: *application-environment
+      CHECKPOINT_DISABLE: '1'
+    networks: [database]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: 'no'
+    <<: *ops-hardening
+    logging: *bounded-logs
+
+  # Operator tooling (config check, control init, backup manifests, rescans).
+  ops:
+    build: *ops-build
+    image: mehran-planner/ops:local
+    profiles: [ops]
+    environment: *ops-environment
+    volumes:
+      - private_files:/var/lib/mehran/files
+      - erasure_control:/var/lib/mehran/erasure-control
+      - shared_control:/var/lib/mehran/shared-control
+      - ${BACKUP_DIR:-/var/backups/mehran-planner}:/backup
+    networks: [database]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: 'no'
+    <<: *ops-hardening
+    logging: *bounded-logs
+
 networks:
   database:
     internal: true
+  app:
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.30.240.0/24
+  egress: {}
+  # The proxy publishes 443 through this bridge only.
   edge: {}
+
 volumes:
   postgres_data: {}
   private_files: {}
+  erasure_control: {}
+  shared_control: {}
+  npm_data: {}
+  npm_letsencrypt: {}

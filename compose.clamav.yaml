@@ -1,4 +1,5 @@
 # ADR 0068 malware-scanning overlay. Deployment only; never publishes clamd.
+# Applied automatically by deploy/planner-compose.sh.
 #   docker compose -f compose.yaml -f compose.clamav.yaml up -d
 # Runtime verification (startup, freshclam, EICAR smoke) is a release gate.
 services:
@@ -47,6 +48,10 @@ services:
     networks: [scanner]
     # The API starts without the scanner; file IO fails closed until clamd is healthy.
   worker:
+    environment: *scanner-environment
+    networks: [scanner]
+  # Operator rescans and the clamd smoke (deploy/clamav/smoke.mjs).
+  ops:
     environment: *scanner-environment
     networks: [scanner]
 networks:
