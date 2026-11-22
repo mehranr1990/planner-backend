@@ -49,7 +49,7 @@ export const messagingOperations: Operation[] = [
   {
     path: '/conversations',
     method: 'get',
-    query: c.ConversationPageQuerySchema,
+    query: c.ConversationListQuerySchema,
     output: c.ConversationSummaryPageSchema,
   },
   {

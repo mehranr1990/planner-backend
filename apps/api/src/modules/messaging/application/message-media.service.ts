@@ -46,7 +46,10 @@ export function messageVersion(expected: number | undefined, actual: number) {
 type Page = z.infer<typeof c.ConversationPageQuerySchema>;
 @Injectable()
 export class MessageMediaService {
-  async conversations(actor: RequestActor, q: Page) {
+  async conversations(
+    actor: RequestActor,
+    q: z.infer<typeof c.ConversationListQuerySchema>,
+  ) {
     const page = await this.base.list(actor, q, (id) =>
       this.advanced.run(actor, id, 'messaging.summary.read', async (s, m) => {
         const progress = await s.tx.messageProgress.findUnique({

@@ -353,7 +353,13 @@ export class MessagingService {
       this.stale(s, member)
     )
       throw new NotFoundException();
-    return member;
+    return {
+      ...member,
+      historyAfter:
+        member.deletedThrough > member.historyAfter
+          ? member.deletedThrough
+          : member.historyAfter,
+    };
   }
   private stale(s: Operation, member: { joinedAt: Date }) {
     return !!s.since && member.joinedAt < s.since;
@@ -606,6 +612,18 @@ export class MessagingService {
     if (!actorId) throw new NotFoundException();
     if (feature) await this.kernel.featureGrowth(s.tx, s.conv.scopeId, feature);
     const auditId = await s.begin(resourceId);
+    if (feature === 'messaging.message') {
+      const sender = await this.currentMember(s);
+      await s.tx.conversationMember.updateMany({
+        where: {
+          conversationId: s.conv.id,
+          state: 'ACTIVE',
+          id: { not: sender.id },
+          hiddenAt: { not: null },
+        },
+        data: { hiddenAt: null },
+      });
+    }
     await this.kernel.offerEffect(
       s.tx,
       s.actor,
@@ -1070,11 +1088,12 @@ export class MessagingService {
   }
   async list(
     actor: RequestActor,
-    q: Page,
+    q: z.infer<typeof c.ConversationListQuerySchema>,
     project?: (id: string) => Promise<z.infer<typeof c.ConversationSchema>>,
   ) {
     const stamp = hash('messaging-list-v1'),
-      context = 'conversations';
+      context =
+        q.archived === 'true' ? 'conversations:archived' : 'conversations';
     const after = this.kernel.cursorPosition(
       context,
       stamp,
@@ -1084,7 +1103,14 @@ export class MessagingService {
     const actors = await this.authority.actors(actor);
     const rows = await this.db.client.conversation.findMany({
       where: {
-        Members: { some: { state: 'ACTIVE', actorId: { in: actors } } },
+        Members: {
+          some: {
+            state: 'ACTIVE',
+            actorId: { in: actors },
+            hiddenAt: null,
+            archived: q.archived === 'true',
+          },
+        },
         ...(after ? { id: { gt: after } } : {}),
       },
       orderBy: { id: 'asc' },

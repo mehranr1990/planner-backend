@@ -43,6 +43,9 @@ export const ConversationPageQuerySchema = z.strictObject({
   limit: z.coerce.number().int().min(1).max(100).default(50),
 });
 export const ConversationEmptySchema = z.strictObject({});
+export const ConversationListQuerySchema = ConversationPageQuerySchema.extend({
+  archived: z.enum(['true', 'false']).optional(),
+});
 export const ConversationRenameSchema = z.strictObject({ title: label });
 export const ConversationInvitationInputSchema = z.strictObject({
   id,

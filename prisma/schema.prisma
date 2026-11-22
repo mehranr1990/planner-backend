@@ -5328,6 +5328,9 @@ model Conversation {
  @@index([spaceId,scopeId,id],map:"Conversation_scope_list")
 }
 model ConversationMember {
+ archived Boolean @default(false)
+ hiddenAt DateTime? @db.Timestamptz(3)
+ deletedThrough BigInt @default(0)
  MessageModeration_member MessageModeration[] @relation("MessageModeration_member_fk")
  MessageChange_audience MessageChange[] @relation("MessageChange_audience_fk")
  MessagePolicy_member MessagePolicy[] @relation("MessagePolicy_member_fk")

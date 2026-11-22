@@ -652,6 +652,65 @@ describe('P5-01 durable messaging, explicit participation and polling', () => {
       ),
     ).toMatchObject({ unreadCount: 0, lastMessage: null });
   });
+  it('keeps archive private and sticky, and delete-for-me hides old history after incoming revival', async () => {
+    const conv = await create('DM');
+    await accept(conv.id);
+    const old = await send(conv.id);
+    const ext = app.get(MessagingExtensionsService);
+    await expect(
+      advanced.detail(alice.actor, conv.id, old.id),
+    ).resolves.toBeDefined();
+    let prefs = await ext.settings(alice.actor, conv.id);
+    prefs = await ext.updatePreferences(
+      alice.actor,
+      conv.id,
+      prefs.me.revision,
+      { archived: true },
+    );
+    expect(prefs.me.archived).toBe(true);
+    expect(
+      (await messages.list(alice.actor, page)).items.map((x) => x.id),
+    ).not.toContain(conv.id);
+    expect(
+      (
+        await messages.list(alice.actor, { ...page, archived: 'true' })
+      ).items.map((x) => x.id),
+    ).toContain(conv.id);
+    await send(conv.id, owner, 'Still archived');
+    expect((await ext.settings(alice.actor, conv.id)).me.archived).toBe(true);
+    prefs = await ext.updatePreferences(
+      alice.actor,
+      conv.id,
+      prefs.me.revision,
+      { archived: false, deleteForMe: true },
+    );
+    expect(
+      (await messages.list(alice.actor, page)).items.map((x) => x.id),
+    ).not.toContain(conv.id);
+    expect(
+      (await messages.messages(alice.actor, conv.id, page)).items,
+    ).toHaveLength(0);
+    await expect(
+      advanced.detail(alice.actor, conv.id, old.id),
+    ).rejects.toThrow();
+    expect(
+      (await messages.messages(owner.actor, conv.id, page)).items.length,
+    ).toBe(2);
+    await send(conv.id, alice, 'My own message');
+    expect(
+      (await messages.list(alice.actor, page)).items.map((x) => x.id),
+    ).not.toContain(conv.id);
+    const incoming = await send(conv.id, owner, 'New incoming');
+    expect(
+      (await messages.list(alice.actor, page)).items.map((x) => x.id),
+    ).toContain(conv.id);
+    const history = await messages.messages(alice.actor, conv.id, page);
+    expect(history.items.map((x) => x.id)).not.toContain(old.id);
+    expect(history.items.map((x) => x.id)).toContain(incoming.id);
+    await expect(
+      advanced.detail(alice.actor, conv.id, old.id),
+    ).rejects.toThrow();
+  });
   it('requires explicit DM acceptance, current named recipient, and a fixed pair', async () => {
     const conv = await create('DM');
     expect(conv.writable).toBe(false);

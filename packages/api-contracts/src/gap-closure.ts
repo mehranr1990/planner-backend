@@ -26,6 +26,8 @@ export const ConversationSettingsSchema = z.strictObject({
   revision,
   canManage: z.boolean(),
   me: z.strictObject({
+    archived: z.boolean(),
+    hidden: z.boolean(),
     linkPreviews: z.boolean().nullable(),
     collapseBlocked: z.boolean(),
     revision,
@@ -40,6 +42,8 @@ export const ConversationSettingsPatchSchema = z
   .refine((v) => Object.keys(v).length > 0);
 export const ConversationPreferencesPatchSchema = z
   .strictObject({
+    archived: z.boolean().optional(),
+    deleteForMe: z.literal(true).optional(),
     linkPreviews: z.boolean().nullable().optional(),
     collapseBlocked: z.boolean().optional(),
   })

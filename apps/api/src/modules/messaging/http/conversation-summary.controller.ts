@@ -18,8 +18,8 @@ export class ConversationSummaryController {
   ) {}
   @Get() list(
     @CurrentActor() actor: RequestActor,
-    @Query(new ZodValidationPipe(c.ConversationPageQuerySchema))
-    q: z.infer<typeof c.ConversationPageQuerySchema>,
+    @Query(new ZodValidationPipe(c.ConversationListQuerySchema))
+    q: z.infer<typeof c.ConversationListQuerySchema>,
   ) {
     return this.media.conversations(actor, q);
   }

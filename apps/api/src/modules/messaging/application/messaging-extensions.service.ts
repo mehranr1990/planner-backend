@@ -61,6 +61,8 @@ export class MessagingExtensionsService {
       revision: setting?.revision ?? 1,
       canManage: await this.manages(s),
       me: {
+        archived: member.archived,
+        hidden: member.hiddenAt !== null,
         linkPreviews: mine?.linkPreviews ?? null,
         collapseBlocked: mine?.collapseBlocked ?? false,
         revision: mine?.revision ?? 1,
@@ -151,6 +153,21 @@ export class MessagingExtensionsService {
             : {}),
           updatedAt: s.now,
         };
+        // Reuse the central history floor across every content projection.
+        if (body.archived !== undefined || body.deleteForMe) {
+          await s.tx.conversationMember.update({
+            where: { id: member.id },
+            data: {
+              ...(body.archived !== undefined
+                ? { archived: body.archived }
+                : {}),
+              ...(body.deleteForMe
+                ? { hiddenAt: s.now, deletedThrough: s.conv.lastSequence }
+                : {}),
+            },
+          });
+          await this.base.effect(s, 'messaging.visibility.update', member.id);
+        }
         if (before)
           await s.tx.conversationMemberSetting.update({
             where: { memberId_generation: key },
