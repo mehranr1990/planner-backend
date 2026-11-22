@@ -32,4 +32,8 @@ export { CompanyAccess } from '../application/company-access.service.js';
 export { MessagingAuthority } from './messaging-authority.js';
 export { CompanyErasure } from './company-erasure.js';
 export type { CompanyTransaction } from '../application/company-access.service.js';
+export {
+  sharedNotificationUsers,
+  sharedNotificationModule,
+} from './notification-audience.js';
 export { InvitationMailService } from '../application/invitation-mail.service.js';

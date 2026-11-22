@@ -192,6 +192,32 @@ describe('P1-10 private durable reminder scheduling and delivery', () => {
       .send({ ...body, title: 'different' })
       .expect(409);
   });
+  it('persists independent module channels and suppresses the actual personal delivery pipeline', async () => {
+    const settings = await preference(a, {
+      moduleChannels: {
+        PERSONAL: { IN_APP: false, EMAIL: false, WEB_PUSH: false },
+        PROJECTS: { IN_APP: true, EMAIL: true, WEB_PUSH: true },
+      },
+    });
+    expect(settings.moduleChannels.PERSONAL?.IN_APP).toBe(false);
+    expect(settings.moduleChannels.PROJECTS?.IN_APP).toBe(true);
+    expect(settings.moduleChannels.TEAMS?.IN_APP).toBe(true);
+    const r = await reminder();
+    await dispatch(r);
+    expect(
+      await db.client.notification.count({
+        where: { reminderId: r.id, inbox: true },
+      }),
+    ).toBe(0);
+    expect((await deliveries(r.id)).every((d) => d.state !== 'DELIVERED')).toBe(
+      true,
+    );
+    await preference(a, {
+      moduleChannels: {
+        PERSONAL: { IN_APP: true, EMAIL: true, WEB_PUSH: true },
+      },
+    });
+  });
   it('publishes in-app exactly once under concurrent dispatch and duplicate jobs', async () => {
     const r = await reminder(),
       d = (await deliveries(r.id))[0]!;

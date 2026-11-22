@@ -9,7 +9,11 @@ import type {
   Prisma,
   SharedAssignmentNotification,
 } from '../../../generated/prisma/client.js';
-import { SharedKernel } from '../../spaces/public/index.js';
+import {
+  SharedKernel,
+  sharedNotificationModule,
+} from '../../spaces/public/index.js';
+import { moduleChannelEnabled } from '../public/module-preferences.js';
 import type { SharedAuthority } from '../../spaces/public/index.js';
 import { SharedWorkNotifications } from '../public/shared-work-notifications.js';
 import { sharedDeleteBatch } from '../../../platform/lifecycle/shared-cleanup.js';
@@ -42,7 +46,7 @@ export class SharedWorkNotificationsRepository extends SharedWorkNotifications {
     },
   ) {
     const proof = a.require(tx, input.spaceId, 'task.read');
-    if (input.kind === 'REMINDER') {
+    {
       const actor = await tx.sharedActor.findUnique({
         where: { id: input.recipientActorId },
         select: { userId: true },
@@ -50,9 +54,17 @@ export class SharedWorkNotificationsRepository extends SharedWorkNotifications {
       if (!actor?.userId) return;
       const preference = await tx.notificationPreference.findFirst({
         where: { ownerUserId: actor.userId },
-        select: { inApp: true },
+        select: { inApp: true, moduleChannels: true },
       });
       if (preference?.inApp === false) return;
+      if (
+        !moduleChannelEnabled(
+          preference?.moduleChannels ?? {},
+          await sharedNotificationModule(tx, proof.scopeId),
+          'IN_APP',
+        )
+      )
+        return;
     }
     const alias = await tx.domainScopeActorAlias.findFirst({
       where: {

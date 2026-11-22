@@ -110,18 +110,28 @@ export class CompanyPolicyWorker {
                 ...a,
                 escalated: true,
               });
-              await ctx.tx.companyNotification.create({
-                data: {
-                  id: randomUUID(),
-                  spaceId: ctx.spaceId,
-                  scopeId: a.scopeId,
-                  recipientAccessId: assigned.reviewer.accessId,
-                  recipientGeneration: assigned.reviewer.generation,
-                  kind: 'APPROVAL_ESCALATED',
-                  subjectId: a.id,
-                  dedupeKey: 'approval-escalated:' + a.id + ':' + a.stepIndex,
-                },
-              });
+              if (
+                (
+                  await filterModuleNotificationMembers(
+                    ctx.tx,
+                    a.scopeId,
+                    [assigned.reviewer],
+                    'COMPANY',
+                  )
+                ).length
+              )
+                await ctx.tx.companyNotification.create({
+                  data: {
+                    id: randomUUID(),
+                    spaceId: ctx.spaceId,
+                    scopeId: a.scopeId,
+                    recipientAccessId: assigned.reviewer.accessId,
+                    recipientGeneration: assigned.reviewer.generation,
+                    kind: 'APPROVAL_ESCALATED',
+                    subjectId: a.id,
+                    dedupeKey: 'approval-escalated:' + a.id + ':' + a.stepIndex,
+                  },
+                });
               if (audit)
                 await this.access.effect(
                   ctx,
@@ -145,3 +155,4 @@ export class CompanyPolicyWorker {
     return changed;
   }
 }
+import { filterModuleNotificationMembers } from '../../notifications/public/index.js';

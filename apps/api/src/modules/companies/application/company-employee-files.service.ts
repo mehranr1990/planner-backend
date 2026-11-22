@@ -312,7 +312,17 @@ export class CompanyEmployeeFilesService {
           (await s.tx.contextAccess.findFirst({
             where: { id: custody.primaryOwnerAccessId, state: 'ACTIVE' },
           }));
-        if (owner)
+        if (
+          owner &&
+          (
+            await filterModuleNotificationMembers(
+              s.tx,
+              s.spaceId,
+              [{ accessId: owner.id, generation: owner.generation }],
+              'COMPANY',
+            )
+          ).length
+        )
           await s.tx.companyNotification.createMany({
             data: [
               {
@@ -605,3 +615,4 @@ export class CompanyEmployeeFilesService {
       });
   }
 }
+import { filterModuleNotificationMembers } from '../../notifications/public/index.js';

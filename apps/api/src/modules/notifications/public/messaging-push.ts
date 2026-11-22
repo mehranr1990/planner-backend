@@ -55,7 +55,7 @@ export class MessagingPush {
         enabled: p.messagingWebPush,
         revision: p.revision,
         serverAvailable: p.available,
-        globalWebPush: p.webPush,
+        globalWebPush: p.globalWebPush,
       };
     });
   }
@@ -109,8 +109,21 @@ export class MessagingPush {
       where: { spaceId: owner.spaceId },
     });
     return {
-      inApp: p?.inApp ?? true,
-      webPush: p?.webPush ?? false,
+      globalWebPush: p?.webPush ?? false,
+      inApp:
+        (p?.inApp ?? true) &&
+        moduleChannelEnabled(
+          p?.moduleChannels ?? {},
+          'MESSAGING_MEETINGS',
+          'IN_APP',
+        ),
+      webPush:
+        (p?.webPush ?? false) &&
+        moduleChannelEnabled(
+          p?.moduleChannels ?? {},
+          'MESSAGING_MEETINGS',
+          'WEB_PUSH',
+        ),
       messagingWebPush: p?.messagingWebPush ?? false,
       enabledAt: p?.messagingEnabledAt ?? null,
       quietStart: p?.quietStart ?? null,
@@ -261,3 +274,4 @@ export class MessagingPush {
   exports: [NotificationTransport, MessagingPush],
 })
 export class NotificationChannelModule {}
+import { moduleChannelEnabled } from './module-preferences.js';

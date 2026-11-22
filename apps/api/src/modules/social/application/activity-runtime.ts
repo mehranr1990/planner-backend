@@ -259,7 +259,11 @@ export class ActivityRuntime {
       dedupe: string;
     },
   ) {
-    const recipients = [...new Set(userIds.filter((u): u is string => !!u))];
+    const recipients = await filterModuleNotificationUsers(
+      tx,
+      [...new Set(userIds.filter((u): u is string => !!u))],
+      'SOCIAL',
+    );
     if (!recipients.length) return;
     await tx.socialNotice.createMany({
       data: recipients.map((userId) => ({
@@ -382,3 +386,4 @@ export class ActivityConversationGuard extends ConversationSourceGuard {
     return p.role === 'ORGANIZER' ? ('ADMIN' as const) : ('MEMBER' as const);
   }
 }
+import { filterModuleNotificationUsers } from '../../notifications/public/index.js';

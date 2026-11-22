@@ -182,7 +182,14 @@ export class CompanyBudgetAlertsService implements OnModuleInit {
         )
           recipients.push(member);
       await s.tx.companyNotification.createMany({
-        data: recipients.map((m) => ({
+        data: (
+          await filterModuleNotificationMembers(
+            s.tx,
+            s.scopeId,
+            recipients,
+            'COMPANY',
+          )
+        ).map((m) => ({
           id: randomUUID(),
           ...this.op.where(s),
           recipientAccessId: m.accessId,
@@ -196,3 +203,4 @@ export class CompanyBudgetAlertsService implements OnModuleInit {
     }
   }
 }
+import { filterModuleNotificationMembers } from '../../notifications/public/index.js';

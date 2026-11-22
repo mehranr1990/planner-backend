@@ -304,7 +304,14 @@ export class CompanyKnowledgePagesService {
         const delivered = pending.length
           ? (
               await s.tx.companyNotification.createMany({
-                data: pending.map((m) => ({
+                data: (
+                  await filterModuleNotificationMembers(
+                    s.tx,
+                    s.scopeId,
+                    pending,
+                    'COMPANY',
+                  )
+                ).map((m) => ({
                   id: randomUUID(),
                   spaceId: s.spaceId,
                   scopeId: s.scopeId,
@@ -394,3 +401,4 @@ export class CompanyKnowledgePagesService {
     );
   }
 }
+import { filterModuleNotificationMembers } from '../../notifications/public/index.js';

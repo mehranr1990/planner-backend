@@ -6,6 +6,7 @@ import {
   assertApiCompatible,
   approvedProjectHash,
   approvedCompanyHash,
+  approvedFiveFeaturesHash,
 } from './openapi-compatibility.js';
 import { historicalCompanyCustodyResponses } from './company-custody-responses.js';
 import { gapClosureOperations } from '../../packages/api-contracts/src/gap-closure-openapi.js';
@@ -49,15 +50,27 @@ it('freezes the 67 gap-closure operations and only the approved KPI goals transi
     if (later[key]) {
       expect(later[key].previous).toBe(hash);
       expect(current[key]).toBe(
-        approvedCompanyHash(key, approvedProjectHash(key, later[key].approved)),
+        approvedFiveFeaturesHash(
+          key,
+          approvedCompanyHash(
+            key,
+            approvedProjectHash(key, later[key].approved),
+          ),
+        ),
       );
     } else
       expect(current[key]).toBe(
-        approvedCompanyHash(key, approvedProjectHash(key, hash)),
+        approvedFiveFeaturesHash(
+          key,
+          approvedCompanyHash(key, approvedProjectHash(key, hash)),
+        ),
       );
   for (const [key, value] of Object.entries(extensions))
     expect(current[key]).toBe(
-      approvedCompanyHash(key, approvedProjectHash(key, value.approved)),
+      approvedFiveFeaturesHash(
+        key,
+        approvedCompanyHash(key, approvedProjectHash(key, value.approved)),
+      ),
     );
   const changed = structuredClone(doc) as unknown as {
     paths: Record<string, { get: { security: unknown[] } }>;

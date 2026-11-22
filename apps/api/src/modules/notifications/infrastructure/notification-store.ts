@@ -153,11 +153,18 @@ export class NotificationStore {
     });
   }
   enabled(channel: string, p: NotificationPreference) {
-    return channel === 'IN_APP'
-      ? p.inApp
-      : channel === 'EMAIL'
-        ? p.email
-        : p.webPush;
+    return (
+      moduleChannelEnabled(
+        p.moduleChannels,
+        'PERSONAL',
+        channel as 'IN_APP' | 'EMAIL' | 'WEB_PUSH',
+      ) &&
+      (channel === 'IN_APP'
+        ? p.inApp
+        : channel === 'EMAIL'
+          ? p.email
+          : p.webPush)
+    );
   }
   async validateTask(id: string | null, revision: number | null) {
     if (!id) return null;
@@ -508,3 +515,4 @@ export class NotificationStore {
     return null;
   }
 }
+import { moduleChannelEnabled } from '../public/module-preferences.js';

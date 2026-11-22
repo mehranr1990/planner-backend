@@ -130,9 +130,15 @@ export class LendingKit {
     ctx: { loanId: string } | { reportId: string },
     dedupe: string,
   ) {
-    const recipients = [
-      ...new Set(users.filter((u): u is string => !!u && u !== actor?.userId)),
-    ];
+    const recipients = await filterModuleNotificationUsers(
+      tx,
+      [
+        ...new Set(
+          users.filter((u): u is string => !!u && u !== actor?.userId),
+        ),
+      ],
+      'SOCIAL',
+    );
     if (!recipients.length) return;
     const loanId = 'loanId' in ctx ? ctx.loanId : null,
       reportId = 'reportId' in ctx ? ctx.reportId : null;
@@ -279,3 +285,4 @@ export class LendingKit {
     );
   }
 }
+import { filterModuleNotificationUsers } from '../../notifications/public/index.js';

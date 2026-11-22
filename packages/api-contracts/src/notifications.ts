@@ -214,8 +214,26 @@ export const NotificationDeliveryQuerySchema = CursorQuerySchema.extend({
   kind: z.enum(['CHANNEL', 'ENDPOINT']).optional(),
 });
 export const NotificationSnoozeSchema = z.strictObject({ until: Time });
+export const NotificationModuleSchema = z.enum([
+  'PERSONAL',
+  'PROJECTS',
+  'TEAMS',
+  'COMPANY',
+  'MESSAGING_MEETINGS',
+  'SOCIAL',
+]);
+export const ModuleChannelSettingsSchema = z.strictObject({
+  IN_APP: z.boolean(),
+  WEB_PUSH: z.boolean(),
+  EMAIL: z.boolean(),
+});
+export const ModuleNotificationPreferencesSchema = z.partialRecord(
+  NotificationModuleSchema,
+  ModuleChannelSettingsSchema,
+);
 export const NotificationPreferencePatchSchema = z
   .strictObject({
+    moduleChannels: ModuleNotificationPreferencesSchema.optional(),
     inApp: z.boolean().optional(),
     email: z.boolean().optional(),
     webPush: z.boolean().optional(),
@@ -225,6 +243,7 @@ export const NotificationPreferencePatchSchema = z
   })
   .refine((v) => Object.keys(v).length > 0);
 export const NotificationPreferenceSchema = z.strictObject({
+  moduleChannels: ModuleNotificationPreferencesSchema,
   ...root,
   inApp: z.boolean(),
   email: z.boolean(),

@@ -96,6 +96,7 @@ export class NotificationsRepository extends NotificationsPort {
     } = plain(row) as Record<string, unknown>;
     return {
       ...legacy,
+      moduleChannels: moduleChannelView(legacy.moduleChannels),
       availableChannels: this.available(),
       webPushPublicKey:
         this.config.PUSH_MODE === 'webpush'
@@ -437,6 +438,13 @@ export class NotificationsRepository extends NotificationsPort {
         where: { id: before.id },
         data: {
           inApp: v.inApp ?? before.inApp,
+          moduleChannels: {
+            ...c.ModuleNotificationPreferencesSchema.parse(
+              before.moduleChannels,
+            ),
+            ...c.NotificationPreferencePatchSchema.parse(cmd.body)
+              .moduleChannels,
+          },
           email: v.email ?? before.email,
           webPush: v.webPush ?? before.webPush,
           ...(v.webPush && !before.webPush && before.messagingWebPush
@@ -1199,3 +1207,4 @@ export class NotificationsRepository extends NotificationsPort {
     });
   }
 }
+import { moduleChannelView } from '../public/module-preferences.js';

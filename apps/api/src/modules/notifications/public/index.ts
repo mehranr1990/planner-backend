@@ -6,3 +6,8 @@ export { SharedWorkNotifications } from './shared-work-notifications.js';
 export { NotificationCustodyGraph } from '../application/notifications-custody-graph.js';
 export { MessagingPush, NotificationChannelModule } from './messaging-push.js';
 export type { MessagingPushOwner } from './messaging-push.js';
+export {
+  moduleChannelEnabled,
+  filterModuleNotificationUsers,
+  filterModuleNotificationMembers,
+} from './module-preferences.js';

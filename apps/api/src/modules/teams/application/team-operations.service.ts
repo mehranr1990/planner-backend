@@ -85,6 +85,12 @@ export class TeamOperationsService {
     subjectId: string,
     dedupeKey: string,
   ) {
+    recipients = await filterModuleNotificationMembers(
+      s.tx,
+      s.id,
+      recipients,
+      'TEAMS',
+    );
     if (!recipients.length) return 0;
     return (
       await s.tx.teamNotification.createMany({
@@ -1889,3 +1895,4 @@ export class TeamOperationsService {
     );
   }
 }
+import { filterModuleNotificationMembers } from '../../notifications/public/index.js';

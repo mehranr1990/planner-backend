@@ -1824,6 +1824,7 @@ model NotificationDelivery {
 }
 
 model NotificationPreference {
+ moduleChannels Json @default("{}")
  messagingWebPush Boolean @default(false)
  messagingEnabledAt DateTime? @db.Timestamptz(3)
   id              String   @id @default(uuid()) @db.Uuid
