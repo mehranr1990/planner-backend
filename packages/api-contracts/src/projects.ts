@@ -3,6 +3,13 @@ import { GoalStatusSchema } from './goals.js';
 import { SharedMembershipSchema } from './collaboration.js';
 const title = z.string().trim().min(1).max(300),
   description = z.string().max(10000).nullable();
+export const ProjectManualStatusSchema = z.enum([
+  'PLANNED',
+  'ACTIVE',
+  'ON_HOLD',
+  'COMPLETED',
+  'CANCELLED',
+]);
 export const ProjectCreateSchema = z.strictObject({
   id: z.uuid(),
   title,
@@ -26,6 +33,7 @@ export const ProjectCreateSchema = z.strictObject({
 });
 export const ProjectPatchSchema = z
   .strictObject({
+    manualStatus: ProjectManualStatusSchema.optional(),
     title: title.optional(),
     description: description.optional(),
   })
@@ -39,6 +47,7 @@ export const DomainCustodyAssociationSchema = z.union([
   }),
 ]);
 export const ProjectSchema = z.strictObject({
+  manualStatus: ProjectManualStatusSchema,
   id: z.uuid(),
   spaceId: z.uuid(),
   scopeId: z.uuid(),
@@ -65,6 +74,9 @@ export const ProjectPageQuerySchema = z.strictObject({
     .max(2048)
     .regex(/^[A-Za-z0-9_-]+$/)
     .optional(),
+});
+export const ProjectListQuerySchema = ProjectPageQuerySchema.extend({
+  manualStatus: ProjectManualStatusSchema.optional(),
 });
 export const ProjectPageSchema = z.strictObject({
   items: z.array(ProjectSchema),

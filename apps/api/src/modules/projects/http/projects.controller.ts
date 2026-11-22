@@ -97,7 +97,8 @@ export class ProjectsController {
   @Get()
   list(
     @CurrentActor() actor: RequestActor,
-    @Query(query) q: z.infer<typeof c.ProjectPageQuerySchema>,
+    @Query(new ZodValidationPipe(c.ProjectListQuerySchema))
+    q: z.infer<typeof c.ProjectListQuerySchema>,
   ) {
     return this.service.list(actor, q);
   }

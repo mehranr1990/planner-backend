@@ -2614,6 +2614,8 @@ model GoalGrant {
 }
 
 model Project {
+  manualStatus String @default("PLANNED") @db.VarChar(9)
+  @@index([manualStatus,id], map: "Project_manual_status_id")
   fileFolders ProjectFileFolder[]
  Announcement_projectId Announcement[] @relation("Announcement_projectId_fk")
  Meeting_projectId Meeting[] @relation("Meeting_projectId_fk")

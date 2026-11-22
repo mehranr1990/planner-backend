@@ -371,6 +371,7 @@ export class ProjectAnalyticsService {
                     'targetDate',
                     'completed',
                     'statusNote',
+                    'manualStatus',
                     'key',
                     'color',
                   ]);

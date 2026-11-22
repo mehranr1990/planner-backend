@@ -377,6 +377,46 @@ describe('P2-03 independent Projects and authorized shared sources', () => {
     if (!('grant' in accepted)) throw new Error('Expected accepted grant');
     return { offer, accepted };
   }
+  it('manual status is independent, manager writable, filtered and revision protected', async () => {
+    const p = await project();
+    expect(p.manualStatus).toBe('PLANNED');
+    await join(p.id, member, 'MANAGER');
+    const changed = await projects.patch(member.actor, p.id, p.revision, {
+      manualStatus: 'COMPLETED',
+    });
+    expect(changed.manualStatus).toBe('COMPLETED');
+    expect(changed.state).toBe('ACTIVE');
+    await expect(
+      projects.patch(owner.actor, p.id, p.revision, { manualStatus: 'ACTIVE' }),
+    ).rejects.toBeInstanceOf(Error);
+    await expect(
+      projects.patch(outsider.actor, p.id, changed.revision, {
+        manualStatus: 'CANCELLED',
+      }),
+    ).rejects.toBeInstanceOf(Error);
+    expect(
+      (
+        await projects.list(owner.actor, {
+          limit: 100,
+          manualStatus: 'COMPLETED',
+        })
+      ).items.map((x) => x.id),
+    ).toContain(p.id);
+    expect(
+      (
+        await projects.list(owner.actor, {
+          limit: 100,
+          manualStatus: 'PLANNED',
+        })
+      ).items.map((x) => x.id),
+    ).not.toContain(p.id);
+    const activity = await client.projectActivity.findFirst({
+      where: { projectId: p.id, action: 'project.update' },
+    });
+    expect(activity?.details).toEqual({
+      changes: [{ field: 'manualStatus', from: 'PLANNED', to: 'COMPLETED' }],
+    });
+  });
   it('P2 gap preserves linked history on repeat-safe task deletion and rejects foreign and stale deletes', async () => {
     const p = await project(),
       t = await task(p.id),

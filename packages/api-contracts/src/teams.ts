@@ -96,9 +96,17 @@ export const TeamTaskPatchSchema = z
     status: ProjectTaskPatchSchema.shape.status,
   })
   .refine((v) => Object.keys(v).length > 0);
-export const TeamPatchSchema = ProjectPatchSchema;
+export const TeamPatchSchema = z
+  .strictObject({
+    title: ProjectPatchSchema.shape.title,
+    description: ProjectPatchSchema.shape.description,
+  })
+  .refine((v) => Object.keys(v).length > 0);
 export const TeamPageQuerySchema = ProjectPageQuerySchema;
-export const TeamSchema = ProjectSchema.omit({ association: true }).extend({
+export const TeamSchema = ProjectSchema.omit({
+  association: true,
+  manualStatus: true,
+}).extend({
   association: DomainCustodyAssociationSchema,
 });
 export const TeamPageSchema = z.strictObject({

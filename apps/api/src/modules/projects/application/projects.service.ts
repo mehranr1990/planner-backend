@@ -572,13 +572,13 @@ export class ProjectsService {
       },
     );
   }
-  async list(actor: RequestActor, q: z.infer<typeof c.ProjectPageQuerySchema>) {
+  async list(actor: RequestActor, q: z.infer<typeof c.ProjectListQuerySchema>) {
     this.kernel.assertEnabled();
     // Admission and source visibility are filtered before pagination; guests use named-resource routes.
     const hints = await this.kernel.readableContextHints(actor);
     const scopes = hints.ids,
       after = this.kernel.cursorPosition(
-        'projects',
+        q.manualStatus ? 'projects:' + q.manualStatus : 'projects',
         hints.stamp,
         actor.userId,
         q.after,
@@ -587,6 +587,7 @@ export class ProjectsService {
       where: {
         ...(after ? { id: { gt: after } } : {}),
         scopeId: { in: scopes },
+        ...(q.manualStatus ? { manualStatus: q.manualStatus } : {}),
       },
       orderBy: { id: 'asc' },
       take: q.limit + 1,
@@ -614,7 +615,7 @@ export class ProjectsService {
       }
     }
     return this.kernel.cursorPage(
-      'projects',
+      q.manualStatus ? 'projects:' + q.manualStatus : 'projects',
       hints.stamp,
       actor.userId,
       page(visible, q.limit),
@@ -627,7 +628,14 @@ export class ProjectsService {
     input: z.infer<typeof c.ProjectPatchSchema>,
   ) {
     const row = await this.hint(id),
-      r = this.request(row, 'settings.manage');
+      r = this.request(
+        row,
+        input.manualStatus !== undefined &&
+          input.title === undefined &&
+          input.description === undefined
+          ? 'work.manage'
+          : 'settings.manage',
+      );
     return this.run(
       actor,
       row,
@@ -638,6 +646,9 @@ export class ProjectsService {
         const after = await tx.project.update({
           where: { id },
           data: {
+            ...(input.manualStatus !== undefined
+              ? { manualStatus: input.manualStatus }
+              : {}),
             ...(input.title !== undefined ? { title: input.title } : {}),
             ...(input.description !== undefined
               ? { description: input.description }
@@ -646,7 +657,26 @@ export class ProjectsService {
             updatedAt: new Date(),
           },
         });
-        await this.effect(tx, actor, a, r, 'project.update', id);
+        await this.effect(
+          tx,
+          actor,
+          a,
+          r,
+          'project.update',
+          id,
+          undefined,
+          input.manualStatus !== undefined
+            ? {
+                changes: [
+                  {
+                    field: 'manualStatus',
+                    from: current.manualStatus,
+                    to: after.manualStatus,
+                  },
+                ],
+              }
+            : undefined,
+        );
         return this.view(tx, after, a);
       },
     );

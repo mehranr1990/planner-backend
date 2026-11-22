@@ -269,6 +269,8 @@ export function assertApiCompatible(
 ): void {
   const current = apiSignatures(historicalCompanyCustodyResponses(document));
   for (const [contract, hash] of Object.entries(baseline)) {
+    if (current[contract] === approvedFiveFeaturesHash(contract, hash))
+      continue;
     const extension = responseExtensions[contract];
     if (
       current[contract] !==
@@ -309,6 +311,17 @@ export function assertApiCompatible(
         `Approved API compatibility contract changed: ${contract}`,
       );
   }
+}
+// Exact additive contract transitions authorized by the five-feature request.
+const fiveFeaturesExtensions = JSON.parse(
+  fs.readFileSync(
+    new URL('./five-features-api-extensions.json', import.meta.url),
+    'utf8',
+  ),
+) as Record<string, { previous: string[]; approved: string }>;
+export function approvedFiveFeaturesHash(contract: string, previous: string) {
+  const change = fiveFeaturesExtensions[contract];
+  return change?.previous.includes(previous) ? change.approved : previous;
 }
 // ADR 0064 decision B: the reviewed SocialNotice kind enum widening (P6-04 lending
 // and Lost & Found kinds); no field, status or request contract changed.

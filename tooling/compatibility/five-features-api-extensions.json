@@ -1,0 +1,92 @@
+{
+  "post /api/v1/projects response 201": {
+    "previous": [
+      "a207482041f12f55e473b664e4e16b97eb658691021b7bd2a45fc9a5065561fe"
+    ],
+    "approved": "72ed624903550a71348ae52fe11747e566af10d44ad6d59bb2efbbf897b93cae"
+  },
+  "get /api/v1/projects parameters": {
+    "previous": [
+      "d4b7d5316d270cdb47d381198822ab65aa7839f27cfb70fbf545a37e9faa1aca"
+    ],
+    "approved": "4a04cdc08e6f7d952901d800dec91e15ce824222508d5e267a832e3c077fd49c"
+  },
+  "get /api/v1/projects response 200": {
+    "previous": [
+      "ccd925d381db56fed257f18999c7b4b4d146a7a5e97973dab906f6bff9e73ef1"
+    ],
+    "approved": "1f8009fbf11c3e1dfdc80fad58b6e93d2a17e52aa5a8df798ed63e1c42f60592"
+  },
+  "get /api/v1/projects/{id} response 200": {
+    "previous": [
+      "a207482041f12f55e473b664e4e16b97eb658691021b7bd2a45fc9a5065561fe"
+    ],
+    "approved": "72ed624903550a71348ae52fe11747e566af10d44ad6d59bb2efbbf897b93cae"
+  },
+  "patch /api/v1/projects/{id} request": {
+    "previous": [
+      "e2eb3185480c4e7678fe146baf9790f192fde6d264eae55d63b2634f1b031762"
+    ],
+    "approved": "4d69ac53788193e30eb2b5fdf2a812942e2ddf7f28984c0fe4737ded5d7bd866"
+  },
+  "patch /api/v1/projects/{id} response 200": {
+    "previous": [
+      "a207482041f12f55e473b664e4e16b97eb658691021b7bd2a45fc9a5065561fe"
+    ],
+    "approved": "72ed624903550a71348ae52fe11747e566af10d44ad6d59bb2efbbf897b93cae"
+  },
+  "get /api/v1/teams/{id}/projects response 200": {
+    "previous": [
+      "36631e13b1ac0decebbbcba33e541ee94d6a334f712680f345c66e83d22b16d8"
+    ],
+    "approved": "96058fbc8701df8ea59f00415fcdea36001a1b60cfeadaaea0d6c8f92fdee0e9"
+  },
+  "get /api/v1/notifications/preferences response 200": {
+    "previous": [
+      "7a8479bcd8cdf8952fe49f3d1500513fb6fc9a2ae6ce2f9f03de3047eceb1320"
+    ],
+    "approved": "0a1a888ccd058025a06d47c72898c70260042662a2e671c2b054ec0183d55ea5"
+  },
+  "patch /api/v1/notifications/preferences request": {
+    "previous": [
+      "72933696fbe35905731a2e35647a69e7cf175594748897cc9c27d5633ca04deb"
+    ],
+    "approved": "110128de0c1bd1d1376f571ac4b52dd258d20aa8c56b5e262e0998ffb36a19c2"
+  },
+  "patch /api/v1/notifications/preferences response 200": {
+    "previous": [
+      "7a8479bcd8cdf8952fe49f3d1500513fb6fc9a2ae6ce2f9f03de3047eceb1320"
+    ],
+    "approved": "0a1a888ccd058025a06d47c72898c70260042662a2e671c2b054ec0183d55ea5"
+  },
+  "get /api/v1/conversations/{id}/settings response 200": {
+    "previous": [
+      "e85e294ce16ce8edb98d2c23f4e57a4c9e9ebcb20a0e655d2031cb1387d41c2b"
+    ],
+    "approved": "78845e42f78f2e4897742d176eacd07e6005d26672ab2f760a5f55ddbd586e33"
+  },
+  "patch /api/v1/conversations/{id}/settings response 200": {
+    "previous": [
+      "e85e294ce16ce8edb98d2c23f4e57a4c9e9ebcb20a0e655d2031cb1387d41c2b"
+    ],
+    "approved": "78845e42f78f2e4897742d176eacd07e6005d26672ab2f760a5f55ddbd586e33"
+  },
+  "patch /api/v1/conversations/{id}/preferences request": {
+    "previous": [
+      "42b62ce1ba0b35fe60ff1324b295e10baddef8ad3abfe90d6ed7f5333d35b706"
+    ],
+    "approved": "d97837428fe876eed49e67d6ad72b2afb84338c834d83bb08b84f7bad753ee0d"
+  },
+  "patch /api/v1/conversations/{id}/preferences response 200": {
+    "previous": [
+      "e85e294ce16ce8edb98d2c23f4e57a4c9e9ebcb20a0e655d2031cb1387d41c2b"
+    ],
+    "approved": "78845e42f78f2e4897742d176eacd07e6005d26672ab2f760a5f55ddbd586e33"
+  },
+  "get /api/v1/conversations parameters": {
+    "previous": [
+      "29d206ac40694665bb69d1e3b436bb2d8ab7471ccf0162f64717b16a8d230376"
+    ],
+    "approved": "f5a2456530e41b3b5d72a283d1592c3373c03f9bcadc59046949b98b0f6643d0"
+  }
+}

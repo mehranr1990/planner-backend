@@ -165,7 +165,10 @@ export function projectPaths(): Record<string, Record<string, unknown>> {
   add('/projects', 'post', c.ProjectSchema, c.ProjectCreateSchema, {
     idempotency: true,
   });
-  add('/projects', 'get', c.ProjectPageSchema, undefined, { page: true });
+  add('/projects', 'get', c.ProjectPageSchema, undefined, {
+    query: c.ProjectListQuerySchema,
+    etag: false,
+  });
   add('/projects/{id}', 'get', c.ProjectSchema, undefined, {});
   add('/projects/{id}', 'patch', c.ProjectSchema, c.ProjectPatchSchema, {
     revision: true,

@@ -2,6 +2,24 @@ import { it, expect } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import * as c from './projects.js';
 import { projectPaths } from './projects-openapi.js';
+it('validates manual status independently from lifecycle and calculated progress', () => {
+  for (const manualStatus of c.ProjectManualStatusSchema.options) {
+    expect(c.ProjectPatchSchema.parse({ manualStatus })).toEqual({
+      manualStatus,
+    });
+    expect(c.ProjectListQuerySchema.parse({ manualStatus }).manualStatus).toBe(
+      manualStatus,
+    );
+  }
+  for (const manualStatus of ['ARCHIVED', 'DONE', 'CANCELED', '', null])
+    expect(c.ProjectPatchSchema.safeParse({ manualStatus }).success).toBe(
+      false,
+    );
+  expect(c.ProjectPatchSchema.safeParse({ state: 'ARCHIVED' }).success).toBe(
+    false,
+  );
+  expect(c.ProjectPatchSchema.safeParse({ progress: 100 }).success).toBe(false);
+});
 it('keeps independent creation and typed resource offers strict with no future attachment or administrative grants', () => {
   const project = {
     id: randomUUID(),
