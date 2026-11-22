@@ -15,6 +15,26 @@ type Operation = {
 };
 export const projectExecutionOperations: Operation[] = [
   {
+    path: '/projects/{projectId}/capacity-templates/{accessId}/effective',
+    method: 'get',
+    output: c.ProjectWorkloadSchema,
+    query: c.ProjectMemberCapacityQuerySchema,
+    etag: false,
+  },
+  {
+    path: '/projects/{projectId}/capacity-templates/{accessId}',
+    method: 'get',
+    output: c.ProjectWeekdayCapacitySchema,
+    query: c.ProjectMemberGenerationQuerySchema,
+  },
+  {
+    path: '/projects/{projectId}/capacity-templates/{accessId}',
+    method: 'put',
+    output: c.ProjectWeekdayCapacitySchema,
+    input: c.ProjectWeekdayCapacityInputSchema,
+    revision: true,
+  },
+  {
     path: '/projects/{projectId}/reports/snapshots',
     method: 'get',
     output: c.ProjectReportSnapshotPageSchema,

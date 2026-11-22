@@ -63,7 +63,7 @@ import type { Prisma } from '../../generated/prisma/client.js';
 // StoredFile, so Shared STORAGE purge and Personal Space erasure remove the
 // verdict with the file row. It references no User, Space or custody content.
 export const SHARED_CLEANUP_FK_SHA256 =
-  '2d1de9cad1fd0eb139b44e49e7706123655661207f4274b7614fd7078d457397';
+  '66c998a9c325b545ac84513f18ab6586387e0da45ef4e5c4826d0a1b47efc8a2';
 export async function assertSharedCleanupCatalog(tx: Prisma.TransactionClient) {
   const rows = await tx.$queryRaw<
     { table: string; name: string; target: string; definition: string }[]

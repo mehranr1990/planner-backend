@@ -306,6 +306,21 @@ export const ProjectCapacityInputSchema = z.strictObject({
   timezone: CalendarZoneSchema,
   availableMinutes: z.number().int().min(0).max(1440).nullable(),
 });
+export const ProjectWeekdayCapacityTemplateSchema = z.strictObject({
+  timezone: CalendarZoneSchema,
+  effectiveFrom: date,
+  // Sunday=0 through Saturday=6. Null inherits this weekday; zero overrides it as nonworking.
+  weekdays: z.array(z.number().int().min(0).max(1440).nullable()).length(7),
+});
+export const ProjectWeekdayCapacityInputSchema = z.strictObject({
+  member,
+  template: ProjectWeekdayCapacityTemplateSchema.nullable(),
+});
+export const ProjectWeekdayCapacitySchema =
+  ProjectWeekdayCapacityInputSchema.extend({ projectId: id, revision });
+export const ProjectMemberGenerationQuerySchema = z.strictObject({
+  generation: z.coerce.number().int().positive(),
+});
 export const ProjectCapacityCreateSchema =
   ProjectCapacityInputSchema.safeExtend({ id });
 export const ProjectCapacitySchema = ProjectCapacityCreateSchema.safeExtend({
@@ -350,6 +365,10 @@ export const ProjectWorkloadSchema = z.strictObject({
 });
 export const ProjectWorkRecordsQuerySchema =
   ProjectWorkloadQuerySchema.safeExtend(ProjectPageQuerySchema.shape);
+export const ProjectMemberCapacityQuerySchema =
+  ProjectWorkloadQuerySchema.safeExtend({
+    generation: z.coerce.number().int().positive(),
+  });
 export const ProjectReportWindowSchema = z
   .strictObject({ fromAt: z.iso.datetime(), toAt: z.iso.datetime() })
   .refine(

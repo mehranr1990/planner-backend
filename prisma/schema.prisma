@@ -2614,6 +2614,7 @@ model GoalGrant {
 }
 
 model Project {
+  memberCapacityTemplates ProjectMemberCapacityTemplate[]
   manualStatus String @default("PLANNED") @db.VarChar(9)
   @@index([manualStatus,id], map: "Project_manual_status_id")
   fileFolders ProjectFileFolder[]
@@ -3316,6 +3317,19 @@ model ProjectCapacityDay {
 
   @@unique([spaceId, scopeId, projectId, accessId, generation, date, timezone])
   @@index([spaceId, scopeId, projectId, timezone, date, id], map: "ProjectCapacityDay_range")
+}
+
+model ProjectMemberCapacityTemplate {
+  id String @id @db.Uuid
+  spaceId String @db.Uuid
+  scopeId String @db.Uuid
+  projectId String @db.Uuid
+  accessId String @db.Uuid
+  generation Int
+  template Json?
+  revision Int @default(2)
+  project Project @relation(fields:[spaceId,scopeId,projectId],references:[spaceId,scopeId,id],onDelete:NoAction,onUpdate:NoAction,map:"ProjectMemberCapacityTemplate_project_fk")
+  @@unique([projectId,accessId,generation])
 }
 
 model ProjectChangePlan {

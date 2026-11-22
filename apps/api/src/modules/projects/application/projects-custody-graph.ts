@@ -15,6 +15,11 @@ import type {
 } from '../../../platform/database/custody-graph.js';
 const tables: readonly CustodyGraphTable[] = [
   {
+    table: 'ProjectMemberCapacityTemplate',
+    select: ['spaceId'],
+    move: ['spaceId'],
+  },
+  {
     table: 'Project',
     select: ['spaceId'],
     move: ['spaceId'],

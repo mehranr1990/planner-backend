@@ -42,6 +42,11 @@ import {
 } from '../../src/modules/projects/public/index.js';
 import * as c from '@mehran/api-contracts';
 import type { MemberRole } from '../../src/modules/spaces/domain/shared-policy.js';
+import {
+  TeamsService,
+  TeamAnalyticsService,
+} from '../../src/modules/teams/public/index.js';
+import { TeamGapService } from '../../src/modules/teams/application/team-gap.service.js';
 
 type Person = { actor: RequestActor; email: string; cookie: string };
 const barrier = () => {
@@ -281,7 +286,7 @@ describe('P2-03 independent Projects and authorized shared sources', () => {
           policyVersion: version,
           approvalReference: 'SYNTHETIC-ONLY',
           accountableOperator: 'synthetic operator',
-          applicableContexts: ['PROJECT'],
+          applicableContexts: ['PROJECT', 'TEAM'],
           marketScope: 'isolated fixture',
           sharedRecoverySeconds: 2592000,
           classRules: {
@@ -377,6 +382,144 @@ describe('P2-03 independent Projects and authorized shared sources', () => {
     if (!('grant' in accepted)) throw new Error('Expected accepted grant');
     return { offer, accepted };
   }
+  it('inherits capacity only from the owning Team and preserves Project weekday/date precedence', async () => {
+    const teams = app.get(TeamsService),
+      gap = app.get(TeamGapService),
+      metrics = app.get(ProjectWorkMetricsService);
+    const team = await teams.create(
+      owner.actor,
+      {
+        id: randomUUID(),
+        title: 'Capacity source',
+        retentionPolicyVersion: version,
+      },
+      randomUUID(),
+    );
+    const ta = await client.contextAccess.findFirstOrThrow({
+      where: { scopeId: team.id, SharedActor: { userId: owner.actor.userId } },
+    });
+    await gap.setWeekly(owner.actor, team.id, ta.id, 1, {
+      timezone: 'UTC',
+      effectiveFrom: '2030-01-01',
+      weekdays: [300, 300, 300, 300, 0, 0, 300],
+    });
+    const p = await projects.create(
+      owner.actor,
+      {
+        id: randomUUID(),
+        title: 'Capacity project',
+        ownerTeamId: team.id,
+        retentionPolicyVersion: version,
+      },
+      randomUUID(),
+    );
+    const access = await client.contextAccess.findFirstOrThrow({
+      where: { scopeId: p.id, SharedActor: { userId: owner.actor.userId } },
+    });
+    const member = { accessId: access.id, generation: access.generation };
+    const other = await teams.create(
+      owner.actor,
+      {
+        id: randomUUID(),
+        title: 'Reference only',
+        retentionPolicyVersion: version,
+      },
+      randomUUID(),
+    );
+    const otherAccess = await client.contextAccess.findFirstOrThrow({
+      where: { scopeId: other.id, SharedActor: { userId: owner.actor.userId } },
+    });
+    await gap.setWeekly(owner.actor, other.id, otherAccess.id, 1, {
+      timezone: 'UTC',
+      effectiveFrom: '2030-01-01',
+      weekdays: [900, 900, 900, 900, 900, 900, 900],
+    });
+    await teams.reference(owner.actor, other.id, p.id, undefined, true);
+    const window = {
+      fromDate: '2030-01-06',
+      toDate: '2030-01-07',
+      timezone: 'UTC',
+    };
+    expect(
+      (await metrics.workload(owner.actor, p.id, window, member)).rows[0]
+        ?.capacityMinutes,
+    ).toBe(300);
+    const override = await metrics.setWeekdayCapacity(
+      owner.actor,
+      p.id,
+      access.id,
+      1,
+      {
+        member,
+        template: {
+          timezone: 'UTC',
+          effectiveFrom: '2030-01-01',
+          weekdays: [600, null, null, null, null, null, null],
+        },
+      },
+    );
+    expect(
+      (await metrics.workload(owner.actor, p.id, window, member)).rows[0]
+        ?.capacityMinutes,
+    ).toBe(600);
+    await expect(
+      metrics.setWeekdayCapacity(owner.actor, p.id, access.id, 1, {
+        member,
+        template: null,
+      }),
+    ).rejects.toThrow();
+    await expect(
+      metrics.setWeekdayCapacity(
+        outsider.actor,
+        p.id,
+        access.id,
+        override.revision,
+        { member, template: null },
+      ),
+    ).rejects.toThrow();
+    await app.get(TeamAnalyticsService).capacity(
+      owner.actor,
+      team.id,
+      {
+        id: randomUUID(),
+        member: { accessId: ta.id, generation: ta.generation },
+        date: '2030-01-06',
+        timezone: 'UTC',
+        availableMinutes: 240,
+      },
+      undefined,
+      randomUUID(),
+    );
+    expect(
+      (await metrics.workload(owner.actor, p.id, window, member)).rows[0]
+        ?.capacityMinutes,
+    ).toBe(240);
+    await metrics.capacity(owner.actor, p.id, randomUUID(), 0, {
+      member,
+      date: '2030-01-06',
+      timezone: 'UTC',
+      availableMinutes: 0,
+    });
+    expect(
+      (await metrics.workload(owner.actor, p.id, window, member)).rows[0]
+        ?.capacityMinutes,
+    ).toBe(0);
+    const independent = await project();
+    const independentAccess = await client.contextAccess.findFirstOrThrow({
+      where: {
+        scopeId: independent.id,
+        SharedActor: { userId: owner.actor.userId },
+      },
+    });
+    expect(
+      (
+        await metrics.workload(owner.actor, independent.id, window, {
+          accessId: independentAccess.id,
+          generation: independentAccess.generation,
+        })
+      ).rows[0]?.capacityMinutes,
+    ).toBe(480);
+  });
   it('manual status is independent, manager writable, filtered and revision protected', async () => {
     const p = await project();
     expect(p.manualStatus).toBe('PLANNED');

@@ -509,6 +509,55 @@ export class ProjectExecutionController {
     res.setHeader('ETag', revisionTag(v.revision));
     return v;
   }
+  @Get('capacity-templates/:accessId/effective')
+  effectiveCapacity(
+    @CurrentActor() actor: RequestActor,
+    @Param('projectId', uuid) pid: string,
+    @Param('accessId', uuid) accessId: string,
+    @Query(new ZodValidationPipe(c.ProjectMemberCapacityQuerySchema))
+    query: z.infer<typeof c.ProjectMemberCapacityQuerySchema>,
+  ) {
+    const { generation, ...window } = query;
+    return this.metrics.workload(actor, pid, window, { accessId, generation });
+  }
+  @Get('capacity-templates/:accessId')
+  async weekdayCapacity(
+    @CurrentActor() actor: RequestActor,
+    @Param('projectId', uuid) pid: string,
+    @Param('accessId', uuid) accessId: string,
+    @Query(new ZodValidationPipe(c.ProjectMemberGenerationQuerySchema))
+    q: z.infer<typeof c.ProjectMemberGenerationQuerySchema>,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const result = await this.metrics.weekdayCapacity(
+      actor,
+      pid,
+      accessId,
+      q.generation,
+    );
+    res.setHeader('ETag', revisionTag(result.revision));
+    return result;
+  }
+  @Put('capacity-templates/:accessId')
+  async setWeekdayCapacity(
+    @CurrentActor() actor: RequestActor,
+    @Param('projectId', uuid) pid: string,
+    @Param('accessId', uuid) accessId: string,
+    @Body(new ZodValidationPipe(c.ProjectWeekdayCapacityInputSchema))
+    body: z.infer<typeof c.ProjectWeekdayCapacityInputSchema>,
+    @Headers('if-match') match: string | undefined,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const result = await this.metrics.setWeekdayCapacity(
+      actor,
+      pid,
+      accessId,
+      rev(match),
+      body,
+    );
+    res.setHeader('ETag', revisionTag(result.revision));
+    return result;
+  }
   @Get('capacity-days')
   async capacityList(
     @CurrentActor() actor: RequestActor,

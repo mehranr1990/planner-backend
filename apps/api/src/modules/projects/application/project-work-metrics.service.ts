@@ -7,6 +7,10 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import * as c from '@mehran/api-contracts';
+import { randomUUID } from 'node:crypto';
+import { Prisma } from '../../../generated/prisma/client.js';
+import { projectMemberCapacity } from '../../teams/public/project-capacity.js';
+import { memberCapacity } from '../domain/member-capacity.js';
 import type { z } from 'zod';
 import type { RequestActor } from '../../../platform/auth/request-actor.js';
 import { DatabaseService } from '../../../platform/database/database.service.js';
@@ -312,6 +316,94 @@ export class ProjectWorkMetricsService {
       },
     );
   }
+  weekdayCapacity(
+    actor: RequestActor,
+    pid: string,
+    accessId: string,
+    generation: number,
+  ) {
+    return this.op.read(actor, pid, [], undefined, async (s) => {
+      if (
+        !(await this.op.kernel.visibleWorkMember(
+          s.tx,
+          s.a,
+          pid,
+          accessId,
+          generation,
+        ))
+      )
+        throw new NotFoundException();
+      const row = await s.tx.projectMemberCapacityTemplate.findUnique({
+        where: {
+          projectId_accessId_generation: {
+            projectId: pid,
+            accessId,
+            generation,
+          },
+        },
+      });
+      return c.ProjectWeekdayCapacitySchema.parse({
+        projectId: pid,
+        member: { accessId, generation },
+        template: row?.template ?? null,
+        revision: row?.revision ?? 1,
+      });
+    });
+  }
+  setWeekdayCapacity(
+    actor: RequestActor,
+    pid: string,
+    accessId: string,
+    revision: number,
+    input: z.infer<typeof c.ProjectWeekdayCapacityInputSchema>,
+  ) {
+    const body = c.ProjectWeekdayCapacityInputSchema.parse(input);
+    if (body.member.accessId !== accessId) throw new NotFoundException();
+    return this.op.write(
+      actor,
+      pid,
+      ['work.manage'],
+      undefined,
+      'project.capacity.weekdays',
+      accessId,
+      [accessId],
+      async (s) => {
+        await s.member(accessId, body.member.generation);
+        const where = {
+          projectId_accessId_generation: {
+            projectId: pid,
+            accessId,
+            generation: body.member.generation,
+          },
+        };
+        const before = await s.tx.projectMemberCapacityTemplate.findUnique({
+          where,
+        });
+        matchRevision(before?.revision ?? 1, revision);
+        await s.begin();
+        const row = await s.tx.projectMemberCapacityTemplate.upsert({
+          where,
+          create: {
+            id: randomUUID(),
+            ...projectWhere(s),
+            accessId,
+            generation: body.member.generation,
+            template: body.template ?? Prisma.DbNull,
+          },
+          update: {
+            template: body.template ?? Prisma.DbNull,
+            revision: { increment: 1 },
+          },
+        });
+        return c.ProjectWeekdayCapacitySchema.parse({
+          projectId: pid,
+          member: body.member,
+          template: row.template,
+          revision: row.revision,
+        });
+      },
+    );
+  }
   async allocation(
     actor: RequestActor,
     pid: string,
@@ -394,6 +486,7 @@ export class ProjectWorkMetricsService {
     actor: RequestActor,
     pid: string,
     q: z.infer<typeof c.ProjectWorkloadQuerySchema>,
+    selected?: { accessId: string; generation: number },
   ) {
     return this.op.read(actor, pid, [], undefined, async (s) => {
       const where = {
@@ -491,11 +584,92 @@ export class ProjectWorkMetricsService {
           else row.estimatedMinutes += metric.estimatedMinutes;
         }
       }
+      const project = await s.tx.project.findUniqueOrThrow({
+        where: { id: pid },
+        select: { keyOwnerTeamId: true },
+      });
+      const templates = await s.tx.projectMemberCapacityTemplate.findMany({
+        where: projectWhere(s),
+        take: 10001,
+      });
+      if (templates.length > 10000) throw new PayloadTooLargeException();
+      if (selected) {
+        if (!(await visible(selected.accessId, selected.generation)))
+          throw new NotFoundException();
+        for (
+          let time = Date.parse(q.fromDate);
+          time < Date.parse(q.toDate);
+          time += 86400000
+        )
+          get(selected.accessId, selected.generation, new Date(time));
+      }
+      const inherited = new Map<
+        string,
+        Awaited<ReturnType<typeof projectMemberCapacity>>
+      >();
+      for (const row of rows.values()) {
+        const template = templates.find(
+          (t) =>
+            t.accessId === row.member.accessId &&
+            t.generation === row.member.generation,
+        );
+        const parsed = c.ProjectWeekdayCapacityTemplateSchema.safeParse(
+          template?.template,
+        );
+        const override =
+          parsed.success &&
+          parsed.data.timezone === q.timezone &&
+          row.date >= parsed.data.effectiveFrom
+            ? parsed.data.weekdays[
+                new Date(row.date + 'T00:00:00Z').getUTCDay()
+              ]
+            : undefined;
+        const key = row.member.accessId + ':' + row.member.generation;
+        if (project.keyOwnerTeamId && !inherited.has(key)) {
+          const user = await this.op.kernel.memberUserInTransaction(
+            s.tx,
+            pid,
+            row.member.accessId,
+          );
+          inherited.set(
+            key,
+            user
+              ? await projectMemberCapacity(
+                  s.tx,
+                  project.keyOwnerTeamId,
+                  user,
+                  q.fromDate,
+                  q.toDate,
+                  q.timezone,
+                )
+              : null,
+          );
+        }
+        const dated = capacities.find(
+          (d) =>
+            d.accessId === row.member.accessId &&
+            d.generation === row.member.generation &&
+            d.date.toISOString().slice(0, 10) === row.date,
+        );
+        row.capacityMinutes = memberCapacity(
+          row.date,
+          dated ? { minutes: dated.availableMinutes } : null,
+          override,
+          inherited.get(key)?.day(row.date) ?? null,
+          project.keyOwnerTeamId !== null,
+        );
+      }
       return c.ProjectWorkloadSchema.parse({
         projectId: pid,
         ...q,
         basis: 'EXPLICIT_ACCEPTED_ASSIGNMENT_ALLOCATIONS',
         rows: [...rows.values()]
+          .filter(
+            (row) =>
+              !selected ||
+              (row.member.accessId === selected.accessId &&
+                row.member.generation === selected.generation),
+          )
           .sort(
             (a, b) =>
               a.date.localeCompare(b.date) ||

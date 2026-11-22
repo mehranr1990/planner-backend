@@ -39,5 +39,5 @@ it('matches all P2-06 OpenAPI operations to actual guarded Nest handlers', () =>
     .filter((key) => actual.includes(key));
   expected.push(...additions);
   expect(actual.sort()).toEqual(expected.sort());
-  expect(actual).toHaveLength(35 + additions.length);
+  expect(actual).toHaveLength(38 + additions.length);
 });

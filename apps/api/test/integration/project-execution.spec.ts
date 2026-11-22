@@ -1345,9 +1345,9 @@ describe('P2-06 risk register, safe plans and explicit shared work', () => {
     await metrics.allocation(owner.actor, p.id, randomUUID(), 0, input);
     let load = await metrics.workload(owner.actor, p.id, range);
     expect(load.rows[0]).toMatchObject({
-      capacityMinutes: null,
+      capacityMinutes: 480,
       allocatedMinutes: 90,
-      overbookedMinutes: null,
+      overbookedMinutes: 0,
       unknownEstimates: 1,
     });
     const cap = await metrics.capacity(owner.actor, p.id, randomUUID(), 0, {

@@ -75,6 +75,7 @@ export class ProjectCleanupService {
         'ProjectFile',
         'ProjectWorkAllocation',
         'ProjectCapacityDay',
+        'ProjectMemberCapacityTemplate',
         'ProjectReportSource',
         'ProjectReportSnapshot',
         'ProjectChangeSource',
