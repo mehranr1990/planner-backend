@@ -32,7 +32,7 @@ export class AuthModule {
         VerifiedSessionGuard,
         { provide: INITIAL_IDENTITY_RELATIONS, useValue: relations },
       ],
-      exports: [AuthService, VerifiedSessionGuard],
+      exports: [AuthService, VerifiedSessionGuard, IdentityMailService],
     };
   }
 }

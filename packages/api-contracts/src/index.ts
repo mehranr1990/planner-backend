@@ -113,3 +113,4 @@ export * from './team-gap-closure.js';
 
 export * from './company-gap-closure.js';
 export * from './messages-meetings-gap.js';
+export * from './communication-email-invitations.js';

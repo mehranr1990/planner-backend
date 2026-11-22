@@ -3,6 +3,7 @@ import * as c from './messaging.js';
 import { ScopeAccessMeSchema } from './scope-access.js';
 import { embeddedJsonSchema, pointerSegment } from './embedded-json-schema.js';
 import { advancedMessagingOperations } from './advanced-messaging-openapi.js';
+import * as email from './communication-email-invitations.js';
 export type Operation = {
   path: string;
   method: 'get' | 'post' | 'patch';
@@ -17,8 +18,39 @@ export type Operation = {
   download?: boolean;
   recovery?: boolean;
   status200?: boolean;
+  proof?: boolean;
 };
 export const messagingOperations: Operation[] = [
+  {
+    path: '/conversations/{id}/email-invitations',
+    method: 'post',
+    input: email.CommunicationEmailInviteSchema,
+    output: email.CommunicationEmailOfferSchema,
+    revision: true,
+    key: true,
+  },
+  {
+    path: '/conversations/{id}/email-invitations/{invitationId}',
+    method: 'get',
+    output: email.CommunicationEmailOfferSchema,
+  },
+  {
+    path: '/conversations/{id}/email-invitations/{invitationId}/revoke',
+    method: 'post',
+    input: email.CommunicationEmailEmptySchema,
+    output: email.CommunicationEmailOfferSchema,
+    revision: true,
+    status200: true,
+  },
+  {
+    path: '/conversation-invitations/{invitationId}/claim-email',
+    method: 'post',
+    input: email.CommunicationEmailEmptySchema,
+    output: c.ConversationInvitationSchema,
+    revision: true,
+    proof: true,
+    status200: true,
+  },
   {
     path: '/conversations/{id}',
     method: 'patch',
@@ -181,6 +213,17 @@ export function messagingOperationPaths(operations: Operation[]) {
           minLength: 1,
           maxLength: 128,
           pattern: '^[!-~]+$',
+        },
+      });
+    if (op.proof)
+      parameters.push({
+        in: 'header',
+        name: 'X-Invitation-Proof',
+        required: true,
+        schema: {
+          type: 'string',
+          pattern: '^[A-Za-z0-9_-]{43}$',
+          maxLength: 43,
         },
       });
     if (op.conditionalRevision)

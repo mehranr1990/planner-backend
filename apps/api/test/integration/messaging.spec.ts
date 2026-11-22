@@ -1,4 +1,5 @@
 import { MessagingExtensionsService } from '../../src/modules/messaging/application/messaging-extensions.service.js';
+import { InvitationMailService } from '../../src/modules/spaces/public/index.js';
 import 'reflect-metadata';
 import {
   beforeAll,
@@ -651,6 +652,167 @@ describe('P5-01 durable messaging, explicit participation and polling', () => {
         (r) => r.id === target.id,
       ),
     ).toMatchObject({ unreadCount: 0, lastMessage: null });
+  });
+  it('email claims reject expired/revoked offers, departed issuers, and unrelated source members', async () => {
+    const delivery = vi
+      .spyOn(app.get(InvitationMailService), 'send')
+      .mockResolvedValue('SENT');
+    for (const state of ['expired', 'revoked', 'departed']) {
+      const conv = await create('PRIVATE_GROUP', []),
+        offer = await messages.inviteEmail(
+          owner.actor,
+          conv.id,
+          conv.revision,
+          { id: randomUUID(), email: alice.email },
+          randomUUID(),
+        ),
+        proof = delivery.mock.calls.at(-1)![2];
+      if (state === 'expired')
+        await db.conversationEmailInvitation.update({
+          where: { id: offer.id },
+          data: { expiresAt: new Date(Date.now() - 1000) },
+        });
+      if (state === 'revoked')
+        await messages.emailInvitation(owner.actor, conv.id, offer.id, 1);
+      if (state === 'departed')
+        await messages.leave(
+          owner.actor,
+          conv.id,
+          (await member(conv.id, owner)).revision,
+        );
+      await expect(
+        messages.claimEmailInvitation(alice.actor, offer.id, proof, 1),
+      ).rejects.toThrow();
+      expect(
+        await db.conversationMember.count({
+          where: { conversationId: conv.id },
+        }),
+      ).toBe(1);
+    }
+    const p = await work(),
+      conv = await messages.create(
+        owner.actor,
+        {
+          id: randomUUID(),
+          kind: 'PROJECT',
+          sourceId: p.id,
+          title: 'Scoped email',
+          participants: [],
+        },
+        randomUUID(),
+      );
+    const offer = await messages.inviteEmail(
+      owner.actor,
+      conv.id,
+      conv.revision,
+      { id: randomUUID(), email: alice.email },
+      randomUUID(),
+    );
+    await expect(
+      messages.claimEmailInvitation(
+        alice.actor,
+        offer.id,
+        delivery.mock.calls.at(-1)![2],
+        1,
+      ),
+    ).rejects.toThrow();
+    delivery.mockRestore();
+  });
+  it('email claim supports later registration while requiring verified, unchanged email through acceptance', async () => {
+    const conv = await create('PRIVATE_GROUP', []),
+      delivery = vi
+        .spyOn(app.get(InvitationMailService), 'send')
+        .mockResolvedValue('SENT'),
+      email = randomUUID() + '@example.test';
+    const offer = await messages.inviteEmail(
+        owner.actor,
+        conv.id,
+        conv.revision,
+        { id: randomUUID(), email },
+        randomUUID(),
+      ),
+      proof = delivery.mock.calls.at(-1)![2];
+    const personAfter = await person(false);
+    await db.user.update({
+      where: { id: personAfter.actor.userId },
+      data: { email },
+    });
+    await expect(
+      messages.claimEmailInvitation(personAfter.actor, offer.id, proof, 1),
+    ).rejects.toThrow();
+    await db.user.update({
+      where: { id: personAfter.actor.userId },
+      data: { emailVerified: true },
+    });
+    const invite = await messages.claimEmailInvitation(
+      personAfter.actor,
+      offer.id,
+      proof,
+      1,
+    );
+    await db.user.update({
+      where: { id: personAfter.actor.userId },
+      data: { email: randomUUID() + '@example.test' },
+    });
+    await expect(
+      messages.decide(personAfter.actor, invite.id, 1, true),
+    ).rejects.toThrow();
+    await db.user.update({
+      where: { id: personAfter.actor.userId },
+      data: { email },
+    });
+    await messages.decide(personAfter.actor, invite.id, 1, true);
+    delivery.mockRestore();
+  });
+  it('email links bind verified recipients and create only a pending invitation before explicit acceptance', async () => {
+    const conv = await create('PRIVATE_GROUP', []),
+      delivery = vi
+        .spyOn(app.get(InvitationMailService), 'send')
+        .mockResolvedValue('SENT');
+    const beforeActors = await db.sharedActor.count({
+      where: { spaceId: conv.id },
+    });
+    const offer = await messages.inviteEmail(
+      owner.actor,
+      conv.id,
+      conv.revision,
+      { id: randomUUID(), email: alice.email.toUpperCase() },
+      randomUUID(),
+    );
+    const proof = delivery.mock.calls[0]![2];
+    expect(await db.sharedActor.count({ where: { spaceId: conv.id } })).toBe(
+      beforeActors,
+    );
+    await expect(
+      messages.claimEmailInvitation(bob.actor, offer.id, proof, 1),
+    ).rejects.toThrow();
+    const claims = await Promise.allSettled([
+      messages.claimEmailInvitation(alice.actor, offer.id, proof, 1),
+      messages.claimEmailInvitation(alice.actor, offer.id, proof, 1),
+    ]);
+    expect(claims.filter((c) => c.status === 'fulfilled')).toHaveLength(1);
+    const success = claims.find((c) => c.status === 'fulfilled');
+    if (success?.status !== 'fulfilled') throw Error('Claim missing');
+    const claimed = success.value;
+    expect(claimed.state).toBe('PENDING');
+    await expect(messages.get(alice.actor, conv.id)).rejects.toThrow();
+    await expect(
+      messages.claimEmailInvitation(alice.actor, offer.id, proof, 1),
+    ).rejects.toThrow();
+    const ordinary = await db.conversationInvitation.findUniqueOrThrow({
+      where: { id: offer.id },
+    });
+    expect(ordinary.expiresAt.toISOString()).toBe(offer.expiresAt);
+    await messages.decide(alice.actor, claimed.id, claimed.revision, true);
+    await expect(messages.get(alice.actor, conv.id)).resolves.toBeDefined();
+    expect(
+      (
+        await db.conversationEmailInvitation.findUniqueOrThrow({
+          where: { id: offer.id },
+        })
+      ).proofHash,
+    ).toBeNull();
+    delivery.mockRestore();
   });
   it('keeps archive private and sticky, and delete-for-me hides old history after incoming revival', async () => {
     const conv = await create('DM');

@@ -520,6 +520,48 @@ describe('P2-03 independent Projects and authorized shared sources', () => {
       ).rows[0]?.capacityMinutes,
     ).toBe(480);
   });
+  it('email offers require continued ownership of the exact invited email before acceptance', async () => {
+    const p = await project();
+    const offer = await service.createInvitation(
+      owner.actor,
+      p.id,
+      {
+        kind: 'MEMBERSHIP',
+        memberRole: 'MEMBER',
+        recipient: { email: member.email },
+      },
+      randomUUID(),
+    );
+    await client.user.update({
+      where: { id: member.actor.userId },
+      data: { email: randomUUID() + '@example.test' },
+    });
+    try {
+      await expect(
+        service.decideInvitation(
+          member.actor,
+          offer.invitation.id,
+          offer.proof!,
+          1,
+          true,
+        ),
+      ).rejects.toThrow();
+    } finally {
+      await client.user.update({
+        where: { id: member.actor.userId },
+        data: { email: member.email },
+      });
+    }
+    await expect(
+      service.decideInvitation(
+        member.actor,
+        offer.invitation.id,
+        offer.proof!,
+        1,
+        true,
+      ),
+    ).resolves.toBeDefined();
+  });
   it('manual status is independent, manager writable, filtered and revision protected', async () => {
     const p = await project();
     expect(p.manualStatus).toBe('PLANNED');

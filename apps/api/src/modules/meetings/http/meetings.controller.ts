@@ -9,6 +9,8 @@ import {
   Headers,
   Inject,
   UseGuards,
+  HttpCode,
+  BadRequestException,
 } from '@nestjs/common';
 import { z as schema, type z } from 'zod';
 import * as c from '@mehran/api-contracts';
@@ -27,6 +29,58 @@ const uuid = new ZodValidationPipe(schema.uuid()),
 @Controller('meetings')
 @UseGuards(VerifiedSessionGuard, MeetingsGuard)
 export class MeetingsController {
+  @Post(':id/email-invitations')
+  inviteEmail(
+    @CurrentActor() a: RequestActor,
+    @Param('id', uuid) id: string,
+    @Body(new ZodValidationPipe(c.CommunicationEmailInviteSchema))
+    body: z.infer<typeof c.CommunicationEmailInviteSchema>,
+    @Headers('if-match') match: string | undefined,
+    @Headers('idempotency-key') key: string | undefined,
+    @Query(empty) _q: unknown,
+  ) {
+    return this.meetings.inviteEmail(a, id, expectedRevision(match), body, key);
+  }
+  @Get(':id/email-invitations/:invitationId')
+  emailOffer(
+    @CurrentActor() a: RequestActor,
+    @Param('id', uuid) id: string,
+    @Param('invitationId', uuid) invitationId: string,
+    @Query(empty) _q: unknown,
+  ) {
+    return this.meetings.emailInvitation(a, id, invitationId);
+  }
+  @Post(':id/email-invitations/:invitationId/revoke')
+  @HttpCode(200)
+  revokeEmail(
+    @CurrentActor() a: RequestActor,
+    @Param('id', uuid) id: string,
+    @Param('invitationId', uuid) invitationId: string,
+    @Headers('if-match') match: string | undefined,
+    @Body(new ZodValidationPipe(c.CommunicationEmailEmptySchema)) _b: unknown,
+    @Query(empty) _q: unknown,
+  ) {
+    const revision = expectedRevision(match);
+    if (revision === undefined) throw new BadRequestException();
+    return this.meetings.emailInvitation(a, id, invitationId, revision);
+  }
+  @Post('invitations/:invitationId/claim-email')
+  @HttpCode(200)
+  claimEmail(
+    @CurrentActor() a: RequestActor,
+    @Param('invitationId', uuid) invitationId: string,
+    @Headers('if-match') match: string | undefined,
+    @Headers('x-invitation-proof') proof: string | undefined,
+    @Body(new ZodValidationPipe(c.CommunicationEmailEmptySchema)) _b: unknown,
+    @Query(empty) _q: unknown,
+  ) {
+    return this.meetings.claimEmailInvitation(
+      a,
+      invitationId,
+      proof,
+      expectedRevision(match),
+    );
+  }
   constructor(
     @Inject(MeetingsService) private readonly meetings: MeetingsService,
   ) {}

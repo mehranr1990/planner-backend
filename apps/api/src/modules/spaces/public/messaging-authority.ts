@@ -27,6 +27,14 @@ export class MessagingAuthority {
   displayName(tx: Prisma.TransactionClient, spaceId: string, actorId: string) {
     return this.collaboration.displayName(tx, spaceId, actorId);
   }
+  async verifiedEmail(tx: Prisma.TransactionClient, userId: string) {
+    await this.kernel.verifiedRecipient(tx, userId);
+    const user = await tx.user.findUniqueOrThrow({
+      where: { id: userId },
+      select: { email: true },
+    });
+    return user.email.toLowerCase();
+  }
   async personal(tx: Prisma.TransactionClient, userId: string) {
     await this.kernel.verifiedRecipient(tx, userId);
     const space = await tx.space.findFirst({

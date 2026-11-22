@@ -4,6 +4,7 @@ import {
 } from './http/retention.controller.js';
 import { RetentionSelectionService } from './application/retention-selection.service.js';
 import { CompanyAccess } from './application/company-access.service.js';
+import { InvitationMailService } from './application/invitation-mail.service.js';
 import { MessagingAuthority } from './public/messaging-authority.js';
 import { CompanyErasure } from './public/company-erasure.js';
 import { Module } from '@nestjs/common';
@@ -35,6 +36,7 @@ import {
 @Module({
   imports: [DatabaseModule, AuditModule],
   providers: [
+    InvitationMailService,
     MessagingAuthority,
     CompanyErasure,
     CompanyAccess,
@@ -61,6 +63,7 @@ import {
     RetentionController,
   ],
   exports: [
+    InvitationMailService,
     SharedIdentity,
     MessagingAuthority,
     CompanyErasure,

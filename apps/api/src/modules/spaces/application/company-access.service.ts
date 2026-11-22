@@ -21,6 +21,7 @@ import type { RequestActor } from '../../../platform/auth/request-actor.js';
 import { SharedKernel } from './shared-kernel.service.js';
 import { CollaborationService } from './collaboration.service.js';
 import { CollaborationLimit } from './collaboration-limit.js';
+import { InvitationMailService } from './invitation-mail.service.js';
 import { SharedAuthority } from '../public/shared-authority.js';
 import type { SharedAccess } from '../public/shared-authority.js';
 import { companyDefaultPolicy } from '../domain/shared-policy.js';
@@ -273,7 +274,7 @@ export class CompanyAccess {
       });
     });
   }
-  resend(
+  async resend(
     actor: RequestActor,
     id: string,
     scopeId: string,
@@ -281,7 +282,11 @@ export class CompanyAccess {
     revision: number,
     raw: string | undefined,
   ) {
-    return this.write(
+    const mail: { email: string | null; proof: string | null } = {
+      email: null,
+      proof: null,
+    };
+    const result = await this.write(
       actor,
       id,
       'company.invitation.resend',
@@ -310,10 +315,18 @@ export class CompanyAccess {
               throw new ConflictException({ code: 'STALE_REVISION' });
             await this.limit.take('invitation.context:' + id, 20, ctx.tx);
             const audit = await ctx.begin();
+            mail.proof = randomBytes(32).toString('base64url');
+            mail.email =
+              row.recipientEmail ??
+              (row.recipientUserId
+                ? ((await this.identity.current(ctx.tx, row.recipientUserId))
+                    ?.email ?? null)
+                : null);
             await ctx.tx.contextInvitation.update({
               where: { id: offerId },
               data: {
-                proofHash: digest(randomBytes(32).toString('base64url')),
+                proofHash: digest(mail.proof),
+                emailDeliveryState: 'NONE',
                 resentAt: ctx.now,
                 revision: { increment: 1 },
               },
@@ -329,6 +342,8 @@ export class CompanyAccess {
         );
       },
     );
+    await this.invitationMail.deliver(offerId, mail.email, mail.proof);
+    return result;
   }
   constructor(
     @Inject(DatabaseService) private readonly db: DatabaseService,
@@ -337,6 +352,8 @@ export class CompanyAccess {
     private readonly collaboration: CollaborationService,
     @Inject(SharedIdentity) private readonly identity: SharedIdentity,
     @Inject(CollaborationLimit) private readonly limit: CollaborationLimit,
+    @Inject(InvitationMailService)
+    private readonly invitationMail: InvitationMailService,
   ) {}
   private async context(
     tx: Tx,
@@ -1158,7 +1175,7 @@ export class CompanyAccess {
           this.db.client,
           'userId' in body.recipient ? body.recipient.userId : '',
         );
-    return this.write(
+    const delivery = await this.write(
       actor,
       spaceId,
       'company.invitation.create',
@@ -1253,6 +1270,12 @@ export class CompanyAccess {
       },
       hinted ? [hinted.id] : [],
     );
+    await this.invitationMail.deliver(
+      delivery.invitation.id,
+      email,
+      delivery.proof,
+    );
+    return delivery;
   }
   private async issuer(ctx: CompanyTransaction, row: ContextInvitation) {
     const root = await ctx.tx.contextAccess.findUnique({

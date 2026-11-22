@@ -38,6 +38,7 @@ import { isolatedTestDatabaseUrl } from '../../../../tooling/testing/test-databa
 import type { z } from 'zod';
 import * as c from '@mehran/api-contracts';
 import { Readable } from 'node:stream';
+import { InvitationMailService } from '../../src/modules/spaces/public/index.js';
 import {
   MeetingsService,
   MeetingDocuments,
@@ -384,6 +385,140 @@ describe('P5-05 meetings decisions and announcements', () => {
     );
     return documents.finalize(owner.actor, id, v.id, v.revision, randomUUID());
   }
+  it('meeting email claims reject expiry, revocation, departed issuers and unrelated scope access', async () => {
+    const delivery = vi
+      .spyOn(app.get(InvitationMailService), 'send')
+      .mockResolvedValue('SENT');
+    for (const state of ['expired', 'revoked', 'departed']) {
+      const m = await meeting([]),
+        offer = await meetings.inviteEmail(
+          owner.actor,
+          m.id,
+          m.revision,
+          { id: randomUUID(), email: alice.email },
+          randomUUID(),
+        ),
+        proof = delivery.mock.calls.at(-1)![2];
+      if (state === 'expired')
+        await db.meetingEmailInvitation.update({
+          where: { id: offer.id },
+          data: { expiresAt: new Date(Date.now() - 1000) },
+        });
+      if (state === 'revoked')
+        await meetings.emailInvitation(owner.actor, m.id, offer.id, 1);
+      if (state === 'departed')
+        await meetings.leave(owner.actor, m.id, 1, randomUUID());
+      await expect(
+        meetings.claimEmailInvitation(alice.actor, offer.id, proof, 1),
+      ).rejects.toThrow();
+      expect(await db.meetingMember.count({ where: { meetingId: m.id } })).toBe(
+        1,
+      );
+    }
+    const p = await work(),
+      m = await meeting([], { id: p.id, kind: 'PROJECT' }),
+      offer = await meetings.inviteEmail(
+        owner.actor,
+        m.id,
+        m.revision,
+        { id: randomUUID(), email: alice.email },
+        randomUUID(),
+      );
+    await expect(
+      meetings.claimEmailInvitation(
+        alice.actor,
+        offer.id,
+        delivery.mock.calls.at(-1)![2],
+        1,
+      ),
+    ).rejects.toThrow();
+    delivery.mockRestore();
+  });
+  it('meeting email invitation supports later verified registration and rechecks email at RSVP', async () => {
+    const m = await meeting([]),
+      delivery = vi
+        .spyOn(app.get(InvitationMailService), 'send')
+        .mockResolvedValue('SENT'),
+      email = randomUUID() + '@example.test';
+    const offer = await meetings.inviteEmail(
+        owner.actor,
+        m.id,
+        m.revision,
+        { id: randomUUID(), email },
+        randomUUID(),
+      ),
+      proof = delivery.mock.calls.at(-1)![2];
+    const after = await person(false);
+    await db.user.update({
+      where: { id: after.actor.userId },
+      data: { email },
+    });
+    await expect(
+      meetings.claimEmailInvitation(after.actor, offer.id, proof, 1),
+    ).rejects.toThrow();
+    await db.user.update({
+      where: { id: after.actor.userId },
+      data: { emailVerified: true },
+    });
+    const invite = await meetings.claimEmailInvitation(
+      after.actor,
+      offer.id,
+      proof,
+      1,
+    );
+    await db.user.update({
+      where: { id: after.actor.userId },
+      data: { email: randomUUID() + '@example.test' },
+    });
+    await expect(
+      meetings.rsvp(after.actor, invite.id, 1, 'ACCEPTED', randomUUID()),
+    ).rejects.toThrow();
+    await db.user.update({
+      where: { id: after.actor.userId },
+      data: { email },
+    });
+    await meetings.rsvp(after.actor, invite.id, 1, 'ACCEPTED', randomUUID());
+    delivery.mockRestore();
+  });
+  it('meeting email links cannot enroll participants before verified claim and explicit RSVP', async () => {
+    const m = await meeting([]),
+      delivery = vi
+        .spyOn(app.get(InvitationMailService), 'send')
+        .mockResolvedValue('SENT');
+    const offer = await meetings.inviteEmail(
+        owner.actor,
+        m.id,
+        m.revision,
+        { id: randomUUID(), email: alice.email },
+        randomUUID(),
+      ),
+      proof = delivery.mock.calls[0]![2];
+    await expect(
+      meetings.claimEmailInvitation(bob.actor, offer.id, proof, 1),
+    ).rejects.toThrow();
+    const claims = await Promise.allSettled([
+      meetings.claimEmailInvitation(alice.actor, offer.id, proof, 1),
+      meetings.claimEmailInvitation(alice.actor, offer.id, proof, 1),
+    ]);
+    expect(claims.filter((c) => c.status === 'fulfilled')).toHaveLength(1);
+    const success = claims.find((c) => c.status === 'fulfilled');
+    if (success?.status !== 'fulfilled') throw Error('Claim missing');
+    const claimed = success.value;
+    expect(claimed.state).toBe('PENDING');
+    await expect(meetings.get(alice.actor, m.id)).rejects.toThrow();
+    await expect(
+      meetings.claimEmailInvitation(alice.actor, offer.id, proof, 1),
+    ).rejects.toThrow();
+    await meetings.rsvp(
+      alice.actor,
+      claimed.id,
+      claimed.revision,
+      'ACCEPTED',
+      randomUUID(),
+    );
+    await expect(meetings.get(alice.actor, m.id)).resolves.toBeDefined();
+    delivery.mockRestore();
+  });
   it('stabilization M-X4/M-X5: invites source roster actors after organizer checks and hints meeting sources', async () => {
     const team = await work('TEAM'),
       other = await work('TEAM'),

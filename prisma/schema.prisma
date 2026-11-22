@@ -2497,6 +2497,7 @@ model SharedUsageEntry {
 
 // P2-02: additional check/partial uniqueness rules are enforced by reviewed SQL.
 model ContextInvitation {
+  emailDeliveryState String @default("NONE") @db.VarChar(11)
   declineNote String? @db.VarChar(500)
   resentAt DateTime? @db.Timestamptz(3)
  companyTargetAccessId String? @db.Uuid
@@ -5386,6 +5387,7 @@ model ConversationAdmission {
  @@unique([conversationId,memberId,generation],map:"ConversationAdmission_scope_key")
 }
 model ConversationInvitation {
+ invitedEmail String? @db.VarChar(320)
  MessageActivity_invitation MessageActivity[] @relation("MessageActivity_invitation_fk")
  @@unique([conversationId,id],map:"ConversationInvitation_identity_key")
  id String @id @db.Uuid
@@ -5834,6 +5836,7 @@ model MeetingAdmission {
 
 // P5-05 / ADR 0048: typed meeting and publication owner data.
 model MeetingInvitation {
+ invitedEmail String? @db.VarChar(320)
  accepted MeetingAdmission? @relation("MeetingInvitation_accepted_fk",fields:[meetingId,acceptedMemberId,acceptedMemberGeneration],references:[meetingId,memberId,generation],onDelete:NoAction,onUpdate:NoAction,map:"MeetingInvitation_accepted_fk")
  recipientInterval ContextAccessInterval? @relation("MeetingInvitation_recipientInterval_fk",fields:[recipientAccessId,recipientGeneration],references:[accessId,generation],onDelete:NoAction,onUpdate:NoAction,map:"MeetingInvitation_recipientInterval_fk")
  issuerInterval ContextAccessInterval @relation("MeetingInvitation_issuerInterval_fk",fields:[inviterAccessId,inviterGeneration],references:[accessId,generation],onDelete:NoAction,onUpdate:NoAction,map:"MeetingInvitation_issuerInterval_fk")
@@ -7764,4 +7767,48 @@ model StoredFileScan {
   engine    String     @db.VarChar(200)
   scannedAt DateTime   @db.Timestamptz(3)
   file      StoredFile @relation(fields: [fileId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "StoredFileScan_fileId_fkey")
+}
+
+model ConversationEmailInvitation {
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ conversationId String @db.Uuid
+ inviterActorId String @db.Uuid
+ inviterAccessId String @db.Uuid
+ inviterGeneration Int
+ inviterMemberId String? @db.Uuid
+ inviterMemberGeneration Int?
+ restoreGeneration Int
+ email String? @db.VarChar(320)
+ proofHash String? @db.Char(64)
+ keyHash String @db.Char(64)
+ fingerprint String @db.Char(64)
+ state String @default("PENDING") @db.VarChar(8)
+ emailDeliveryState String @default("NONE") @db.VarChar(11)
+ revision Int @default(1)
+ expiresAt DateTime @db.Timestamptz(3)
+ @@unique([conversationId,inviterActorId,keyHash])
+}
+
+model MeetingEmailInvitation {
+ id String @id @db.Uuid
+ spaceId String @db.Uuid
+ scopeId String @db.Uuid
+ meetingId String @db.Uuid
+ inviterActorId String @db.Uuid
+ inviterAccessId String @db.Uuid
+ inviterGeneration Int
+ inviterMemberId String? @db.Uuid
+ inviterMemberGeneration Int?
+ restoreGeneration Int
+ email String? @db.VarChar(320)
+ proofHash String? @db.Char(64)
+ keyHash String @db.Char(64)
+ fingerprint String @db.Char(64)
+ state String @default("PENDING") @db.VarChar(8)
+ emailDeliveryState String @default("NONE") @db.VarChar(11)
+ revision Int @default(1)
+ expiresAt DateTime @db.Timestamptz(3)
+ @@unique([meetingId,inviterActorId,keyHash])
 }

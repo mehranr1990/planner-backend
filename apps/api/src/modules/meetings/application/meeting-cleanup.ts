@@ -85,6 +85,7 @@ export async function purgeMeetings(
     'MeetingAgendaRevision',
     'MeetingAgendaEntry',
     'MeetingInvitation',
+    'MeetingEmailInvitation',
     'MeetingMutation',
     'MeetingAdmission',
     'MeetingMember',

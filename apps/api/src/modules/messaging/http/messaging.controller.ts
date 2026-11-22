@@ -13,6 +13,7 @@ import {
   UseGuards,
   Injectable,
   BadRequestException,
+  HttpCode,
 } from '@nestjs/common';
 import type { CanActivate, ExecutionContext } from '@nestjs/common';
 import type { Response, Request } from 'express';
@@ -66,6 +67,50 @@ export class MessagingGuard implements CanActivate {
 @Controller('conversations')
 @UseGuards(VerifiedSessionGuard, MessagingGuard)
 export class MessagingController {
+  @Post(':id/email-invitations')
+  async inviteEmail(
+    @CurrentActor() actor: RequestActor,
+    @Param('id', id) conversationId: string,
+    @Body(new ZodValidationPipe(c.CommunicationEmailInviteSchema))
+    body: z.infer<typeof c.CommunicationEmailInviteSchema>,
+    @Headers('if-match') match: string | undefined,
+    @Headers('idempotency-key') key: string | undefined,
+    @Query(query) _q: unknown,
+  ) {
+    return this.service.inviteEmail(
+      actor,
+      conversationId,
+      revision(match),
+      body,
+      key,
+    );
+  }
+  @Get(':id/email-invitations/:invitationId')
+  emailOffer(
+    @CurrentActor() actor: RequestActor,
+    @Param('id', id) conversationId: string,
+    @Param('invitationId', id) invitationId: string,
+    @Query(query) _q: unknown,
+  ) {
+    return this.service.emailInvitation(actor, conversationId, invitationId);
+  }
+  @Post(':id/email-invitations/:invitationId/revoke')
+  @HttpCode(200)
+  revokeEmail(
+    @CurrentActor() actor: RequestActor,
+    @Param('id', id) conversationId: string,
+    @Param('invitationId', id) invitationId: string,
+    @Headers('if-match') match: string | undefined,
+    @Body(empty) _b: unknown,
+    @Query(query) _q: unknown,
+  ) {
+    return this.service.emailInvitation(
+      actor,
+      conversationId,
+      invitationId,
+      revision(match),
+    );
+  }
   constructor(
     @Inject(MessagingService) private readonly service: MessagingService,
   ) {}
@@ -267,6 +312,23 @@ export class MessagingController {
 @Controller('conversation-invitations')
 @UseGuards(VerifiedSessionGuard, MessagingGuard)
 export class ConversationInvitationsController {
+  @Post(':invitationId/claim-email')
+  @HttpCode(200)
+  claimEmail(
+    @CurrentActor() actor: RequestActor,
+    @Param('invitationId', id) invitationId: string,
+    @Headers('if-match') match: string | undefined,
+    @Headers('x-invitation-proof') proof: string | undefined,
+    @Body(empty) _b: unknown,
+    @Query(query) _q: unknown,
+  ) {
+    return this.service.claimEmailInvitation(
+      actor,
+      invitationId,
+      proof,
+      revision(match),
+    );
+  }
   constructor(
     @Inject(MessagingService) private readonly service: MessagingService,
   ) {}

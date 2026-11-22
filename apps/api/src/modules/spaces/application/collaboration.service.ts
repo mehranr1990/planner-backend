@@ -25,6 +25,7 @@ import type { SharedControlRecord } from '../../../platform/storage/shared-contr
 import { SharedKernel } from './shared-kernel.service.js';
 import { SharedAuthority } from '../public/shared-authority.js';
 import { CollaborationLimit } from './collaboration-limit.js';
+import { InvitationMailService } from './invitation-mail.service.js';
 import type { SharedTraffic } from '../domain/http-rate-policy.js';
 import {
   roleAdministration,
@@ -85,6 +86,9 @@ const handoverView = (r: OwnerHandover) =>
 
 @Injectable()
 export class CollaborationService {
+  invitationRate(tx: Prisma.TransactionClient, scopeId: string) {
+    return this.limit.take('invitation.context:' + scopeId, 20, tx);
+  }
   constructor(
     @Inject(DatabaseService) private readonly db: DatabaseService,
     @Inject(SharedKernel) private readonly kernel: SharedKernel,
@@ -92,6 +96,8 @@ export class CollaborationService {
     @Inject(AuthService) private readonly auth: AuthService,
     @Inject(SharedControl) private readonly control: SharedControl,
     @Inject(CollaborationLimit) private readonly limit: CollaborationLimit,
+    @Inject(InvitationMailService)
+    private readonly invitationMail: InvitationMailService,
   ) {}
   async request(
     ip: string,
@@ -490,7 +496,7 @@ export class CollaborationService {
         }),
       ),
       id = randomUUID();
-    return this.signed(
+    const delivery = await this.signed(
       actor,
       spaceId,
       users,
@@ -593,8 +599,8 @@ export class CollaborationService {
             ...location,
             inviterAccessId: authority.accessId,
             inviterGeneration: authority.generation,
-            recipientUserId: recipient?.id ?? null,
-            recipientEmail: recipient ? null : email,
+            recipientUserId: email ? null : (recipient?.id ?? null),
+            recipientEmail: email,
             recipientAccessId: target?.id ?? null,
             recipientGeneration: target?.generation ?? null,
             recipientRevision: target?.revision ?? null,
@@ -631,6 +637,12 @@ export class CollaborationService {
         });
       },
     );
+    await this.invitationMail.deliver(
+      delivery.invitation.id,
+      email,
+      delivery.proof,
+    );
+    return delivery;
   }
   async invitation(actor: RequestActor, spaceId: string, id: string) {
     return this.kernel.participate(
@@ -769,7 +781,11 @@ export class CollaborationService {
       issuer = hint
         ? await this.userForAccess(this.db.client, hint.inviterAccessId)
         : null;
-    return this.signed(
+    const mail: { email: string | null; proof: string | null } = {
+      email: null,
+      proof: null,
+    };
+    const result = await this.signed(
       actor,
       spaceId,
       issuer ? [issuer] : [],
@@ -829,10 +845,18 @@ export class CollaborationService {
               );
               await this.limit.take('invitation.context:' + spaceId, 20, tx);
               const audit = await begin();
+              mail.proof = randomBytes(32).toString('base64url');
+              mail.email =
+                row.recipientEmail ??
+                (row.recipientUserId
+                  ? ((await this.identity.current(tx, row.recipientUserId))
+                      ?.email ?? null)
+                  : null);
               await tx.contextInvitation.update({
                 where: { id },
                 data: {
-                  proofHash: hash(randomBytes(32).toString('base64url')),
+                  proofHash: hash(mail.proof),
+                  emailDeliveryState: 'NONE',
                   resentAt: now,
                   revision: { increment: 1 },
                 },
@@ -859,6 +883,8 @@ export class CollaborationService {
         }
       },
     );
+    await this.invitationMail.deliver(id, mail.email, mail.proof);
+    return result;
   }
   async pendingSent(
     actor: RequestActor,

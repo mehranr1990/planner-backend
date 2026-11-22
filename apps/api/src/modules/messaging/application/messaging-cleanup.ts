@@ -79,6 +79,7 @@ export async function purgeMessaging(
   for (const table of [
     'ConversationMessage',
     'ConversationInvitation',
+    'ConversationEmailInvitation',
     'ConversationAdmission',
     'ConversationMember',
   ])

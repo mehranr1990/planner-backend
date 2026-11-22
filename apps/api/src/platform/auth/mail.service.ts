@@ -8,7 +8,8 @@ import type { AppConfig } from '../../bootstrap/environment.js';
 
 export type IdentityMail = {
   to: string;
-  kind: 'verify-email' | 'reset-password' | 'confirm-email-change';
+  kind:
+    'verify-email' | 'reset-password' | 'confirm-email-change' | 'invitation';
   url: string;
 };
 
@@ -49,7 +50,10 @@ export class IdentityMailService {
       from: this.config.MAIL_FROM,
       to: message.to,
       subject: `Mehran Planner: ${message.kind}`,
-      text: `Complete the requested account action:\n${message.url}\nIf you did not request this, ignore this email.`,
+      text:
+        message.kind === 'invitation'
+          ? `You have been invited to Mehran Planner. Sign in or register with this email address, then explicitly accept. This invitation expires after seven days.\n${message.url}\nIf unexpected, ignore this email.`
+          : `Complete the requested account action:\n${message.url}\nIf you did not request this, ignore this email.`,
     });
   }
 

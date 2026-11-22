@@ -58,6 +58,7 @@ const EnvironmentSchema = z.object({
   TRUSTED_PROXY_ADDRESSES: z.string().default(''),
   MAIL_MODE: z.enum(['sink', 'smtp']).default('sink'),
   MAIL_SINK_DIR: z.string().min(1).default('.tools/mail'),
+  INVITATION_ACCEPT_URL: z.url().optional(),
   MAIL_FROM: z.string().email().default('no-reply@localhost.invalid'),
   SMTP_HOST: z.string().optional(),
   SMTP_PORT: z.coerce.number().int().min(1).max(65535).default(587),

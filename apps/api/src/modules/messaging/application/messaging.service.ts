@@ -31,6 +31,12 @@ import { DmContacts } from './dm-contacts.service.js';
 import { ConversationSources } from './conversation-sources.js';
 import type { ConversationSourceKind } from './conversation-sources.js';
 import { purgeMessaging } from './messaging-cleanup.js';
+import {
+  invitationProof,
+  invitationProofHash,
+  invitationProofMatches,
+} from '../../../platform/auth/invitation-proof.js';
+import { InvitationMailService } from '../../spaces/public/index.js';
 import type { SharedCleanupScope } from '../../../platform/lifecycle/shared-cleanup.js';
 
 type Tx = Prisma.TransactionClient;
@@ -94,6 +100,8 @@ const messageView = (m: ConversationMessage) =>
 @Injectable()
 export class MessagingService {
   constructor(
+    @Inject(InvitationMailService)
+    private readonly emailDelivery: InvitationMailService,
     @Inject(DmContacts) readonly contacts: DmContacts,
     @Inject(DatabaseService) private readonly db: DatabaseService,
     @Inject(SharedKernel) private readonly kernel: SharedKernel,
@@ -301,7 +309,11 @@ export class MessagingService {
     );
     await tx.conversationInvitation.updateMany({
       where: { conversationId: id, state: 'PENDING' },
-      data: { state: 'REVOKED', revision: { increment: 1 } },
+      data: {
+        state: 'REVOKED',
+        invitedEmail: null,
+        revision: { increment: 1 },
+      },
     });
     await tx.conversation.update({
       where: { id },
@@ -791,7 +803,11 @@ export class MessagingService {
         recipientActorId: recipient.id,
         state: 'PENDING',
       },
-      data: { state: 'REVOKED', revision: { increment: 1 } },
+      data: {
+        state: 'REVOKED',
+        invitedEmail: null,
+        revision: { increment: 1 },
+      },
     });
     return s.tx.conversationInvitation.create({
       data: {
@@ -1205,6 +1221,235 @@ export class MessagingService {
       [body.userId],
     );
   }
+  async inviteEmail(
+    actor: RequestActor,
+    id: string,
+    revision: number,
+    input: z.infer<typeof c.CommunicationEmailInviteSchema>,
+    key: string | undefined,
+  ) {
+    const body = c.CommunicationEmailInviteSchema.parse(input),
+      digest = keyHash(key),
+      email = body.email.toLowerCase(),
+      bodyHash = fingerprint({ ...body, email }),
+      proof = invitationProof();
+    let created = false;
+    const result = await this.operation(
+      actor,
+      id,
+      'messaging.email.invitation.create',
+      async (s) => {
+        const manager = await this.administer(s),
+          p = s.proof!;
+        const old = await s.tx.conversationEmailInvitation.findUnique({
+          where: {
+            conversationId_inviterActorId_keyHash: {
+              conversationId: id,
+              inviterActorId: p.actorId,
+              keyHash: digest,
+            },
+          },
+        });
+        if (old) {
+          if (old.fingerprint !== bodyHash) throw new ConflictException();
+          return this.emailOffer(old, s.now);
+        }
+        match(revision, s.conv.revision);
+        if (
+          await s.tx.conversationInvitation.findUnique({
+            where: { id: body.id },
+          })
+        )
+          throw new ConflictException();
+        if (
+          (await s.tx.conversationEmailInvitation.count({
+            where: {
+              conversationId: id,
+              state: 'PENDING',
+              expiresAt: { gt: s.now },
+            },
+          })) >= 200
+        )
+          throw new PayloadTooLargeException();
+        await this.collaboration.invitationRate(s.tx, s.conv.scopeId);
+        const row = await s.tx.conversationEmailInvitation.create({
+          data: {
+            id: body.id,
+            spaceId: s.conv.spaceId,
+            scopeId: s.conv.scopeId,
+            conversationId: id,
+            inviterActorId: p.actorId,
+            inviterAccessId: p.accessId,
+            inviterGeneration: p.generation,
+            inviterMemberId: manager?.id ?? null,
+            inviterMemberGeneration: manager?.generation ?? null,
+            restoreGeneration: p.restoreGeneration,
+            email,
+            proofHash: invitationProofHash(proof),
+            keyHash: digest,
+            fingerprint: bodyHash,
+            expiresAt: new Date(s.now.getTime() + 604800000),
+          },
+        });
+        await s.tx.conversation.update({
+          where: { id },
+          data: { revision: { increment: 1 } },
+        });
+        await this.effect(s, 'messaging.email.invitation.create', row.id);
+        created = true;
+        return this.emailOffer(row, s.now);
+      },
+    );
+    if (created) {
+      const state = await this.emailDelivery.send(
+        result.id,
+        email,
+        proof,
+        'CONVERSATION',
+      );
+      await this.db.client.conversationEmailInvitation.updateMany({
+        where: {
+          id: result.id,
+          state: 'PENDING',
+          proofHash: invitationProofHash(proof),
+        },
+        data: { emailDeliveryState: state },
+      });
+    }
+    return result;
+  }
+  private emailOffer(
+    row: { id: string; state: string; revision: number; expiresAt: Date },
+    now: Date,
+  ) {
+    return c.CommunicationEmailOfferSchema.strip().parse({
+      ...row,
+      state:
+        row.state === 'PENDING' && row.expiresAt <= now ? 'EXPIRED' : row.state,
+      expiresAt: row.expiresAt.toISOString(),
+    });
+  }
+  emailInvitation(
+    actor: RequestActor,
+    id: string,
+    offerId: string,
+    revision?: number,
+  ) {
+    return this.operation(
+      actor,
+      id,
+      revision === undefined
+        ? 'messaging.email.invitation.read'
+        : 'messaging.email.invitation.revoke',
+      async (s) => {
+        await this.administer(s);
+        let row = await s.tx.conversationEmailInvitation.findFirst({
+          where: { id: offerId, conversationId: id },
+        });
+        if (!row) throw new NotFoundException();
+        if (revision !== undefined) {
+          match(revision, row.revision);
+          if (row.state !== 'PENDING') throw new ConflictException();
+          row = await s.tx.conversationEmailInvitation.update({
+            where: { id: offerId },
+            data: {
+              state: 'REVOKED',
+              email: null,
+              proofHash: null,
+              revision: { increment: 1 },
+            },
+          });
+          await this.effect(s, 'messaging.email.invitation.revoke', offerId);
+        }
+        return this.emailOffer(row, s.now);
+      },
+    );
+  }
+  async claimEmailInvitation(
+    actor: RequestActor,
+    offerId: string,
+    rawProof: string | undefined,
+    revision: number,
+  ) {
+    const hint = await this.db.client.conversationEmailInvitation.findUnique({
+      where: { id: offerId },
+    });
+    if (!hint) throw new NotFoundException();
+    const users = await this.authority.hints([hint.inviterActorId]);
+    return this.operation(
+      actor,
+      hint.conversationId,
+      'messaging.email.invitation.claim',
+      async (s) => {
+        const offer = await s.tx.conversationEmailInvitation.findUnique({
+          where: { id: offerId },
+        });
+        if (
+          !offer ||
+          offer.state !== 'PENDING' ||
+          offer.expiresAt <= s.now ||
+          !invitationProofMatches(offer.proofHash, rawProof) ||
+          offer.email !==
+            (await this.authority.verifiedEmail(s.tx, actor.userId))
+        )
+          throw new NotFoundException();
+        match(revision, offer.revision);
+        const issuer = await this.authority.user(
+            s.tx,
+            s.conv.spaceId,
+            offer.inviterActorId,
+          ),
+          issuerFrame = {
+            ...s,
+            since:
+              (await this.sources.grant(s.tx, s.conv, issuer))?.since ?? null,
+          },
+          p = await this.proof(issuerFrame, issuer),
+          manager = await this.administer(issuerFrame, p);
+        if (
+          p.accessId !== offer.inviterAccessId ||
+          p.generation !== offer.inviterGeneration ||
+          p.restoreGeneration !== offer.restoreGeneration ||
+          manager?.id !== (offer.inviterMemberId ?? undefined) ||
+          manager?.generation !== (offer.inviterMemberGeneration ?? undefined)
+        )
+          throw new NotFoundException();
+        const issuerOperation = {
+          ...issuerFrame,
+          actor: { ...s.actor, userId: issuer },
+          proof: p,
+        };
+        const invite = await this.issue(
+          issuerOperation,
+          { id: offer.id, userId: actor.userId },
+          'email-invite:' + offer.id,
+        );
+        const row = await s.tx.conversationInvitation.update({
+          where: { id: invite.id },
+          data: { expiresAt: offer.expiresAt, invitedEmail: offer.email },
+        });
+        await s.tx.conversationEmailInvitation.update({
+          where: { id: offer.id },
+          data: {
+            state: 'CLAIMED',
+            email: null,
+            proofHash: null,
+            revision: { increment: 1 },
+          },
+        });
+        await this.effect(
+          s,
+          'messaging.email.invitation.claim',
+          offer.id,
+          undefined,
+          invite.recipientActorId,
+        );
+        return this.invitationView(s.tx, s.conv, row);
+      },
+      users,
+      true,
+    );
+  }
   private async recipientOperation<T>(
     actor: RequestActor,
     invitationId: string,
@@ -1235,6 +1480,13 @@ export class MessagingService {
           )) !== actor.userId
         )
           throw new NotFoundException();
+        if (
+          row.state === 'PENDING' &&
+          row.invitedEmail &&
+          row.invitedEmail !==
+            (await this.authority.verifiedEmail(s.tx, actor.userId))
+        )
+          throw new NotFoundException();
         return work(s, row);
       },
       users,
@@ -1251,14 +1503,18 @@ export class MessagingService {
       s.conv.spaceId,
       row.inviterActorId,
     );
-    const proof = await this.proof(s, issuer);
+    const issuerFrame = {
+      ...s,
+      since: (await this.sources.grant(s.tx, s.conv, issuer))?.since ?? null,
+    };
+    const proof = await this.proof(issuerFrame, issuer);
     if (
       proof.accessId !== row.inviterAccessId ||
       proof.generation !== row.inviterGeneration ||
       proof.restoreGeneration !== row.restoreGeneration
     )
       throw new NotFoundException();
-    const admin = await this.administer(s, proof);
+    const admin = await this.administer(issuerFrame, proof);
     if (
       admin &&
       (admin.id !== row.inviterMemberId ||
@@ -1394,6 +1650,7 @@ export class MessagingService {
           where: { id: row.id },
           data: {
             state: accept ? 'ACCEPTED' : 'DECLINED',
+            invitedEmail: null,
             revision: { increment: 1 },
           },
         });
@@ -1434,7 +1691,11 @@ export class MessagingService {
         if (row.state !== 'PENDING') throw new ConflictException();
         const next = await s.tx.conversationInvitation.update({
           where: { id: row.id },
-          data: { state: 'REVOKED', revision: { increment: 1 } },
+          data: {
+            state: 'REVOKED',
+            invitedEmail: null,
+            revision: { increment: 1 },
+          },
         });
         await s.tx.conversation.update({
           where: { id },

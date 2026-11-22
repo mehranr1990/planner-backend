@@ -1,9 +1,40 @@
 import * as c from './meetings.js';
+import * as email from './communication-email-invitations.js';
 import {
   messagingOperationPaths,
   type Operation,
 } from './messaging-openapi.js';
 export const meetingOperations: Operation[] = [
+  {
+    path: '/meetings/{id}/email-invitations',
+    method: 'post',
+    input: email.CommunicationEmailInviteSchema,
+    output: email.CommunicationEmailOfferSchema,
+    revision: true,
+    key: true,
+  },
+  {
+    path: '/meetings/{id}/email-invitations/{invitationId}',
+    method: 'get',
+    output: email.CommunicationEmailOfferSchema,
+  },
+  {
+    path: '/meetings/{id}/email-invitations/{invitationId}/revoke',
+    method: 'post',
+    input: email.CommunicationEmailEmptySchema,
+    output: email.CommunicationEmailOfferSchema,
+    revision: true,
+    status200: true,
+  },
+  {
+    path: '/meetings/invitations/{invitationId}/claim-email',
+    method: 'post',
+    input: email.CommunicationEmailEmptySchema,
+    output: c.MeetingInvitationSchema,
+    revision: true,
+    proof: true,
+    status200: true,
+  },
   {
     path: '/meetings/{id}/access/me',
     method: 'get',

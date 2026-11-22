@@ -10,6 +10,12 @@ import {
 import { randomUUID } from 'node:crypto';
 import type { z } from 'zod';
 import * as c from '@mehran/api-contracts';
+import { InvitationMailService } from '../../spaces/public/index.js';
+import {
+  invitationProof,
+  invitationProofHash,
+  invitationProofMatches,
+} from '../../../platform/auth/invitation-proof.js';
 import type {
   Prisma,
   MeetingInvitation,
@@ -30,6 +36,8 @@ type Page = z.infer<typeof c.MeetingPageQuerySchema>;
 @Injectable()
 export class MeetingsService {
   constructor(
+    @Inject(InvitationMailService)
+    private readonly emailDelivery: InvitationMailService,
     @Inject(MeetingKernel) readonly op: MeetingKernel,
     @Inject(SharedCalendar) readonly calendar: SharedCalendar,
   ) {}
@@ -602,7 +610,11 @@ export class MeetingsService {
         recipientActorId: recipient.id,
         state: 'PENDING',
       },
-      data: { state: 'REVOKED', revision: { increment: 1 } },
+      data: {
+        state: 'REVOKED',
+        invitedEmail: null,
+        revision: { increment: 1 },
+      },
     });
     return s.tx.meetingInvitation.create({
       data: {
@@ -670,6 +682,225 @@ export class MeetingsService {
         : hint
           ? await this.op.authority.spaceHints(hint.spaceId, [body.actorId])
           : [],
+    );
+  }
+  private emailOffer(
+    row: { id: string; state: string; revision: number; expiresAt: Date },
+    now: Date,
+  ) {
+    return c.CommunicationEmailOfferSchema.strip().parse({
+      ...row,
+      state:
+        row.state === 'PENDING' && row.expiresAt <= now ? 'EXPIRED' : row.state,
+      expiresAt: row.expiresAt.toISOString(),
+    });
+  }
+  async inviteEmail(
+    actor: RequestActor,
+    id: string,
+    revision: number | undefined,
+    input: z.infer<typeof c.CommunicationEmailInviteSchema>,
+    key: string | undefined,
+  ) {
+    const body = c.CommunicationEmailInviteSchema.parse(input),
+      digest = meetingKey(key),
+      email = body.email.toLowerCase(),
+      fingerprint = meetingHash({ ...body, email }),
+      proof = invitationProof();
+    let created = false;
+    const result = await this.op.operation(
+      actor,
+      id,
+      'meeting.email.invitation.create',
+      async (s) => {
+        const manager = await this.op.organizer(s),
+          p = s.proof!;
+        const old = await s.tx.meetingEmailInvitation.findUnique({
+          where: {
+            meetingId_inviterActorId_keyHash: {
+              meetingId: id,
+              inviterActorId: p.actorId,
+              keyHash: digest,
+            },
+          },
+        });
+        if (old) {
+          if (old.fingerprint !== fingerprint) throw new ConflictException();
+          return this.emailOffer(old, s.now);
+        }
+        meetingRevision(revision, s.meeting.revision);
+        if (await s.tx.meetingInvitation.findUnique({ where: { id: body.id } }))
+          throw new ConflictException();
+        if (
+          (await s.tx.meetingEmailInvitation.count({
+            where: {
+              meetingId: id,
+              state: 'PENDING',
+              expiresAt: { gt: s.now },
+            },
+          })) >= 200
+        )
+          throw new PayloadTooLargeException();
+        await this.op.collaboration.invitationRate(s.tx, s.scopeId);
+        const row = await s.tx.meetingEmailInvitation.create({
+          data: {
+            id: body.id,
+            spaceId: s.spaceId,
+            scopeId: s.scopeId,
+            meetingId: id,
+            inviterActorId: p.actorId,
+            inviterAccessId: p.accessId,
+            inviterGeneration: p.generation,
+            inviterMemberId: manager.id,
+            inviterMemberGeneration: manager.generation,
+            restoreGeneration: p.restoreGeneration,
+            email,
+            proofHash: invitationProofHash(proof),
+            keyHash: digest,
+            fingerprint,
+            expiresAt: new Date(s.now.getTime() + 604800000),
+          },
+        });
+        await s.tx.meeting.update({
+          where: { id },
+          data: { revision: { increment: 1 } },
+        });
+        await this.op.effect(s, 'meeting.email.invitation.create', row.id);
+        created = true;
+        return this.emailOffer(row, s.now);
+      },
+    );
+    if (created) {
+      const state = await this.emailDelivery.send(
+        result.id,
+        email,
+        proof,
+        'MEETING',
+      );
+      await this.op.db.client.meetingEmailInvitation.updateMany({
+        where: {
+          id: result.id,
+          state: 'PENDING',
+          proofHash: invitationProofHash(proof),
+        },
+        data: { emailDeliveryState: state },
+      });
+    }
+    return result;
+  }
+  emailInvitation(
+    actor: RequestActor,
+    id: string,
+    offerId: string,
+    revision?: number,
+  ) {
+    return this.op.operation(
+      actor,
+      id,
+      revision === undefined
+        ? 'meeting.email.invitation.read'
+        : 'meeting.email.invitation.revoke',
+      async (s) => {
+        await this.op.organizer(s, true);
+        let row = await s.tx.meetingEmailInvitation.findFirst({
+          where: { id: offerId, meetingId: id },
+        });
+        if (!row) throw new NotFoundException();
+        if (revision !== undefined) {
+          meetingRevision(revision, row.revision);
+          if (row.state !== 'PENDING') throw new ConflictException();
+          row = await s.tx.meetingEmailInvitation.update({
+            where: { id: offerId },
+            data: {
+              state: 'REVOKED',
+              email: null,
+              proofHash: null,
+              revision: { increment: 1 },
+            },
+          });
+          await this.op.effect(s, 'meeting.email.invitation.revoke', offerId);
+        }
+        return this.emailOffer(row, s.now);
+      },
+    );
+  }
+  async claimEmailInvitation(
+    actor: RequestActor,
+    offerId: string,
+    rawProof: string | undefined,
+    revision: number | undefined,
+  ) {
+    const hint = await this.op.db.client.meetingEmailInvitation.findUnique({
+      where: { id: offerId },
+    });
+    if (!hint) throw new NotFoundException();
+    const users = await this.op.authority.hints([hint.inviterActorId]);
+    return this.op.operation(
+      actor,
+      hint.meetingId,
+      'meeting.email.invitation.claim',
+      async (s) => {
+        const offer = await s.tx.meetingEmailInvitation.findUnique({
+          where: { id: offerId },
+        });
+        if (
+          !offer ||
+          offer.state !== 'PENDING' ||
+          offer.expiresAt <= s.now ||
+          !invitationProofMatches(offer.proofHash, rawProof) ||
+          offer.email !==
+            (await this.op.authority.verifiedEmail(s.tx, actor.userId)) ||
+          !offer.inviterMemberId
+        )
+          throw new NotFoundException();
+        meetingRevision(revision, offer.revision);
+        const issuer = await this.op.other(
+          s,
+          offer.inviterMemberId,
+          offer.inviterMemberGeneration ?? undefined,
+        );
+        if (
+          issuer.proof.accessId !== offer.inviterAccessId ||
+          issuer.proof.generation !== offer.inviterGeneration ||
+          issuer.proof.restoreGeneration !== offer.restoreGeneration
+        )
+          throw new NotFoundException();
+        const issuerOperation = {
+          ...s,
+          actor: { ...s.actor, userId: issuer.userId },
+          proof: issuer.proof,
+        };
+        const invite = await this.issue(
+          issuerOperation,
+          { id: offer.id, userId: actor.userId },
+          'email-invite:' + offer.id,
+        );
+        const row = await s.tx.meetingInvitation.update({
+          where: { id: invite.id },
+          data: { expiresAt: offer.expiresAt, invitedEmail: offer.email },
+        });
+        await s.tx.meetingEmailInvitation.update({
+          where: { id: offer.id },
+          data: {
+            state: 'CLAIMED',
+            email: null,
+            proofHash: null,
+            revision: { increment: 1 },
+          },
+        });
+        await this.op.shared.offerEffect(
+          s.tx,
+          actor,
+          s.scopeId,
+          invite.recipientActorId,
+          'meeting.email.invitation.claim',
+          offer.id,
+          await s.begin(),
+        );
+        return this.invitationView(s, row);
+      },
+      users,
+      true,
     );
   }
   organizerInvitations(actor: RequestActor, id: string, q: Page) {
@@ -828,7 +1059,11 @@ export class MeetingsService {
             }
             await s.tx.meetingInvitation.update({
               where: { id: invitationId },
-              data: { state: 'REVOKED', revision: { increment: 1 } },
+              data: {
+                state: 'REVOKED',
+                invitedEmail: null,
+                revision: { increment: 1 },
+              },
             });
             return invitationId;
           },
@@ -862,6 +1097,13 @@ export class MeetingsService {
             s.spaceId,
             row.recipientActorId,
           )) !== actor.userId
+        )
+          throw new NotFoundException();
+        if (
+          row.state === 'PENDING' &&
+          row.invitedEmail &&
+          row.invitedEmail !==
+            (await this.op.authority.verifiedEmail(s.tx, actor.userId))
         )
           throw new NotFoundException();
         await this.issuer(s, row);
@@ -906,6 +1148,7 @@ export class MeetingsService {
             where: { id: row.id },
             data: {
               state: 'DECLINED',
+              invitedEmail: null,
               decisionKeyHash: digest,
               decisionFingerprint: fingerprint,
               revision: { increment: 1 },
@@ -959,6 +1202,7 @@ export class MeetingsService {
               where: { id: row.id },
               data: {
                 state: decision,
+                invitedEmail: null,
                 ...(member
                   ? {
                       acceptedMemberId: member.id,
