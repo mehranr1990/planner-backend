@@ -59,3 +59,14 @@ unchanged. Shared counters survive restart; auth/file/lifecycle in-memory counte
 do not. Before production, retain the existing trusted-proxy/topology release gate:
 the current application deliberately uses the socket IP, ignoring forwarded headers.
 No production deployment or relaxed release gate is authorized.
+
+Verification clarification (owner-requested P0 acceptance, 2026-11-23): the
+socket-only statement above describes the default with no trusted proxies.
+Current bootstrap supports `TRUSTED_PROXY_ADDRESSES`, an explicit IP/CIDR
+allowlist. Express resolves `request.ip` from the socket toward the first
+untrusted hop; arbitrary forwarded headers from untrusted peers are ignored.
+Shared and auth limiters use this resolved IP, with socket fallback. Never trust
+all peers or a caller-provided `X-Mehran-Client-IP`; the auth dispatcher overwrites
+that internal header. Regression coverage exercises the configured Express
+resolver and actual limiter input. Real proxy/TLS deployment verification remains
+required; no limiter settings or trusted-proxy policy are changed by this check.

@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Request, Response } from 'express';
+import type { Express } from 'express';
+import { ExpressAdapter } from '@nestjs/platform-express';
+import httpRequest from 'supertest';
+import { applyTrustedProxies } from '../../../bootstrap/environment.js';
 import type { DatabaseService } from '../../../platform/database/database.service.js';
 import type { SharedControl } from '../../../platform/storage/shared-control.js';
 import { CollaborationLimit } from './collaboration-limit.js';
@@ -236,7 +240,7 @@ describe('Shared endpoint-aware request budgets', () => {
     ).toBeDefined();
   });
 
-  it('deduplicates overlapping guards and uses the socket IP and route template', async () => {
+  it('deduplicates overlapping guards and uses the Express-resolved IP and route template', async () => {
     const request = vi
       .fn()
       .mockResolvedValue({ limit: 600, remaining: 599, reset: 17 });
@@ -244,7 +248,7 @@ describe('Shared endpoint-aware request budgets', () => {
       method: 'GET',
       route: { path: read.route },
       socket: { remoteAddress: 'real-ip' },
-      ip: 'spoofed',
+      ip: 'resolved-client-ip',
       actor: { userId: 'alice' },
     } as unknown as Request;
     const setHeader = vi.fn();
@@ -254,12 +258,37 @@ describe('Shared endpoint-aware request budgets', () => {
       sharedHttpRequest({ request }, req, res),
     ]);
     expect(request).toHaveBeenCalledExactlyOnceWith(
-      'real-ip',
+      'resolved-client-ip',
       { userId: 'alice' },
       false,
       read,
     );
     expect(setHeader).toHaveBeenCalledWith('RateLimit-Remaining', '599');
     expect(setHeader).toHaveBeenCalledWith('RateLimit-Reset', '17');
+  });
+  it('keys admission by the socket for untrusted peers and the nearest untrusted hop behind an explicit proxy', async () => {
+    for (const trusted of ['', '10.9.9.9', '127.0.0.1']) {
+      const app = new ExpressAdapter().getInstance<Express>();
+      applyTrustedProxies(app, trusted);
+      const admit = vi
+        .fn()
+        .mockResolvedValue({ limit: 600, remaining: 599, reset: 17 });
+      app.get('/rate-probe', async (req, res) => {
+        await sharedHttpRequest({ request: admit }, req, res);
+        res.json({ socket: req.socket.remoteAddress });
+      });
+      const result = await httpRequest(app)
+        .get('/rate-probe')
+        .set('X-Forwarded-For', '203.0.113.9, 198.51.100.7')
+        .set('X-Real-IP', '203.0.113.10')
+        .set('X-Mehran-Client-IP', '203.0.113.11')
+        .expect(200);
+      expect(admit).toHaveBeenCalledExactlyOnceWith(
+        trusted === '127.0.0.1' ? '198.51.100.7' : result.body.socket,
+        undefined,
+        false,
+        { method: 'GET', route: '/rate-probe' },
+      );
+    }
   });
 });

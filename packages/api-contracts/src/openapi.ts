@@ -1,3 +1,4 @@
+import { adminPaths } from './admin-openapi.js';
 import { messagesMeetingsGapPaths } from './messages-meetings-gap-openapi.js';
 import { companyGapPaths } from './company-gap-closure-openapi.js';
 import { teamGapPaths } from './team-gap-closure-openapi.js';
@@ -253,6 +254,7 @@ export function createOpenApiDocument() {
         'HTTP 409 preserves error.code CONFLICT and the generic message. Optional error.details uses the existing array of {path, code}; path "" identifies a resource conflict. Reviewed Project reasons: PROJECT_KEY_CONFLICT (key collision), TASK_HAS_ACTIVE_CHILDREN (parent deletion), WORKFLOW_PUBLICATION_CONFLICT (stale or conflicting publication), WORKFLOW_DRAFT_TERMINAL (published/discarded draft). Recovery reasons: RESTORE_EXPIRED, RECOVERY_EXPIRED, RECOVERY_UNAVAILABLE (recovery window closed or content no longer recoverable). HTTP 403 preserves error.code FORBIDDEN and the generic message; Shared feature gates add details code SHARED_ACTIVATION_GATED or SHARED_RETENTION_UNAVAILABLE. Other conflicts may omit details; clients must retain generic fallback handling.',
     },
     paths: {
+      ...adminPaths,
       ...filePaths(),
       ...taskPaths(),
       ...taskToolPaths(),
@@ -307,6 +309,13 @@ export function createOpenApiDocument() {
     },
     components: {
       securitySchemes: {
+        adminCookie: {
+          type: 'apiKey',
+          in: 'cookie',
+          name: 'mehran-admin.session_token',
+          description:
+            'Production uses __Secure-mehran-admin.session_token; separate admin-only cookie path.',
+        },
         sessionCookie: {
           type: 'apiKey',
           in: 'cookie',

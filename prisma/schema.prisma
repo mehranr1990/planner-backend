@@ -7813,3 +7813,88 @@ model MeetingEmailInvitation {
  expiresAt DateTime @db.Timestamptz(3)
  @@unique([meetingId,inviterActorId,keyHash])
 }
+
+model AdminUser {
+ id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+ name String
+ email String @unique
+ emailVerified Boolean @default(true)
+ image String?
+ createdAt DateTime @default(now())
+ updatedAt DateTime @updatedAt
+ role String @default("SUPPORT")
+ active Boolean @default(true)
+ twoFactorEnabled Boolean @default(false)
+ mfaEnrolledAt DateTime?
+ sessions AdminSession[]
+ accounts AdminAccount[]
+ factors AdminTwoFactor[]
+ auditEvents AdminAuditEvent[]
+}
+model AdminSession {
+  mfaVerifiedAt DateTime?
+  id        String   @id @default(dbgenerated("pg_catalog.gen_random_uuid()")) @db.Uuid
+  expiresAt DateTime
+  token     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  ipAddress String?
+  userAgent String?
+  userId    String   @db.Uuid
+  user      AdminUser     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([token])
+  @@index([userId])
+  @@map("AdminSession")
+}
+model AdminAccount {
+  id                    String    @id @default(dbgenerated("pg_catalog.gen_random_uuid()")) @db.Uuid
+  accountId             String
+  providerId            String
+  userId                String    @db.Uuid
+  user                  AdminUser      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@index([userId])
+  @@map("AdminAccount")
+}
+model AdminVerification {
+  id         String   @id @default(dbgenerated("pg_catalog.gen_random_uuid()")) @db.Uuid
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([identifier])
+  @@map("AdminVerification")
+}
+model AdminTwoFactor {
+ id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+ secret String
+ backupCodes String
+ userId String @unique @db.Uuid
+ user AdminUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+ verified Boolean @default(true)
+ failedVerificationCount Int @default(0)
+ lockedUntil DateTime?
+ @@index([secret])
+}
+model AdminAuditEvent {
+ id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+ actorAdminId String? @db.Uuid
+ actor AdminUser? @relation(fields: [actorAdminId], references: [id], onDelete: SetNull)
+ action String
+ outcome String
+ requestId String @db.Uuid
+ createdAt DateTime @default(now())
+ @@index([actorAdminId, createdAt])
+}

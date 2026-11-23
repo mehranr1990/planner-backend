@@ -309,6 +309,16 @@ describe('scoped persistence and API conventions', () => {
       '202611180083_social_group_conversation',
       '202611190084_company_team_project_recovery_window',
       '202611190085_malware_scan_verdicts',
+      '202611200086_task_restore_deadline',
+      '202611200087_retention_policy_seven_day_recovery',
+      '20261123000000_platform_admin_p0',
+      '202611230088_project_manual_status',
+      '202611230089_conversation_member_visibility',
+      '202611230090_invitation_email_delivery',
+      '202611230091_module_notification_channels',
+      '202611230092_project_member_weekday_capacity',
+      '202611230093_communication_email_invitations',
+      '202611230094_admin_session_mfa_proof',
     ]);
     for (const sql of [
       '',

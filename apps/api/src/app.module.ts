@@ -1,3 +1,4 @@
+import { AdminModule } from './platform/admin/admin.module.js';
 import { CompaniesModule } from './modules/companies/public/index.js';
 import {
   SocialModule,
@@ -93,6 +94,7 @@ export class AppModule {
     return {
       module: AppModule,
       imports: [
+        AdminModule,
         SocialModule,
         SocialActivitiesModule.register(tasks, calendar, finance),
         MessagingModule,
