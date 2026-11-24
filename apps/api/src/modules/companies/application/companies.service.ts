@@ -7,6 +7,8 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { randomUUID, createHash } from 'node:crypto';
+import { AdminCommand } from '../../../platform/admin/admin-command.js';
+import type { Prisma } from '../../../generated/prisma/client.js';
 import * as c from '@mehran/api-contracts';
 import type { z } from 'zod';
 import type {
@@ -16,7 +18,11 @@ import type {
 } from '../../../generated/prisma/client.js';
 import { DatabaseService } from '../../../platform/database/database.service.js';
 import type { RequestActor } from '../../../platform/auth/request-actor.js';
-import { CompanyAccess, SharedKernel } from '../../spaces/public/index.js';
+import {
+  CompanyAccess,
+  CompanyDomainParent,
+  SharedKernel,
+} from '../../spaces/public/index.js';
 import type { CompanyTransaction } from '../../spaces/public/index.js';
 import {
   companyAllows,
@@ -31,11 +37,117 @@ type Page = z.infer<typeof c.CompanyPageQuerySchema>;
 type PolicyChain = z.infer<typeof c.CompanyPolicySchema>[];
 @Injectable()
 export class CompaniesService {
+  async adminCreate(
+    command: AdminCommand,
+    ownerUserId: string,
+    input: {
+      id: string;
+      title: string;
+      description?: string | undefined;
+      retentionPolicyVersion: string;
+    },
+  ) {
+    command.require('admin.workspaces.create');
+    await this.kernel.provision(
+      {
+        userId: ownerUserId,
+        requestId: command.requestId,
+        correlationId: command.requestId,
+      },
+      input.id,
+      input.retentionPolicyVersion,
+      async (tx, b) => {
+        await tx.company.create({
+          data: {
+            id: input.id,
+            spaceId: b.spaceId,
+            scopeId: b.scopeId,
+            createdByActorId: b.actorId,
+            title: input.title,
+            description: input.description ?? null,
+            creationKey: hash(command.key),
+            creationFingerprint: hash(input),
+          },
+        });
+        await tx.companyScopePolicy.create({
+          data: {
+            spaceId: b.spaceId,
+            scopeId: b.scopeId,
+            version: 1,
+            rules: [],
+            createdByActorId: b.actorId,
+            auditId: command.auditId,
+          },
+        });
+        await tx.adminDelivery.create({
+          data: {
+            auditId: command.auditId,
+            targetUserId: ownerUserId,
+            kind: 'WORKSPACE_CREATED',
+            payload: { workspaceId: input.id },
+          },
+        });
+      },
+      'COMPANY',
+      [],
+      [],
+      command,
+    );
+    return { id: input.id };
+  }
+  async adminProfile(
+    tx: Prisma.TransactionClient,
+    command: AdminCommand,
+    id: string,
+    input: {
+      revision: number;
+      title: string;
+      description?: string | undefined;
+    },
+  ) {
+    command.require('admin.workspaces.update');
+    await command.verify(tx);
+    const before = await tx.company.findUniqueOrThrow({ where: { id } });
+    if (before.revision !== input.revision) throw new ConflictException();
+    const after = await tx.company.update({
+      where: { id, revision: input.revision },
+      data: {
+        title: input.title,
+        ...(input.description !== undefined
+          ? { description: input.description }
+          : {}),
+        revision: { increment: 1 },
+      },
+    });
+    return {
+      before: { title: before.title, description: before.description },
+      after: { title: after.title, description: after.description },
+      revision: after.revision,
+    };
+  }
+  adminMetadata(tx: Prisma.TransactionClient, id: string) {
+    return tx.company.findUnique({
+      where: { id },
+      select: { title: true, description: true, revision: true },
+    });
+  }
   constructor(
     @Inject(DatabaseService) private readonly db: DatabaseService,
     @Inject(SharedKernel) private readonly kernel: SharedKernel,
     @Inject(CompanyAccess) readonly access: CompanyAccess,
-  ) {}
+    @Inject(CompanyDomainParent) parent: CompanyDomainParent,
+  ) {
+    parent.register(async (tx, companyId, parentScopeId) => {
+      const unit = await tx.companyUnit.findFirst({
+        where: { id: parentScopeId, spaceId: companyId },
+      });
+      const department = await tx.companyDepartment.findFirst({
+        where: { id: unit?.departmentId ?? parentScopeId, spaceId: companyId },
+      });
+      if (!department) throw new NotFoundException();
+      return [department.id, ...(unit ? [unit.id] : [])];
+    });
+  }
   private company(row: Company, state: 'ACTIVE' | 'ARCHIVED' = 'ACTIVE') {
     return c.CompanySchema.strip().parse({
       ...row,

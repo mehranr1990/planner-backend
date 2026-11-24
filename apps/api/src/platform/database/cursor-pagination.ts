@@ -13,7 +13,7 @@ const CursorSchema = z.strictObject({
 });
 export type CursorRow = { id: string; createdAt: Date };
 export function cursorPosition(
-  scope: AuthorizedSpace,
+  scope: Pick<AuthorizedSpace, 'actor' | 'spaceId'>,
   filter: string,
   cursor?: string,
 ): CursorRow | undefined {
@@ -36,7 +36,7 @@ export function cursorPosition(
   }
 }
 export function cursorPage<T extends CursorRow>(
-  scope: AuthorizedSpace,
+  scope: Pick<AuthorizedSpace, 'actor' | 'spaceId'>,
   filter: string,
   limit: number,
   rows: T[],

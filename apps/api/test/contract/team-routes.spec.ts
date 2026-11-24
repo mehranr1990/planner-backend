@@ -7,6 +7,7 @@ import {
   TeamInvitationController,
 } from '../../src/modules/teams/http/teams.controller.js';
 import { teamPaths } from '../../../../packages/api-contracts/src/teams-openapi.js';
+import { teamCustodyPaths } from '../../../../packages/api-contracts/src/team-custody.js';
 it('matches every exported Team operation to an actual compiled controller handler', () => {
   const actual: string[] = [];
   for (const controller of [TeamsController, TeamInvitationController])
@@ -30,9 +31,12 @@ it('matches every exported Team operation to an actual compiled controller handl
           path.replace(/\/+$/, '').replace(/:([A-Za-z]+)/g, '{$1}'),
       );
     }
-  const expected = Object.entries(teamPaths()).flatMap(([path, ops]) =>
+  const expected = Object.entries({
+    ...teamPaths(),
+    ...teamCustodyPaths,
+  }).flatMap(([path, ops]) =>
     Object.keys(ops).map((method) => method + ' ' + path),
   );
   expect(actual.sort()).toEqual(expected.sort());
-  expect(actual).toHaveLength(19);
+  expect(actual).toHaveLength(22);
 });

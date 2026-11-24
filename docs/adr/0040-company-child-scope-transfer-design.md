@@ -1,5 +1,10 @@
 # 0040: Whole-root transfer into Company custody with domain child scopes
 
+P1 exception (2026-11-24): the owner authorized only the eligible ordinary
+Independent Team → Company-owned Team direction in
+[ADR 0043](0043-company-transfer-deferral-and-stabilization.md). All remaining
+transfer directions and unsupported historical/data graphs stay deferred.
+
 Execution amendment (2026-11-08): [ADR 0043](0043-company-transfer-deferral-and-stabilization.md)
 preserves this approved future design and reusable preparation, but defers actual
 execution and transferred-child acceptance beyond P4-06. No transfer is enabled.

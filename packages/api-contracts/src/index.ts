@@ -116,3 +116,5 @@ export * from './messages-meetings-gap.js';
 export * from './communication-email-invitations.js';
 
 export * from './admin.js';
+export * from './admin-management.js';
+export * from './team-custody.js';

@@ -1,5 +1,9 @@
 import { z } from 'zod';
 import { adminAuthRoutes } from './admin.js';
+import {
+  adminManagementRoutes,
+  adminManagementResponses,
+} from './admin-management.js';
 export const adminPaths: Record<string, Record<string, unknown>> = {};
 for (const [key, schema] of Object.entries(adminAuthRoutes)) {
   const [method, route] = key.split(' ') as [string, string];
@@ -81,3 +85,84 @@ adminPaths['/api/v1/admin/session'] = {
     },
   },
 };
+for (const [route, spec] of Object.entries(adminManagementRoutes)) {
+  const [method, suffix] = route.split(' ') as [string, string];
+  const path = '/api/v1/admin/' + suffix.replace(':id', '{id}');
+  const operation = {
+    operationId:
+      'platformAdminManagement_' +
+      method.toLowerCase() +
+      '_' +
+      suffix.replace(/[^a-zA-Z]/g, '_'),
+    tags: ['platform-admin'],
+    security: [{ adminCookie: [] }],
+    description: `Requires ${spec.permission}. Metadata only. Mutations require successful MFA in the past five minutes. UTC date intervals include from and exclude until.`,
+    parameters: [
+      ...(method !== 'GET' && !suffix.startsWith('users')
+        ? [
+            {
+              in: 'header',
+              name: 'Idempotency-Key',
+              required: false,
+              schema: { type: 'string', minLength: 1, maxLength: 128 },
+              description:
+                'Required for shared Workspace mutations; binds exact validated input and Admin actor.',
+            },
+          ]
+        : []),
+      ...(suffix.includes(':id')
+        ? [
+            {
+              in: 'path',
+              name: 'id',
+              required: true,
+              schema: { type: 'string', format: 'uuid' },
+            },
+          ]
+        : []),
+      ...(method === 'GET'
+        ? Object.entries(z.toJSONSchema(spec.schema).properties ?? {}).map(
+            ([name, schema]) => ({ in: 'query', name, schema }),
+          )
+        : []),
+    ],
+    ...(method !== 'GET'
+      ? {
+          requestBody: {
+            required: true,
+            content: {
+              'application/json': { schema: z.toJSONSchema(spec.schema) },
+            },
+          },
+        }
+      : {}),
+    responses: Object.fromEntries(
+      [200, 400, 401, 403, 404, 409, 429, 500].map((code) => [
+        String(code),
+        {
+          description:
+            code === 200
+              ? 'Authorized administrative metadata; unavailable metrics carry an explicit availability reason'
+              : 'Safe API error',
+          content: {
+            [suffix.endsWith('/export') && code === 200
+              ? 'text/csv'
+              : 'application/json']: {
+              schema:
+                code === 200
+                  ? suffix.endsWith('/export')
+                    ? { type: 'string' }
+                    : z.toJSONSchema(
+                        adminManagementResponses[
+                          route as keyof typeof adminManagementResponses
+                        ],
+                      )
+                  : { $ref: '#/components/schemas/ApiError' },
+            },
+          },
+        },
+      ]),
+    ),
+  };
+  adminPaths[path] = { ...adminPaths[path], [method.toLowerCase()]: operation };
+}

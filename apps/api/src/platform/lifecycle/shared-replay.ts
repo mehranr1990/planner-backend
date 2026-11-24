@@ -2,6 +2,27 @@ import { z } from 'zod';
 const uuid = z.uuid();
 const instant = z.iso.datetime();
 export const SharedReplaySchema = z.strictObject({
+  administrativeState: z
+    .strictObject({
+      root: z.strictObject({
+        adminRevision: z.number().int().positive(),
+        suspendedAt: instant.nullable(),
+        suspensionExpiresAt: instant.nullable(),
+        suspensionReason: z.string().max(500).nullable(),
+      }),
+      scopes: z
+        .array(
+          z.strictObject({
+            id: uuid,
+            adminRevision: z.number().int().positive(),
+            suspendedAt: instant.nullable(),
+            suspensionExpiresAt: instant.nullable(),
+            suspensionReason: z.string().max(500).nullable(),
+          }),
+        )
+        .max(2000),
+    })
+    .optional(),
   kind: z.literal('REPLAY'),
   companyRestricted: z.literal(true).optional(),
   /** ADR 0040: old strict readers must reject Company-child custody snapshots. */

@@ -4,8 +4,10 @@ import {
   ConflictException,
   NotFoundException,
   BadRequestException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { createHash, randomUUID } from 'node:crypto';
+import { AdminCommand } from '../../../platform/admin/admin-command.js';
 import type { z } from 'zod';
 import * as c from '@mehran/api-contracts';
 import type { Team, Prisma } from '../../../generated/prisma/client.js';
@@ -13,6 +15,7 @@ import { DatabaseService } from '../../../platform/database/database.service.js'
 import type { RequestActor } from '../../../platform/auth/request-actor.js';
 import {
   SharedKernel,
+  TeamCustodyTransfer,
   SharedAuthority,
   CollaborationService,
   ordinaryCapabilities,
@@ -20,17 +23,184 @@ import {
 } from '../../spaces/public/index.js';
 import type { SharedRequest } from '../../spaces/public/index.js';
 import { TeamProjects } from '../../projects/public/index.js';
+import { TeamCustodyGraph } from './teams-custody-graph.js';
 const hash = (v: unknown) =>
   createHash('sha256').update(JSON.stringify(v)).digest('hex');
 type Page = z.infer<typeof c.TeamPageQuerySchema>;
 @Injectable()
 export class TeamsService {
+  async adminCreate(
+    command: AdminCommand,
+    ownerUserId: string,
+    input: {
+      id: string;
+      title: string;
+      description?: string | undefined;
+      retentionPolicyVersion: string;
+    },
+  ) {
+    command.require('admin.workspaces.create');
+    await this.kernel.provision(
+      {
+        userId: ownerUserId,
+        requestId: command.requestId,
+        correlationId: command.requestId,
+      },
+      input.id,
+      input.retentionPolicyVersion,
+      async (tx, b) => {
+        await tx.team.create({
+          data: {
+            id: input.id,
+            spaceId: b.spaceId,
+            scopeId: b.scopeId,
+            createdByActorId: b.actorId,
+            title: input.title,
+            description: input.description ?? null,
+            creationKey: hash(command.key),
+            creationFingerprint: hash(input),
+          },
+        });
+        await tx.adminDelivery.create({
+          data: {
+            auditId: command.auditId,
+            targetUserId: ownerUserId,
+            kind: 'WORKSPACE_CREATED',
+            payload: { workspaceId: input.id },
+          },
+        });
+      },
+      'TEAM',
+      [],
+      [],
+      command,
+    );
+    return { id: input.id };
+  }
+  async adminProfile(
+    tx: Prisma.TransactionClient,
+    command: AdminCommand,
+    id: string,
+    input: {
+      revision: number;
+      title: string;
+      description?: string | undefined;
+    },
+  ) {
+    command.require('admin.workspaces.update');
+    await command.verify(tx);
+    const before = await tx.team.findUniqueOrThrow({ where: { id } });
+    if (before.revision !== input.revision) throw new ConflictException();
+    const after = await tx.team.update({
+      where: { id, revision: input.revision },
+      data: {
+        title: input.title,
+        ...(input.description !== undefined
+          ? { description: input.description }
+          : {}),
+        revision: { increment: 1 },
+      },
+    });
+    return {
+      before: { title: before.title, description: before.description },
+      after: { title: after.title, description: after.description },
+      revision: after.revision,
+    };
+  }
+  adminMetadata(tx: Prisma.TransactionClient, id: string) {
+    return tx.team.findUnique({
+      where: { id },
+      select: { title: true, description: true, revision: true },
+    });
+  }
   constructor(
+    @Inject(TeamCustodyGraph) private readonly custodyGraph: TeamCustodyGraph,
+    @Inject(TeamCustodyTransfer)
+    private readonly transfers: TeamCustodyTransfer,
     @Inject(DatabaseService) private readonly db: DatabaseService,
     @Inject(SharedKernel) private readonly kernel: SharedKernel,
     @Inject(CollaborationService) readonly collaboration: CollaborationService,
     @Inject(TeamProjects) private readonly projects: TeamProjects,
   ) {}
+  private custodySource(id: string) {
+    return {
+      snapshot: async (
+        tx: Prisma.TransactionClient,
+        companyId: string,
+        transferId: string,
+      ): Promise<Prisma.InputJsonValue> => {
+        const row = await tx.team.findUnique({ where: { id } });
+        if (!row || row.spaceId !== id || row.scopeId !== id)
+          throw new ConflictException({
+            code: 'TEAM_CUSTODY_REQUIRES_INDEPENDENT_TEAM',
+          });
+        const graph = await this.custodyGraph.snapshot(tx, {
+          sourceSpaceId: id,
+          destinationSpaceId: companyId,
+          transferId,
+          verify: (database, moving) => {
+            if (database !== tx || moving) throw new ForbiddenException();
+          },
+        });
+        return JSON.parse(JSON.stringify(graph)) as Prisma.InputJsonValue;
+      },
+      move: async (
+        tx: Prisma.TransactionClient,
+        companyId: string,
+        transferId: string,
+      ) => {
+        await this.custodyGraph.move(tx, {
+          sourceSpaceId: id,
+          destinationSpaceId: companyId,
+          transferId,
+          verify: (database, moving) => {
+            if (database !== tx || !moving) throw new ForbiddenException();
+          },
+        });
+      },
+    };
+  }
+  custodyPreview(
+    actor: RequestActor,
+    id: string,
+    input: z.infer<typeof c.TeamCustodyPreviewSchema>,
+    key: string | undefined,
+  ) {
+    return this.transfers.preview(
+      actor,
+      id,
+      c.TeamCustodyPreviewSchema.parse(input),
+      key,
+      this.custodySource(id),
+    );
+  }
+  custodyConsent(
+    actor: RequestActor,
+    id: string,
+    transferId: string,
+    input: z.infer<typeof c.TeamCustodyConsentSchema>,
+  ) {
+    return this.transfers.consent(
+      actor,
+      id,
+      transferId,
+      c.TeamCustodyConsentSchema.parse(input),
+    );
+  }
+  custodyApply(
+    actor: RequestActor,
+    id: string,
+    transferId: string,
+    input: z.infer<typeof c.TeamCustodyApplySchema>,
+  ) {
+    return this.transfers.apply(
+      actor,
+      id,
+      transferId,
+      c.TeamCustodyApplySchema.parse(input),
+      this.custodySource(id),
+    );
+  }
   private cursor(
     context: string,
     stamp: string,

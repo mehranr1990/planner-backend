@@ -73,6 +73,45 @@ export class TeamGuard implements CanActivate {
 @UseGuards(VerifiedSessionGuard, TeamGuard)
 export class TeamsController {
   constructor(@Inject(TeamsService) private readonly service: TeamsService) {}
+  @Post(':id/company-custody/preview')
+  @HttpCode(200)
+  async custodyPreview(
+    @CurrentActor() a: RequestActor,
+    @Param('id', id) teamId: string,
+    @Body(new ZodValidationPipe(c.TeamCustodyPreviewSchema))
+    b: z.infer<typeof c.TeamCustodyPreviewSchema>,
+    @Headers('idempotency-key') key: string | undefined,
+  ) {
+    return c.TeamCustodyTransferSchema.parse(
+      await this.service.custodyPreview(a, teamId, b, key),
+    );
+  }
+  @Post(':id/company-custody/:transferId/consent')
+  @HttpCode(200)
+  async custodyConsent(
+    @CurrentActor() a: RequestActor,
+    @Param('id', id) teamId: string,
+    @Param('transferId', id) transferId: string,
+    @Body(new ZodValidationPipe(c.TeamCustodyConsentSchema))
+    b: z.infer<typeof c.TeamCustodyConsentSchema>,
+  ) {
+    return c.TeamCustodyTransferSchema.parse(
+      await this.service.custodyConsent(a, teamId, transferId, b),
+    );
+  }
+  @Post(':id/company-custody/:transferId/apply')
+  @HttpCode(200)
+  async custodyApply(
+    @CurrentActor() a: RequestActor,
+    @Param('id', id) teamId: string,
+    @Param('transferId', id) transferId: string,
+    @Body(new ZodValidationPipe(c.TeamCustodyApplySchema))
+    b: z.infer<typeof c.TeamCustodyApplySchema>,
+  ) {
+    return c.TeamCustodyTransferSchema.parse(
+      await this.service.custodyApply(a, teamId, transferId, b),
+    );
+  }
   @Post() async create(
     @CurrentActor() a: RequestActor,
     @Body(new ZodValidationPipe(c.TeamCreateSchema))

@@ -7,7 +7,12 @@ import { CompanyAccess } from './application/company-access.service.js';
 import { InvitationMailService } from './application/invitation-mail.service.js';
 import { MessagingAuthority } from './public/messaging-authority.js';
 import { CompanyErasure } from './public/company-erasure.js';
+import { CompanyDomainParent } from './public/company-domain-parent.js';
 import { Module } from '@nestjs/common';
+import { AdminSpaces } from './infrastructure/admin-spaces.js';
+import { AdminCollaboration } from './application/admin-collaboration.js';
+import { TeamCustodyTransfer } from './application/team-custody-transfer.js';
+import { TeamDomainLifecycle } from './application/team-domain-lifecycle.js';
 import { DatabaseModule } from '../../platform/database/database.module.js';
 import { SpacesRepository } from './infrastructure/spaces.repository.js';
 import { SpacesService } from './application/spaces.service.js';
@@ -36,6 +41,11 @@ import {
 @Module({
   imports: [DatabaseModule, AuditModule],
   providers: [
+    TeamDomainLifecycle,
+    CompanyDomainParent,
+    TeamCustodyTransfer,
+    AdminCollaboration,
+    AdminSpaces,
     InvitationMailService,
     MessagingAuthority,
     CompanyErasure,
@@ -63,6 +73,10 @@ import {
     RetentionController,
   ],
   exports: [
+    CompanyDomainParent,
+    TeamCustodyTransfer,
+    AdminCollaboration,
+    AdminSpaces,
     InvitationMailService,
     SharedIdentity,
     MessagingAuthority,

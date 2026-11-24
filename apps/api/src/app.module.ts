@@ -1,4 +1,5 @@
 import { AdminModule } from './platform/admin/admin.module.js';
+import { ManagementModule } from './modules/admin-management/public/index.js';
 import { CompaniesModule } from './modules/companies/public/index.js';
 import {
   SocialModule,
@@ -91,10 +92,18 @@ export class AppModule {
       storage,
       meetingWorkflows,
     );
+    const companies = CompaniesModule.register(
+      projects,
+      storage,
+      teams,
+      calendar,
+      goals,
+    );
     return {
       module: AppModule,
       imports: [
         AdminModule,
+        ManagementModule.register([teams, companies]),
         SocialModule,
         SocialActivitiesModule.register(tasks, calendar, finance),
         MessagingModule,
@@ -144,7 +153,7 @@ export class AppModule {
         HabitsModule,
         goals,
         projects,
-        CompaniesModule.register(projects, storage, teams, calendar, goals),
+        companies,
         teams,
         notes,
         JournalModule,

@@ -21,6 +21,7 @@ import { APP_CONFIG } from '../../bootstrap/configuration.module.js';
 import type { AppConfig } from '../../bootstrap/environment.js';
 import { trustedOrigins } from '../../bootstrap/environment.js';
 import { AuthService } from './auth.service.js';
+import { AccountSuspendedException } from './account-suspended.exception.js';
 import { AuditService } from '../audit/audit.service.js';
 import type { AuditAction } from '../audit/audit.service.js';
 import type { ContextRequest } from '../../bootstrap/request-context.js';
@@ -173,6 +174,18 @@ export class AuthController {
         res.setHeader('Retry-After', String(Math.max(1, Number(delay))));
     }
     res.setHeader('cache-control', 'no-store');
+    if (result.status === 403 && route === '/sign-in/email') {
+      const body: unknown = await result.clone().json();
+      if (
+        body &&
+        typeof body === 'object' &&
+        'code' in body &&
+        body.code === 'ACCOUNT_SUSPENDED' &&
+        'message' in body &&
+        typeof body.message === 'string'
+      )
+        throw new AccountSuspendedException(body.message);
+    }
     if (result.status >= 400)
       throw new HttpException(
         'Authentication request failed',

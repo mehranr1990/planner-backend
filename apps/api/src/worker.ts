@@ -1,4 +1,5 @@
 import 'reflect-metadata';
+import { AdminDeliveryService } from './modules/admin-management/public/index.js';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module.js';
 import { parseEnvironment } from './bootstrap/environment.js';
@@ -48,6 +49,7 @@ process.once('SIGINT', () => {
 });
 try {
   await worker.start(async () => {
+    const adminDelivery = await app.get(AdminDeliveryService).consume();
     const rewards = await app.get(RewardsPort).consume();
     const lifecycle = await app.get(PersonalLifecycle).consume();
     const sharedExit = await app.get(SharedKernel).consumeExit();
@@ -65,6 +67,7 @@ try {
     const meetings = await app.get(MeetingFiles).consume();
     const announcements = await app.get(AnnouncementSchedulesService).consume();
     return (
+      adminDelivery ||
       rewards ||
       lifecycle ||
       sharedExit ||

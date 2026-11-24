@@ -1,5 +1,16 @@
 # Platform Admin
 
+Current work status (2026-11-24): P0 is committed as `651b0ec` and pushed to
+origin/main. Platform Admin P1 has 27 Admin operations and the newly authorized
+ordinary Independent Team → Company-owned Team workflow under ADR 0043.
+Local P1 verification is complete; acceptance is recommended. Final complete runs:
+936 repository tests and 1,231 PostgreSQL tests passed, both exit 0; one existing
+live-clamd smoke is conditionally skipped without CLAMAV_SMOKE_HOST.
+See [P1 work record](docs/platform-admin-p1-work-record.md) for implemented endpoints,
+permissions, source-model reconciliation, actual gates and retained eligibility limits.
+The historical P0 acceptance report below predates this authorization. No P1 commit,
+push, deployment or P2 work is authorized.
+
 Owner-authorized scope: Platform Admin P0, 2026-11-23. This is distinct from
 Backend Phase 0 (P0-01 through P0-04). The owner's current implementation request
 supersedes the older V3 Phase 7 scheduling and fixed Workspace pricing assumptions
@@ -16,7 +27,8 @@ for this control plane. Existing security and compatibility guarantees remain bi
 | P6    | Feature Flags, Product Configuration, Platform Settings | Versioned audited configuration and rollback decisions          |
 | P7    | Product Analytics                                       | Privacy-safe aggregate definitions and retention decisions      |
 
-These are the requested 22 modules. Only P0 is authorized for implementation.
+These are the requested 22 modules. P0 and the current P1 completion work are
+authorized; P2 remains outside this task's explicit authorization.
 No UI, content impersonation, Guest Access, Global Test Mode, commercial paywalls,
 entitlement engine, plan, subscription, billing or seat tables are introduced.
 

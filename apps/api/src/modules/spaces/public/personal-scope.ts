@@ -2,6 +2,7 @@ import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { AuthorizedSpace } from '../../../platform/authorization/authorized-space.js';
 import type { RequestActor } from '../../../platform/auth/request-actor.js';
 import type { Prisma } from '../../../generated/prisma/client.js';
+import { effectiveSuspension } from '../../../platform/admin/management-policy.js';
 /** Only Spaces owns authoritative mutation access and its commit-order counter. */
 export function personalScope(
   actor: RequestActor,
@@ -10,6 +11,18 @@ export function personalScope(
   const scope = AuthorizedSpace.personal(actor, row, {
     async fence(tx: Prisma.TransactionClient) {
       await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${'personal-access:' + row!.id},0))::text`;
+      const account = await tx.userSettings.findUnique({
+        where: { userId: actor.userId },
+        select: { suspendedAt: true, suspensionExpiresAt: true },
+      });
+      if (account && effectiveSuspension(account))
+        throw new ForbiddenException({ code: 'ACCOUNT_SUSPENDED' });
+      const workspace = await tx.space.findUnique({
+        where: { id: row!.id },
+        select: { suspendedAt: true, suspensionExpiresAt: true },
+      });
+      if (workspace && effectiveSuspension(workspace))
+        throw new ForbiddenException({ code: 'WORKSPACE_READ_ONLY' });
       const found = await tx.space.findFirst({
         where: { id: row!.id, kind: 'PERSONAL', ownerUserId: actor.userId },
         select: { accessClosedAt: true },

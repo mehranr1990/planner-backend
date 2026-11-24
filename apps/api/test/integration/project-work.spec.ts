@@ -1447,10 +1447,12 @@ describe('P2-04 assignment, work projections and private scheduling', () => {
     const notice = (await work.inbox(member.actor, { limit: 100 })).items.find(
       (n) => n.assignmentId === row.id,
     )!;
+    const deletedAt = new Date();
     await client.task.update({
       where: { id: t.id },
       data: {
-        deletedAt: new Date(),
+        deletedAt,
+        restoreUntil: new Date(deletedAt.getTime() + 7 * 86400000),
         deletionBatchId: randomUUID(),
         revision: { increment: 1 },
       },

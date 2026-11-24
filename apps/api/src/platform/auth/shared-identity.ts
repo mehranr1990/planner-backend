@@ -1,6 +1,7 @@
 import { Injectable, ForbiddenException } from '@nestjs/common';
 import type { Prisma } from '../../generated/prisma/client.js';
 import type { RequestActor } from './request-actor.js';
+import { effectiveSuspension } from '../admin/management-policy.js';
 
 /** Identity owner: shared commands revalidate the exact provider session inside the fence. */
 @Injectable()
@@ -40,6 +41,11 @@ export class SharedIdentity {
     });
   }
   async require(tx: Prisma.TransactionClient, actor: RequestActor) {
+    const state = await tx.userSettings.findUnique({
+      where: { userId: actor.userId },
+      select: { suspendedAt: true, suspensionExpiresAt: true },
+    });
+    if (state && effectiveSuspension(state)) throw new ForbiddenException();
     if (!actor.sessionId) throw new ForbiddenException();
     const sessions = await tx.$queryRaw<{ id: string }[]>`
       SELECT s.id FROM "AuthSession" s JOIN "User" u ON u.id=s."userId"

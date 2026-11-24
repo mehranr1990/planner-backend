@@ -10,6 +10,8 @@ import { personalScope } from '../public/personal-scope.js';
 import { PrivacyGate } from '../../../platform/authorization/privacy-gate.js';
 import { DatabaseService } from '../../../platform/database/database.service.js';
 import { SharedKernel } from './shared-kernel.service.js';
+import { effectiveSuspension } from '../../../platform/admin/management-policy.js';
+import { AccountSuspendedException } from '../../../platform/auth/account-suspended.exception.js';
 
 @Injectable()
 export class SpacesService {
@@ -30,6 +32,16 @@ export class SpacesService {
       row.accessClosedAt
     )
       return null;
+    const state = await tx.userSettings.findUnique({
+      where: { userId: row.ownerUserId },
+      select: { suspendedAt: true, suspensionExpiresAt: true },
+    });
+    if (state && effectiveSuspension(state)) return null;
+    const workspace = await tx.space.findUnique({
+      where: { id: row.id },
+      select: { suspendedAt: true, suspensionExpiresAt: true },
+    });
+    if (workspace && effectiveSuspension(workspace)) return null;
     return personalScope(
       { userId: row.ownerUserId, requestId, correlationId },
       row,
@@ -59,6 +71,7 @@ export class SpacesService {
     return space.id;
   }
   async authorizePersonal(actor: RequestActor) {
+    await this.admit(actor.userId);
     this.privacy.assert();
     const space = await this.repository.personalFor(actor.userId);
     this.policy.assertOwner(actor.userId, space);
@@ -68,6 +81,16 @@ export class SpacesService {
   }
   async admit(userId: string) {
     this.privacy.assert();
+    const state = await this.database.client.userSettings.findUnique({
+      where: { userId },
+      select: {
+        suspendedAt: true,
+        suspensionExpiresAt: true,
+        suspensionReason: true,
+      },
+    });
+    if (state && effectiveSuspension(state))
+      throw new AccountSuspendedException(state.suspensionReason);
     const space = await this.database.client.space.findFirst({
       where: { kind: 'PERSONAL', ownerUserId: userId },
     });

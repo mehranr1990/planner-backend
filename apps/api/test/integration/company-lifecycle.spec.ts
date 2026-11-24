@@ -1532,7 +1532,7 @@ describe('P4-06 Company lifecycle and preservation', () => {
       ),
     ).rejects.toMatchObject({
       code: '23514',
-      message: 'Both current owners must approve custody',
+      message: 'Only Independent Team to Company custody is executable',
     });
     expect(
       (await client.companyCustodyTransfer.findUniqueOrThrow({ where: { id } }))

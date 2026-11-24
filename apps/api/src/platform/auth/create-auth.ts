@@ -1,5 +1,6 @@
 import { betterAuth } from 'better-auth';
 import { APIError } from 'better-auth/api';
+import { AccountSuspendedException } from './account-suspended.exception.js';
 import type { BetterAuthOptions } from 'better-auth';
 import { prismaAdapter } from 'better-auth/adapters/prisma';
 import { authSchemaOptions } from './auth-options.js';
@@ -14,6 +15,10 @@ export function createIdentityAuth(
   send: (message: IdentityMail) => Promise<void>,
   diagnostic: () => void,
   admission: (userId: string) => Promise<void> = async () => undefined,
+  recoveryDelivery: (
+    userId: string,
+    message: IdentityMail,
+  ) => Promise<void> = async (_userId, message) => send(message),
 ) {
   const options: BetterAuthOptions = {
     ...authSchemaOptions,
@@ -32,7 +37,12 @@ export function createIdentityAuth(
           before: async (session) => {
             try {
               await admission(session.userId);
-            } catch {
+            } catch (error) {
+              if (error instanceof AccountSuspendedException)
+                throw new APIError('FORBIDDEN', {
+                  code: 'ACCOUNT_SUSPENDED',
+                  message: error.publicReason,
+                });
               throw new APIError('FORBIDDEN', {
                 message: 'Account access unavailable',
               });
@@ -42,8 +52,13 @@ export function createIdentityAuth(
           after: async (session) => {
             try {
               await admission(session.userId);
-            } catch {
+            } catch (error) {
               await revokeUserSessions(session.userId);
+              if (error instanceof AccountSuspendedException)
+                throw new APIError('FORBIDDEN', {
+                  code: 'ACCOUNT_SUSPENDED',
+                  message: error.publicReason,
+                });
               throw new APIError('FORBIDDEN', {
                 message: 'Account access unavailable',
               });
@@ -58,7 +73,11 @@ export function createIdentityAuth(
       autoSignIn: false,
       revokeSessionsOnPasswordReset: true,
       sendResetPassword: async ({ user, url }) =>
-        send({ to: user.email, url, kind: 'reset-password' }),
+        recoveryDelivery(user.id, {
+          to: user.email,
+          url,
+          kind: 'reset-password',
+        }),
     },
     emailVerification: {
       sendOnSignUp: true,

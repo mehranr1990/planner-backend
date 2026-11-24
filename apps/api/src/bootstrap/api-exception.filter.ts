@@ -5,6 +5,7 @@ import type { ApiError, ErrorCode } from '@mehran/api-contracts';
 import type { ContextRequest } from './request-context.js';
 import { persistenceStatus } from '../platform/database/persistence-error.js';
 import { RateLimitException, rateLimitHeaders } from './rate-limit.js';
+import { AccountSuspendedException } from '../platform/auth/account-suspended.exception.js';
 
 const errors: Record<number, [ErrorCode, string]> = {
   400: ['BAD_REQUEST', 'Invalid request'],
@@ -59,6 +60,11 @@ export class ApiExceptionFilter implements ExceptionFilter {
       if (!response.destroyed) response.destroy();
       return;
     }
+    if (exception instanceof AccountSuspendedException)
+      response.setHeader(
+        'X-Account-Suspension-Reason',
+        encodeURIComponent(exception.publicReason),
+      );
     // Express JSON parser errors carry a status but are not Nest HttpExceptions.
     const parserError =
       exception instanceof Error &&

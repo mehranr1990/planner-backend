@@ -8,6 +8,7 @@ import {
   PayloadTooLargeException,
 } from '@nestjs/common';
 import { randomUUID, randomBytes, createHash } from 'node:crypto';
+import { AdminCommand } from '../../../platform/admin/admin-command.js';
 import type { z } from 'zod';
 import * as c from '@mehran/api-contracts';
 import type {
@@ -1288,6 +1289,23 @@ export class CompanyAccess {
       root.generation !== row.inviterGeneration
     )
       throw new NotFoundException();
+    if (row.initiatedByAdminId) {
+      await AdminCommand.requireInitiator(
+        ctx.tx,
+        row.initiatedByAdminId,
+        'admin.memberships.add',
+      );
+      const custody = await ctx.tx.sharedCustody.findUniqueOrThrow({
+        where: { spaceId: row.spaceId },
+      });
+      if (
+        custody.primaryOwnerAccessId !== root.id ||
+        row.companyIssuerAccessId !== root.id ||
+        row.companyIssuerGeneration !== root.generation
+      )
+        throw new NotFoundException();
+      return;
+    }
     const userId = root.SharedActor.userId,
       rootProof = await this.seat(ctx, ctx.spaceId, userId);
     const issuerCtx = {

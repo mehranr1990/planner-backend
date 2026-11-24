@@ -17,18 +17,18 @@ import type {
 import { DatabaseService } from '../../../platform/database/database.service.js';
 import { AuthService } from '../../../platform/auth/auth.service.js';
 import type { RequestActor } from '../../../platform/auth/request-actor.js';
-import type { SharedCleanupScope } from '../../../platform/lifecycle/shared-cleanup.js';
+import type {
+  SharedCleanupScope,
+  SharedCleanupStep,
+} from '../../../platform/lifecycle/shared-cleanup.js';
 import { sharedDeleteBatch } from '../../../platform/lifecycle/shared-cleanup.js';
 import { SharedKernel } from './shared-kernel.service.js';
 import { CollaborationService } from './collaboration.service.js';
 import { SharedRetentionSchema } from './shared-retention.js';
 import { SharedControl } from '../../../platform/storage/shared-control.js';
+import { TeamDomainLifecycle } from './team-domain-lifecycle.js';
 export type LifecycleFile = { id: string; key: string; attempt: string | null };
-export type LifecycleStep = {
-  nextStage?: string;
-  files?: LifecycleFile[];
-  finalize?: boolean;
-};
+export type LifecycleStep = SharedCleanupStep;
 type LifecycleAdvance = {
   worked: true;
   transfer?: {
@@ -45,6 +45,7 @@ const hash = (s: string) => createHash('sha256').update(s).digest('hex');
 @Injectable()
 export class SharedLifecycleService {
   constructor(
+    @Inject(TeamDomainLifecycle) private readonly domains: TeamDomainLifecycle,
     @Inject(SharedControl) private readonly control: SharedControl,
     @Inject(DatabaseService) private readonly db: DatabaseService,
     @Inject(SharedKernel) private readonly kernel: SharedKernel,
@@ -464,6 +465,8 @@ export class SharedLifecycleService {
   }
   async core(tx: Prisma.TransactionClient, s: SharedCleanupScope) {
     s.verify(tx);
+    if (s.scopeId)
+      throw new ConflictException({ code: 'SCOPED_SOURCE_FINALIZER_REQUIRED' });
     await tx.sharedCustody.update({
       where: { spaceId: s.spaceId },
       data: { primaryOwnerAccessId: null },
@@ -493,7 +496,7 @@ export class SharedLifecycleService {
       await tx.$executeRaw`UPDATE "SharedLifecycleJob" SET "spaceId"=NULL,"recoveryHash"=NULL,progress=jsonb_build_object('stage','CANCELED','releases',COALESCE(progress->'releases','{}'::jsonb)),"leaseUntil"=NULL WHERE id IN(SELECT id FROM "SharedLifecycleJob" WHERE "spaceId"=${s.spaceId}::uuid AND state='CANCELED' ORDER BY id LIMIT 200)`;
     return jobs === 0;
   }
-  next(
+  async next(
     kind:
       | 'PROJECT'
       | 'TEAM'
@@ -502,7 +505,7 @@ export class SharedLifecycleService {
       | 'MEETING'
       | 'SOCIAL_GROUP' = 'PROJECT',
   ) {
-    return this.db.client.sharedLifecycleJob.findFirst({
+    const root = await this.db.client.sharedLifecycleJob.findFirst({
       where: {
         spaceId: { not: null },
         scopeId: null,
@@ -513,6 +516,20 @@ export class SharedLifecycleService {
       },
       orderBy: [{ nextAt: 'asc' }, { id: 'asc' }],
     });
+    const child = kind === 'TEAM' ? await this.domains.next() : null;
+    if (!root) return child;
+    if (!child) return root;
+    return child.nextAt < root.nextAt ||
+      (child.nextAt.getTime() === root.nextAt.getTime() && child.id < root.id)
+      ? child
+      : root;
+  }
+  domainCore(
+    tx: Prisma.TransactionClient,
+    s: SharedCleanupScope,
+    removeSource: () => Promise<void>,
+  ) {
+    return this.domains.core(tx, s, removeSource);
   }
   async advance(
     hint: SharedLifecycleJob,
@@ -535,6 +552,10 @@ export class SharedLifecycleService {
     ) => Promise<string | null>,
   ): Promise<LifecycleAdvance | null> {
     if (!hint.spaceId) return null;
+    if (hint.scopeId) {
+      if (kind !== 'TEAM') throw new NotFoundException();
+      return this.domains.advance(hint, users, handler, contentGuard);
+    }
     const spaceId = hint.spaceId;
     return this.collaboration.signed(
       null,
@@ -893,7 +914,7 @@ export class SharedLifecycleService {
   }
   failure(hint: SharedLifecycleJob, leaseId?: string) {
     if (!hint.spaceId) return Promise.resolve();
-    const spaceId = hint.spaceId;
+    const spaceId = hint.scopeId ?? hint.spaceId;
     return this.collaboration.signed(
       null,
       spaceId,
@@ -927,7 +948,7 @@ export class SharedLifecycleService {
             },
           },
         });
-        await tx.sharedCustody.update({ where: { spaceId }, data: { state } });
+        await this.kernel.updateLifecycleCustody(tx, spaceId, { state });
         const policy = await tx.sharedRetentionPolicy.findUniqueOrThrow({
           where: { version: job.retentionPolicyVersion },
         });

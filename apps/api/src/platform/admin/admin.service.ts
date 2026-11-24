@@ -51,12 +51,24 @@ export class AdminService {
         current.mfaVerifiedAt <= user.mfaEnrolledAt)
     )
       throw new ForbiddenException();
-    return { user, session: session.session };
+    return {
+      user,
+      session: { ...session.session, mfaVerifiedAt: current.mfaVerifiedAt },
+    };
   }
   async authorize(headers: IncomingHttpHeaders, permission: AdminPermission) {
     const actor = await this.session(headers);
     if (!permits(actor.user.role, permission)) throw new ForbiddenException();
     return actor;
+  }
+  requireRecent(actor: Awaited<ReturnType<AdminService['session']>>) {
+    const verified = actor.session.mfaVerifiedAt;
+    if (
+      !verified ||
+      Date.now() - verified.getTime() >= 300000 ||
+      verified > new Date()
+    )
+      throw new ForbiddenException({ code: 'ADMIN_REAUTHENTICATION_REQUIRED' });
   }
   auditAttempt(action: string, requestId: string) {
     return this.database.client.adminAuditEvent.create({

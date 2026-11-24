@@ -114,6 +114,10 @@ model AuthVerification {
 
 // Application-owned account foundation; business models are added only in their approved batches.
 model UserSettings {
+  adminRevision Int @default(1)
+  suspendedAt DateTime? @db.Timestamptz(3)
+  suspensionExpiresAt DateTime? @db.Timestamptz(3)
+  suspensionReason String? @db.VarChar(500)
   workingHours Json?
   rewardsEnabled             Boolean   @default(false)
   rewardsEnabledSince        DateTime? @db.Timestamptz(3)
@@ -136,6 +140,10 @@ enum SpaceKind {
 }
 
 model Space {
+  adminRevision Int @default(1)
+  suspendedAt DateTime? @db.Timestamptz(3)
+  suspensionExpiresAt DateTime? @db.Timestamptz(3)
+  suspensionReason String? @db.VarChar(500)
   socialPrivacy SocialPrivacy?
   socialCircles SocialCircle[]
   socialGroup SocialGroup?
@@ -1875,6 +1883,10 @@ model PushSubscription {
 
 // SQL enforces additional branch, lifecycle and immutable-history constraints.
 model AccessScope {
+  adminRevision Int @default(1)
+  suspendedAt DateTime? @db.Timestamptz(3)
+  suspensionExpiresAt DateTime? @db.Timestamptz(3)
+  suspensionReason String? @db.VarChar(500)
   workflowDrafts TaskWorkflowDraft[]
   socialGroup SocialGroup?
  Announcement_scope Announcement[] @relation("Announcement_scope_fk")
@@ -2221,6 +2233,8 @@ model ResourceGrant {
 
 // SQL enforces additional branch, lifecycle and immutable-history constraints.
 model SharedActor {
+  adminUserId String? @db.Uuid
+  adminUser AdminUser? @relation(fields: [adminUserId], references: [id], onDelete: Restrict)
   projectFileFolders ProjectFileFolder[]
   closedRegisterDetails ProjectRegisterDetail[]
   workflowDrafts TaskWorkflowDraft[]
@@ -2356,7 +2370,7 @@ model SharedCustody {
  Company Company?
 
  TeamWorkItem TeamWorkItem[]
-  Team Team?
+  Team Team[]
   spaceId                String                @id @db.Uuid
   kind                   String                @db.VarChar(20)
   state                  String                @db.VarChar(24)
@@ -2498,6 +2512,7 @@ model SharedUsageEntry {
 
 // P2-02: additional check/partial uniqueness rules are enforced by reviewed SQL.
 model ContextInvitation {
+  initiatedByAdminId String? @db.Uuid
   emailDeliveryState String @default("NONE") @db.VarChar(11)
   declineNote String? @db.VarChar(500)
   resentAt DateTime? @db.Timestamptz(3)
@@ -2564,6 +2579,7 @@ model ContextInvitation {
 
 // P2-02: additional check/partial uniqueness rules are enforced by reviewed SQL.
 model OwnerHandover {
+  initiatedByAdminId String? @db.Uuid
   id                                                                                      String                @id @db.Uuid
   spaceId                                                                                 String                @db.Uuid
   scopeId                                                                                 String                @db.Uuid
@@ -3821,7 +3837,7 @@ model Team {
  TeamPlan TeamPlan[]
  TeamWorkItem TeamWorkItem[]
   id                   String                 @id @db.Uuid
-  spaceId              String                 @unique @db.Uuid
+  spaceId              String                 @db.Uuid
   scopeId              String                 @db.Uuid
   createdByActorId     String                 @db.Uuid
   title                String                 @db.VarChar(300)
@@ -5166,6 +5182,7 @@ model TeamCompanyAssociation {
 
 // ADR 0040: immutable reviewed whole-root custody protocol.
 model CompanyCustodyTransfer {
+  retirementControlId String? @unique @db.Uuid
   startedAt DateTime? @db.Timestamptz(3)
   companyRetentionPolicyVersion String @db.VarChar(80) @default(dbgenerated("NULL::character varying"))
   DomainScopeAdmissionAlias_transfer DomainScopeAdmissionAlias[] @relation("DomainScopeAdmissionAlias_transfer")
@@ -7815,6 +7832,7 @@ model MeetingEmailInvitation {
 }
 
 model AdminUser {
+ sharedAttributions SharedActor[]
  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
  name String
  email String @unique
@@ -7889,6 +7907,12 @@ model AdminTwoFactor {
  @@index([secret])
 }
 model AdminAuditEvent {
+ targetUserId String? @db.Uuid
+ targetSpaceId String? @db.Uuid
+ reason String? @db.VarChar(500)
+ internalNote String? @db.VarChar(2000)
+ permission String? @db.VarChar(100)
+ metadata Json?
  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
  actorAdminId String? @db.Uuid
  actor AdminUser? @relation(fields: [actorAdminId], references: [id], onDelete: SetNull)
@@ -7897,4 +7921,40 @@ model AdminAuditEvent {
  requestId String @db.Uuid
  createdAt DateTime @default(now())
  @@index([actorAdminId, createdAt])
+}
+
+model AdminBulkOperation {
+ id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+ actorAdminId String @db.Uuid
+ input Json
+ targets Json
+ results Json @default("{}")
+ expiresAt DateTime @db.Timestamptz(3)
+ createdAt DateTime @default(now()) @db.Timestamptz(3)
+}
+
+model AdminMutationReceipt {
+ id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+ actorAdminId String @db.Uuid
+ operation String @db.VarChar(100)
+ keyHash String @db.Char(64)
+ fingerprint String @db.Char(64)
+ result Json
+ createdAt DateTime @default(now()) @db.Timestamptz(3)
+ @@unique([actorAdminId, operation, keyHash])
+}
+model AdminDelivery {
+ id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+ auditId String @db.Uuid
+ targetUserId String? @db.Uuid
+ recipientEmail String? @db.VarChar(320)
+ kind String @db.VarChar(40)
+ payload Json
+ state String @default("PENDING") @db.VarChar(10)
+ attempts Int @default(0)
+ nextAt DateTime @default(now()) @db.Timestamptz(3)
+ leaseUntil DateTime? @db.Timestamptz(3)
+ createdAt DateTime @default(now()) @db.Timestamptz(3)
+ @@unique([auditId,targetUserId,kind])
+ @@index([state,nextAt])
 }

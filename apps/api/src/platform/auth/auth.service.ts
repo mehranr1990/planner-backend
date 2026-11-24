@@ -3,11 +3,10 @@ import {
   Injectable,
   ForbiddenException,
   UnauthorizedException,
-  HttpException,
 } from '@nestjs/common';
-import { isAPIError } from 'better-auth/api';
 import { PinoLogger } from 'nestjs-pino';
 import { fromNodeHeaders } from 'better-auth/node';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import type { IncomingHttpHeaders } from 'node:http';
 import type { Prisma } from '../../generated/prisma/client.js';
 import { APP_CONFIG } from '../../bootstrap/configuration.module.js';
@@ -25,6 +24,11 @@ import type { IdentityAdmission } from './admission.js';
 
 @Injectable()
 export class AuthService {
+  private readonly recoveryDeliveries = new AsyncLocalStorage<{
+    userId: string;
+    email: string;
+    delivery?: Promise<void>;
+  }>();
   readonly auth: ReturnType<typeof createIdentityAuth>;
   constructor(
     @Inject(APP_CONFIG) config: AppConfig,
@@ -40,7 +44,37 @@ export class AuthService {
       (message) => mail.send(message),
       () => logger.warn({ provider: 'better-auth' }, 'Identity provider event'),
       admission,
+      async (userId, message) => {
+        const context = this.recoveryDeliveries.getStore();
+        if (context) {
+          if (context.userId !== userId || context.email !== message.to)
+            throw new ForbiddenException();
+          context.delivery = (async () => {
+            await admission(userId);
+            await mail.send(message);
+          })();
+          return context.delivery;
+        }
+        return mail.send(message);
+      },
     );
+  }
+  /** Observe the actual SMTP promise; the provider intentionally hides delivery failures from public recovery. */
+  async dispatchRecovery(userId: string) {
+    await this.admission(userId);
+    const user = await this.database.client.user.findUniqueOrThrow({
+      where: { id: userId },
+      select: { email: true, emailVerified: true },
+    });
+    if (!user.emailVerified) throw new ForbiddenException();
+    const context: { userId: string; email: string; delivery?: Promise<void> } =
+      { userId, email: user.email };
+    await this.recoveryDeliveries.run(context, async () => {
+      await this.auth.api.requestPasswordReset({ body: { email: user.email } });
+      if (!context.delivery)
+        throw new Error('Recovery delivery was not dispatched');
+      await context.delivery;
+    });
   }
   async session(
     headers: IncomingHttpHeaders,
@@ -67,16 +101,23 @@ export class AuthService {
     headers: IncomingHttpHeaders,
     body: { name?: string; image?: string | null },
   ) {
-    try {
-      return await this.auth.api.updateUser({
-        headers: fromNodeHeaders(headers),
-        body,
+    const session = await this.session(headers);
+    if (!session) throw new UnauthorizedException();
+    return this.database.client.$transaction(async (tx) => {
+      const personal = await tx.space.findFirstOrThrow({
+        where: { kind: 'PERSONAL', ownerUserId: session.user.id },
+        select: { id: true },
       });
-    } catch (error) {
-      if (isAPIError(error))
-        throw new HttpException('Identity request failed', error.statusCode);
-      throw error;
-    }
+      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${'personal-access:' + personal.id},0))::text`;
+      await this.admission(session.user.id);
+      const current = await tx.authSession.findUnique({
+        where: { id: session.session.id },
+      });
+      if (!current || current.expiresAt <= new Date())
+        throw new UnauthorizedException();
+      await tx.user.update({ where: { id: session.user.id }, data: body });
+      return { status: true };
+    });
   }
   async requireFreshSession(headers: IncomingHttpHeaders): Promise<void> {
     const session = await this.session(headers);

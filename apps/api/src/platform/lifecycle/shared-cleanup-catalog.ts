@@ -63,10 +63,13 @@ import type { Prisma } from '../../generated/prisma/client.js';
 // StoredFile, so Shared STORAGE purge and Personal Space erasure remove the
 // verdict with the file row. It references no User, Space or custody content.
 export const SHARED_CLEANUP_FK_SHA256 =
-  // Five features: 11 typed edges, 1,159 total. Project capacity templates
-  // are removed in PROJECT_CONTENT before Projects/membership intervals.
-  // Email offers are removed in MESSAGING/MEETINGS before members/actors.
-  '2ab2357ea7eb8c9c67d8f250ec46a75d21a91da57c05deb381d27b42301b242b';
+  // Platform Admin adds ten edges (1,169 total): four independent Admin identity/audit
+  // references and six P1 attribution/initiation/receipt/delivery references. Delivery
+  // cascades on User erasure; invitation/handover attribution is removed with its
+  // existing owner-controlled records. No new FK points into ordinary work content.
+  // M098 makes only nine enumerated locator FKs DEFERRABLE INITIALLY IMMEDIATE;
+  // delete actions/order are unchanged. Root-wide transfer disposal stays fenced.
+  '69c57be2b5d1f0a6902cd874c6a50b28ce22a982bea856d46b28b6d6cda639ec';
 export async function assertSharedCleanupCatalog(tx: Prisma.TransactionClient) {
   const rows = await tx.$queryRaw<
     { table: string; name: string; target: string; definition: string }[]

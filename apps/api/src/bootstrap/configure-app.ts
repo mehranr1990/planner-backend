@@ -40,6 +40,7 @@ export async function configureApp(app: NestExpressApplication): Promise<void> {
       'X-Invitation-Proof',
     ],
     exposedHeaders: [
+      'X-Account-Suspension-Reason',
       'X-Request-Id',
       'X-Correlation-Id',
       'ETag',

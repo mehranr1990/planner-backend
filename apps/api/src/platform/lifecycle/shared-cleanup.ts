@@ -8,6 +8,11 @@ export type SharedCleanupScope = {
   verify: (tx: Prisma.TransactionClient) => void;
 };
 export type CleanupFile = { id: string; key: string; attempt: string | null };
+export type SharedCleanupStep = {
+  nextStage?: string;
+  files?: CleanupFile[];
+  finalize?: boolean;
+};
 type CleanupParents = Readonly<
   Record<string, { table: string; foreignKey: string }>
 >;

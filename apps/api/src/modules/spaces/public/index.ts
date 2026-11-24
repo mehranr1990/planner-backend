@@ -1,4 +1,6 @@
 export { SpacesModule } from '../spaces.module.js';
+export { AdminSpaces } from '../infrastructure/admin-spaces.js';
+export { AdminCollaboration } from '../application/admin-collaboration.js';
 export { sharedHttpRequest } from './shared-http-request.js';
 export type { SharedTraffic } from '../domain/http-rate-policy.js';
 export { SpacesService } from '../application/spaces.service.js';
@@ -37,3 +39,5 @@ export {
   sharedNotificationModule,
 } from './notification-audience.js';
 export { InvitationMailService } from '../application/invitation-mail.service.js';
+export { TeamCustodyTransfer } from '../application/team-custody-transfer.js';
+export { CompanyDomainParent } from './company-domain-parent.js';

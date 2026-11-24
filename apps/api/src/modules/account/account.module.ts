@@ -5,6 +5,7 @@ import { NotificationIdentity } from './public/notification-identity.js';
 import { NotificationIdentityRepository } from './infrastructure/notification-identity.repository.js';
 import { FinancePreferencesRepository } from './infrastructure/finance-preferences.repository.js';
 import { Module } from '@nestjs/common';
+import { AdminAccounts } from './infrastructure/admin-accounts.js';
 import { DatabaseModule } from '../../platform/database/database.module.js';
 import { SpacesModule } from '../spaces/public/index.js';
 import { SettingsRepository } from './infrastructure/settings.repository.js';
@@ -18,6 +19,7 @@ import { PlanningPreferencesRepository } from './infrastructure/planning-prefere
 @Module({
   imports: [DatabaseModule, SpacesModule, AuditModule],
   providers: [
+    AdminAccounts,
     { provide: RewardPreferencesAccess, useClass: RewardPreferencesRepository },
     { provide: NotificationIdentity, useClass: NotificationIdentityRepository },
     { provide: SETTINGS_REPOSITORY, useClass: SettingsRepository },
@@ -27,6 +29,7 @@ import { PlanningPreferencesRepository } from './infrastructure/planning-prefere
   ],
   controllers: [MeController],
   exports: [
+    AdminAccounts,
     PlanningPreferences,
     FinancePreferences,
     NotificationIdentity,

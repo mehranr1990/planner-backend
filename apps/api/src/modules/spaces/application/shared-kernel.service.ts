@@ -7,6 +7,8 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { randomUUID, createHash } from 'node:crypto';
+import { AdminCommand } from '../../../platform/admin/admin-command.js';
+import { effectiveSuspension } from '../../../platform/admin/management-policy.js';
 import { z } from 'zod';
 import type {
   Prisma,
@@ -23,6 +25,7 @@ import { SharedControl } from '../../../platform/storage/shared-control.js';
 import type { SharedControlRecord } from '../../../platform/storage/shared-control.js';
 import { SharedAuthority } from '../public/shared-authority.js';
 import { CompanyErasure } from '../public/company-erasure.js';
+import { CompanyDomainParent } from '../public/company-domain-parent.js';
 import type { SharedCleanupScope } from '../../../platform/lifecycle/shared-cleanup.js';
 import { assertSharedCleanupCatalog } from '../../../platform/lifecycle/shared-cleanup-catalog.js';
 import { SharedFeaturePolicy } from '../public/shared-features.js';
@@ -92,7 +95,7 @@ function retryable(error: unknown) {
     )
   );
 }
-function knownRollback(error: unknown) {
+export function knownRollback(error: unknown) {
   return (
     error instanceof ForbiddenException ||
     error instanceof NotFoundException ||
@@ -103,6 +106,188 @@ function knownRollback(error: unknown) {
 }
 @Injectable()
 export class SharedKernel {
+  /** Existing account/identity/custody lock order for the narrow consented Team workflow. */
+  async teamCustodyFence<T>(
+    actor: RequestActor,
+    spaces: string[],
+    users: string[],
+    work: (tx: Prisma.TransactionClient, locked: string[]) => Promise<T>,
+    onRetry?: () => Promise<void>,
+    retiringTeamId?: string,
+  ) {
+    this.enabled();
+    const locked = [...new Set([actor.userId, ...users])].sort();
+    return this.transaction(
+      locked,
+      [...new Set(spaces)].sort(),
+      actor,
+      async (tx) => {
+        await this.verifyRestoreFloor(tx);
+        for (const user of locked) await this.verifiedRecipient(tx, user);
+        for (const id of spaces) {
+          const custody = await tx.sharedCustody.findUnique({
+            where: { spaceId: id },
+          });
+          if (!custody && id === retiringTeamId) continue;
+          if (!custody) throw new NotFoundException();
+          await this.assertWorkspaceWritable(tx, id);
+          if (custody.state !== 'ACTIVE')
+            throw new ConflictException({
+              code: 'TEAM_CUSTODY_CONTEXT_UNAVAILABLE',
+            });
+          await this.offerControl(tx, id, custody.authorizationVersion);
+        }
+        return work(tx, locked);
+      },
+      onRetry,
+      retiringTeamId ? [retiringTeamId] : [],
+    );
+  }
+  async adminAttribution(
+    tx: Prisma.TransactionClient,
+    spaceId: string,
+    adminId: string,
+  ) {
+    const prior = await tx.sharedActor.findFirst({
+      where: { spaceId, adminUserId: adminId },
+    });
+    return (
+      prior ??
+      tx.sharedActor.create({
+        data: {
+          id: randomUUID(),
+          spaceId,
+          userId: null,
+          adminUserId: adminId,
+          state: 'ADMIN',
+        },
+      })
+    );
+  }
+  /** Locks and signs administrative metadata mutations without issuing ordinary resource authority. */
+  async administer<T extends Prisma.InputJsonValue>(
+    command: AdminCommand,
+    selector: string,
+    users: string[],
+    work: (
+      tx: Prisma.TransactionClient,
+      attributionId: string,
+      auditId: string,
+    ) => Promise<T>,
+    effect: { action: string; resourceId: string },
+  ) {
+    this.enabled();
+    const spaceId = await this.custodySpace(selector);
+    const hints = await this.db.client.contextAccess.findMany({
+      where: {
+        OR: [
+          { SharedCustody: { some: { spaceId } } },
+          { DomainScopeCustody_owner: { some: { scopeId: selector } } },
+        ],
+      },
+      select: { SharedActor: { select: { userId: true } } },
+    });
+    const locked = [
+      ...new Set([
+        ...users,
+        ...hints.flatMap((h) =>
+          h.SharedActor.userId ? [h.SharedActor.userId] : [],
+        ),
+      ]),
+    ].sort();
+    const intents: SharedControlRecord[] = [];
+    let committed = false;
+    const abort = async () => {
+      for (const r of intents)
+        await this.control.append({
+          ...r,
+          outcome: 'ABORTED',
+          at: new Date().toISOString(),
+        });
+      intents.length = 0;
+    };
+    try {
+      const result = await this.transaction(
+        locked,
+        [spaceId],
+        null,
+        (tx) =>
+          command.execute(tx, async () => {
+            const custody = await this.lifecycleCustody(tx, selector);
+            if (custody.spaceId !== spaceId)
+              throw new ConflictException({ code: 'CUSTODY_CHANGED_RESTART' });
+            if (
+              !['TEAM', 'COMPANY'].includes(custody.kind) ||
+              !['ACTIVE', 'ARCHIVED'].includes(custody.state)
+            )
+              throw new ConflictException({ code: 'WORKSPACE_UNAVAILABLE' });
+            const root = await tx.sharedCustody.findUniqueOrThrow({
+              where: { spaceId },
+            });
+            await this.offerControl(tx, spaceId, root.authorizationVersion);
+            const r: SharedControlRecord = {
+              id: randomUUID(),
+              spaceId,
+              version: String(root.authorizationVersion + 1n),
+              action: effect.action,
+              resourceId: effect.resourceId,
+              outcome: 'INTENT',
+              at: new Date().toISOString(),
+            };
+            await this.control.append(r);
+            intents.push(r);
+            const attribution = await this.adminAttribution(
+              tx,
+              spaceId,
+              command.adminId,
+            );
+            return work(tx, attribution.id, r.id);
+          }),
+        abort,
+      );
+      committed = true;
+      for (const r of intents)
+        await this.control.append({
+          ...r,
+          outcome: 'COMMITTED',
+          at: new Date().toISOString(),
+        });
+      return result;
+    } catch (error) {
+      if (!committed && knownRollback(error)) await abort();
+      throw error;
+    }
+  }
+  async adminEffect(
+    tx: Prisma.TransactionClient,
+    command: AdminCommand,
+    selector: string,
+    attributionId: string,
+    auditId: string,
+    action: string,
+    resourceId: string,
+    usage?: { actorId: string; feature: string; delta: number },
+  ) {
+    const custody = await this.lifecycleCustody(tx, selector);
+    return this.effects(
+      tx,
+      { requestId: command.requestId },
+      {
+        spaceId: custody.spaceId,
+        scopeId: selector,
+        actorId: attributionId,
+        accessId: custody.primaryOwnerAccessId!,
+        generation: 1,
+        role: null,
+        capability: 'task.read',
+        authorizationVersion: custody.authorizationVersion,
+      },
+      action,
+      resourceId,
+      auditId,
+      usage,
+    );
+  }
   // A control view lives only inside one already-fenced DB transaction. Every new transaction reloads it.
   private readonly controlViews = new WeakMap<
     object,
@@ -125,6 +310,8 @@ export class SharedKernel {
     @Inject(PrivacyGate) private readonly privacy: PrivacyGate,
     @Inject(SharedFeaturePolicy) private readonly features: SharedFeaturePolicy,
     @Inject(CompanyErasure) private readonly companyErasure: CompanyErasure,
+    @Inject(CompanyDomainParent)
+    private readonly companyParent: CompanyDomainParent = new CompanyDomainParent(),
   ) {}
   private enabled() {
     this.privacy.assert();
@@ -137,6 +324,63 @@ export class SharedKernel {
   }
   assertEnabled() {
     this.enabled();
+  }
+  async assertTeamParentAvailable(
+    tx: Prisma.TransactionClient,
+    companyId: string,
+    parentScopeId: string,
+    allowArchived = false,
+    requireWritable = false,
+  ) {
+    const ids = await this.companyParent.ancestors(
+      tx,
+      companyId,
+      parentScopeId,
+    );
+    const rows = await tx.accessScope.findMany({
+      where: { spaceId: companyId, id: { in: ids } },
+    });
+    if (
+      rows.length !== ids.length ||
+      rows.some(
+        (r) =>
+          r.state !== 'ACTIVE' && !(allowArchived && r.state === 'ARCHIVED'),
+      )
+    )
+      throw new NotFoundException();
+    if (requireWritable && rows.some((r) => effectiveSuspension(r)))
+      throw new ForbiddenException({ code: 'WORKSPACE_READ_ONLY' });
+    return rows;
+  }
+  async assertWorkspaceWritable(
+    tx: Prisma.TransactionClient,
+    selector: string,
+  ) {
+    const spaceId = await this.custodySpaceInTransaction(tx, selector);
+    const state = await tx.space.findUnique({
+      where: { id: spaceId },
+      select: { suspendedAt: true, suspensionExpiresAt: true },
+    });
+    if (state && effectiveSuspension(state))
+      throw new ForbiddenException({ code: 'WORKSPACE_READ_ONLY' });
+    const child = await tx.accessScope.findUnique({
+      where: { id: selector },
+      select: { suspendedAt: true, suspensionExpiresAt: true },
+    });
+    if (child && effectiveSuspension(child))
+      throw new ForbiddenException({ code: 'WORKSPACE_READ_ONLY' });
+    const domain = await tx.domainScopeCustody.findUnique({
+      where: { scopeId: selector },
+    });
+    if (domain?.kind === 'TEAM') {
+      await this.assertTeamParentAvailable(
+        tx,
+        spaceId,
+        domain.parentScopeId,
+        false,
+        true,
+      );
+    }
   }
   async contextState(
     tx: Prisma.TransactionClient,
@@ -347,13 +591,13 @@ export class SharedKernel {
   async projectStatus(actor: RequestActor, spaceId: string) {
     this.enabled();
     if (!actor.sessionId) throw new ForbiddenException();
-    const users = await this.requiredUsers(actor, [spaceId], []);
+    const selector = spaceId;
+    spaceId = await this.custodySpace(selector);
+    const users = await this.requiredUsers(actor, [spaceId], [], [selector]);
     return this.transaction(users, [spaceId], actor, async (tx) => {
       if (!(await this.accountActive(tx, actor.userId)))
         throw new NotFoundException();
-      const custody = await tx.sharedCustody.findUniqueOrThrow({
-          where: { spaceId },
-        }),
+      const custody = await this.lifecycleCustody(tx, selector),
         local = await tx.sharedActor.findFirst({
           where: { spaceId, userId: actor.userId, state: 'ACTIVE' },
         });
@@ -363,7 +607,7 @@ export class SharedKernel {
           where: {
             spaceId_scopeId_actorId: {
               spaceId,
-              scopeId: spaceId,
+              scopeId: selector,
               actorId: local.id,
             },
           },
@@ -376,11 +620,16 @@ export class SharedKernel {
         )
       )
         throw new NotFoundException();
-      await this.offerControl(tx, spaceId, custody.authorizationVersion);
+      const root = await tx.sharedCustody.findUniqueOrThrow({
+        where: { spaceId },
+      });
+      if (selector !== spaceId)
+        await this.companyRootAdmission(tx, spaceId, actor.userId);
+      await this.offerControl(tx, spaceId, root.authorizationVersion);
       const job = await tx.sharedLifecycleJob.findUnique({
         where: {
           custodyId_generation: {
-            custodyId: spaceId,
+            custodyId: selector,
             generation: custody.closureGeneration,
           },
         },
@@ -1230,7 +1479,7 @@ export class SharedKernel {
           committed.action === record.action &&
           committed.SharedAuditEvent.action === record.action &&
           committed.SharedAuditEvent.resourceId === record.resourceId) ||
-        (lifecycle?.custodyId === spaceId &&
+        ((lifecycle?.custodyId === spaceId || lifecycle?.spaceId === spaceId) &&
           lifecycle.authorizationVersion === BigInt(record.version) &&
           lifecycle.action === record.action &&
           lifecycle.jobId === record.resourceId)
@@ -1524,7 +1773,7 @@ export class SharedKernel {
           !communication &&
           (!owner?.userId ||
             !primary ||
-            !(await this.accountActive(tx, owner.userId)) ||
+            !(await this.accountActive(tx, owner.userId, true)) ||
             (await this.endedByClosure(tx, owner.userId, primary.joinedAt)))
         )
           throw new NotFoundException();
@@ -1962,6 +2211,8 @@ export class SharedKernel {
         custodyId: selector,
         generation: job.generation,
         action,
+        spaceId,
+        originCustodyId: selector !== spaceId ? selector : null,
         authorizationVersion: custody.authorizationVersion,
         operatorReference,
       },
@@ -1976,6 +2227,42 @@ export class SharedKernel {
     work: (scope: SharedCleanupScope) => Promise<T>,
   ) {
     await assertSharedCleanupCatalog(tx);
+    const domain = await tx.domainScopeCustody.findUnique({
+      where: { scopeId: spaceId },
+    });
+    if (domain) {
+      const job = await tx.sharedLifecycleJob.findUniqueOrThrow({
+        where: { id: jobId },
+      });
+      const [allowed] = await tx.$queryRaw<
+        { ok: boolean }[]
+      >`SELECT p1_team_disposal_allowed(${domain.spaceId}::uuid,${domain.scopeId}::uuid) ok`;
+      if (
+        domain.kind !== 'TEAM' ||
+        job.spaceId !== domain.spaceId ||
+        job.scopeId !== domain.scopeId ||
+        job.custodyId !== domain.scopeId ||
+        job.state !== 'PURGING' ||
+        (job.progress as Record<string, unknown>).leaseId !== leaseId ||
+        !allowed?.ok
+      )
+        throw new ConflictException({ code: 'PURGE_LEASE_CHANGED' });
+      let open = true;
+      const scope: SharedCleanupScope = {
+        spaceId: domain.spaceId,
+        scopeId: domain.scopeId,
+        jobId,
+        lockedUsers,
+        verify: (client) => {
+          if (!open || client !== tx) throw new ForbiddenException();
+        },
+      };
+      try {
+        return await work(scope);
+      } finally {
+        open = false;
+      }
+    }
     // Transfer evidence adds joint dependencies. Until their scoped retention
     // reconciliation is complete, no root-wide file or row pass may start.
     if (
@@ -2026,15 +2313,29 @@ export class SharedKernel {
     for (const row of rows.sort((a, b) => a.id.localeCompare(b.id)))
       await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${'personal-access:' + row.id},0))::text`;
   }
-  private async lockCustodies(tx: Prisma.TransactionClient, ids: string[]) {
+  private async lockCustodies(
+    tx: Prisma.TransactionClient,
+    ids: string[],
+    optional: string[] = [],
+  ) {
     for (const id of ids) {
       const found = await tx.$queryRaw<
         { spaceId: string }[]
       >`SELECT "spaceId" FROM "SharedCustody" WHERE "spaceId"=${id}::uuid FOR UPDATE`;
-      if (found.length !== 1) throw new NotFoundException();
+      if (found.length !== 1 && !optional.includes(id))
+        throw new NotFoundException();
     }
   }
-  private async accountActive(tx: Prisma.TransactionClient, userId: string) {
+  private async accountActive(
+    tx: Prisma.TransactionClient,
+    userId: string,
+    ownerOnly = false,
+  ) {
+    const account = await tx.userSettings.findUnique({
+      where: { userId },
+      select: { suspendedAt: true, suspensionExpiresAt: true },
+    });
+    if (!ownerOnly && account && effectiveSuspension(account)) return false;
     const row = await tx.space.findFirst({
       where: { kind: 'PERSONAL', ownerUserId: userId },
       select: { accessClosedAt: true },
@@ -2048,6 +2349,15 @@ export class SharedKernel {
     lockedUsers: string[],
   ): Promise<SharedAccess> {
     request = await this.requestCoordinates(tx, request);
+    if (
+      ![
+        'task.read',
+        'file.read',
+        'export.visible',
+        'membership.leave',
+      ].includes(request.capability)
+    )
+      await this.assertWorkspaceWritable(tx, request.scopeId);
     const custody = await tx.sharedCustody.findUnique({
       where: { spaceId: request.spaceId },
     });
@@ -2096,6 +2406,13 @@ export class SharedKernel {
     )
       throw new NotFoundException();
     const contextKind = domain?.kind ?? custody.kind;
+    if (domain?.kind === 'TEAM' && !departure)
+      await this.assertTeamParentAvailable(
+        tx,
+        domain.spaceId,
+        domain.parentScopeId,
+        archived,
+      );
     const sharedActor = await tx.sharedActor.findFirst({
       where: {
         spaceId: request.spaceId,
@@ -2214,7 +2531,7 @@ export class SharedKernel {
         !companyPrimary ||
         !companyActor?.userId ||
         !lockedUsers.includes(companyActor.userId) ||
-        !(await this.accountActive(tx, companyActor.userId)) ||
+        !(await this.accountActive(tx, companyActor.userId, true)) ||
         (await this.endedByClosure(
           tx,
           companyActor.userId,
@@ -2237,7 +2554,7 @@ export class SharedKernel {
       !communicationRead &&
       (!primary ||
         !primaryActor?.userId ||
-        !(await this.accountActive(tx, primaryActor.userId)) ||
+        !(await this.accountActive(tx, primaryActor.userId, true)) ||
         (await this.endedByClosure(tx, primaryActor.userId, primary.joinedAt)))
     )
       throw new ForbiddenException({ code: 'OWNER_EXIT_FROZEN' });
@@ -2605,6 +2922,7 @@ export class SharedKernel {
     actor: RequestActor | null,
     work: (tx: Prisma.TransactionClient) => Promise<T>,
     onRetry?: () => Promise<void>,
+    optionalSpaces: string[] = [],
   ) {
     const deadline = performance.now() + 30000;
     for (let attempt = 0; attempt < 3; attempt++) {
@@ -2618,7 +2936,7 @@ export class SharedKernel {
             await this.accounts(tx, users);
             await this.identity.lock(tx, users);
             if (actor) await this.identity.require(tx, actor);
-            await this.lockCustodies(tx, spaces);
+            await this.lockCustodies(tx, spaces, optionalSpaces);
             const baseline = await tx.sharedCustody.findMany({
               where: { spaceId: { in: spaces } },
               select: { spaceId: true, authorizationVersion: true },
@@ -2637,6 +2955,7 @@ export class SharedKernel {
                 where: {
                   OR: [
                     { custodyId: b.spaceId },
+                    { spaceId: b.spaceId },
                     { SharedLifecycleJob: { spaceId: b.spaceId } },
                   ],
                   authorizationVersion: { gt: b.authorizationVersion },
@@ -2651,6 +2970,7 @@ export class SharedKernel {
                     action: e.action,
                     resourceId: e.SharedAuditEvent.resourceId,
                     actorId: e.actorId,
+                    scopeId: e.scopeId ?? b.spaceId,
                   }),
                 );
               for (const e of system)
@@ -2662,6 +2982,7 @@ export class SharedKernel {
                     action: e.action,
                     resourceId: e.jobId,
                     actorId: null,
+                    scopeId: e.originCustodyId ?? b.spaceId,
                   }),
                 );
             }
@@ -2709,7 +3030,7 @@ export class SharedKernel {
   }
   private async effects(
     tx: Prisma.TransactionClient,
-    actor: RequestActor,
+    actor: Pick<RequestActor, 'requestId'> & Partial<RequestActor>,
     access: SharedAccess,
     action: string,
     resourceId: string,
@@ -3420,6 +3741,7 @@ export class SharedKernel {
       | 'SOCIAL_GROUP' = 'PROJECT',
     additionalUsers: string[] = [],
     additionalRequests: SharedRequest[] = [],
+    administrative?: AdminCommand,
   ) {
     this.enabled();
     uuid.parse(spaceId);
@@ -3431,195 +3753,216 @@ export class SharedKernel {
     return this.transaction(
       lockedUsers,
       [...new Set(extraSpaces)].sort(),
-      actor,
+      administrative ? null : actor,
       async (tx) => {
-        for (const request of additionalRequests)
-          await this.participantAuthority(
-            tx,
-            actor,
-            actor.userId,
-            request,
-            lockedUsers,
-          );
-        if (!(await this.accountActive(tx, actor.userId)))
-          throw new ForbiddenException();
-        const retention = await tx.sharedRetentionPolicy.findUnique({
-          where: { version: retentionVersion },
-        });
-        const parsed =
-          retention && SharedRetentionSchema.safeParse(retention.configuration);
-        if (
-          !retention ||
-          !parsed ||
-          !parsed.success ||
-          parsed.data.policyVersion !== retention.version ||
-          parsed.data.approvalReference !== retention.approvalReference ||
-          !parsed.data.applicableContexts.includes(kind)
-        )
-          throw new ForbiddenException({
-            code: 'SHARED_RETENTION_UNAVAILABLE',
+        const provisionWork = async () => {
+          for (const request of additionalRequests)
+            await this.participantAuthority(
+              tx,
+              actor,
+              actor.userId,
+              request,
+              lockedUsers,
+            );
+          if (!(await this.accountActive(tx, actor.userId)))
+            throw new ForbiddenException();
+          if (administrative) await this.verifiedRecipient(tx, actor.userId);
+          const retention = await tx.sharedRetentionPolicy.findUnique({
+            where: { version: retentionVersion },
           });
-        if (await tx.space.findUnique({ where: { id: spaceId } }))
-          throw new ConflictException();
-        if (
-          await tx.sharedLifecycleJob.findFirst({
-            where: { custodyId: spaceId },
-          })
-        )
-          throw new ConflictException({ code: 'CUSTODY_ID_RETIRED' });
-        await this.verifyRestoreFloor(tx);
-        await this.control.assertCurrent(
-          spaceId,
-          0n,
-          (await this.controlView(tx)).records,
-        );
-        if (
-          !['CONVERSATION', 'MEETING'].includes(kind) &&
-          Object.values(parsed.data.classRules).some(
-            (rule) => rule.disposalAction !== 'PURGE',
+          const parsed =
+            retention &&
+            SharedRetentionSchema.safeParse(retention.configuration);
+          if (
+            !retention ||
+            !parsed ||
+            !parsed.success ||
+            parsed.data.policyVersion !== retention.version ||
+            parsed.data.approvalReference !== retention.approvalReference ||
+            !parsed.data.applicableContexts.includes(kind)
           )
-        )
-          throw new ForbiddenException({
-            code: 'SHARED_RETENTION_DISPOSITION_UNAVAILABLE',
+            throw new ForbiddenException({
+              code: 'SHARED_RETENTION_UNAVAILABLE',
+            });
+          if (await tx.space.findUnique({ where: { id: spaceId } }))
+            throw new ConflictException();
+          if (
+            await tx.sharedLifecycleJob.findFirst({
+              where: { custodyId: spaceId },
+            })
+          )
+            throw new ConflictException({ code: 'CUSTODY_ID_RETIRED' });
+          await this.verifyRestoreFloor(tx);
+          await this.control.assertCurrent(
+            spaceId,
+            0n,
+            (await this.controlView(tx)).records,
+          );
+          if (
+            !['CONVERSATION', 'MEETING'].includes(kind) &&
+            Object.values(parsed.data.classRules).some(
+              (rule) => rule.disposalAction !== 'PURGE',
+            )
+          )
+            throw new ForbiddenException({
+              code: 'SHARED_RETENTION_DISPOSITION_UNAVAILABLE',
+            });
+          await this.featureGrowth(tx, spaceId, 'shared.custody', actor.userId);
+          if (kind === 'SOCIAL_GROUP')
+            await this.featureGrowth(tx, spaceId, 'social.group', actor.userId);
+          const actorId = randomUUID(),
+            accessId = randomUUID(),
+            auditId = randomUUID();
+          const now = (
+            await tx.$queryRaw<{ now: Date }[]>`SELECT clock_timestamp() AS now`
+          )[0]!.now;
+          await tx.space.create({
+            data: { id: spaceId, kind: 'SHARED', ownerUserId: null },
           });
-        await this.featureGrowth(tx, spaceId, 'shared.custody', actor.userId);
-        if (kind === 'SOCIAL_GROUP')
-          await this.featureGrowth(tx, spaceId, 'social.group', actor.userId);
-        const actorId = randomUUID(),
-          accessId = randomUUID(),
-          auditId = randomUUID();
-        const now = (
-          await tx.$queryRaw<{ now: Date }[]>`SELECT clock_timestamp() AS now`
-        )[0]!.now;
-        await tx.space.create({
-          data: { id: spaceId, kind: 'SHARED', ownerUserId: null },
-        });
-        await tx.sharedCustody.create({
-          data: {
-            spaceId,
-            kind,
-            state: 'ACTIVE',
-            primaryOwnerAccessId: accessId,
-            retentionPolicyVersion: retentionVersion,
-          },
-        });
-        await tx.accessScope.create({
-          data: { id: spaceId, spaceId, kind: 'ROOT' },
-        });
-        await tx.sharedActor.create({
-          data: { id: actorId, spaceId, userId: actor.userId, state: 'ACTIVE' },
-        });
-        await tx.contextAccess.create({
-          data: {
-            id: accessId,
+          await tx.sharedCustody.create({
+            data: {
+              spaceId,
+              kind,
+              state: 'ACTIVE',
+              primaryOwnerAccessId: accessId,
+              retentionPolicyVersion: retentionVersion,
+            },
+          });
+          await tx.accessScope.create({
+            data: { id: spaceId, spaceId, kind: 'ROOT' },
+          });
+          await tx.sharedActor.create({
+            data: {
+              id: actorId,
+              spaceId,
+              userId: actor.userId,
+              state: 'ACTIVE',
+            },
+          });
+          const attributionId = administrative
+            ? (await this.adminAttribution(tx, spaceId, administrative.adminId))
+                .id
+            : actorId;
+          await tx.contextAccess.create({
+            data: {
+              id: accessId,
+              spaceId,
+              scopeId: spaceId,
+              actorId,
+              state: 'ACTIVE',
+              memberRole: kind === 'COMPANY' ? 'ORG_ADMIN' : 'ADMIN',
+              joinedAt: now,
+            },
+          });
+          await tx.contextAccessInterval.create({
+            data: { accessId, generation: 1, joinedAt: now },
+          });
+          await tx.contextCapabilityPolicy.create({
+            data: {
+              spaceId,
+              scopeId: spaceId,
+              version: 1,
+              roleDefaults:
+                kind === 'SOCIAL_GROUP'
+                  ? {
+                      OWNER: ['task.read'],
+                      ADMIN: ['task.read'],
+                      MANAGER: [],
+                      MEMBER: ['task.read'],
+                      VIEWER: [],
+                    }
+                  : kind === 'COMPANY'
+                    ? companyDefaultPolicy
+                    : kind === 'TEAM'
+                      ? teamDefaultPolicy
+                      : kind === 'CONVERSATION'
+                        ? {
+                            OWNER: ['task.read'],
+                            ADMIN: ['task.read'],
+                            MANAGER: ['task.read'],
+                            MEMBER: ['task.read'],
+                            VIEWER: ['task.read'],
+                          }
+                        : defaultPolicy,
+              exportMaxRecords: 10000,
+              exportMaxBytes: 10485760,
+              publishedByActorId: attributionId,
+              auditId,
+            },
+          });
+          await tx.sharedAuditEvent.create({
+            data: {
+              id: auditId,
+              spaceId,
+              actorId: attributionId,
+              action: 'custody.create',
+              resourceId: spaceId,
+              requestId: actor.requestId,
+            },
+          });
+          await tx.sharedOutboxEvent.create({
+            data: {
+              id: randomUUID(),
+              spaceId,
+              actorId: attributionId,
+              auditId,
+              action: 'custody.create',
+              authorizationVersion: 1n,
+            },
+          });
+          await tx.sharedUsageEntry.create({
+            data: {
+              id: randomUUID(),
+              spaceId,
+              subjectActorId: actorId,
+              auditId,
+              feature: 'shared.custody',
+              delta: 1,
+            },
+          });
+          const admissionAuditId = randomUUID();
+          await tx.sharedAuditEvent.create({
+            data: {
+              id: admissionAuditId,
+              spaceId,
+              actorId: attributionId,
+              action: 'membership.admit',
+              resourceId: accessId,
+              requestId: actor.requestId,
+            },
+          });
+          await tx.sharedOutboxEvent.create({
+            data: {
+              id: randomUUID(),
+              spaceId,
+              actorId: attributionId,
+              auditId: admissionAuditId,
+              action: 'membership.admit',
+              authorizationVersion: 1n,
+            },
+          });
+          await tx.sharedUsageEntry.create({
+            data: {
+              id: randomUUID(),
+              spaceId,
+              subjectActorId: actorId,
+              auditId: admissionAuditId,
+              feature: 'shared.membership',
+              delta: 1,
+            },
+          });
+          const boundary = {
             spaceId,
             scopeId: spaceId,
-            actorId,
-            state: 'ACTIVE',
-            memberRole: kind === 'COMPANY' ? 'ORG_ADMIN' : 'ADMIN',
-            joinedAt: now,
-          },
-        });
-        await tx.contextAccessInterval.create({
-          data: { accessId, generation: 1, joinedAt: now },
-        });
-        await tx.contextCapabilityPolicy.create({
-          data: {
-            spaceId,
-            scopeId: spaceId,
-            version: 1,
-            roleDefaults:
-              kind === 'SOCIAL_GROUP'
-                ? {
-                    OWNER: ['task.read'],
-                    ADMIN: ['task.read'],
-                    MANAGER: [],
-                    MEMBER: ['task.read'],
-                    VIEWER: [],
-                  }
-                : kind === 'COMPANY'
-                  ? companyDefaultPolicy
-                  : kind === 'TEAM'
-                    ? teamDefaultPolicy
-                    : kind === 'CONVERSATION'
-                      ? {
-                          OWNER: ['task.read'],
-                          ADMIN: ['task.read'],
-                          MANAGER: ['task.read'],
-                          MEMBER: ['task.read'],
-                          VIEWER: ['task.read'],
-                        }
-                      : defaultPolicy,
-            exportMaxRecords: 10000,
-            exportMaxBytes: 10485760,
-            publishedByActorId: actorId,
-            auditId,
-          },
-        });
-        await tx.sharedAuditEvent.create({
-          data: {
-            id: auditId,
-            spaceId,
-            actorId,
-            action: 'custody.create',
-            resourceId: spaceId,
-            requestId: actor.requestId,
-          },
-        });
-        await tx.sharedOutboxEvent.create({
-          data: {
-            id: randomUUID(),
-            spaceId,
-            actorId,
-            auditId,
-            action: 'custody.create',
-            authorizationVersion: 1n,
-          },
-        });
-        await tx.sharedUsageEntry.create({
-          data: {
-            id: randomUUID(),
-            spaceId,
-            subjectActorId: actorId,
-            auditId,
-            feature: 'shared.custody',
-            delta: 1,
-          },
-        });
-        const admissionAuditId = randomUUID();
-        await tx.sharedAuditEvent.create({
-          data: {
-            id: admissionAuditId,
-            spaceId,
-            actorId,
-            action: 'membership.admit',
-            resourceId: accessId,
-            requestId: actor.requestId,
-          },
-        });
-        await tx.sharedOutboxEvent.create({
-          data: {
-            id: randomUUID(),
-            spaceId,
-            actorId,
-            auditId: admissionAuditId,
-            action: 'membership.admit',
-            authorizationVersion: 1n,
-          },
-        });
-        await tx.sharedUsageEntry.create({
-          data: {
-            id: randomUUID(),
-            spaceId,
-            subjectActorId: actorId,
-            auditId: admissionAuditId,
-            feature: 'shared.membership',
-            delta: 1,
-          },
-        });
-        const boundary = { spaceId, scopeId: spaceId, actorId, accessId };
-        await write?.(tx, boundary);
-        return boundary;
+            actorId: attributionId,
+            accessId,
+          };
+          await write?.(tx, boundary);
+          return boundary;
+        };
+        return administrative
+          ? administrative.execute(tx, provisionWork)
+          : provisionWork();
       },
     );
   }
@@ -3800,7 +4143,7 @@ export class SharedKernel {
             !primary ||
             primary.state !== 'ACTIVE' ||
             !primaryActor?.userId ||
-            !(await this.accountActive(tx, primaryActor.userId)) ||
+            !(await this.accountActive(tx, primaryActor.userId, true)) ||
             (await this.endedByClosure(
               tx,
               primaryActor.userId,
@@ -4154,7 +4497,7 @@ export class SharedKernel {
           throw new ConflictException();
         if (
           lifecycle &&
-          (lifecycle.custodyId !== spaceId ||
+          ((lifecycle.custodyId !== spaceId && lifecycle.spaceId !== spaceId) ||
             lifecycle.authorizationVersion !== BigInt(record.version) ||
             lifecycle.action !== record.action ||
             lifecycle.jobId !== record.resourceId)

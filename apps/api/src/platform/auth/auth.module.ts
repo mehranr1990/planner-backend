@@ -1,4 +1,5 @@
 import { Global, Module } from '@nestjs/common';
+import { AdminIdentity } from './admin-identity.js';
 import type { DynamicModule, ModuleMetadata, Provider } from '@nestjs/common';
 import { DatabaseModule } from '../database/database.module.js';
 import { AuthService } from './auth.service.js';
@@ -26,13 +27,19 @@ export class AuthModule {
       imports: [DatabaseModule, AuditModule, ...(imports ?? [])],
       controllers: [AuthController],
       providers: [
+        AdminIdentity,
         admission,
         AuthService,
         IdentityMailService,
         VerifiedSessionGuard,
         { provide: INITIAL_IDENTITY_RELATIONS, useValue: relations },
       ],
-      exports: [AuthService, VerifiedSessionGuard, IdentityMailService],
+      exports: [
+        AdminIdentity,
+        AuthService,
+        VerifiedSessionGuard,
+        IdentityMailService,
+      ],
     };
   }
 }

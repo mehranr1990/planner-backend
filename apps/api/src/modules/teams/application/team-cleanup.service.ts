@@ -152,6 +152,15 @@ export class TeamCleanupService {
               ? { nextStage: 'TEAM_ROOT' }
               : {};
           if (stage === 'TEAM_ROOT')
+            if (s.scopeId)
+              return (await this.lifecycle.domainCore(tx, s, async () => {
+                await tx.team.delete({
+                  where: { id: s.scopeId!, spaceId: s.spaceId },
+                });
+              }))
+                ? { finalize: true }
+                : {};
+          if (stage === 'TEAM_ROOT')
             return (await sharedDeleteBatch(tx, s, ['Team']))
               ? { nextStage: 'CORE' }
               : {};
@@ -187,9 +196,10 @@ export class TeamCleanupService {
         await this.lifecycle.failure(hint, claimedLease);
         return true;
       }
-      throw new ServiceUnavailableException({
-        code: 'SHARED_LIFECYCLE_RECONCILIATION_REQUIRED',
-      });
+      throw new ServiceUnavailableException(
+        { code: 'SHARED_LIFECYCLE_RECONCILIATION_REQUIRED' },
+        { cause: error },
+      );
     }
   }
 }

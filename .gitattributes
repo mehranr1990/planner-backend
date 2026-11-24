@@ -1,1 +1,3 @@
 * text=auto eol=lf
+# Preserve the exact reviewed/applied M100 checksum, including existing line endings.
+prisma/migrations/202611240100_team_scoped_disposal/migration.sql -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol

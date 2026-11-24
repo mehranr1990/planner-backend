@@ -319,6 +319,12 @@ describe('scoped persistence and API conventions', () => {
       '202611230092_project_member_weekday_capacity',
       '202611230093_communication_email_invitations',
       '202611230094_admin_session_mfa_proof',
+      '202611230095_platform_admin_p1',
+      '202611230096_platform_admin_p1_completion',
+      '202611230097_admin_invitation_delivery',
+      '202611240098_independent_team_company_custody',
+      '202611240099_team_company_custody_protocol',
+      '202611240100_team_scoped_disposal',
     ]);
     for (const sql of [
       '',

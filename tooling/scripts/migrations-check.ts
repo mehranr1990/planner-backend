@@ -44,7 +44,8 @@ try {
       `SELECT tablename FROM pg_tables WHERE schemaname = current_schema() ORDER BY tablename`,
     )
   ).rows;
-  assert.equal(emptyTables.length, 351); // 350 domain tables plus migration ledger
+  // Six P0 Admin identity/audit tables and three P1 bulk/receipt/delivery tables.
+  assert.equal(emptyTables.length, 360); // 359 domain tables plus migration ledger
   // Required reset capability is restricted to this disposable, newly-created namespace.
   await sandbox.resetOwnedSchema();
   const folder = path.resolve('.tools/migration-check-' + randomUUID());

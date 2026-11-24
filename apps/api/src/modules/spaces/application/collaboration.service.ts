@@ -8,6 +8,7 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import { AdminCommand } from '../../../platform/admin/admin-command.js';
 import * as c from '@mehran/api-contracts';
 import type { z } from 'zod';
 import type {
@@ -180,6 +181,7 @@ export class CollaborationService {
       locked: string[],
     ) =>
       work(tx, now, locked, async (resourceId = target) => {
+        if (!lifecycle) await this.kernel.assertWorkspaceWritable(tx, spaceId);
         if (intents[0]) return intents[0].id;
         const custody = await tx.sharedCustody.findUniqueOrThrow({
           where: { spaceId: physicalSpaceId },
@@ -551,9 +553,12 @@ export class CollaborationService {
         if (!email && !recipient) throw new NotFoundException();
         if (contactCheck && recipient)
           await contactCheck(tx, recipient.id, locked);
+        let recipientRoot: Awaited<
+          ReturnType<SharedKernel['companyRootAdmission']>
+        > | null = null;
         if (location.spaceId !== location.scopeId) {
           if (!recipient) throw new NotFoundException();
-          await this.kernel.companyRootAdmission(
+          recipientRoot = await this.kernel.companyRootAdmission(
             tx,
             location.spaceId,
             recipient.id,
@@ -610,6 +615,17 @@ export class CollaborationService {
             fingerprint,
             createdAt: now,
             expiresAt: new Date(now.getTime() + week),
+            ...(recipientRoot
+              ? {
+                  companyRecipientRootAccessId: recipientRoot.id,
+                  companyRecipientRootGeneration: recipientRoot.generation,
+                  companyRestoreGeneration: (
+                    await tx.accessScope.findUniqueOrThrow({
+                      where: { id: location.spaceId },
+                    })
+                  ).restoreGeneration,
+                }
+              : {}),
           },
         });
         await this.kernel.offerEffect(
@@ -1065,7 +1081,7 @@ export class CollaborationService {
     if (
       !row ||
       !custody ||
-      custody.kind !== kind ||
+      (await this.contextKind(tx, row.scopeId)) !== kind ||
       row.state !== 'PENDING' ||
       row.expiresAt <= now ||
       !current?.emailVerified ||
@@ -1397,18 +1413,38 @@ export class CollaborationService {
         const currentIssuer = await this.userForAccess(tx, row.inviterAccessId);
         if (!currentIssuer || currentIssuer !== issuerUser)
           throw new NotFoundException();
-        await this.kernel.participantAuthority(
-          tx,
-          actor,
-          currentIssuer,
-          {
-            spaceId: row.spaceId,
-            scopeId: row.scopeId,
-            capability: roleAdministration(row.memberRole as MemberRole),
-            generation: row.inviterGeneration,
-          },
-          locked,
-        );
+        if (row.initiatedByAdminId) {
+          await AdminCommand.requireInitiator(
+            tx,
+            row.initiatedByAdminId,
+            'admin.memberships.add',
+          );
+          const issuer = await tx.contextAccess.findUniqueOrThrow({
+            where: { id: row.inviterAccessId },
+          });
+          const currentCustody = await this.kernel.lifecycleCustody(
+            tx,
+            row.scopeId,
+          );
+          if (
+            issuer.generation !== row.inviterGeneration ||
+            issuer.state !== 'ACTIVE' ||
+            currentCustody.primaryOwnerAccessId !== issuer.id
+          )
+            throw new NotFoundException();
+        } else
+          await this.kernel.participantAuthority(
+            tx,
+            actor,
+            currentIssuer,
+            {
+              spaceId: row.spaceId,
+              scopeId: row.scopeId,
+              capability: roleAdministration(row.memberRole as MemberRole),
+              generation: row.inviterGeneration,
+            },
+            locked,
+          );
         const local = await this.actor(tx, row.spaceId, actor.userId);
         let access = await tx.contextAccess.findUnique({
           where: {
@@ -1429,7 +1465,7 @@ export class CollaborationService {
               access.revision !== row.recipientRevision))
         )
           throw new ConflictException({ code: 'ADMISSION_CHANGED' });
-        if (accept && access?.memberRole)
+        if (accept && access?.memberRole && !row.initiatedByAdminId)
           await this.kernel.participantAuthority(
             tx,
             actor,
@@ -1449,6 +1485,17 @@ export class CollaborationService {
                 actor.userId,
               )
             : null;
+        if (
+          root &&
+          (root.id !== row.companyRecipientRootAccessId ||
+            root.generation !== row.companyRecipientRootGeneration ||
+            (
+              await tx.accessScope.findUniqueOrThrow({
+                where: { id: row.spaceId },
+              })
+            ).restoreGeneration !== row.companyRestoreGeneration)
+        )
+          throw new ConflictException({ code: 'ROOT_ADMISSION_CHANGED' });
         const auditId = await begin(),
           addsMember =
             accept &&
@@ -1777,6 +1824,7 @@ export class CollaborationService {
           fingerprint,
           id,
         );
+
         return handoverView(result);
       },
     );
@@ -1885,19 +1933,33 @@ export class CollaborationService {
           throw new ConflictException();
         const fromUser = await this.userForAccess(tx, row.fromAccessId);
         if (!fromUser) throw new NotFoundException();
-        const initiating = await this.kernel.participantAuthority(
-          tx,
-          actor,
-          fromUser,
-          {
-            spaceId,
-            scopeId: spaceId,
-            capability: 'custody.handover',
-            generation: row.fromGeneration,
-          },
-          locked,
-        );
-        if (initiating.accessId !== row.fromAccessId)
+        if (row.initiatedByAdminId)
+          await AdminCommand.requireInitiator(
+            tx,
+            row.initiatedByAdminId,
+            'admin.workspaces.transfer_owner',
+          );
+        const initiating = row.initiatedByAdminId
+          ? await tx.contextAccess.findUniqueOrThrow({
+              where: { id: row.fromAccessId },
+            })
+          : await this.kernel.participantAuthority(
+              tx,
+              actor,
+              fromUser,
+              {
+                spaceId,
+                scopeId: spaceId,
+                capability: 'custody.handover',
+                generation: row.fromGeneration,
+              },
+              locked,
+            );
+        if (
+          ('accessId' in initiating ? initiating.accessId : initiating.id) !==
+            row.fromAccessId ||
+          initiating.generation !== row.fromGeneration
+        )
           throw new ConflictException();
         const custody = await this.kernel.lifecycleCustody(tx, spaceId);
         if (decision === 'accept') {
@@ -2006,6 +2068,15 @@ export class CollaborationService {
           hash(JSON.stringify({ id, decision, actorId: authority.actorId })),
           id,
         );
+        if (decision === 'accept' && row.initiatedByAdminId)
+          await AdminCommand.acceptedHandover(tx, {
+            initiatorAdminId: row.initiatedByAdminId,
+            acceptedByUserId: actor.userId,
+            previousOwnerUserId: fromUser,
+            spaceId: row.spaceId,
+            handoverId: row.id,
+            requestId: actor.requestId,
+          });
         return handoverView(result);
       },
     );

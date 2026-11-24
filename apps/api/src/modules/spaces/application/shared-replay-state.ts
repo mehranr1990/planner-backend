@@ -14,6 +14,7 @@ export async function captureSharedReplay(
     action: string;
     resourceId: string | null;
     actorId: string | null;
+    scopeId?: string | undefined;
   },
 ) {
   const c = await tx.sharedCustody.findUnique({
@@ -25,7 +26,7 @@ export async function captureSharedReplay(
     });
     if (transfer) {
       if (
-        event.id !== transfer.id ||
+        event.id !== (transfer.retirementControlId ?? transfer.id) ||
         event.resourceId !== transfer.id ||
         event.action !== 'company.custody.transfer.retire' ||
         BigInt(event.version) !== transfer.sourceVersion + 1n
@@ -118,6 +119,59 @@ export async function captureSharedReplay(
   }
   return SharedReplaySchema.parse({
     kind: 'REPLAY',
+    ...(c
+      ? {
+          administrativeState: {
+            root: await tx.space
+              .findUniqueOrThrow({
+                where: { id: event.spaceId },
+                select: {
+                  adminRevision: true,
+                  suspendedAt: true,
+                  suspensionExpiresAt: true,
+                  suspensionReason: true,
+                },
+              })
+              .then((row) => ({
+                ...row,
+                suspendedAt: row.suspendedAt?.toISOString() ?? null,
+                suspensionExpiresAt:
+                  row.suspensionExpiresAt?.toISOString() ?? null,
+              })),
+            scopes: await tx.accessScope
+              .findMany({
+                where: {
+                  spaceId: event.spaceId,
+                  id: {
+                    in: [
+                      ...new Set([
+                        event.spaceId,
+                        event.scopeId ?? event.spaceId,
+                        event.resourceId ?? event.spaceId,
+                      ]),
+                    ],
+                  },
+                },
+                select: {
+                  id: true,
+                  adminRevision: true,
+                  suspendedAt: true,
+                  suspensionExpiresAt: true,
+                  suspensionReason: true,
+                },
+                take: 2001,
+              })
+              .then((rows) =>
+                rows.map((row) => ({
+                  ...row,
+                  suspendedAt: row.suspendedAt?.toISOString() ?? null,
+                  suspensionExpiresAt:
+                    row.suspensionExpiresAt?.toISOString() ?? null,
+                })),
+              ),
+          },
+        }
+      : {}),
     ...(c?.kind === 'COMPANY' ? { companyRestricted: true } : {}),
     ...(c?.kind === 'COMPANY' &&
     (await tx.companyCustodyTransfer.count({
@@ -182,6 +236,24 @@ export async function applySharedReplay(
       'Retired independent custody requires a compatible transferred snapshot',
     );
   const spaceId = r.spaceId;
+  if (r.administrativeState) {
+    const decode = (row: typeof r.administrativeState.root) => ({
+      ...row,
+      suspendedAt: row.suspendedAt ? new Date(row.suspendedAt) : null,
+      suspensionExpiresAt: row.suspensionExpiresAt
+        ? new Date(row.suspensionExpiresAt)
+        : null,
+    });
+    await tx.space.update({
+      where: { id: spaceId },
+      data: decode(r.administrativeState.root),
+    });
+    for (const { id, ...row } of r.administrativeState.scopes)
+      await tx.accessScope.updateMany({
+        where: { id, spaceId },
+        data: decode(row),
+      });
+  }
   // New disclosure/invitation authorities never survive a restored authorization snapshot.
   await tx.accessScope.update({
     where: { id: spaceId },

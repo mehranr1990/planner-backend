@@ -330,7 +330,7 @@ describe('P6-06 Social hardening: deletion, recovery, departure, erasure', () =>
     await sandbox?.close();
   });
 
-  it('Owner deletion revokes every member; 30-day recovery restores only the Owner', async () => {
+  it('Owner deletion revokes every member; seven-day recovery restores only the Owner', async () => {
     const g = await group(bob, carol);
     const independent = await activity(null);
     await attend(independent.id, bob);
@@ -365,8 +365,8 @@ describe('P6-06 Social hardening: deletion, recovery, departure, erasure', () =>
     const job = c(await exit.job(alice.actor, g.id));
     expect(job.state).toBe('CLOSING_GRACE');
     const window = Date.parse(job.recoveryDeadline) - Date.now();
-    expect(window).toBeGreaterThan(30 * 86400000 - 120000);
-    expect(window).toBeLessThanOrEqual(30 * 86400000);
+    expect(window).toBeGreaterThan(7 * 86400000 - 120000);
+    expect(window).toBeLessThanOrEqual(7 * 86400000);
     // A revoked member cannot obtain a recovery proof or restore.
     await denied(exit.proof(bob.actor, g.id, job.revision, password));
     const proof = await exit.proof(alice.actor, g.id, job.revision, password);
