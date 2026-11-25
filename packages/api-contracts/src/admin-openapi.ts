@@ -1,10 +1,95 @@
 import { z } from 'zod';
 import { adminAuthRoutes } from './admin.js';
+import { adminSecurityRoutes } from './admin-security.js';
+import { adminAuditRoutes } from './admin-audit.js';
+import { adminUserSecurityRoutes } from './admin-user-security.js';
+import { adminRetentionRoutes } from './admin-retention.js';
+import { adminPrivacyRoutes } from './admin-privacy.js';
 import {
   adminManagementRoutes,
   adminManagementResponses,
 } from './admin-management.js';
 export const adminPaths: Record<string, Record<string, unknown>> = {};
+for (const [route, spec] of Object.entries({
+  ...adminSecurityRoutes,
+  ...adminAuditRoutes,
+  ...adminUserSecurityRoutes,
+  ...adminRetentionRoutes,
+  ...adminPrivacyRoutes,
+})) {
+  const [method, suffix] = route.split(' ') as [string, string];
+  const path = '/api/v1/admin/' + suffix.replace(':id', '{id}');
+  const csv = route === 'GET audit/export';
+  adminPaths[path] = {
+    ...adminPaths[path],
+    [method.toLowerCase()]: {
+      operationId:
+        'platformAdminP2_' +
+        method.toLowerCase() +
+        '_' +
+        suffix.replace(/[^a-zA-Z]/g, '_'),
+      tags: ['platform-admin'],
+      security: [{ adminCookie: [] }],
+      description: `Requires ${spec.permission}. Mutations require recent MFA and an Idempotency-Key. Critical changes require a distinct authorized approver. User login restrictions reuse P1 account suspension.`,
+      parameters: [
+        ...(suffix.includes(':id')
+          ? [
+              {
+                in: 'path',
+                name: 'id',
+                required: true,
+                schema: { type: 'string', format: 'uuid' },
+              },
+            ]
+          : []),
+        ...(method === 'GET'
+          ? Object.entries(z.toJSONSchema(spec.schema).properties ?? {}).map(
+              ([name, schema]) => ({
+                in: 'query',
+                name,
+                schema,
+                required: name === 'category',
+              }),
+            )
+          : [
+              {
+                in: 'header',
+                name: 'Idempotency-Key',
+                required: true,
+                schema: { type: 'string', minLength: 1, maxLength: 128 },
+              },
+            ]),
+      ],
+      ...(method !== 'GET'
+        ? {
+            requestBody: {
+              required: true,
+              content: {
+                'application/json': { schema: z.toJSONSchema(spec.schema) },
+              },
+            },
+          }
+        : {}),
+      responses: Object.fromEntries(
+        [200, 400, 401, 403, 404, 409, 429, 500].map((code) => [
+          String(code),
+          {
+            description:
+              code === 200 ? 'Authorized P2 result' : 'Safe API error',
+            content: {
+              [code === 200 && csv ? 'text/csv' : 'application/json']: {
+                schema:
+                  code === 200
+                    ? z.toJSONSchema(spec.response)
+                    : { $ref: '#/components/schemas/ApiError' },
+              },
+            },
+          },
+        ]),
+      ),
+    },
+  };
+}
 for (const [key, schema] of Object.entries(adminAuthRoutes)) {
   const [method, route] = key.split(' ') as [string, string];
   const path = '/api/v1/admin/auth' + route;

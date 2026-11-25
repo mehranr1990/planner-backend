@@ -2,7 +2,6 @@ import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID, createHash } from 'node:crypto';
 import type { Prisma } from '../../../generated/prisma/client.js';
 import type { RequestActor } from '../../../platform/auth/request-actor.js';
-import type { AuthorizedSpace } from '../../../platform/authorization/authorized-space.js';
 import { DatabaseService } from '../../../platform/database/database.service.js';
 import { SharedKernel } from '../application/shared-kernel.service.js';
 import type { SharedRequest } from '../application/shared-kernel.service.js';
@@ -59,13 +58,13 @@ export class MessagingAuthority {
   }
   async ownedActors(
     tx: Prisma.TransactionClient,
-    scope: AuthorizedSpace,
+    scope: PersonalSuspensionScope,
     after?: string,
   ) {
     return (
       await tx.sharedActor.findMany({
         where: {
-          userId: scope.actor.userId,
+          userId: await suspensionOwner(tx, scope),
           ...(after ? { id: { gt: after } } : {}),
         },
         select: { id: true },
@@ -429,3 +428,7 @@ export class MessagingAuthority {
     return this.kernel.memberUserInTransaction(tx, scopeId, accessId);
   }
 }
+import {
+  suspensionOwner,
+  type PersonalSuspensionScope,
+} from '../../../platform/lifecycle/account-closure-authority.js';

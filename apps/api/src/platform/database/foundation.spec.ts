@@ -325,6 +325,17 @@ describe('scoped persistence and API conventions', () => {
       '202611240098_independent_team_company_custody',
       '202611240099_team_company_custody_protocol',
       '202611240100_team_scoped_disposal',
+      '202611240101_platform_admin_p2_security',
+      '202611240102_platform_admin_p2_audit',
+      '202611240103_platform_admin_security_alerts',
+      '202611240104_admin_approval_fencing',
+      '202611240105_admin_audit_retention',
+      '202611240106_admin_privacy_deletion_requests',
+      '202611240107_admin_privacy_review_fencing',
+      '202611240108_admin_audit_backfill',
+      '202611240109_admin_backup_retention',
+      '202611240110_admin_audit_change_summary',
+      '202611240111_admin_audit_expiry_bounds',
     ]);
     for (const sql of [
       '',

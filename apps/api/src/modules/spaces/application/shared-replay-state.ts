@@ -307,15 +307,33 @@ export async function applySharedReplay(
     });
   }
   const deleted = r.custody.state === 'DELETED';
-  if (deleted) {
+  // The signed Admin closure ends every admission in the reviewed boundary.
+  // Restored seats might predate the captured membership set. End them before
+  // applying the individually recorded owner evidence or allowing recovery.
+  const adminClosure = r.action === 'workspace.delete';
+  if (adminClosure && !r.resourceId) throw new Error('Missing closure target');
+  if (deleted || adminClosure) {
     const oldAccess = await tx.contextAccess.findMany({
-      where: { spaceId, state: { in: ['ACTIVE', 'SUSPENDED'] } },
+      where: {
+        spaceId,
+        ...(adminClosure && r.resourceId !== spaceId
+          ? { scopeId: r.resourceId! }
+          : {}),
+        state: { in: ['ACTIVE', 'SUSPENDED'] },
+      },
     });
     for (const a of oldAccess) {
       const endedAt = new Date(Math.max(Date.now(), a.joinedAt.getTime()));
       await tx.contextAccess.update({
         where: { id: a.id },
-        data: { state: 'LEFT', endedAt, revision: { increment: 1 } },
+        data: {
+          state:
+            adminClosure && a.id !== r.custody.primaryOwnerAccessId
+              ? 'REVOKED'
+              : 'LEFT',
+          endedAt,
+          revision: { increment: 1 },
+        },
       });
       await tx.contextAccessInterval.updateMany({
         where: { accessId: a.id, generation: a.generation, endedAt: null },

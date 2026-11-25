@@ -29,7 +29,11 @@ import { PrivacyGate } from '../../../platform/authorization/privacy-gate.js';
 import { AuthService } from '../../../platform/auth/auth.service.js';
 import { idempotent } from '../../../platform/database/idempotency.js';
 import { writeAudit } from '../../../platform/audit/audit.service.js';
-import { appendOutbox } from '../../../platform/outbox/outbox.js';
+import {
+  appendOutbox,
+  appendAdminAccountClosure,
+} from '../../../platform/outbox/outbox.js';
+import type { AdminCommand } from '../../../platform/admin/admin-command.js';
 import { ExportBudget } from '../../../platform/lifecycle/personal-data.js';
 import type { PersonalData } from '../../../platform/lifecycle/personal-data.js';
 import { PlatformPersonalData } from '../../../platform/lifecycle/platform-data.js';
@@ -57,6 +61,11 @@ import { FinanceData } from '../../finance/public/index.js';
 import { NotificationsData } from '../../notifications/public/index.js';
 import { RewardsData } from '../../rewards/public/index.js';
 import { PersonalLifecycle } from '../public/lifecycle.js';
+import { ProjectExportService } from '../../projects/public/index.js';
+import {
+  zipArchive,
+  type ZipEntry,
+} from '../../../platform/storage/zip-archive.js';
 const day = 86400000;
 const hash = (v: string) => createHash('sha256').update(v).digest('hex');
 // Durable pairs retain BOTH publication and staging identities after lease takeover.
@@ -78,8 +87,271 @@ export class LifecycleRepository
   extends PersonalLifecycle
   implements OnApplicationBootstrap
 {
+  async adminDeletionStatus(id: string) {
+    const row = await this.db.client.accountDeletionJob.findUnique({
+      where: { id },
+      select: {
+        state: true,
+        attempts: true,
+        eraseAfter: true,
+        failureCode: true,
+      },
+    });
+    return row
+      ? {
+          state: row.state,
+          attempts: row.attempts,
+          recoveryDeadline: row.eraseAfter?.toISOString() ?? null,
+          failureCode: row.failureCode,
+        }
+      : null;
+  }
+  async adminDeletionPreview(tx: Prisma.TransactionClient, id: string) {
+    const space = await this.spaces.personalMetadata(tx, id),
+      settings = await tx.userSettings.findUnique({ where: { userId: id } });
+    if (!space || !settings) throw new NotFoundException();
+    const dependencies = await this.shared.accountDeletionDependencies(tx, id);
+    const active = await tx.accountDeletionJob.count({
+      where: {
+        ownerUserId: id,
+        state: {
+          in: ['PENDING', 'WAITING', 'ERASING', 'BLOCKED_POLICY', 'FAILED'],
+        },
+      },
+    });
+    const policyVersion = this.config.PERSONAL_ERASURE_POLICY_VERSION ?? null;
+    const fingerprint = hash(
+      JSON.stringify({
+        id,
+        spaceId: space.id,
+        closed: space.accessClosedAt,
+        revision: settings.adminRevision,
+        policyVersion,
+        dependencies,
+        active,
+      }),
+    );
+    return {
+      id,
+      revision: settings.adminRevision,
+      fingerprint,
+      eligible:
+        !space.accessClosedAt &&
+        !active &&
+        !dependencies.items.length &&
+        !dependencies.truncated &&
+        policyVersion !== null,
+      policyVersion,
+      dependencies: dependencies.items,
+    };
+  }
+  async adminDeleteInside(
+    tx: Prisma.TransactionClient,
+    command: AdminCommand,
+    id: string,
+    input: {
+      revision: number;
+      fingerprint: string;
+      policyVersion: string;
+      retentionAcknowledged: boolean;
+      recoveryDays: number;
+      requestId: string;
+      reason: string;
+    },
+  ) {
+    command.require('admin.privacy.accounts.delete');
+    await command.verify(tx);
+    const space = await this.spaces.personalMetadata(tx, id);
+    if (!space) throw new NotFoundException();
+    await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${'personal-access:' + space.id},0))::text`;
+    const current = await this.adminDeletionPreview(tx, id);
+    if (
+      !current.eligible ||
+      current.fingerprint !== input.fingerprint ||
+      current.revision !== input.revision
+    )
+      throw new ConflictException({ code: 'DELETION_IMPACT_CHANGED' });
+    if (
+      !Number.isInteger(input.recoveryDays) ||
+      input.recoveryDays < 7 ||
+      input.recoveryDays > 30
+    )
+      throw new BadRequestException();
+    this.policy(input.policyVersion, input.retentionAcknowledged);
+    const now = (
+        await tx.$queryRaw<{ now: Date }[]>`SELECT clock_timestamp() now`
+      )[0]!.now,
+      jobId = randomUUID();
+    const job = await tx.accountDeletionJob.create({
+      data: {
+        id: jobId,
+        ownerUserId: id,
+        spaceId: space.id,
+        initiatedByAdminId: command.adminId,
+        originAdminRequestId: input.requestId,
+        state: 'WAITING',
+        evidenceKeyId: this.control.keys.activeKeyId,
+        identityDigest: this.control.digest('identity', id),
+        spaceDigest: this.control.digest('space', space.id),
+        policyVersion: input.policyVersion,
+        retentionAcknowledged: input.retentionAcknowledged,
+        recoveryHash: hash(this.capability(jobId, 'recovery')),
+        recoveryExpiresAt: new Date(+now + 90 * day),
+        confirmedAt: now,
+        eraseAfter: new Date(+now + input.recoveryDays * day),
+        nextAt: new Date(+now + input.recoveryDays * day),
+      },
+    });
+    await this.control.append(this.record(job, 'CLOSED'));
+    const authority = await this.spaces.adminPersonalClosure(
+      tx,
+      command,
+      id,
+      now,
+    );
+    for (const owner of this.owners) await owner.suspend(tx, authority);
+    await this.auth.revokeAllInside(tx, id);
+    await tx.userExportJob.updateMany({
+      where: { ownerUserId: id, state: { in: ['QUEUED', 'RUNNING', 'READY'] } },
+      data: {
+        state: 'CANCELED',
+        failureCode: 'ACCOUNT_CLOSED',
+        revision: { increment: 1 },
+      },
+    });
+    await appendAdminAccountClosure(tx, authority, job.id);
+    await tx.adminDelivery.create({
+      data: {
+        auditId: command.auditId,
+        targetUserId: id,
+        kind: 'ACCOUNT_DELETION',
+        payload: { jobId: job.id },
+      },
+    });
+    return { jobId: job.id, eraseAfter: job.eraseAfter!.toISOString() };
+  }
+  async deletionNotice(jobId: string, userId: string) {
+    const job = await this.db.client.accountDeletionJob.findFirst({
+      where: {
+        id: jobId,
+        ownerUserId: userId,
+        initiatedByAdminId: { not: null },
+        state: 'WAITING',
+        eraseAfter: { gt: new Date() },
+      },
+    });
+    if (!job?.eraseAfter) return null;
+    return {
+      recovery: this.retainedCapability(job, 'recovery'),
+      deadline: job.eraseAfter.toISOString(),
+    };
+  }
+  async adminRecoverInside(
+    tx: Prisma.TransactionClient,
+    command: AdminCommand,
+    jobId: string,
+  ) {
+    command.require('admin.privacy.accounts.recover');
+    await command.verify(tx);
+    const before = await tx.accountDeletionJob.findUnique({
+      where: { id: jobId },
+    });
+    if (!before?.ownerUserId || !before.spaceId || !before.initiatedByAdminId)
+      throw new NotFoundException();
+    await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${'personal-access:' + before.spaceId},0))::text`;
+    const current = await tx.accountDeletionJob.findUniqueOrThrow({
+      where: { id: jobId },
+    });
+    const now = (
+      await tx.$queryRaw<{ now: Date }[]>`SELECT clock_timestamp() now`
+    )[0]!.now;
+    if (
+      current.state !== 'WAITING' ||
+      !current.eraseAfter ||
+      current.eraseAfter <= now
+    )
+      throw new ConflictException({ code: 'DELETION_NOT_RECOVERABLE' });
+    const next = await tx.accountDeletionJob.update({
+      where: { id: jobId },
+      data: {
+        state: 'CANCELED',
+        revision: { increment: 1 },
+        completedAt: now,
+        confirmationHash: null,
+      },
+    });
+    await this.control.append(this.record(next, 'CANCELED'));
+    await this.spaces.adminReopenPersonal(
+      tx,
+      command,
+      before.ownerUserId,
+      before.spaceId,
+    );
+    await this.auth.revokeAllInside(tx, before.ownerUserId);
+  }
+  async archive(
+    scope: AuthorizedSpace,
+    id: string,
+    proof: string | undefined,
+    projectId?: string,
+  ) {
+    const job = await this.authorizeDownload(scope, id, proof),
+      manifest = job.manifest as AttachmentManifest[] | null;
+    const entries: ZipEntry[] = [
+      {
+        name: 'personal-data.json',
+        open: async () => (await this.download(scope, id, proof)).stream,
+      },
+    ];
+    for (const item of manifest ?? [])
+      if (item.status === 'READY')
+        entries.push({
+          name: `files/${item.id}`,
+          open: async () =>
+            (await this.download(scope, id, proof, item.id)).stream,
+        });
+    const shared = Boolean(
+      this.config.SHARED_CONTROL_ACTIVE_KEY_ID &&
+      (this.config.SHARED_SECURITY_ACCEPTANCE_REFERENCE ||
+        this.config.SHARED_LOCAL_DEVELOPMENT_TEST_MODE),
+    );
+    if (projectId && !shared)
+      throw new ConflictException({ code: 'SHARED_EXPORT_UNAVAILABLE' });
+    if (shared) {
+      const projects = await this.projectExports.personalArchiveEntries(
+        scope.actor,
+        projectId,
+      );
+      for (const entry of projects)
+        entries.push({
+          name: entry.name,
+          open: async () => {
+            await this.authorizeDownload(scope, id, proof);
+            return entry.open();
+          },
+        });
+    }
+    const description = JSON.stringify({
+      version: 1,
+      exportId: id,
+      personalSnapshotAt: job.completedAt?.toISOString(),
+      projects: shared
+        ? 'Independent owned Projects and any expressly selected Project with current export rights'
+        : 'Unavailable: shared activation is gated',
+      fileNames:
+        'Opaque IDs; original names and checksums are in the JSON metadata',
+      maxArchiveBytes: 512 * 1024 * 1024,
+    });
+    entries.unshift({
+      name: 'archive-manifest.json',
+      open: async () => Readable.from(description),
+    });
+    return zipArchive(entries);
+  }
   private readonly owners: PersonalData[];
   constructor(
+    @Inject(ProjectExportService)
+    private readonly projectExports: ProjectExportService,
     @Inject(DatabaseService) private readonly db: DatabaseService,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
     @Inject(AuthService) private readonly auth: AuthService,
@@ -270,11 +542,10 @@ export class LifecycleRepository
       return this.exportView({ ...row, state: 'EXPIRED' });
     return this.exportView(row);
   }
-  async download(
+  private async authorizeDownload(
     scope: AuthorizedSpace,
     id: string,
     proof: string | undefined,
-    fileId?: string,
   ) {
     const job = await this.job(scope, id);
     if (
@@ -321,6 +592,15 @@ export class LifecycleRepository
         correlationId: scope.actor.correlationId,
       });
     });
+    return job;
+  }
+  async download(
+    scope: AuthorizedSpace,
+    id: string,
+    proof: string | undefined,
+    fileId?: string,
+  ) {
+    const job = await this.authorizeDownload(scope, id, proof);
     if (fileId) {
       const manifest = job.manifest as AttachmentManifest[] | null,
         item = manifest?.find((v) => v.id === fileId);
@@ -471,6 +751,12 @@ export class LifecycleRepository
       state,
       at: new Date().toISOString(),
       eraseAfter: job.eraseAfter!.toISOString(),
+      ...(job.confirmedAt
+        ? { confirmedAt: job.confirmedAt.toISOString() }
+        : {}),
+      ...(job.recoveryExpiresAt
+        ? { recoveryExpiresAt: job.recoveryExpiresAt.toISOString() }
+        : {}),
       policyVersion: job.policyVersion,
       recoveryHash: state === 'CLOSED' ? job.recoveryHash : null,
     };
@@ -514,6 +800,16 @@ export class LifecycleRepository
           job.confirmationExpiresAt! <= new Date()
         )
           throw new ConflictException();
+        const dependencies = await this.shared.accountDeletionDependencies(
+          tx,
+          scope.actor.userId,
+        );
+        if (dependencies.items.length || dependencies.truncated)
+          throw new ConflictException({
+            code: 'OWNER_SUCCESSION_OR_DISPOSITION_REQUIRED',
+            dependencies: dependencies.items,
+            truncated: dependencies.truncated,
+          });
         const confirmedAt = (
             await tx.$queryRaw<{ now: Date }[]>`SELECT clock_timestamp() AS now`
           )[0]!.now,
@@ -626,6 +922,7 @@ export class LifecycleRepository
           !job ||
           job.identityDigest !== record.identityDigest ||
           job.spaceDigest !== record.spaceDigest ||
+          job.eraseAfter?.toISOString() !== record.eraseAfter ||
           (record.state === 'ERASED' && job.state !== 'ERASED') ||
           (record.state === 'ERASING' &&
             !['ERASING', 'ERASED', 'FAILED', 'BLOCKED_POLICY'].includes(
@@ -1053,6 +1350,7 @@ export class LifecycleRepository
       const row = await tx.accountDeletionJob.findFirst({
         where: {
           state: { in: ['WAITING', 'ERASING', 'BLOCKED_POLICY'] },
+          eraseAfter: { lte: new Date() },
           nextAt: { lte: new Date() },
           OR: [{ leaseUntil: null }, { leaseUntil: { lte: new Date() } }],
         },
@@ -1259,6 +1557,7 @@ export class LifecycleRepository
         if (
           record.state === 'CLOSED' &&
           job?.state === 'WAITING' &&
+          job.eraseAfter?.toISOString() === record.eraseAfter &&
           userId &&
           job.spaceId &&
           (await this.db.client.$transaction((tx) =>
@@ -1301,13 +1600,19 @@ export class LifecycleRepository
                     : 'ERASING',
               eraseAfter: new Date(record.eraseAfter),
               confirmedAt: new Date(
-                new Date(record.eraseAfter).getTime() - 7 * day,
+                record.confirmedAt ??
+                  new Date(record.eraseAfter).getTime() - 7 * day,
               ),
+              nextAt:
+                record.state === 'CLOSED'
+                  ? new Date(record.eraseAfter)
+                  : new Date(),
               policyVersion: record.policyVersion,
               retentionAcknowledged: true,
               recoveryHash: record.recoveryHash,
               recoveryExpiresAt: new Date(
-                new Date(record.eraseAfter).getTime() + 83 * day,
+                record.recoveryExpiresAt ??
+                  new Date(record.eraseAfter).getTime() + 83 * day,
               ),
               progress: Prisma.DbNull,
               leaseUntil: null,

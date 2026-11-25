@@ -1,6 +1,6 @@
 #!/bin/sh
 # Consistent, verified backup: brief API/worker stop, PostgreSQL custom dump and
-# private files, signed 30-day manifest, then structural + signature checks.
+# private files, signed policy-bound manifest, then structural + signature checks.
 # The independent control namespaces go to a separate archive (never rolled back
 # together with planner data). Copy the result off-host afterwards.
 #   sudo sh deploy/backup.sh

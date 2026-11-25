@@ -34,7 +34,11 @@ export class AdminService {
     const user = await this.database.client.adminUser.findUnique({
       where: { id: session.user.id },
     });
-    if (!user?.active || (mfa && !user.twoFactorEnabled))
+    if (
+      !user?.active ||
+      (user.signInBlockedUntil && user.signInBlockedUntil > new Date()) ||
+      (mfa && !user.twoFactorEnabled)
+    )
       throw new ForbiddenException();
     // Re-read after identity loading: revocation must not authorize a stale provider snapshot.
     const current = await this.database.client.adminSession.findUnique({
@@ -73,6 +77,32 @@ export class AdminService {
   auditAttempt(action: string, requestId: string) {
     return this.database.client.adminAuditEvent.create({
       data: { action, requestId, outcome: 'ATTEMPTED' },
+    });
+  }
+  auditContext(
+    id: string,
+    permission: string,
+    input: unknown,
+    target?: { userId?: string; spaceId?: string; adminId?: string },
+  ) {
+    const reason =
+      input &&
+      typeof input === 'object' &&
+      'reason' in input &&
+      typeof input.reason === 'string'
+        ? input.reason
+        : null;
+    return this.database.client.adminAuditEvent.update({
+      where: { id },
+      data: {
+        permission,
+        reason,
+        ...(target?.userId ? { targetUserId: target.userId } : {}),
+        ...(target?.spaceId ? { targetSpaceId: target.spaceId } : {}),
+        ...(target?.adminId
+          ? { metadata: { targetAdminId: target.adminId } }
+          : {}),
+      },
     });
   }
   auditOutcome(

@@ -163,6 +163,31 @@ export class AuthService {
   async revokeAllInside(tx: Prisma.TransactionClient, userId: string) {
     await tx.authSession.deleteMany({ where: { userId } });
   }
+  async revokeSelectedInside(
+    tx: Prisma.TransactionClient,
+    userId: string,
+    sessionIds: string[],
+  ) {
+    await tx.authSession.deleteMany({
+      where: { userId, id: { in: sessionIds } },
+    });
+  }
+  async sessionMetadata(userId: string) {
+    const rows = await this.database.client.authSession.findMany({
+      where: { userId, expiresAt: { gt: new Date() } },
+      select: { id: true, createdAt: true, expiresAt: true },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: 101,
+    });
+    return {
+      items: rows.slice(0, 100).map((r) => ({
+        ...r,
+        createdAt: r.createdAt.toISOString(),
+        expiresAt: r.expiresAt.toISOString(),
+      })),
+      truncated: rows.length > 100,
+    };
+  }
   async revokeOtherSessionsInside(
     tx: Prisma.TransactionClient,
     userId: string,

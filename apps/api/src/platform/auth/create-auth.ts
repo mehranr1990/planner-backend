@@ -8,6 +8,11 @@ import { trustedOrigins } from '../../bootstrap/environment.js';
 import type { AppConfig } from '../../bootstrap/environment.js';
 import type { IdentityMail } from './mail.service.js';
 import type { identityClient } from './identity-relations.js';
+import { AdminSecurityPolicySchema } from '@mehran/api-contracts';
+import {
+  SECURITY_POLICY_ID,
+  defaultAdminSecurityPolicy,
+} from '../admin/security-policy.js';
 
 export function createIdentityAuth(
   config: AppConfig,
@@ -114,7 +119,17 @@ export function createIdentityAuth(
       window: 60,
       max: 100,
       customRules: {
-        '/sign-in/email': { window: 10, max: 3 },
+        '/sign-in/email': async () => {
+          const row = await client.adminSecurityPolicy.findUnique({
+            where: { id: SECURITY_POLICY_ID },
+          });
+          return {
+            window: 10,
+            max: AdminSecurityPolicySchema.parse(
+              row?.policy ?? defaultAdminSecurityPolicy,
+            ).userLoginMax,
+          };
+        },
         '/request-password-reset': { window: 60, max: 3 },
         '/reset-password': { window: 60, max: 5 },
         '/send-verification-email': { window: 60, max: 3 },

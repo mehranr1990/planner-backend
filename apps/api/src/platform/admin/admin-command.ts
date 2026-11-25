@@ -55,15 +55,11 @@ export class AdminCommand {
     adminId: string,
     permission: string,
   ) {
-    const user = await tx.adminUser.findUnique({
-      where: { id: adminId },
-      select: { active: true, twoFactorEnabled: true, role: true },
-    });
-    if (
-      !user?.active ||
-      !user.twoFactorEnabled ||
-      !permits(user.role, permission)
-    )
+    const [user] = await tx.$queryRaw<
+      { role: string }[]
+    >`SELECT role FROM "AdminUser" WHERE id=${adminId}::uuid
+      AND active AND "twoFactorEnabled" AND ("signInBlockedUntil" IS NULL OR "signInBlockedUntil"<=clock_timestamp()) FOR SHARE`;
+    if (!user || !permits(user.role, permission))
       throw new ForbiddenException();
   }
   require(permission: string) {
@@ -94,7 +90,7 @@ export class AdminCommand {
   async verify(tx: Prisma.TransactionClient) {
     const rows = await tx.$queryRaw<
       { role: string }[]
-    >`SELECT u.role FROM "AdminUser" u JOIN "AdminSession" s ON s."userId"=u.id WHERE u.id=${this.adminId}::uuid AND s.id=${this.sessionId}::uuid AND u.active AND u."twoFactorEnabled" AND s."expiresAt">clock_timestamp() AND s."mfaVerifiedAt">u."mfaEnrolledAt" AND s."createdAt">u."mfaEnrolledAt" AND s."mfaVerifiedAt">clock_timestamp()-interval '5 minutes' AND s."mfaVerifiedAt"<=clock_timestamp() FOR SHARE OF u,s`;
+    >`SELECT u.role FROM "AdminUser" u JOIN "AdminSession" s ON s."userId"=u.id WHERE u.id=${this.adminId}::uuid AND s.id=${this.sessionId}::uuid AND u.active AND (u."signInBlockedUntil" IS NULL OR u."signInBlockedUntil"<=clock_timestamp()) AND u."twoFactorEnabled" AND s."expiresAt">clock_timestamp() AND s."mfaVerifiedAt">u."mfaEnrolledAt" AND s."createdAt">u."mfaEnrolledAt" AND s."mfaVerifiedAt">clock_timestamp()-interval '5 minutes' AND s."mfaVerifiedAt"<=clock_timestamp() FOR SHARE OF u,s`;
     if (!rows[0] || !permits(rows[0].role, this.permission))
       throw new ForbiddenException();
   }

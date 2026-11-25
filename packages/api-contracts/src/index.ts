@@ -118,3 +118,8 @@ export * from './communication-email-invitations.js';
 export * from './admin.js';
 export * from './admin-management.js';
 export * from './team-custody.js';
+export * from './admin-security.js';
+export * from './admin-audit.js';
+export * from './admin-user-security.js';
+export * from './admin-retention.js';
+export * from './admin-privacy.js';

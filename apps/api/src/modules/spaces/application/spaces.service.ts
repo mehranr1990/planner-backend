@@ -12,9 +12,62 @@ import { DatabaseService } from '../../../platform/database/database.service.js'
 import { SharedKernel } from './shared-kernel.service.js';
 import { effectiveSuspension } from '../../../platform/admin/management-policy.js';
 import { AccountSuspendedException } from '../../../platform/auth/account-suspended.exception.js';
+import { AccountClosureAuthority } from '../../../platform/lifecycle/account-closure-authority.js';
+import type { AdminCommand } from '../../../platform/admin/admin-command.js';
 
 @Injectable()
 export class SpacesService {
+  personalMetadata(tx: Prisma.TransactionClient, userId: string) {
+    return tx.space.findFirst({
+      where: { kind: 'PERSONAL', ownerUserId: userId },
+      select: { id: true, kind: true, ownerUserId: true, accessClosedAt: true },
+    });
+  }
+  async adminReopenPersonal(
+    tx: Prisma.TransactionClient,
+    command: AdminCommand,
+    userId: string,
+    spaceId: string,
+  ) {
+    command.require('admin.privacy.accounts.recover');
+    await command.verify(tx);
+    await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${'personal-access:' + spaceId},0))::text`;
+    const changed = await tx.space.updateMany({
+      where: {
+        id: spaceId,
+        ownerUserId: userId,
+        kind: 'PERSONAL',
+        accessClosedAt: { not: null },
+      },
+      data: { accessClosedAt: null },
+    });
+    if (changed.count !== 1) throw new ForbiddenException();
+  }
+  async adminPersonalClosure(
+    tx: Prisma.TransactionClient,
+    command: AdminCommand,
+    userId: string,
+    at: Date,
+  ) {
+    command.require('admin.privacy.accounts.delete');
+    await command.verify(tx);
+    const personal = await tx.space.findFirst({
+      where: { kind: 'PERSONAL', ownerUserId: userId },
+    });
+    if (!personal) throw new ForbiddenException();
+    await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${'personal-access:' + personal.id},0))::text`;
+    const current = await tx.space.findUniqueOrThrow({
+      where: { id: personal.id },
+    });
+    if (current.accessClosedAt)
+      throw new ForbiddenException({ code: 'ACCOUNT_CLOSED' });
+    await tx.space.update({
+      where: { id: personal.id },
+      data: { accessClosedAt: at },
+    });
+    await this.shared.enqueueExit(tx, userId, at);
+    return AccountClosureAuthority.issue(tx, command, userId, personal.id);
+  }
   async background(
     tx: Prisma.TransactionClient,
     spaceId: string,

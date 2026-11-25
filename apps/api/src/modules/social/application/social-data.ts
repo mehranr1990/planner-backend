@@ -1,4 +1,8 @@
 import { Injectable } from '@nestjs/common';
+import {
+  suspensionOwner,
+  type PersonalSuspensionScope,
+} from '../../../platform/lifecycle/account-closure-authority.js';
 import { randomUUID } from 'node:crypto';
 import type { Prisma } from '../../../generated/prisma/client.js';
 import type { AuthorizedSpace } from '../../../platform/authorization/authorized-space.js';
@@ -6,8 +10,8 @@ import type { ExportBudget } from '../../../platform/lifecycle/personal-data.js'
 import { SocialData } from '../public/personal-data.js';
 @Injectable()
 export class SocialDataOwner extends SocialData {
-  async suspend(tx: Prisma.TransactionClient, scope: AuthorizedSpace) {
-    const userId = scope.actor.userId;
+  async suspend(tx: Prisma.TransactionClient, scope: PersonalSuspensionScope) {
+    const userId = await suspensionOwner(tx, scope);
     await tx.socialPrivacy.updateMany({
       where: { ownerUserId: userId },
       data: {

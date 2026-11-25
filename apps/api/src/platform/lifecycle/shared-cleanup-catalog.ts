@@ -69,7 +69,11 @@ export const SHARED_CLEANUP_FK_SHA256 =
   // existing owner-controlled records. No new FK points into ordinary work content.
   // M098 makes only nine enumerated locator FKs DEFERRABLE INITIALLY IMMEDIATE;
   // delete actions/order are unchanged. Root-wide transfer disposal stays fenced.
-  '69c57be2b5d1f0a6902cd874c6a50b28ce22a982bea856d46b28b6d6cda639ec';
+  // P2 adds 17 references (1,186 FKs): Admin approval/alert/retention ownership,
+  // typed deletion review subjects (SET NULL on User/Team/Company removal),
+  // immutable Admin request history, and AccountDeletionJob provenance. These
+  // neither broaden cleanup custody nor retain the erased User/Team/Company.
+  '28a90de1612104a147578f8a3599e6d468f3a95693d86f5e692a54a1398cc2f3';
 export async function assertSharedCleanupCatalog(tx: Prisma.TransactionClient) {
   const rows = await tx.$queryRaw<
     { table: string; name: string; target: string; definition: string }[]

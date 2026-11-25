@@ -222,3 +222,17 @@ Avoid repeating lengthy architecture explanations or full logs unless a failure 
 - Sections 1, 4 and 13 require canonical-document reads at session/batch boundaries and on resumption. Those mandatory reads remain; limit additional investigation to relevant changes and do not repeat completed G0 analysis or ADR work without a new affected requirement or blocker.
 - Efficiency preferences never reduce mandatory correctness, safety or final acceptance coverage. The documentation-only check rule applies to documentation-only work; required implementation gates remain intact.
 - Existing Phase 0/1 scope exclusions retain their stated scope. Later work follows the approved V3 phase sequence and accepted ADRs, with explicit batch authorization; all applicable cross-cutting safeguards remain binding.
+
+## 16. Platform Admin execution efficiency (owner instruction, 2026-11-25)
+
+Apply to the current and subsequent Platform Admin phases. Batch related changes
+before validation. During implementation, run directly affected tests and targeted
+regressions for confirmed failures. Run the complete mandatory suite and quality
+gates at final phase acceptance. After failures, fix and validate the affected
+behavior, then rerun the final checks affected by those fixes. Preserve all required
+security coverage and acceptance criteria.
+
+Reuse verified results while their inputs remain unchanged. Regenerate OpenAPI and
+Prisma artifacts only when their inputs change. Avoid repeated repository scans,
+unchanged document reads and duplicate work. Keep terminal output and progress
+documentation concise. Do not use subagents or write E2E tests.

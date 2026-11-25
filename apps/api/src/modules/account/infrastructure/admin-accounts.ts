@@ -15,6 +15,7 @@ import { AuthService } from '../../../platform/auth/auth.service.js';
 import { effectiveSuspension } from '../../../platform/admin/management-policy.js';
 
 export type AccountChange = {
+  sessionIds?: string[] | undefined;
   revision: number;
   reason: string;
   internalNote?: string | undefined;
@@ -24,6 +25,10 @@ export type AccountChange = {
 };
 @Injectable()
 export class AdminAccounts {
+  async sessions(id: string) {
+    await this.identity.detail(this.db.client, id);
+    return this.auth.sessionMetadata(id);
+  }
   constructor(
     @Inject(DatabaseService) private readonly db: DatabaseService,
     @Inject(AdminIdentity) private readonly identity: AdminIdentity,
@@ -102,6 +107,8 @@ export class AdminAccounts {
       throw new BadRequestException({ code: 'EXPIRY_IN_PAST' });
     if (operation === 'suspend' || operation === 'revoke-sessions')
       await this.auth.revokeAllInside(tx, id);
+    if (operation === 'revoke-selected-sessions')
+      await this.auth.revokeSelectedInside(tx, id, input.sessionIds ?? []);
     if (operation === 'update' || operation === 'verify-email')
       await this.identity.update(tx, id, operation, input);
     if (operation === 'verify-email') await this.auth.revokeAllInside(tx, id);
@@ -112,7 +119,9 @@ export class AdminAccounts {
       const recent = await tx.adminAuditEvent.count({
         where: {
           targetUserId: id,
-          action: 'POST users/:id/recovery',
+          action: {
+            in: ['POST users/:id/recovery', 'POST security/users/:id/recovery'],
+          },
           createdAt: { gte: new Date(Date.now() - 60000) },
         },
       });

@@ -1,11 +1,19 @@
 import { Injectable } from '@nestjs/common';
+import {
+  suspensionOwner,
+  type PersonalSuspensionScope,
+} from '../../../platform/lifecycle/account-closure-authority.js';
 import type { Prisma } from '../../../generated/prisma/client.js';
 import type { AuthorizedSpace } from '../../../platform/authorization/authorized-space.js';
 import { ExportBudget } from '../../../platform/lifecycle/personal-data.js';
 import { NotificationsData } from '../public/personal-data.js';
 @Injectable()
 export class NotificationsDataRepository extends NotificationsData {
-  override async suspend(tx: Prisma.TransactionClient, scope: AuthorizedSpace) {
+  override async suspend(
+    tx: Prisma.TransactionClient,
+    scope: PersonalSuspensionScope,
+  ) {
+    await suspensionOwner(tx, scope);
     await tx.notificationDelivery.updateMany({
       where: {
         spaceId: scope.spaceId,

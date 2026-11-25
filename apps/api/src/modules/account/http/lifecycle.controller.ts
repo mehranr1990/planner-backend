@@ -29,6 +29,31 @@ export const lifecycleThrottle = ThrottlerModule.forRoot([
 @UseGuards(ThrottlerGuard)
 @Throttle({ lifecycle: { limit: 10, ttl: 60000 } })
 export class LifecycleController {
+  @Get('exports/:id/archive')
+  @UseGuards(VerifiedSessionGuard)
+  async archive(
+    @CurrentActor() actor: RequestActor,
+    @Param('id', new ZodValidationPipe(c.TaskIdSchema)) id: string,
+    @Headers('x-export-proof') proof: string | undefined,
+    @Query(new ZodValidationPipe(c.PersonalArchiveQuerySchema))
+    query: z.infer<typeof c.PersonalArchiveQuerySchema>,
+    @Res() res: Response,
+  ) {
+    const stream = await this.lifecycle.archive(
+      await this.spaces.authorizePersonal(actor),
+      id,
+      proof,
+      query.projectId,
+    );
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader(
+      'Content-Disposition',
+      'attachment; filename="personal-export.zip"',
+    );
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    await pipeline(stream, res);
+  }
   constructor(
     @Inject(SpacesService) private readonly spaces: SpacesService,
     @Inject(PersonalLifecycle) private readonly lifecycle: PersonalLifecycle,

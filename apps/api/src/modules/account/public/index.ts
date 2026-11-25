@@ -1,5 +1,6 @@
 export { AccountModule } from '../account.module.js';
 export { AdminAccounts } from '../infrastructure/admin-accounts.js';
+export type { AccountChange } from '../infrastructure/admin-accounts.js';
 export { PersonalLifecycle } from './lifecycle.js';
 export { initialAccountRelations } from './identity-creation.js';
 export { PlanningPreferences } from './planning-preferences.js';

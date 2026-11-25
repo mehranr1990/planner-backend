@@ -1,5 +1,7 @@
 # Coordinated PostgreSQL and private-file backup / restore
 
+Platform Admin P2 reads the reviewed BACKUP retention setting when signing each new manifest. The default is 30 days and the approved range is 1–30 days. The retention preview reports zero affected historical records. Use the published policy when configuring physical off-host expiry. The signing command requires read access to the policy database. Previously signed manifests keep their own expiry. [P2 retention workflow](../platform-admin-p2-work-record.md)
+
 P1-12 amendment: stop both API and worker during a coordinated backup. The approved
 30-day maximum, signed manifest and independent erasure replay requirements are
 defined in [personal data lifecycle](./personal-data-lifecycle.md); they supersede

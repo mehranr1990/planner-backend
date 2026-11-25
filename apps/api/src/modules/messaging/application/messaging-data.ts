@@ -1,4 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
+import type { PersonalSuspensionScope } from '../../../platform/lifecycle/account-closure-authority.js';
 import type { Prisma } from '../../../generated/prisma/client.js';
 import type { AuthorizedSpace } from '../../../platform/authorization/authorized-space.js';
 import { ExportBudget } from '../../../platform/lifecycle/personal-data.js';
@@ -13,7 +14,7 @@ export class MessagingDataRepository extends MessagingData {
   }
   private async batches(
     tx: Prisma.TransactionClient,
-    scope: AuthorizedSpace,
+    scope: PersonalSuspensionScope,
     work: (actors: string[]) => Promise<void>,
   ) {
     let after: string | undefined;
@@ -24,7 +25,10 @@ export class MessagingDataRepository extends MessagingData {
       after = actors.at(-1);
     }
   }
-  override async suspend(tx: Prisma.TransactionClient, scope: AuthorizedSpace) {
+  override async suspend(
+    tx: Prisma.TransactionClient,
+    scope: PersonalSuspensionScope,
+  ) {
     await this.batches(tx, scope, async (actors) => {
       const admission = { Member: { actorId: { in: actors } } };
       await tx.messagePersonalMutation.deleteMany({ where: { admission } });

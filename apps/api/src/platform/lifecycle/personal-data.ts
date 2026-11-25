@@ -1,6 +1,7 @@
 import type { Prisma } from '../../generated/prisma/client.js';
 import type { AuthorizedSpace } from '../authorization/authorized-space.js';
 import { UnprocessableEntityException } from '@nestjs/common';
+import type { PersonalSuspensionScope } from './account-closure-authority.js';
 /** Only source owners supply rows. The shared budget bounds the whole snapshot. */
 export class ExportBudget {
   count = 0;
@@ -46,7 +47,7 @@ export abstract class PersonalData {
   }
   suspend(
     _tx: Prisma.TransactionClient,
-    _scope: AuthorizedSpace,
+    _scope: PersonalSuspensionScope,
   ): Promise<void> {
     return Promise.resolve();
   }

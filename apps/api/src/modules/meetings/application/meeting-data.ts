@@ -1,4 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
+import type { PersonalSuspensionScope } from '../../../platform/lifecycle/account-closure-authority.js';
 import type { Prisma } from '../../../generated/prisma/client.js';
 import type { AuthorizedSpace } from '../../../platform/authorization/authorized-space.js';
 import {
@@ -13,7 +14,7 @@ export class MeetingData extends PersonalData {
   }
   private async actors(
     tx: Prisma.TransactionClient,
-    scope: AuthorizedSpace,
+    scope: PersonalSuspensionScope,
     work: (ids: string[]) => Promise<void>,
   ) {
     let after: string | undefined;
@@ -24,7 +25,10 @@ export class MeetingData extends PersonalData {
       after = ids.at(-1);
     }
   }
-  override suspend(tx: Prisma.TransactionClient, scope: AuthorizedSpace) {
+  override suspend(
+    tx: Prisma.TransactionClient,
+    scope: PersonalSuspensionScope,
+  ) {
     return this.actors(tx, scope, async (ids) => {
       await tx.announcementAcknowledgement.deleteMany({
         where: { actorId: { in: ids } },

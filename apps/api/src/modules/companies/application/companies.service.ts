@@ -37,6 +37,43 @@ type Page = z.infer<typeof c.CompanyPageQuerySchema>;
 type PolicyChain = z.infer<typeof c.CompanyPolicySchema>[];
 @Injectable()
 export class CompaniesService {
+  async adminDelete<T extends Prisma.InputJsonValue>(
+    command: AdminCommand,
+    id: string,
+    authorize: (tx: Prisma.TransactionClient) => Promise<{
+      revision: number;
+      fingerprint: string;
+      recoveryDays: number;
+    }>,
+    complete: (tx: Prisma.TransactionClient, jobId: string) => Promise<T>,
+  ) {
+    return this.kernel.administer(
+      command,
+      id,
+      [],
+      async (tx, attribution, audit, locked) => {
+        const input = await authorize(tx),
+          row = await tx.company.findUniqueOrThrow({ where: { id } });
+        if (row.revision !== input.revision)
+          throw new ConflictException({ code: 'STALE_REVISION' });
+        const job = await this.kernel.adminCloseInside(
+          tx,
+          command,
+          id,
+          input,
+          attribution,
+          audit,
+          locked,
+        );
+        await tx.company.update({
+          where: { id },
+          data: { revision: { increment: 1 }, updatedAt: new Date() },
+        });
+        return complete(tx, job.jobId);
+      },
+      { action: 'workspace.delete', resourceId: id },
+    );
+  }
   async adminCreate(
     command: AdminCommand,
     ownerUserId: string,

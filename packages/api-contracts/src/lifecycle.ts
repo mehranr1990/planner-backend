@@ -1,4 +1,7 @@
 import { z } from 'zod';
+export const PersonalArchiveQuerySchema = z.strictObject({
+  projectId: z.uuid().optional(),
+});
 const Password = z.string().min(1).max(128),
   Id = z.uuid();
 export const ExportRequestSchema = z.strictObject({ password: Password });

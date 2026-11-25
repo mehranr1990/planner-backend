@@ -306,6 +306,8 @@ model UserExportJob {
 }
 
 model AccountDeletionJob {
+ initiatedByAdminId String? @db.Uuid
+ originAdminRequestId String? @db.Uuid
   id                    String    @id @default(uuid()) @db.Uuid
   ownerUserId           String?   @db.Uuid
   spaceId               String?   @db.Uuid
@@ -7832,6 +7834,7 @@ model MeetingEmailInvitation {
 }
 
 model AdminUser {
+ signInBlockedUntil DateTime? @db.Timestamptz(3)
  sharedAttributions SharedActor[]
  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
  name String
@@ -7848,6 +7851,121 @@ model AdminUser {
  accounts AdminAccount[]
  factors AdminTwoFactor[]
  auditEvents AdminAuditEvent[]
+}
+
+// P2: explicit two-operator security review. Identity references are SQL-enforced.
+model AdminSecurityApproval {
+ targetEnrollmentAt DateTime? @db.Timestamptz(3)
+ id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+ action String @db.VarChar(30)
+ state String @default("PENDING") @db.VarChar(12)
+ requesterAdminId String @db.Uuid
+ approverAdminId String? @db.Uuid
+ targetAdminId String? @db.Uuid
+ input Json
+ reason String @db.VarChar(500)
+ approvalReason String? @db.VarChar(500)
+ expiresAt DateTime @db.Timestamptz(3)
+ createdAt DateTime @default(now()) @db.Timestamptz(3)
+ completedAt DateTime? @db.Timestamptz(3)
+ @@index([state, expiresAt])
+}
+model AdminSecurityPolicy {
+ id String @id @db.Uuid
+ revision Int @default(1)
+ policy Json
+ updatedAt DateTime @default(now()) @db.Timestamptz(3)
+}
+model AdminPrivacyDeletionRequest {
+ impact Json @default("{\"members\":null,\"ownedBoundaries\":0,\"children\":null}")
+ id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+ kind String @db.VarChar(10)
+ targetId String @db.Uuid
+ targetUserId String? @db.Uuid
+ targetTeamId String? @db.Uuid
+ targetCompanyId String? @db.Uuid
+ expectedRevision Int
+ recoveryDays Int
+ impactFingerprint String @db.Char(64)
+ state String @default("REQUESTED") @db.VarChar(10)
+ requesterAdminId String @db.Uuid
+ approverAdminId String? @db.Uuid
+ reason String @db.VarChar(500)
+ approvalReason String? @db.VarChar(500)
+ expiresAt DateTime @db.Timestamptz(3)
+ createdAt DateTime @default(now()) @db.Timestamptz(3)
+ resultJobId String? @db.Uuid
+}
+model AdminPrivacyDeletionHistory {
+ id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+ requestId String @db.Uuid
+ actorAdminId String @db.Uuid
+ state String @db.VarChar(10)
+ createdAt DateTime @default(now()) @db.Timestamptz(3)
+ @@index([requestId,createdAt])
+}
+model AdminAuditRetentionPolicy {
+ category String @id @db.VarChar(12)
+ days Int @default(730)
+ revision Int @default(1)
+}
+model AdminAuditRetentionChange {
+ id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+ category String @db.VarChar(12)
+ days Int
+ expectedRevision Int
+ eligibleRecords Int
+ state String @default("PREVIEW") @db.VarChar(10)
+ requesterAdminId String @db.Uuid
+ approverAdminId String? @db.Uuid
+ reason String @db.VarChar(500)
+ approvalReason String? @db.VarChar(500)
+ expiresAt DateTime @db.Timestamptz(3)
+ createdAt DateTime @default(now()) @db.Timestamptz(3)
+}
+
+// Detached immutable evidence deliberately survives source/user erasure and expiry.
+model AdminAuditEvidence {
+ targetAdminId String? @db.Uuid
+ beforeRevision Int?
+ afterRevision Int?
+ id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+ source String @db.VarChar(20)
+ eventId String @db.Uuid
+ category String @db.VarChar(12)
+ action String @db.VarChar(100)
+ outcome String @db.VarChar(10)
+ actorId String? @db.Uuid
+ targetUserId String? @db.Uuid
+ targetSpaceId String? @db.Uuid
+ requestId String @db.Uuid
+ reason String? @db.VarChar(500)
+ digest String @db.Char(64)
+ createdAt DateTime @db.Timestamptz(3)
+ @@unique([source,eventId])
+ @@index([category,createdAt,id])
+}
+model AdminSecurityAlert {
+ id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+ rule String @db.VarChar(30)
+ bucketStart DateTime @db.Timestamptz(3)
+ policyRevision Int
+ severity String @db.VarChar(10)
+ observed Int
+ threshold Int
+ createdAt DateTime @default(now()) @db.Timestamptz(3)
+ @@unique([rule,bucketStart,policyRevision])
+}
+model AdminSecurityAlertDelivery {
+ id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+ alertId String @db.Uuid
+ adminUserId String @db.Uuid
+ state String @default("PENDING") @db.VarChar(10)
+ attempts Int @default(0)
+ nextAt DateTime @default(now()) @db.Timestamptz(3)
+ leaseUntil DateTime? @db.Timestamptz(3)
+ @@unique([alertId,adminUserId])
+ @@index([state,nextAt])
 }
 model AdminSession {
   mfaVerifiedAt DateTime?

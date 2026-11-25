@@ -106,6 +106,222 @@ export function knownRollback(error: unknown) {
 }
 @Injectable()
 export class SharedKernel {
+  async adminDeletionStatus(id: string) {
+    const row = await this.db.client.sharedLifecycleJob.findUnique({
+      where: { id },
+      select: { state: true, attempts: true, recoveryDeadline: true },
+    });
+    return row
+      ? {
+          state: row.state,
+          attempts: row.attempts,
+          recoveryDeadline: row.recoveryDeadline.toISOString(),
+          failureCode: null,
+        }
+      : null;
+  }
+  async adminDeletionPreview(tx: Prisma.TransactionClient, selector: string) {
+    const c = await this.lifecycleCustody(tx, selector);
+    if (!['TEAM', 'COMPANY'].includes(c.kind)) throw new NotFoundException();
+    const members = await tx.contextAccess.findMany({
+      where: {
+        spaceId: c.spaceId,
+        ...(selector !== c.spaceId ? { scopeId: selector } : {}),
+        state: { in: ['ACTIVE', 'SUSPENDED'] },
+      },
+      select: {
+        id: true,
+        actorId: true,
+        generation: true,
+        state: true,
+        memberRole: true,
+        SharedActor: { select: { userId: true } },
+      },
+      orderBy: { id: 'asc' },
+      take: 1001,
+    });
+    const children =
+      c.kind === 'COMPANY'
+        ? await tx.domainScopeCustody.count({ where: { spaceId: c.spaceId } })
+        : 0;
+    let writable = true;
+    try {
+      await this.assertWorkspaceWritable(tx, selector);
+    } catch (error) {
+      if (
+        error instanceof ForbiddenException ||
+        error instanceof NotFoundException
+      )
+        writable = false;
+      else throw error;
+    }
+    const fingerprint = hash(
+      JSON.stringify({
+        id: selector,
+        kind: c.kind,
+        revision: c.revision,
+        state: c.state,
+        authorizationVersion: String(c.authorizationVersion),
+        retention: c.retentionPolicyVersion,
+        members,
+        children,
+        writable,
+      }),
+    );
+    return {
+      id: selector,
+      kind: c.kind,
+      revision: c.revision,
+      fingerprint,
+      eligible:
+        writable &&
+        ['ACTIVE', 'ARCHIVED'].includes(c.state) &&
+        members.length <= 1000 &&
+        children === 0,
+      members: members.length,
+      children,
+    };
+  }
+  async adminCloseInside(
+    tx: Prisma.TransactionClient,
+    command: AdminCommand,
+    selector: string,
+    input: { fingerprint: string; recoveryDays: number },
+    attributionId: string,
+    auditId: string,
+    lockedUsers: string[],
+  ) {
+    command.require('admin.privacy.workspaces.delete');
+    await command.verify(tx);
+    const preview = await this.adminDeletionPreview(tx, selector);
+    if (!preview.eligible || preview.fingerprint !== input.fingerprint)
+      throw new ConflictException({ code: 'DELETION_IMPACT_CHANGED' });
+    if (![7, 30].includes(input.recoveryDays)) throw new BadRequestException();
+    const c = await this.lifecycleCustody(tx, selector),
+      now = (
+        await tx.$queryRaw<{ now: Date }[]>`SELECT clock_timestamp() now`
+      )[0]!.now;
+    const seats = await tx.contextAccess.findMany({
+      where: {
+        spaceId: c.spaceId,
+        ...(selector !== c.spaceId ? { scopeId: selector } : {}),
+        state: { in: ['ACTIVE', 'SUSPENDED'] },
+      },
+      include: { SharedActor: { select: { userId: true } } },
+      orderBy: { id: 'asc' },
+    });
+    for (const seat of seats) {
+      if (
+        seat.SharedActor.userId &&
+        !lockedUsers.includes(seat.SharedActor.userId)
+      )
+        throw new ConflictException({ code: 'LOCK_SET_CHANGED' });
+      await tx.contextAccess.update({
+        where: { id: seat.id },
+        data: {
+          state: seat.id === c.primaryOwnerAccessId ? 'LEFT' : 'REVOKED',
+          endedAt: now,
+          revision: { increment: 1 },
+        },
+      });
+      await tx.contextAccessInterval.updateMany({
+        where: {
+          accessId: seat.id,
+          generation: seat.generation,
+          endedAt: null,
+        },
+        data: { endedAt: now },
+      });
+    }
+    await tx.accessScope.updateMany({
+      where: {
+        spaceId: c.spaceId,
+        ...(selector !== c.spaceId ? { id: selector } : {}),
+      },
+      data: { restoreGeneration: { increment: 1 } },
+    });
+    const deadline = new Date(+now + input.recoveryDays * 86400000),
+      job = await tx.sharedLifecycleJob.create({
+        data: {
+          id: randomUUID(),
+          custodyId: selector,
+          spaceId: c.spaceId,
+          scopeId: selector !== c.spaceId ? selector : null,
+          generation: c.closureGeneration + 1,
+          state: 'CLOSING_GRACE',
+          effectiveDepartureAt: now,
+          recoveryDeadline: deadline,
+          retentionPolicyVersion: c.retentionPolicyVersion,
+          nextAt: deadline,
+          progress: { initiatedByAdminId: command.adminId },
+        },
+      });
+    await this.updateLifecycleCustody(tx, selector, {
+      state: 'CLOSING_GRACE',
+      closureGeneration: c.closureGeneration + 1,
+    });
+    await this.invalidateOffers(tx, selector, now);
+    await this.invalidateDelegatedGrants(tx, c.spaceId);
+    await this.adminEffect(
+      tx,
+      command,
+      selector,
+      attributionId,
+      auditId,
+      'workspace.delete',
+      selector,
+    );
+    const full = seats.filter((s) => s.memberRole !== null);
+    if (full.length) {
+      const departures = full.map((seat) => ({ seat, audit: randomUUID() }));
+      await tx.sharedAuditEvent.createMany({
+        data: departures.map(({ seat, audit }) => ({
+          id: audit,
+          spaceId: c.spaceId,
+          scopeId: seat.scopeId,
+          actorId: attributionId,
+          action: 'membership.change',
+          resourceId: seat.id,
+          requestId: command.requestId,
+        })),
+      });
+      await tx.sharedUsageEntry.createMany({
+        data: departures.map(({ seat: s, audit }) => ({
+          id: randomUUID(),
+          spaceId: c.spaceId,
+          scopeId: s.scopeId,
+          subjectActorId: s.actorId,
+          auditId: audit,
+          feature: 'shared.membership',
+          delta: -1,
+        })),
+      });
+    }
+    return { jobId: job.id, recoveryDeadline: deadline.toISOString() };
+  }
+  /** Personal account fence precedes this metadata-only ownership dependency read. */
+  async accountDeletionDependencies(
+    tx: Prisma.TransactionClient,
+    userId: string,
+  ) {
+    const rows = await tx.$queryRaw<{ id: string; kind: string }[]>`
+      SELECT c."spaceId" id,c.kind FROM "SharedCustody" c
+      JOIN "ContextAccess" a ON a.id=c."primaryOwnerAccessId"
+      JOIN "SharedActor" u ON u.id=a."actorId"
+      WHERE c.kind IN ('TEAM','COMPANY') AND c.state IN ('ACTIVE','ARCHIVED','OWNER_EXIT_FROZEN') AND u."userId"=${userId}::uuid
+      UNION ALL
+      SELECT d."scopeId" id,d.kind FROM "DomainScopeCustody" d
+      JOIN "ContextAccess" a ON a.id=d."primaryOwnerAccessId"
+      JOIN "SharedActor" u ON u.id=a."actorId"
+      WHERE d.kind='TEAM' AND d.state IN ('ACTIVE','ARCHIVED','OWNER_EXIT_FROZEN') AND u."userId"=${userId}::uuid
+      LIMIT 101`;
+    return {
+      items: rows
+        .sort((a, b) => (a.kind + a.id).localeCompare(b.kind + b.id))
+        .slice(0, 100),
+      truncated: rows.length > 100,
+    };
+  }
   /** Existing account/identity/custody lock order for the narrow consented Team workflow. */
   async teamCustodyFence<T>(
     actor: RequestActor,
@@ -173,6 +389,7 @@ export class SharedKernel {
       tx: Prisma.TransactionClient,
       attributionId: string,
       auditId: string,
+      lockedUsers: string[],
     ) => Promise<T>,
     effect: { action: string; resourceId: string },
   ) {
@@ -181,6 +398,15 @@ export class SharedKernel {
     const hints = await this.db.client.contextAccess.findMany({
       where: {
         OR: [
+          ...(effect.action === 'workspace.delete'
+            ? [
+                {
+                  spaceId,
+                  ...(selector !== spaceId ? { scopeId: selector } : {}),
+                  state: { in: ['ACTIVE', 'SUSPENDED'] },
+                },
+              ]
+            : []),
           { SharedCustody: { some: { spaceId } } },
           { DomainScopeCustody_owner: { some: { scopeId: selector } } },
         ],
@@ -241,7 +467,7 @@ export class SharedKernel {
               spaceId,
               command.adminId,
             );
-            return work(tx, attribution.id, r.id);
+            return work(tx, attribution.id, r.id, locked);
           }),
         abort,
       );

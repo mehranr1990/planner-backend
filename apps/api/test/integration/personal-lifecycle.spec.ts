@@ -214,6 +214,27 @@ describe('P1-12 private export and staged account erasure', () => {
       .set('X-Export-Proof', exported.downloadProof!)
       .expect(200);
     expect(attachment.text).toBe(attachmentBytes.toString());
+    const archiveRoute = '/me/exports/' + exported.id + '/archive';
+    await call(b, 'get', archiveRoute)
+      .set('X-Export-Proof', exported.downloadProof!)
+      .expect(404);
+    await call(a, 'get', archiveRoute).expect(403);
+    const zip = await call(a, 'get', archiveRoute)
+      .set('X-Export-Proof', exported.downloadProof!)
+      .buffer(true)
+      .parse((res, done) => {
+        const parts: Buffer[] = [];
+        res.on('data', (chunk: Buffer) => parts.push(chunk));
+        res.on('end', () => done(null, Buffer.concat(parts)));
+        res.on('error', done);
+      })
+      .expect('Content-Type', /application\/zip/)
+      .expect(200);
+    const bytes = zip.body as Buffer;
+    expect(bytes.readUInt32LE(bytes.length - 22)).toBe(0x06054b50);
+    expect(bytes.includes(Buffer.from('personal-data.json'))).toBe(true);
+    expect(bytes.includes(attachmentBytes)).toBe(true);
+    expect(bytes.includes(Buffer.from('Foreign private body'))).toBe(false);
     await call(b, 'get', '/me/exports/' + exported.id + '/download')
       .set('X-Export-Proof', exported.downloadProof!)
       .expect(404);

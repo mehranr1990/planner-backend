@@ -3,6 +3,7 @@ import fs from 'node:fs/promises';
 import { createReadStream } from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
+import pg from 'pg';
 import { parseEnvironment } from '../../apps/api/src/bootstrap/environment.ts';
 import { SharedControl } from '../../apps/api/dist/platform/storage/shared-control.js';
 import { PersonalEvidenceKeys } from '../../apps/api/dist/platform/lifecycle/personal-evidence-keys.js';
@@ -49,10 +50,24 @@ try {
     const records = await control.records(),
       actual = await artifacts(root, names),
       now = new Date();
+    const database = new pg.Client({ connectionString: config.DATABASE_URL });
+    await database.connect();
+    let days: number;
+    try {
+      const { rows } = await database.query<{ days: number }>(
+        'SELECT days FROM "AdminAuditRetentionPolicy" WHERE category=$1',
+        ['BACKUP'],
+      );
+      days = rows[0]?.days ?? 0;
+      if (!Number.isInteger(days) || days < 1 || days > 30)
+        throw new Error('Invalid backup retention policy');
+    } finally {
+      await database.end();
+    }
     const signed = signBackup(new PersonalEvidenceKeys(config), {
       version: 1,
       capturedAt: now.toISOString(),
-      expiresAt: new Date(now.getTime() + 30 * 86400000).toISOString(),
+      expiresAt: new Date(now.getTime() + days * 86400000).toISOString(),
       checkpoint: control.checkpoint(records),
       artifacts: Object.entries(actual).map(([name, sha256]) => ({
         name,
@@ -64,7 +79,7 @@ try {
       mode: 0o600,
     });
     process.stdout.write(
-      'PASS: signed 30-day backup manifest; off-host expiry still requires deployment verification.\n',
+      'PASS: signed policy-bound backup manifest; off-host expiry still requires deployment verification.\n',
     );
   } else if (command === 'verify-backup' || command === 'restore-replay') {
     const [manifestFile, root] = process.argv.slice(3);

@@ -2,6 +2,24 @@ import { z } from 'zod';
 import type { Prisma } from '../../generated/prisma/client.js';
 import type { AuthorizedSpace } from '../authorization/authorized-space.js';
 import type { SharedCleanupScope } from '../lifecycle/shared-cleanup.js';
+import type { AccountClosureAuthority } from '../lifecycle/account-closure-authority.js';
+export async function appendAdminAccountClosure(
+  tx: Prisma.TransactionClient,
+  authority: AccountClosureAuthority,
+  jobId: string,
+) {
+  await authority.verify(tx);
+  return tx.outboxEvent.create({
+    data: {
+      type: 'account.deletion_requested',
+      version: 1,
+      aggregateId: jobId,
+      payload: {},
+      spaceId: authority.spaceId,
+      correlationId: authority.requestId,
+    },
+  });
+}
 
 // Consumers fetch timezone through the authorized account facade; no personal value is broadcast.
 export const EventSchema = z.strictObject({

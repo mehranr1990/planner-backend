@@ -45,7 +45,7 @@ try {
     )
   ).rows;
   // Six P0 Admin identity/audit tables and three P1 bulk/receipt/delivery tables.
-  assert.equal(emptyTables.length, 360); // 359 domain tables plus migration ledger
+  assert.equal(emptyTables.length, 369); // P2 adds typed privacy requests and their actor-attributed history
   // Required reset capability is restricted to this disposable, newly-created namespace.
   await sandbox.resetOwnedSchema();
   const folder = path.resolve('.tools/migration-check-' + randomUUID());
@@ -78,6 +78,7 @@ try {
   const spaceId = randomUUID();
   const eventId = randomUUID();
   const auditId = randomUUID();
+  const historicalSignIn = randomUUID();
   await sandbox.query(
     `INSERT INTO "Space" (id,"ownerUserId","updatedAt") VALUES ($1,$2,now())`,
     [spaceId, id],
@@ -89,6 +90,10 @@ try {
   await sandbox.query(
     `INSERT INTO "SecurityAuditEvent" (id,action,outcome,"actorUserId","requestId","correlationId") VALUES ($1,'ACCOUNT_SETTINGS_UPDATE','SUCCEEDED',$2,$3,$4)`,
     [auditId, id, randomUUID(), randomUUID()],
+  );
+  await sandbox.query(
+    `INSERT INTO "SecurityAuditEvent" (id,action,outcome,"actorUserId","requestId","correlationId") VALUES ($1,'AUTH_SIGN_IN','DENIED',$2,$3,$4)`,
+    [historicalSignIn, id, randomUUID(), randomUUID()],
   );
   await sandbox.query(
     `INSERT INTO "IdempotencyRecord" (id,"actorUserId","spaceId",operation,"keyHash",fingerprint,"resultId","statusCode","expiresAt",result) VALUES ($1,$2,$3,'migration.fixture',$4,$5,$6,200,now()+interval '1 day','{"fixture":true}')`,
@@ -569,6 +574,24 @@ try {
   assert.deepEqual(settings, [
     { locale: 'fa', timezone: 'Asia/Tehran', revision: 7 },
   ]);
+  assert.deepEqual(
+    (
+      await sandbox.query(
+        `SELECT source,category,action,outcome,reason,"actorId" FROM "AdminAuditEvidence" WHERE "eventId" IN ($1,$2)`,
+        [historicalSignIn, auditId],
+      )
+    ).rows,
+    [
+      {
+        source: 'USER_SECURITY',
+        category: 'SECURITY',
+        action: 'AUTH_SIGN_IN',
+        outcome: 'DENIED',
+        reason: null,
+        actorId: id,
+      },
+    ],
+  );
   assert.deepEqual(
     (
       await sandbox.query(

@@ -21,6 +21,8 @@ const RecordSchema = z.strictObject({
   state: z.enum(['CLOSED', 'CANCELED', 'ERASING', 'ERASED']),
   at: z.iso.datetime(),
   eraseAfter: z.iso.datetime(),
+  confirmedAt: z.iso.datetime().optional(),
+  recoveryExpiresAt: z.iso.datetime().optional(),
   policyVersion: z.string().max(80),
   recoveryHash: z
     .string()

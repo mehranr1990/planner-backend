@@ -1,6 +1,8 @@
 # Platform Admin
 
-Current work status (2026-11-24): P0 is committed as `651b0ec` and pushed to
+P1 was pushed to `origin/main` at `b9746e17f0087d5019ce39eb86e8beac438a8538`. The owner authorized local P2 implementation and verification. The status paragraphs below record previous work items. [Current Platform Admin progress](docs/platform-admin-implementation-progress.md)
+
+Historical P1 status (2026-11-24): P0 is committed as `651b0ec` and pushed to
 origin/main. Platform Admin P1 has 27 Admin operations and the newly authorized
 ordinary Independent Team → Company-owned Team workflow under ADR 0043.
 Local P1 verification is complete; acceptance is recommended. Final complete runs:

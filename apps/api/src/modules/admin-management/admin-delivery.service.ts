@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { DatabaseService } from '../../platform/database/database.service.js';
-import { AdminAccounts } from '../account/public/index.js';
+import { AdminAccounts, PersonalLifecycle } from '../account/public/index.js';
 import { IdentityMailService } from '../../platform/auth/mail.service.js';
 import { APP_CONFIG } from '../../bootstrap/configuration.module.js';
 import type { AppConfig } from '../../bootstrap/environment.js';
@@ -14,6 +14,7 @@ export class AdminDeliveryService {
     private readonly invitations: InvitationMailService,
     @Inject(DatabaseService) private readonly db: DatabaseService,
     @Inject(AdminAccounts) private readonly accounts: AdminAccounts,
+    @Inject(PersonalLifecycle) private readonly lifecycle: PersonalLifecycle,
     @Inject(IdentityMailService) private readonly mail: IdentityMailService,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {}
@@ -80,6 +81,33 @@ export class AdminDeliveryService {
         if (account && effectiveSuspension(account))
           throw new Error('Recovery unavailable');
         await this.accounts.recovery(row.targetUserId);
+      } else if (row.kind === 'ACCOUNT_DELETION') {
+        const data = row.payload as { jobId: string };
+        const notice = await this.lifecycle.deletionNotice(
+          data.jobId,
+          row.targetUserId,
+        );
+        if (!notice) {
+          await this.db.client.adminDelivery.updateMany({
+            where: { id: row.id, state: 'SENDING', attempts: row.attempts },
+            data: { state: 'CANCELED', leaseUntil: null },
+          });
+          return true;
+        }
+        const url = new URL(this.config.BETTER_AUTH_URL);
+        url.hash = new URLSearchParams({
+          deletionJobId: data.jobId,
+          recoveryCapability: notice.recovery,
+        }).toString();
+        await this.mail.send({
+          to: user.email,
+          kind: 'administrative',
+          url: url.toString(),
+          message:
+            'Platform Administration scheduled account deletion. Recovery is available before ' +
+            notice.deadline +
+            '. Use the recovery capability with your password; revoked sessions do not return.',
+        });
       } else {
         const data = row.payload as {
           workspaceId?: string;

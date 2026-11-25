@@ -161,6 +161,10 @@ import {
 } from './reviewed-rewards-migration.ts';
 import path from 'node:path';
 import {
+  isAdminP2Migration,
+  assertReviewedAdminP2Migration,
+} from './reviewed-admin-p2-migration.ts';
+import {
   adminP1MigrationName,
   teamScopedDisposalMigrationName,
   assertReviewedTeamScopedDisposalMigration,
@@ -252,7 +256,8 @@ export function reviewMigrations(directory = 'prisma/migrations'): string[] {
       path.join(directory, name, 'migration.sql'),
       'utf8',
     );
-    if (name === adminInvitationDeliveryMigrationName)
+    if (isAdminP2Migration(name)) assertReviewedAdminP2Migration(name, sql);
+    else if (name === adminInvitationDeliveryMigrationName)
       assertReviewedAdminInvitationDeliveryMigration(sql);
     else if (name === adminP1MigrationName) assertReviewedAdminP1Migration(sql);
     else if (name === teamCompanyCustodyMigrationName)

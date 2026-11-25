@@ -7,6 +7,9 @@ import {
 import * as c from '@mehran/api-contracts';
 import type { z } from 'zod';
 import type { RequestActor } from '../../../platform/auth/request-actor.js';
+import { Readable } from 'node:stream';
+import type { ZipEntry } from '../../../platform/storage/zip-archive.js';
+import { ProjectsService } from './projects.service.js';
 import { SharedTasks } from '../../tasks/public/index.js';
 import { SharedGoals } from '../../goals/public/index.js';
 import {
@@ -43,7 +46,76 @@ function csvRecord(kind: Bucket, value: Item) {
 }
 @Injectable()
 export class ProjectExportService {
+  async personalArchiveEntries(
+    actor: RequestActor,
+    selectedId?: string,
+  ): Promise<ZipEntry[]> {
+    const hints = await this.op.kernel.readableContextHints(actor, 'PROJECT');
+    const owned = hints.members.filter(
+      (r) => r.role === 'OWNER' && r.id === r.spaceId,
+    );
+    const projectIds = new Set(owned.map((item) => item.id));
+    if (selectedId) projectIds.add(selectedId);
+    if (projectIds.size > 100)
+      throw new PayloadTooLargeException({ code: 'EXPORT_PROJECT_LIMIT' });
+    const entries: ZipEntry[] = [];
+    for (const projectId of projectIds) {
+      const snapshot = await this.build(actor, projectId, { format: 'JSON' }),
+        data = c.ProjectExportSchema.parse(JSON.parse(snapshot.body));
+      const files = data.files.filter((f) => f.status === 'READY');
+      entries.push({
+        name: `projects/${projectId}.json`,
+        open: async () => {
+          const profile = await this.projects.read(actor, projectId);
+          const current = await this.build(actor, projectId, {
+            format: 'JSON',
+          });
+          const content = c.ProjectExportSchema.parse(JSON.parse(current.body));
+          if (
+            JSON.stringify(
+              content.files.filter((f) => f.status === 'READY'),
+            ) !== JSON.stringify(files)
+          )
+            throw new ConflictException({ code: 'EXPORT_SOURCE_CHANGED' });
+          return Readable.from(
+            JSON.stringify({ version: 1, profile, content }),
+          );
+        },
+      });
+      for (const file of files)
+        entries.push({
+          name: `project-files/${projectId}/${file.id}`,
+          open: async () => {
+            await this.op.read(
+              actor,
+              projectId,
+              ['export.visible', 'file.read'],
+              undefined,
+              async () => undefined,
+            );
+            const current = await this.files.download(
+              actor,
+              projectId,
+              file.id,
+              file.target,
+            );
+            if (
+              current.file.sha256 !== file.sha256 ||
+              current.file.actualSize !== file.actualSize
+            ) {
+              current.stream.destroy();
+              throw new ConflictException({ code: 'EXPORT_SOURCE_CHANGED' });
+            }
+            return current.stream;
+          },
+        });
+      if (entries.length > 1000)
+        throw new PayloadTooLargeException({ code: 'EXPORT_ARCHIVE_LIMIT' });
+    }
+    return entries;
+  }
   constructor(
+    @Inject(ProjectsService) private readonly projects: ProjectsService,
     @Inject(ProjectExecutionContext)
     private readonly op: ProjectExecutionContext,
     @Inject(SharedTasks) private readonly tasks: SharedTasks,

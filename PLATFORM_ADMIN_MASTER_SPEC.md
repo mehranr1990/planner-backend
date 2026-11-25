@@ -1,5 +1,9 @@
 # Mehran Planner — Platform Admin Master Specification & Continuous Codex Execution
 
+## Current execution authorization
+
+On 2026-11-25 the owner accepted Platform Admin P2 for local development based on its final documented verification, authorized committing and pushing only P2 to origin/main, and authorized local P3 implementation after the successful push. Preserve the owner's compose.yaml. P3 commit/push, P4, frontend work and deployment require separate approval. Earlier authorization paragraphs below are historical. [P2 work record](docs/platform-admin-p2-work-record.md)
+
 ## Owner-approved P1 custody exception — 2026-11-24
 
 The owner's current task authorizes only the one-way transition

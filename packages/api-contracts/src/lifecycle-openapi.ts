@@ -134,6 +134,24 @@ export function lifecyclePaths(): Record<string, Record<string, unknown>> {
   add('/me/deletion-request/current', 'get', c.CurrentDeletionSchema);
   add('/me/exports/{id}', 'get', c.ExportJobSchema);
   add(
+    '/me/exports/{id}/archive',
+    'get',
+    null,
+    undefined,
+    c.PersonalArchiveQuerySchema,
+    'X-Export-Proof',
+  );
+  const archive = paths['/api/v1/me/exports/{id}/archive']!.get as {
+    responses: Record<string, { description: string; content?: unknown }>;
+  };
+  archive.responses['200'] = {
+    description:
+      'P2 ZIP containing Personal JSON, authorized files and independently owned Projects plus the expressly selected Project when its current export policy allows access; bounded to 512 MiB and 1,000 entries. Shared activation gates still apply.',
+    content: {
+      'application/zip': { schema: { type: 'string', format: 'binary' } },
+    },
+  };
+  add(
     '/me/exports/{id}/download',
     'get',
     null,
