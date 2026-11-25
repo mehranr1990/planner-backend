@@ -123,3 +123,4 @@ export * from './admin-audit.js';
 export * from './admin-user-security.js';
 export * from './admin-retention.js';
 export * from './admin-privacy.js';
+export * from './admin-operations.js';

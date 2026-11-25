@@ -13,6 +13,7 @@ import { LocalFileStorage } from './local-storage.js';
 import { MALWARE_SCANNER } from './malware-scanner.port.js';
 import type { MalwareScannerPort } from './malware-scanner.port.js';
 import { StorageFailure } from './storage.port.js';
+import { StorageAdmission } from './storage-admission.js';
 
 /** ADR 0068: without a configured malware scanner no file has a trusted
  * verdict, so business bytes and file references are refused up front. */
@@ -31,12 +32,20 @@ export class BusinessFileStorage extends LocalFileStorage {
     @Optional()
     @Inject(PinoLogger)
     private readonly logger?: PinoLogger,
+    @Optional()
+    @Inject(StorageAdmission)
+    private readonly admission?: StorageAdmission,
   ) {
     super(contentConfig);
   }
   override async write(...args: Parameters<LocalFileStorage['write']>) {
     assertFileContentAvailable(this.contentConfig);
+    await this.beforePublish();
     return super.write(...args);
+  }
+  protected override async beforePublish() {
+    if (this.admission)
+      await this.admission.check((await this.capacity()).freeBytes);
   }
   override async open(...args: Parameters<LocalFileStorage['open']>) {
     assertFileContentAvailable(this.contentConfig);

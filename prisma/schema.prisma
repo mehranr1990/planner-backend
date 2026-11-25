@@ -7926,6 +7926,7 @@ model AdminAuditRetentionChange {
 
 // Detached immutable evidence deliberately survives source/user erasure and expiry.
 model AdminAuditEvidence {
+ targetFileId String? @db.Uuid
  targetAdminId String? @db.Uuid
  beforeRevision Int?
  afterRevision Int?
@@ -7966,6 +7967,127 @@ model AdminSecurityAlertDelivery {
  leaseUntil DateTime? @db.Timestamptz(3)
  @@unique([alertId,adminUserId])
  @@index([state,nextAt])
+}
+// P3 operational state contains no customer content or infrastructure secrets.
+model AdminOperationalPolicy {
+ section String @id @db.VarChar(10)
+ revision Int @default(1)
+ value Json
+}
+model AdminOperationalPolicyDraft {
+ id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+ section String @db.VarChar(10)
+ expectedRevision Int
+ value Json
+ impact String @db.VarChar(500)
+ state String @default("PREVIEW") @db.VarChar(10)
+ requesterAdminId String @db.Uuid
+ expiresAt DateTime @db.Timestamptz(3)
+ createdAt DateTime @default(now()) @db.Timestamptz(3)
+}
+model AdminOperationalIncident {
+ id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+ rule String @db.VarChar(20)
+ severity String @db.VarChar(10)
+ state String @default("OPEN") @db.VarChar(12)
+ cause String @db.VarChar(120)
+ startedAt DateTime @default(now()) @db.Timestamptz(3)
+ recoveredAt DateTime? @db.Timestamptz(3)
+ lastNotifiedAt DateTime? @db.Timestamptz(3)
+ notificationSequence Int @default(0)
+}
+model AdminOperationalNote {
+ id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+ incidentId String @db.Uuid
+ actorAdminId String @db.Uuid
+ note String @db.VarChar(500)
+ createdAt DateTime @default(now()) @db.Timestamptz(3)
+ @@index([incidentId,id])
+}
+model AdminOperationalDelivery {
+ id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+ incidentId String @db.Uuid
+ adminUserId String @db.Uuid
+ sequence Int
+ state String @default("PENDING") @db.VarChar(10)
+ attempts Int @default(0)
+ leaseUntil DateTime? @db.Timestamptz(3)
+ nextAt DateTime @default(now()) @db.Timestamptz(3)
+ @@unique([incidentId,adminUserId,sequence])
+}
+model AdminOperationalHeartbeat {
+ name String @id @db.VarChar(20)
+ instanceId String @db.Uuid
+ lastSeenAt DateTime @default(now()) @db.Timestamptz(3)
+}
+model AdminOperationalCommand {
+ id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+ actorAdminId String @db.Uuid
+ permission String @db.VarChar(100)
+ kind String @db.VarChar(10)
+ queue String? @db.VarChar(40)
+ jobId String? @db.Uuid
+ dispatchedJobId String? @db.Uuid
+ expectedAttempts Int?
+ state String @default("QUEUED") @db.VarChar(12)
+ attempts Int @default(0)
+ failureCode String? @db.VarChar(60)
+ createdAt DateTime @default(now()) @db.Timestamptz(3)
+ completedAt DateTime? @db.Timestamptz(3)
+ @@index([state,createdAt])
+}
+model AdminStorageCleanupPreview {
+ id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+ actorAdminId String @db.Uuid
+ fingerprint String @db.Char(64)
+ targets Json
+ bytes BigInt
+ state String @default("PREVIEW") @db.VarChar(10)
+ removed Int @default(0)
+ expiresAt DateTime @db.Timestamptz(3)
+ createdAt DateTime @default(now()) @db.Timestamptz(3)
+}
+model AdminStoragePressure {
+ id String @id @db.VarChar(10)
+ since DateTime @default(now()) @db.Timestamptz(3)
+}
+model AdminBackupRun {
+ id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+ actorAdminId String? @db.Uuid
+ origin String @db.VarChar(10)
+ state String @default("QUEUED") @db.VarChar(10)
+ retentionDays Int
+ policyRevision Int
+ createdAt DateTime @default(now()) @db.Timestamptz(3)
+ completedAt DateTime? @db.Timestamptz(3)
+ expiresAt DateTime? @db.Timestamptz(3)
+ failureCode String? @db.VarChar(60)
+ encrypted Boolean @default(false)
+ offHostVerified Boolean @default(false)
+ manifestDigest String? @db.Char(64)
+ operatorLeaseId String? @db.Uuid
+ leaseUntil DateTime? @db.Timestamptz(3)
+ evidence Json?
+ @@index([createdAt,id])
+}
+model AdminRestoreRun {
+ id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+ backupId String @db.Uuid
+ mode String @db.VarChar(10)
+ targetReference String @db.VarChar(80)
+ state String @default("REQUESTED") @db.VarChar(12)
+ requesterAdminId String @db.Uuid
+ approverAdminId String? @db.Uuid
+ expiresAt DateTime @db.Timestamptz(3)
+ createdAt DateTime @default(now()) @db.Timestamptz(3)
+ completedAt DateTime? @db.Timestamptz(3)
+ failureCode String? @db.VarChar(60)
+ replayVerified Boolean @default(false)
+ readinessVerified Boolean @default(false)
+ operatorLeaseId String? @db.Uuid
+ leaseUntil DateTime? @db.Timestamptz(3)
+ evidence Json?
+ @@index([createdAt,id])
 }
 model AdminSession {
   mfaVerifiedAt DateTime?

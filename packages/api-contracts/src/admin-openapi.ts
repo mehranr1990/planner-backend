@@ -5,6 +5,7 @@ import { adminAuditRoutes } from './admin-audit.js';
 import { adminUserSecurityRoutes } from './admin-user-security.js';
 import { adminRetentionRoutes } from './admin-retention.js';
 import { adminPrivacyRoutes } from './admin-privacy.js';
+import { adminOperationsRoutes } from './admin-operations.js';
 import {
   adminManagementRoutes,
   adminManagementResponses,
@@ -16,21 +17,25 @@ for (const [route, spec] of Object.entries({
   ...adminUserSecurityRoutes,
   ...adminRetentionRoutes,
   ...adminPrivacyRoutes,
+  ...adminOperationsRoutes,
 })) {
   const [method, suffix] = route.split(' ') as [string, string];
   const path = '/api/v1/admin/' + suffix.replace(':id', '{id}');
   const csv = route === 'GET audit/export';
+  const file = route === 'GET operations/storage/files/:id/content';
   adminPaths[path] = {
     ...adminPaths[path],
     [method.toLowerCase()]: {
       operationId:
-        'platformAdminP2_' +
+        (suffix.startsWith('operations/')
+          ? 'platformAdminP3_'
+          : 'platformAdminP2_') +
         method.toLowerCase() +
         '_' +
         suffix.replace(/[^a-zA-Z]/g, '_'),
       tags: ['platform-admin'],
       security: [{ adminCookie: [] }],
-      description: `Requires ${spec.permission}. Mutations require recent MFA and an Idempotency-Key. Critical changes require a distinct authorized approver. User login restrictions reuse P1 account suspension.`,
+      description: `Requires ${spec.permission}. Mutations require recent MFA and an Idempotency-Key. Critical changes require a distinct authorized approver. User login restrictions reuse P1 account suspension.${file ? ' Exact private-file access is restricted to Super Admin with the explicit private-file capability and recent MFA. Every attempt and streaming outcome is audited; scope, custody, replay, scan and hash checks apply. Inline only for PNG/JPEG; other types download.' : ''}`,
       parameters: [
         ...(suffix.includes(':id')
           ? [
@@ -48,7 +53,8 @@ for (const [route, spec] of Object.entries({
                 in: 'query',
                 name,
                 schema,
-                required: name === 'category',
+                required:
+                  z.toJSONSchema(spec.schema).required?.includes(name) ?? false,
               }),
             )
           : [
@@ -71,17 +77,37 @@ for (const [route, spec] of Object.entries({
           }
         : {}),
       responses: Object.fromEntries(
-        [200, 400, 401, 403, 404, 409, 429, 500].map((code) => [
+        [
+          200,
+          400,
+          401,
+          403,
+          404,
+          409,
+          429,
+          500,
+          ...(suffix.startsWith('operations/') ? [503] : []),
+        ].map((code) => [
           String(code),
           {
             description:
-              code === 200 ? 'Authorized P2 result' : 'Safe API error',
+              code === 200
+                ? suffix.startsWith('operations/')
+                  ? 'Authorized P3 operational result'
+                  : 'Authorized P2 result'
+                : 'Safe API error',
             content: {
-              [code === 200 && csv ? 'text/csv' : 'application/json']: {
+              [code === 200 && file
+                ? 'application/octet-stream'
+                : code === 200 && csv
+                  ? 'text/csv'
+                  : 'application/json']: {
                 schema:
-                  code === 200
-                    ? z.toJSONSchema(spec.response)
-                    : { $ref: '#/components/schemas/ApiError' },
+                  code === 200 && file
+                    ? { type: 'string', format: 'binary' }
+                    : code === 200
+                      ? z.toJSONSchema(spec.response)
+                      : { $ref: '#/components/schemas/ApiError' },
               },
             },
           },

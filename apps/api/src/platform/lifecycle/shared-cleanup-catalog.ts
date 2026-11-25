@@ -73,7 +73,9 @@ export const SHARED_CLEANUP_FK_SHA256 =
   // typed deletion review subjects (SET NULL on User/Team/Company removal),
   // immutable Admin request history, and AccountDeletionJob provenance. These
   // neither broaden cleanup custody nor retain the erased User/Team/Company.
-  '28a90de1612104a147578f8a3599e6d468f3a95693d86f5e692a54a1398cc2f3';
+  // P3 adds twelve references confined to Admin identities, operational policy,
+  // incidents and backup reviews (1,198 FKs). No edge enters customer custody.
+  '9077bb4de8abcd51704d71cabee07adfa375e46bf6087f3e6b79953b155755f5';
 export async function assertSharedCleanupCatalog(tx: Prisma.TransactionClient) {
   const rows = await tx.$queryRaw<
     { table: string; name: string; target: string; definition: string }[]

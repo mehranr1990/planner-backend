@@ -24,6 +24,7 @@ export const AdminAuditEntrySchema = z.strictObject({
   outcome: z.enum(['SUCCEEDED', 'DENIED', 'FAILED']),
   actorId: z.uuid().nullable(),
   targetAdminId: z.uuid().nullable(),
+  targetFileId: z.uuid().nullable(),
   beforeRevision: z.number().int().nonnegative().nullable(),
   afterRevision: z.number().int().nonnegative().nullable(),
   targetUserId: z.uuid().nullable(),

@@ -9,6 +9,7 @@ import { reviewMigrations } from '../testing/migration-safety.ts';
 import { verifySharedKernelUpgrade } from '../testing/shared-kernel-upgrade.ts';
 import { verifyCollaborationUpgrade } from '../testing/collaboration-upgrade.ts';
 import { verifyProjectUpgrade } from '../testing/project-upgrade.ts';
+import { verifyAdminP3Upgrade } from '../testing/admin-p3-upgrade.ts';
 
 const names = reviewMigrations();
 const url = isolatedTestDatabaseUrl(process.env);
@@ -45,7 +46,7 @@ try {
     )
   ).rows;
   // Six P0 Admin identity/audit tables and three P1 bulk/receipt/delivery tables.
-  assert.equal(emptyTables.length, 369); // P2 adds typed privacy requests and their actor-attributed history
+  assert.equal(emptyTables.length, 380); // P3 adds eleven operational tables; customer data is unchanged
   // Required reset capability is restricted to this disposable, newly-created namespace.
   await sandbox.resetOwnedSchema();
   const folder = path.resolve('.tools/migration-check-' + randomUUID());
@@ -725,3 +726,4 @@ try {
 await verifySharedKernelUpgrade(names);
 await verifyCollaborationUpgrade(names);
 await verifyProjectUpgrade(names);
+await verifyAdminP3Upgrade();

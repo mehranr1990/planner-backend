@@ -13,12 +13,16 @@ import type { Request, Response, NextFunction } from 'express';
 import { APP_CONFIG } from './configuration.module.js';
 import type { AppConfig } from './environment.js';
 import { applyTrustedProxies, trustedOrigins } from './environment.js';
+import { ApiMetrics } from '../platform/operations/api-metrics.js';
+import { OperationsControl } from '../platform/operations/operations-control.js';
 
 export async function configureApp(app: NestExpressApplication): Promise<void> {
   app.use(requestContext);
   app.useLogger(app.get(Logger));
   const errors = new ApiExceptionFilter();
   const config = app.get<AppConfig>(APP_CONFIG);
+  const metrics = app.get(ApiMetrics),
+    operations = app.get(OperationsControl);
   const origins = trustedOrigins(config);
   applyTrustedProxies(
     app.getHttpAdapter().getInstance(),
@@ -68,6 +72,26 @@ export async function configureApp(app: NestExpressApplication): Promise<void> {
       return;
     }
     next();
+  });
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    const finish = metrics.begin();
+    res.once('finish', () => finish(res.statusCode));
+    res.once('close', () =>
+      finish(res.writableFinished ? res.statusCode : 499),
+    );
+    if (
+      /^\/api\/v1\/admin(?:\/|$)/i.test(req.path) ||
+      req.path === '/health/live'
+    ) {
+      next();
+      return;
+    }
+    void operations
+      .assert()
+      .then(() => next())
+      .catch((error: unknown) =>
+        errors.reply(error, req as ContextRequest, res),
+      );
   });
   app.useGlobalFilters(errors);
   app.setGlobalPrefix('api/v1', {

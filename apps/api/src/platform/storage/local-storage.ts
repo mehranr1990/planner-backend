@@ -9,6 +9,7 @@ import {
   link,
   unlink,
   readdir,
+  statfs,
 } from 'node:fs/promises';
 import type { FileHandle } from 'node:fs/promises';
 import path from 'node:path';
@@ -66,7 +67,12 @@ export class LocalFileStorage implements StoragePort, OnModuleInit {
     await this.checkRoot();
     const names = await readdir(this.root);
     if (names.length > 100000) throw new StorageFailure('LIMIT');
-    const result: Array<{ key: string; attempt: string | null }> = [];
+    const result: Array<{
+      key: string;
+      attempt: string | null;
+      size: number;
+      modifiedAt: string;
+    }> = [];
     for (const name of names) {
       const parts =
         /^([a-f0-9-]{36})(?:\.([a-f0-9-]{36}))?\.(blob|part)$/i.exec(name);
@@ -81,10 +87,43 @@ export class LocalFileStorage implements StoragePort, OnModuleInit {
       const stat = await lstat(path.join(this.root, name));
       if (!stat.isFile() || stat.isSymbolicLink() || stat.nlink !== 1)
         throw new StorageFailure('UNAVAILABLE');
-      result.push({ key: parts[1]!, attempt: parts[2] ?? null });
+      result.push({
+        key: parts[1]!,
+        attempt: parts[2] ?? null,
+        size: stat.size,
+        modifiedAt: stat.mtime.toISOString(),
+      });
     }
     return result;
   }
+  async capacity() {
+    await this.checkRoot();
+    const info = await statfs(this.root, { bigint: true });
+    return {
+      totalBytes: info.blocks * info.bsize,
+      freeBytes: info.bavail * info.bsize,
+    };
+  }
+  async removeOrphan(
+    key: string,
+    attempt: string | null,
+    expected: { size: number; modifiedAt: string },
+  ) {
+    await this.checkRoot();
+    const filename = this.location(key, attempt ?? undefined),
+      status = await lstat(filename);
+    if (
+      !status.isFile() ||
+      status.isSymbolicLink() ||
+      status.nlink !== 1 ||
+      status.size !== expected.size ||
+      status.mtime.toISOString() !== expected.modifiedAt
+    )
+      throw new StorageFailure('UNAVAILABLE');
+    await unlink(filename);
+    await this.syncDirectory();
+  }
+  protected async beforePublish(): Promise<void> {}
   /** Content admission hook over exact staged or published bytes. Signed
    * control stores keep IO unchanged; business storage scans for malware. */
   protected readonly inspectsContent: boolean = false;
@@ -226,6 +265,7 @@ export class LocalFileStorage implements StoragePort, OnModuleInit {
       }
       await this.checkRoot();
       // Same-volume hard-link publication is atomic and refuses overwriting an existing blob.
+      await this.beforePublish();
       await link(temporary, this.location(key));
       published = true;
       await unlink(temporary);

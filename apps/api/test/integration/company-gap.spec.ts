@@ -1484,11 +1484,18 @@ describe('P4-GAP-CLOSURE authorization, state and evidence', () => {
       co = await companies.read(owner.actor, f.id);
     await life.change(owner.actor, f.id, co.revision, 'delete', password);
     // Fixture-only time advance, using the existing lifecycle rehearsal convention.
+    const closure = await client.sharedLifecycleJob.findFirstOrThrow({
+        where: { spaceId: f.id },
+      }),
+      recoveryWindow =
+        +closure.recoveryDeadline - +closure.effectiveDepartureAt,
+      shiftedDeparture = new Date(Date.now() - 31 * 86400000);
+    expect(recoveryWindow).toBe(7 * 86400000);
     await client.sharedLifecycleJob.updateMany({
       where: { spaceId: f.id },
       data: {
-        effectiveDepartureAt: new Date(Date.now() - 31 * 86400000),
-        recoveryDeadline: new Date(Date.now() - 86400000),
+        effectiveDepartureAt: shiftedDeparture,
+        recoveryDeadline: new Date(+shiftedDeparture + recoveryWindow),
         nextAt: new Date(0),
       },
     });

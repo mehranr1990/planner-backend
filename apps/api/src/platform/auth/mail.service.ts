@@ -64,6 +64,34 @@ export class IdentityMailService {
     });
   }
 
+  async check(): Promise<void> {
+    if (this.config.NODE_ENV === 'test') return;
+    if (this.config.MAIL_MODE === 'sink') {
+      await mkdir(path.resolve(this.config.MAIL_SINK_DIR), {
+        recursive: true,
+        mode: 0o700,
+      });
+      return;
+    }
+    const transport = nodemailer.createTransport({
+      host: this.config.SMTP_HOST,
+      port: this.config.SMTP_PORT,
+      secure: this.config.SMTP_PORT === 465,
+      requireTLS: true,
+      auth: { user: this.config.SMTP_USER!, pass: this.config.SMTP_PASSWORD! },
+      logger: false,
+      debug: false,
+      connectionTimeout: 5000,
+      greetingTimeout: 5000,
+      socketTimeout: 5000,
+    });
+    try {
+      await transport.verify();
+    } finally {
+      transport.close();
+    }
+  }
+
   latestForTest(
     to: string,
     kind: IdentityMail['kind'],

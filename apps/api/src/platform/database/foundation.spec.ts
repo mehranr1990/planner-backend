@@ -336,6 +336,7 @@ describe('scoped persistence and API conventions', () => {
       '202611240109_admin_backup_retention',
       '202611240110_admin_audit_change_summary',
       '202611240111_admin_audit_expiry_bounds',
+      '202611250112_platform_admin_p3_operations',
     ]);
     for (const sql of [
       '',

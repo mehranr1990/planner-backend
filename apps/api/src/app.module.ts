@@ -1,4 +1,10 @@
 import { AdminModule } from './platform/admin/admin.module.js';
+import { OperationsModule } from './platform/operations/operations.module.js';
+import {
+  ADMIN_FILE_SCOPE_AUTHORITY,
+  EXPORT_STORAGE_REFERENCES,
+  type AdminFileScopeAuthority,
+} from './platform/storage/storage-operations.js';
 import { ManagementModule } from './modules/admin-management/public/index.js';
 import { CompaniesModule } from './modules/companies/public/index.js';
 import {
@@ -36,6 +42,7 @@ import { loggingOptions } from './platform/observability/logging.js';
 import { HealthController } from './platform/observability/health.controller.js';
 import {
   AccountModule,
+  protectsAccountExportKey,
   initialAccountRelations,
 } from './modules/account/public/index.js';
 import {
@@ -52,14 +59,29 @@ import type { FileScopeResolver } from './platform/storage/files.controller.js';
 @Module({})
 export class AppModule {
   static register(config: AppConfig): DynamicModule {
-    const storage = StorageModule.register([SpacesModule], {
-      provide: FILE_SCOPE_RESOLVER,
-      inject: [SpacesService],
-      useFactory:
-        (spaces: SpacesService): FileScopeResolver =>
-        (actor) =>
-          spaces.authorizePersonal(actor),
-    });
+    const storage = StorageModule.register(
+      [SpacesModule],
+      {
+        provide: FILE_SCOPE_RESOLVER,
+        inject: [SpacesService],
+        useFactory:
+          (spaces: SpacesService): FileScopeResolver =>
+          (actor) =>
+            spaces.authorizePersonal(actor),
+      },
+      {
+        provide: ADMIN_FILE_SCOPE_AUTHORITY,
+        inject: [SpacesService],
+        useFactory:
+          (spaces: SpacesService): AdminFileScopeAuthority =>
+          (tx, command, file) =>
+            spaces.adminFileScope(tx, command, file),
+      },
+      {
+        provide: EXPORT_STORAGE_REFERENCES,
+        useValue: protectsAccountExportKey,
+      },
+    );
     const tasks = TasksModule.register(storage);
     const messagingMedia = MessagingMediaModule.register(storage);
     const goals = GoalsModule.register(tasks);
@@ -122,6 +144,7 @@ export class AppModule {
       module: AppModule,
       imports: [
         AdminModule,
+        OperationsModule.register(storage),
         ManagementModule.register([teams, companies, accountLifecycle]),
         SocialModule,
         SocialActivitiesModule.register(tasks, calendar, finance),

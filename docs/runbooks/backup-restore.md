@@ -1,5 +1,7 @@
 # Coordinated PostgreSQL and private-file backup / restore
 
+Platform Admin P3 adds reviewed backup/restore requests, a fixed operator console, authenticated encryption/copy verification and independent signed maintenance/status. Follow the [P3 operational runbook](platform-admin-operations.md) for request leases, two-person restore approval, frozen retention, current restrictive replay, exact target verification and deployment-only gates. Never restore the independent control archive over current controls or infer physical off-host separation from a copied filesystem path.
+
 Platform Admin P2 reads the reviewed BACKUP retention setting when signing each new manifest. The default is 30 days and the approved range is 1–30 days. The retention preview reports zero affected historical records. Use the published policy when configuring physical off-host expiry. The signing command requires read access to the policy database. Previously signed manifests keep their own expiry. [P2 retention workflow](../platform-admin-p2-work-record.md)
 
 P1-12 amendment: stop both API and worker during a coordinated backup. The approved

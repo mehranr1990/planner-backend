@@ -1,4 +1,5 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
+import { OperationsControl } from '../operations/operations-control.js';
 import { PgBoss } from 'pg-boss';
 import { Pool } from 'pg';
 import { APP_CONFIG } from '../../bootstrap/configuration.module.js';
@@ -8,7 +9,12 @@ import { queues, verifyJobSchema } from './schema.js';
 @Injectable()
 export class JobsService {
   private boss: PgBoss | undefined;
-  constructor(@Inject(APP_CONFIG) private readonly config: AppConfig) {}
+  constructor(
+    @Inject(APP_CONFIG) private readonly config: AppConfig,
+    @Optional()
+    @Inject(OperationsControl)
+    private readonly control?: OperationsControl,
+  ) {}
   async start(handlers: {
     sweep: (after?: string) => Promise<string | null>;
     outbox: () => Promise<boolean>;
@@ -47,6 +53,7 @@ export class JobsService {
         if (!(await boss.getQueue(q))) throw new Error('QUEUE_SETUP_REQUIRED');
       const safe = async (work: () => Promise<void>) => {
         try {
+          await this.control?.assert();
           await work();
         } catch {
           throw new Error('NOTIFICATION_JOB_FAILED');

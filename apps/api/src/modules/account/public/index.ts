@@ -8,3 +8,4 @@ export { PlanningPreferences } from './planning-preferences.js';
 export { FinancePreferences } from './finance-preferences.js';
 export { NotificationIdentity } from './notification-identity.js';
 export { RewardPreferencesAccess } from './reward-preferences.js';
+export { protectsAccountExportKey } from './storage-references.js';

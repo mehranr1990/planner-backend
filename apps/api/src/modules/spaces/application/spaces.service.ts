@@ -1,4 +1,9 @@
-import { Inject, Injectable, ForbiddenException } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import { PersonalSpaceSchema } from '@mehran/api-contracts';
 import { SPACES_REPOSITORY } from './spaces.port.js';
 import type { SpacesPort } from './spaces.port.js';
@@ -17,6 +22,60 @@ import type { AdminCommand } from '../../../platform/admin/admin-command.js';
 
 @Injectable()
 export class SpacesService {
+  async adminFileScope(
+    tx: Prisma.TransactionClient,
+    command: AdminCommand,
+    file: {
+      spaceId: string;
+      scopeId: string | null;
+      ownerUserId: string | null;
+    },
+  ) {
+    command.require('admin.storage.private_files.read');
+    await command.verify(tx);
+    this.privacy.assert();
+    const space = await tx.space.findUnique({
+      where: { id: file.spaceId },
+      select: { kind: true, ownerUserId: true, accessClosedAt: true },
+    });
+    if (!space || space.accessClosedAt) throw new NotFoundException();
+    if (file.ownerUserId) {
+      if (
+        space.kind !== 'PERSONAL' ||
+        space.ownerUserId !== file.ownerUserId ||
+        file.scopeId
+      )
+        throw new NotFoundException();
+      return;
+    }
+    this.shared.assertEnabled();
+    if (!file.scopeId || space.kind !== 'SHARED') throw new NotFoundException();
+    const [custody, scope, domain] = await Promise.all([
+      tx.sharedCustody.findUnique({ where: { spaceId: file.spaceId } }),
+      tx.accessScope.findUnique({
+        where: { spaceId_id: { spaceId: file.spaceId, id: file.scopeId } },
+      }),
+      tx.domainScopeCustody.findFirst({
+        where: { spaceId: file.spaceId, scopeId: file.scopeId },
+      }),
+    ]);
+    if (
+      !custody ||
+      !scope ||
+      !['ACTIVE', 'ARCHIVED'].includes(custody.state) ||
+      !['ACTIVE', 'ARCHIVED'].includes(scope.state) ||
+      (domain && !['ACTIVE', 'ARCHIVED'].includes(domain.state))
+    )
+      throw new NotFoundException();
+    const parentScopeId = domain?.parentScopeId ?? file.scopeId;
+    if (custody.kind === 'COMPANY' && parentScopeId !== file.spaceId)
+      await this.shared.assertTeamParentAvailable(
+        tx,
+        file.spaceId,
+        parentScopeId,
+        true,
+      );
+  }
   personalMetadata(tx: Prisma.TransactionClient, userId: string) {
     return tx.space.findFirst({
       where: { kind: 'PERSONAL', ownerUserId: userId },

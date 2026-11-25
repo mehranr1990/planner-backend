@@ -66,6 +66,7 @@ const EnvironmentSchema = z.object({
   SMTP_USER: z.string().optional(),
   SMTP_PASSWORD: z.string().optional(),
   STORAGE_ROOT: z.string().min(1).default('.tools/private-files'),
+  OPERATIONS_CONTROL_ROOT: z.string().min(1).optional(),
   ERASURE_CONTROL_ROOT: z.string().min(1).optional(),
   PERSONAL_EVIDENCE_KEYS: z.string().min(1).optional(),
   PERSONAL_EVIDENCE_ACTIVE_KEY_ID: z
@@ -293,6 +294,26 @@ export function parseEnvironment(environment: NodeJS.ProcessEnv): AppConfig {
     throw new Error(
       'Invalid configuration: ERASURE_CONTROL_ROOT must be independent of planner storage.',
     );
+  if (config.OPERATIONS_CONTROL_ROOT) {
+    const operations = path.resolve(config.OPERATIONS_CONTROL_ROOT);
+    for (const root of [
+      storageRoot,
+      controlRoot,
+      ...(config.SHARED_CONTROL_ROOT
+        ? [path.resolve(config.SHARED_CONTROL_ROOT)]
+        : []),
+    ]) {
+      if (
+        operations === path.parse(operations).root ||
+        operations === root ||
+        operations.startsWith(root + path.sep) ||
+        root.startsWith(operations + path.sep)
+      )
+        throw new Error(
+          'Invalid configuration: OPERATIONS_CONTROL_ROOT must be independent of data and replay controls.',
+        );
+    }
+  }
   return Object.freeze({
     ...result.data,
     STORAGE_ROOT: storageRoot,

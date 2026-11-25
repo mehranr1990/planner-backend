@@ -5,6 +5,7 @@ import {
   adminUserSecurityRoutes,
   adminRetentionRoutes,
   adminPrivacyRoutes,
+  adminOperationsRoutes,
 } from '@mehran/api-contracts';
 
 export const adminPermissions = [
@@ -17,6 +18,7 @@ export const adminPermissions = [
   ...Object.values(adminUserSecurityRoutes).map((r) => r.permission),
   ...Object.values(adminRetentionRoutes).map((r) => r.permission),
   ...Object.values(adminPrivacyRoutes).map((r) => r.permission),
+  ...Object.values(adminOperationsRoutes).map((r) => r.permission),
   'admin.privacy.accounts.delete',
   'admin.privacy.workspaces.delete',
   'admin.audit.category.security',
@@ -54,6 +56,7 @@ export const adminRolePermissions: Record<string, readonly string[]> = {
     'admin.audit.category.control',
   ],
   SECURITY_REVIEWER: [
+    'admin.health.read',
     ...ownSession,
     ...metadataRead,
     'admin.users.sessions.revoke',

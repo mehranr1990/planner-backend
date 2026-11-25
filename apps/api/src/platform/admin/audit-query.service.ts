@@ -55,6 +55,7 @@ export class AdminAuditQuery {
                   OR: [
                     { targetUserId: q.targetId },
                     { targetAdminId: q.targetId },
+                    { targetFileId: q.targetId },
                     { targetSpaceId: q.targetId },
                   ],
                 },
@@ -97,6 +98,7 @@ export class AdminAuditQuery {
       'targetUserId',
       'targetSpaceId',
       'targetAdminId',
+      'targetFileId',
       'beforeRevision',
       'afterRevision',
       'requestId',

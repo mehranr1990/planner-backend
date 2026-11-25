@@ -115,6 +115,20 @@ export class AdminService {
       data: { outcome, actorAdminId },
     });
   }
+  auditFileTarget(
+    id: string,
+    fileId: string,
+    spaceId: string,
+    scopeId: string | null,
+    disposition: string,
+  ) {
+    return this.database.client.adminAuditEvent.update({
+      where: { id },
+      data: {
+        metadata: { fileId, requestedSpaceId: spaceId, scopeId, disposition },
+      },
+    });
+  }
   auditDenial(requestId: string) {
     return this.database.client.adminAuditEvent.create({
       data: { action: 'ADMIN_ACCESS_DENIED', requestId, outcome: 'DENIED' },

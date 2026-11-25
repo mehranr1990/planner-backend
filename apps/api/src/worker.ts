@@ -1,5 +1,6 @@
 import 'reflect-metadata';
 import { AdminSecurityAlerts } from './platform/admin/security-alerts.service.js';
+import { OperationsWorker } from './platform/operations/operations-worker.js';
 import { AdminDeliveryService } from './modules/admin-management/public/index.js';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module.js';
@@ -36,9 +37,11 @@ const app = await NestFactory.createApplicationContext(
 );
 const worker = app.get(NotificationWorker);
 let closing = false;
+let operationsTimer: ReturnType<typeof setInterval> | undefined;
 const close = async () => {
   if (closing) return;
   closing = true;
+  if (operationsTimer) clearInterval(operationsTimer);
   await worker.stop();
   await app.close();
 };
@@ -89,6 +92,19 @@ try {
       announcements
     );
   });
+  const operations = app.get(OperationsWorker);
+  const tick = () => {
+    void operations
+      .tick()
+      .catch(() =>
+        process.stderr.write(
+          'Operational reconciliation failed; inspect protected health evidence.\n',
+        ),
+      );
+  };
+  tick();
+  operationsTimer = setInterval(tick, 30000);
+  operationsTimer.unref();
   process.stdout.write('Planner notification worker ready\n');
 } catch {
   await close();

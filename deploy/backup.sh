@@ -12,10 +12,16 @@ export BACKUP_DIR
 project=mehran-planner
 pg_image=postgres:18.6-bookworm
 stamp=$(date -u +%Y%m%dT%H%M%SZ)
+if [ -n "${PLATFORM_BACKUP_REQUEST_ID:-}" ]; then
+  case "$PLATFORM_BACKUP_REQUEST_ID" in *[!a-fA-F0-9-]*) echo "Invalid backup request" >&2; exit 1;; esac
+  [ "${#PLATFORM_BACKUP_REQUEST_ID}" -eq 36 ] || exit 1
+  stamp="$stamp-$PLATFORM_BACKUP_REQUEST_ID"
+fi
 dir="$BACKUP_DIR/$stamp"
 umask 077
 install -d -m 700 -o 1000 -g 1000 "$BACKUP_DIR"
-install -d -m 700 -o 1000 -g 1000 "$dir"
+mkdir -m 700 "$dir"
+chown 1000:1000 "$dir"
 
 resume() { pc start api worker >/dev/null 2>&1 || true; }
 trap resume EXIT
@@ -45,4 +51,11 @@ pc run --rm --no-deps ops node tooling/scripts/personal-data-admin.ts \
   verify-backup "/backup/$stamp/manifest.json" "/backup/$stamp"
 (cd "$dir" && sha256sum planner.dump files.tar.gz control.tar.gz manifest.json >SHA256SUMS)
 chmod 600 "$dir/SHA256SUMS"
+if [ -n "${PLATFORM_BACKUP_REQUEST_ID:-}" ]; then
+  pc run --rm --no-deps -e PLATFORM_BACKUP_OPERATOR_LEASE_ID \
+    -e BACKUP_ENCRYPTION_KEY_FILE -e BACKUP_LOCAL_SEALED_ROOT \
+    -e BACKUP_OFFHOST_ROOT -e BACKUP_OFFHOST_APPROVAL \
+    ops node tooling/scripts/platform-operations.ts \
+    backup-seal "$PLATFORM_BACKUP_REQUEST_ID" "/backup/$stamp"
+fi
 echo "PASS: verified backup at $dir. Copy it to off-host storage now."

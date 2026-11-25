@@ -4,6 +4,10 @@
 
 On 2026-11-25 the owner accepted Platform Admin P2 for local development based on its final documented verification, authorized committing and pushing only P2 to origin/main, and authorized local P3 implementation after the successful push. Preserve the owner's compose.yaml. P3 commit/push, P4, frontend work and deployment require separate approval. Earlier authorization paragraphs below are historical. [P2 work record](docs/platform-admin-p2-work-record.md)
 
+Verified implementation update, 2026-11-25: P2 was pushed as `8bfba88`. P3 is COMPLETE for local development, with 24 Admin operations, eleven additive control tables and the trusted backup/restore operator console. Its full checkpoints and successful affected reruns verify 952 repository tests and 1,272 runnable PostgreSQL tests; code, architecture, contracts and migration gates passed. One conditional live-ClamAV skip and deployment-only gates remain explicit. P3 is uncommitted/unpushed; P4 is NOT STARTED. [P3 work record](docs/platform-admin-p3-work-record.md)
+
+Publication authorization update, 2026-11-25: the owner explicitly authorized committing and pushing the existing P3 implementation. Preserve the owner's compose.yaml outside this publication. P4 and deployment remain unauthorized; earlier publication restrictions above describe historical checkpoints.
+
 ## Owner-approved P1 custody exception — 2026-11-24
 
 The owner's current task authorizes only the one-way transition

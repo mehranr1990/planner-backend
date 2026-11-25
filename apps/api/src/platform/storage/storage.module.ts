@@ -3,7 +3,7 @@ import { FilePortability } from './public/file-portability.js';
 import { SharedFiles } from './public/shared-files.js';
 import { ErasureControl } from './erasure-control.js';
 import { FileCatalog } from './public/file-catalog.js';
-import { Module } from '@nestjs/common';
+import { Module, NotFoundException } from '@nestjs/common';
 import type { DynamicModule, ModuleMetadata, Provider } from '@nestjs/common';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { DatabaseModule } from '../database/database.module.js';
@@ -18,6 +18,12 @@ import { APP_CONFIG } from '../../bootstrap/configuration.module.js';
 import type { AppConfig } from '../../bootstrap/environment.js';
 import { BusinessFileStorage } from './file-content-policy.js';
 import { FilesRepository } from './files.repository.js';
+import { StorageAdmission } from './storage-admission.js';
+import {
+  StorageOperations,
+  ADMIN_FILE_SCOPE_AUTHORITY,
+  EXPORT_STORAGE_REFERENCES,
+} from './storage-operations.js';
 import { FilesService } from './files.service.js';
 import { FileScanRecords } from './file-scan-records.js';
 import { FileThrottleGuard, FilesController } from './files.controller.js';
@@ -27,6 +33,16 @@ export class StorageModule {
   static register(
     imports: ModuleMetadata['imports'],
     scopeProvider: Provider,
+    adminFileScope: Provider = {
+      provide: ADMIN_FILE_SCOPE_AUTHORITY,
+      useValue: async () => {
+        throw new NotFoundException();
+      },
+    },
+    exportReferences: Provider = {
+      provide: EXPORT_STORAGE_REFERENCES,
+      useValue: async () => true,
+    },
   ): DynamicModule {
     return {
       module: StorageModule,
@@ -40,6 +56,10 @@ export class StorageModule {
       ],
       controllers: [FilesController, VoiceFilesController],
       providers: [
+        exportReferences,
+        adminFileScope,
+        StorageAdmission,
+        StorageOperations,
         SharedFiles,
         FilePortability,
         ErasureControl,
@@ -60,6 +80,7 @@ export class StorageModule {
         { provide: STORAGE_PORT, useClass: BusinessFileStorage },
       ],
       exports: [
+        StorageOperations,
         SharedFiles,
         FileThrottleGuard,
         FilesService,

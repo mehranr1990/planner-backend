@@ -27,7 +27,20 @@ export class StorageFailure extends Error {
   }
 }
 export interface StoragePort {
-  inventory?(): Promise<Array<{ key: string; attempt: string | null }>>;
+  capacity?(): Promise<{ totalBytes: bigint; freeBytes: bigint }>;
+  inventory?(): Promise<
+    Array<{
+      key: string;
+      attempt: string | null;
+      size?: number;
+      modifiedAt?: string;
+    }>
+  >;
+  removeOrphan?(
+    key: string,
+    attempt: string | null,
+    expected: { size: number; modifiedAt: string },
+  ): Promise<void>;
   write(
     key: string,
     attempt: string,
