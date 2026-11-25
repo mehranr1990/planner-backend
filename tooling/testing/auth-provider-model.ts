@@ -1,4 +1,6 @@
 const applicationUserRelations: Readonly<Record<string, string>> = {
+  // ADR 0075: application-owned, recipient-only push delivery metadata.
+  invitationPushAttempts: 'invitationPushAttemptsInvitationPushAttempt[]',
   keyedProjects: 'keyedProjectsProject[]@relation("ProjectKeyOwnerUser")',
   settings: 'settingsUserSettings?',
   spaces: 'spacesSpace[]',

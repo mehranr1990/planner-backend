@@ -4,6 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { createHash } from 'node:crypto';
+import { habitReminderState } from '../../habits/public/reminder-state.js';
 import * as c from '@mehran/api-contracts';
 import type {
   Prisma,
@@ -36,6 +37,7 @@ export function reminderView(row: Reminder) {
     cursorDate: _cursor,
     sourceStamp: _stamp,
     routineId: _routine,
+    habitId: _habit,
     ...rest
   } = row;
   return plain(rest);
@@ -448,15 +450,21 @@ export class NotificationStore {
         break;
       }
       if (!dueOn(date, rule.startDate, rule.recurrence)) continue;
-      const at = resolveLocal(date, rule.time, zone).instant;
+      const habit = r.habitId
+        ? await habitReminderState(this.tx, this.scope, r.habitId, date)
+        : null;
+      if (r.habitId && !habit) continue;
+      const time = habit?.time ?? rule.time,
+        occurrenceZone = habit?.timezone ?? zone;
+      const at = resolveLocal(date, time, occurrenceZone).instant;
       if (mode === 'RESUME' && at && at <= now) continue;
       await this.insert(
         r,
         at,
-        'local:' + date + 'T' + rule.time,
+        'local:' + date + 'T' + time,
         date,
-        rule.time,
-        zone,
+        time,
+        occurrenceZone,
         at ? undefined : 'DST_GAP',
       );
     }

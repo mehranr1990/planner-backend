@@ -1,0 +1,145 @@
+{
+  "post /api/v1/habits request": {
+    "previous": [
+      "83705137a97561c51b2f48a2b4c79ecbc2777b45436a99b9b7f29daf2c983d89"
+    ],
+    "approved": "1690bf6cf1cc62387f999604a02f610cf7a621fcdcc6eaa976c30671fee93b79"
+  },
+  "post /api/v1/habits response 201": {
+    "previous": [
+      "a4309dba6fc8b7e2a85843f4f32d36ba20dc65502f380f48d4e9998848758c7f"
+    ],
+    "approved": "9855b862d4880d6a2a8815b2d32154ee4c93b075f2ba6e54187cf85925970054"
+  },
+  "get /api/v1/habits response 200": {
+    "previous": [
+      "7ead22c69ddf48dee05f43606772d485f4155c74c0e203dc4d44b857c36b6525"
+    ],
+    "approved": "daf61756eb43e847f993f29153b37e02b1339b22e3e36695c60913c9bf69c298"
+  },
+  "get /api/v1/habits/{id} response 200": {
+    "previous": [
+      "a4309dba6fc8b7e2a85843f4f32d36ba20dc65502f380f48d4e9998848758c7f"
+    ],
+    "approved": "9855b862d4880d6a2a8815b2d32154ee4c93b075f2ba6e54187cf85925970054"
+  },
+  "patch /api/v1/habits/{id} request": {
+    "previous": [
+      "0391321af6bfc6776a38ab85d5feeb2e192c6e7e8e4539e86941a8e62407079f"
+    ],
+    "approved": "49c25d63d088d24a2b4feb3831eb21c16dc17b2e6bde69cba9fee919dfe42d49"
+  },
+  "patch /api/v1/habits/{id} response 200": {
+    "previous": [
+      "a4309dba6fc8b7e2a85843f4f32d36ba20dc65502f380f48d4e9998848758c7f"
+    ],
+    "approved": "9855b862d4880d6a2a8815b2d32154ee4c93b075f2ba6e54187cf85925970054"
+  },
+  "delete /api/v1/habits/{id} response 200": {
+    "previous": [
+      "a4309dba6fc8b7e2a85843f4f32d36ba20dc65502f380f48d4e9998848758c7f"
+    ],
+    "approved": "9855b862d4880d6a2a8815b2d32154ee4c93b075f2ba6e54187cf85925970054"
+  },
+  "get /api/v1/team-invitations response 200": {
+    "previous": [
+      "675318e8b74016706e3eafdf464a20422af2bbfd4737fe2665a5d27d8d7690d5"
+    ],
+    "approved": "d8042dcfd1fb61f655b8123af0e449bfcfa3301e0a8deba21d427df3ec06bbbe"
+  },
+  "get /api/v1/project-invitations response 200": {
+    "previous": [
+      "689b630cab676421584901c5487357e283ddae96c9c1116befb22fb97d0d2048"
+    ],
+    "approved": "9c9b896173450c4b721527a4c575c3f3fb74d868f0c0d6b4e3a29dc340526ee1"
+  },
+  "post /api/v1/conversation-invitations/{invitationId}/claim-email response 200": {
+    "previous": [
+      "bf4a87f7e70458a1ef631ce19d551960a9be2f3e826e0c541301298443dab978"
+    ],
+    "approved": "e60a9183eb0ba771a20389bd872d5a7b28b0c9930080588cf52d6c5639bf97c1"
+  },
+  "get /api/v1/conversations/{id}/invitations response 200": {
+    "previous": [
+      "030d56febf27341d8c78a652529e09745d84384b57a2f6831b6cbdddec99b457"
+    ],
+    "approved": "b77ebfc86840bffbe4dfa4b46fd288095231a70da728cdfd4b3eb65c421f1e68"
+  },
+  "post /api/v1/conversations/{id}/invitations response 201": {
+    "previous": [
+      "182a0a663f3a2e7e5537c52ca386fc2e80a63ee6a106cc3b12b53c434d9cdf64",
+      "bf4a87f7e70458a1ef631ce19d551960a9be2f3e826e0c541301298443dab978"
+    ],
+    "approved": "e60a9183eb0ba771a20389bd872d5a7b28b0c9930080588cf52d6c5639bf97c1"
+  },
+  "post /api/v1/conversations/{id}/invitations/{invitationId}/revoke response 201": {
+    "previous": [
+      "182a0a663f3a2e7e5537c52ca386fc2e80a63ee6a106cc3b12b53c434d9cdf64",
+      "bf4a87f7e70458a1ef631ce19d551960a9be2f3e826e0c541301298443dab978"
+    ],
+    "approved": "e60a9183eb0ba771a20389bd872d5a7b28b0c9930080588cf52d6c5639bf97c1"
+  },
+  "get /api/v1/conversation-invitations response 200": {
+    "previous": [
+      "030d56febf27341d8c78a652529e09745d84384b57a2f6831b6cbdddec99b457",
+      "56ba24d777be3456f302fb4c2fa7ad4192acd1c3e8ffd2a9e888ce2076667884"
+    ],
+    "approved": "b77ebfc86840bffbe4dfa4b46fd288095231a70da728cdfd4b3eb65c421f1e68"
+  },
+  "post /api/v1/conversation-invitations/{invitationId}/accept response 201": {
+    "previous": [
+      "182a0a663f3a2e7e5537c52ca386fc2e80a63ee6a106cc3b12b53c434d9cdf64",
+      "bf4a87f7e70458a1ef631ce19d551960a9be2f3e826e0c541301298443dab978"
+    ],
+    "approved": "e60a9183eb0ba771a20389bd872d5a7b28b0c9930080588cf52d6c5639bf97c1"
+  },
+  "post /api/v1/conversation-invitations/{invitationId}/decline response 201": {
+    "previous": [
+      "182a0a663f3a2e7e5537c52ca386fc2e80a63ee6a106cc3b12b53c434d9cdf64",
+      "bf4a87f7e70458a1ef631ce19d551960a9be2f3e826e0c541301298443dab978"
+    ],
+    "approved": "e60a9183eb0ba771a20389bd872d5a7b28b0c9930080588cf52d6c5639bf97c1"
+  },
+  "post /api/v1/meetings/invitations/{invitationId}/claim-email response 200": {
+    "previous": [
+      "f17a0874607c9401b84ba528854c51ad9fe6ec9e6f4d2fa27ced75e9b7d99ea6"
+    ],
+    "approved": "1ab665b7a300bd46e177b22beb9a502c21b07d5faee0c58f0514d336b5eb9734"
+  },
+  "get /api/v1/meetings/invitations response 200": {
+    "previous": [
+      "c3cfd44168e7d42301e3770a9cee63b6ac97e07eadaf611a99f552e5110050df"
+    ],
+    "approved": "27543af988c752f5ad866956d09844f299def5ea4150a62d3ebe9474115f7a21"
+  },
+  "post /api/v1/meetings/invitations/{invitationId}/respond response 201": {
+    "previous": [
+      "f17a0874607c9401b84ba528854c51ad9fe6ec9e6f4d2fa27ced75e9b7d99ea6"
+    ],
+    "approved": "1ab665b7a300bd46e177b22beb9a502c21b07d5faee0c58f0514d336b5eb9734"
+  },
+  "post /api/v1/meetings/{id}/invitations response 201": {
+    "previous": [
+      "f17a0874607c9401b84ba528854c51ad9fe6ec9e6f4d2fa27ced75e9b7d99ea6"
+    ],
+    "approved": "1ab665b7a300bd46e177b22beb9a502c21b07d5faee0c58f0514d336b5eb9734"
+  },
+  "get /api/v1/meetings/{id}/invitations response 200": {
+    "previous": [
+      "ed69951b930a76a419a00a47100e95041910874c27d387d9e4b846b33664386a"
+    ],
+    "approved": "abcbae1987b727d1f7d6383c90f1b90990858620871d7cae4555b495795df316"
+  },
+  "get /api/v1/company-invitations response 200": {
+    "previous": [
+      "675318e8b74016706e3eafdf464a20422af2bbfd4737fe2665a5d27d8d7690d5"
+    ],
+    "approved": "d8042dcfd1fb61f655b8123af0e449bfcfa3301e0a8deba21d427df3ec06bbbe"
+  },
+  "post /api/v1/companies/{id}/contexts/{scopeId}/invitations request": {
+    "previous": [
+      "afa4325828b86a17227fe9c11bf55ea18a108d5caa8ff6a0d9c0dd90bb82d618"
+    ],
+    "approved": "e8999fe9a99e0af9ecd2c6407d11dfe1c864dacb784a787588aa139d034d4473"
+  }
+}

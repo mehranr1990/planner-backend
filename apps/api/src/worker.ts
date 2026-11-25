@@ -1,4 +1,5 @@
 import 'reflect-metadata';
+import { ClientInvitationWorker } from './modules/client-invitations/public/index.js';
 import { AdminSecurityAlerts } from './platform/admin/security-alerts.service.js';
 import { OperationsWorker } from './platform/operations/operations-worker.js';
 import { AdminDeliveryService } from './modules/admin-management/public/index.js';
@@ -8,10 +9,12 @@ import { parseEnvironment } from './bootstrap/environment.js';
 import { NotificationWorker } from './modules/notifications/public/index.js';
 import {
   MessageNoticeWorker,
+  MessagingService,
   ConversationLifecycle,
 } from './modules/messaging/public/index.js';
 import {
   MeetingFiles,
+  MeetingsService,
   MeetingLifecycle,
   AnnouncementSchedulesService,
 } from './modules/meetings/public/index.js';
@@ -24,11 +27,16 @@ import {
   CompanyPolicyWorker,
 } from './modules/companies/public/index.js';
 import { TeamCleanupService } from './modules/teams/public/index.js';
-import { SocialLifecycle } from './modules/social/public/index.js';
+import {
+  SocialLifecycle,
+  SocialGroupsService,
+} from './modules/social/public/index.js';
 import {
   SharedKernel,
   CollaborationService,
   ResourceGrants,
+  InvitationMailService,
+  CompanyAccess,
 } from './modules/spaces/public/index.js';
 const config = parseEnvironment(process.env);
 const app = await NestFactory.createApplicationContext(
@@ -66,9 +74,34 @@ try {
     const conversationCleanup = await app.get(ConversationLifecycle).consume();
     const meetingCleanup = await app.get(MeetingLifecycle).consume();
     const collaboration = await app.get(CollaborationService).maintain();
+    const invitationDelivery = await app
+      .get(InvitationMailService)
+      .consumeContext(async (row, proof) => {
+        if (row.companyScopeId) return app.get(CompanyAccess).preview(proof);
+        const kind = (await app
+          .get(CollaborationService)
+          .invitationKind(row.scopeId)) as 'PROJECT' | 'TEAM' | 'SOCIAL_GROUP';
+        if (kind === 'SOCIAL_GROUP' && row.recipientEmail) {
+          const recipient = await app
+            .get(InvitationMailService)
+            .recipient(row.recipientEmail);
+          if (recipient?.emailVerified)
+            return app
+              .get(SocialGroupsService)
+              .validateInvitationNotification(row.id, recipient.id);
+        }
+        return app.get(CollaborationService).preview(proof, kind);
+      });
     const grants = await app.get(ResourceGrants).maintain();
     const sync = await app.get(SyncService).maintain();
     const messaging = await app.get(MessageNoticeWorker).consume();
+    const conversationInvitations = await app
+      .get(MessagingService)
+      .consumeEmailInvitations();
+    const meetingInvitations = await app
+      .get(MeetingsService)
+      .consumeEmailInvitations();
+    const invitationPush = await app.get(ClientInvitationWorker).consume();
     const meetings = await app.get(MeetingFiles).consume();
     const announcements = await app.get(AnnouncementSchedulesService).consume();
     return (
@@ -85,9 +118,13 @@ try {
       conversationCleanup ||
       meetingCleanup ||
       collaboration ||
+      invitationDelivery ||
       grants ||
       sync ||
       messaging ||
+      conversationInvitations ||
+      meetingInvitations ||
+      invitationPush ||
       meetings ||
       announcements
     );

@@ -171,7 +171,11 @@ describe('P1-03 personal planning, isolation, rollover and capacity', () => {
       }),
     ).toBe(0);
     const day = await createDay(date);
-    expect(day).toMatchObject({ revision: 1, timezone: 'UTC', items: [] });
+    expect(day).toMatchObject({
+      revision: 1,
+      timezone: 'Asia/Tehran',
+      items: [],
+    });
     await call(a, 'post', `/planning/days/${date}`).send({}).expect(409);
     expect((await createDay(date, b)).id).not.toBe(day.id);
     await call(a, 'post', `/planning/days/${nextDate()}`)

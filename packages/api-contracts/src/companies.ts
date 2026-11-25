@@ -90,6 +90,8 @@ export const CompanyMembershipChangeSchema = z.strictObject({
   state: z.enum(['ACTIVE', 'SUSPENDED', 'REVOKED']),
 });
 export const CompanyInvitationCreateSchema = z.strictObject({
+  position: z.string().trim().min(1).max(300).nullable().optional(),
+  supervisorMemberId: z.uuid().nullable().optional(),
   memberRole: CompanyMemberRoleSchema,
   recipient: InvitationCreateSchema.shape.recipient,
 });

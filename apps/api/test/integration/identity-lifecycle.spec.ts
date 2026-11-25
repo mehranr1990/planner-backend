@@ -359,7 +359,7 @@ describe('identity lifecycle, isolation and concurrency', () => {
       .patch('/api/v1/me/settings')
       .set('Cookie', current.cookie)
       .set('Origin', origin)
-      .send({ timezone: 'Asia/Tehran', userId: b.id })
+      .send({ timezone: 'UTC', userId: b.id })
       .expect(400);
     await request(app.getHttpServer())
       .patch('/api/v1/me')
@@ -399,7 +399,7 @@ describe('identity lifecycle, isolation and concurrency', () => {
           where: { userId: b.id },
         })
       ).timezone,
-    ).toBe('UTC');
+    ).toBe('Asia/Tehran');
     const reconciled = await Promise.all(
       Array.from({ length: 8 }, () => app.get(SpacesService).personalFor(a.id)),
     );

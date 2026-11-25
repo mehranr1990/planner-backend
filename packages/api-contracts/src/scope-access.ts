@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { InvitationNotificationSchema } from './client-invitations.js';
 
 /** Capability hints describe current authority; every operation rechecks it. */
 export const ScopeAccessMeSchema = z.strictObject({
@@ -21,6 +22,7 @@ export const ScopeAccessMeSchema = z.strictObject({
   capabilities: z.array(z.string()),
 });
 export const PendingInvitationSummarySchema = z.strictObject({
+  notification: InvitationNotificationSchema.optional(),
   id: z.uuid(),
   contextLabel: z.enum(['Team', 'Company']),
   revision: z.number().int().positive(),

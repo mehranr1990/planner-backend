@@ -15,7 +15,10 @@ export async function verifyAdminP3Upgrade() {
   const box = await migrationSandbox(process.env),
     folder = path.resolve('.tools/admin-p3-upgrade-' + randomUUID()),
     migrations = path.join(folder, 'migrations');
-  const names = reviewMigrations();
+  // Preserve the original P2→P3 rehearsal when later Client migrations exist.
+  const names = reviewMigrations().filter(
+    (name) => name <= adminP3MigrationName,
+  );
   assert.equal(names.at(-1), adminP3MigrationName);
   fs.mkdirSync(migrations, { recursive: true });
   const config = path.join(folder, 'prisma.config.ts');

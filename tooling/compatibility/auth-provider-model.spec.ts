@@ -6,7 +6,7 @@ describe('provider auth schema ownership', () => {
   it('excludes exactly approved application inverse relations without treating them as auth-column drift', () => {
     const extended = provider.replace(
       ' id String',
-      ' socialRequestsSent SocialConnection[] @relation("SocialConnection_requester")\n receivedDmBlocks DmContactBlock[] @relation("DmContactBlock_target_fk")\n id String',
+      ' socialRequestsSent SocialConnection[] @relation("SocialConnection_requester")\n receivedDmBlocks DmContactBlock[] @relation("DmContactBlock_target_fk")\n invitationPushAttempts InvitationPushAttempt[]\n id String',
     );
     expect(normalizedAuthModel(extended, 'User')).toBe(
       normalizedAuthModel(provider, 'User'),
@@ -26,6 +26,15 @@ describe('provider auth schema ownership', () => {
         provider.replace(
           ' id String',
           ' socialRequestsSent String\n id String',
+        ),
+        'User',
+      ),
+    ).toThrow('Unreviewed');
+    expect(() =>
+      normalizedAuthModel(
+        provider.replace(
+          ' id String',
+          ' invitationPushAttempts String\n id String',
         ),
         'User',
       ),

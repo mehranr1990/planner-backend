@@ -41,3 +41,6 @@ export {
 export { InvitationMailService } from '../application/invitation-mail.service.js';
 export { TeamCustodyTransfer } from '../application/team-custody-transfer.js';
 export { CompanyDomainParent } from './company-domain-parent.js';
+export { CompanyInvitationStaff } from './company-invitation-staff.js';
+export type { InvitationStaffDraft } from './company-invitation-staff.js';
+export { CollaborationGuard } from '../http/collaboration.controller.js';

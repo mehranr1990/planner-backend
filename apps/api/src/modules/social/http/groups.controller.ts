@@ -265,6 +265,25 @@ export class SocialGroupInvitationsController {
     private readonly collaboration: CollaborationService,
     @Inject(SocialGroupsService) private readonly service: SocialGroupsService,
   ) {}
+  @Get()
+  @UseGuards(VerifiedSessionGuard, SocialGuard)
+  pending(
+    @CurrentActor() actor: RequestActor,
+    @Query(socialPage) query: z.infer<typeof c.SocialPageQuerySchema>,
+  ) {
+    return this.service.pendingInvitations(actor, query);
+  }
+  @Post(':id/proof')
+  @UseGuards(VerifiedSessionGuard, SocialGuard)
+  proof(
+    @CurrentActor() actor: RequestActor,
+    @Param('id', socialId) id: string,
+    @Headers('if-match') revision: string | undefined,
+    @Body(socialBody) _body: unknown,
+    @Query(socialEmpty) _query: unknown,
+  ) {
+    return this.service.invitationProof(actor, id, socialExpected(revision));
+  }
   @Get('preview') @UseGuards(SocialGuard) preview(
     @Headers('x-invitation-proof') proof: string | undefined,
     @Query(socialEmpty) _q: unknown,

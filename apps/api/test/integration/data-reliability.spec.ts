@@ -528,7 +528,7 @@ describe('P0-03 transactions, API and reliability', () => {
     const mutationIds = [randomUUID(), randomUUID()];
     requestIds.push(...mutationIds);
     const mutations = await Promise.all(
-      ['Asia/Tehran', 'Europe/London'].map((timezone, index) =>
+      ['UTC', 'Europe/London'].map((timezone, index) =>
         request(app.getHttpServer())
           .patch('/api/v1/me/settings')
           .set('Origin', origin)

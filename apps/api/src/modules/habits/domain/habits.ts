@@ -10,6 +10,22 @@ export type Habit = {
   spaceId: string;
   createdByUserId: string;
   title: string;
+  category?: string | null;
+  unitLabel?: string | null;
+  timeOfDay?: 'ANYTIME' | 'MORNING' | 'AFTERNOON' | 'EVENING';
+  preferredTime?: string | null;
+  icon?:
+    | 'DEFAULT'
+    | 'WATER'
+    | 'BOOK'
+    | 'EXERCISE'
+    | 'SLEEP'
+    | 'FOOD'
+    | 'MEDITATION'
+    | 'STUDY'
+    | 'WORK'
+    | 'HEALTH';
+  reminder?: { time: string; ifNotDone: boolean } | null;
   type: 'CHECKBOX' | 'QUANTITY' | 'DURATION';
   unit: string;
   purpose: 'GENERIC' | 'WATER';

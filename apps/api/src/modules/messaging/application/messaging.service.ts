@@ -37,6 +37,7 @@ import {
   invitationProofMatches,
 } from '../../../platform/auth/invitation-proof.js';
 import { InvitationMailService } from '../../spaces/public/index.js';
+import { enqueueInvitationPush } from '../../notifications/public/enqueue-invitation-push.js';
 import type { SharedCleanupScope } from '../../../platform/lifecycle/shared-cleanup.js';
 
 type Tx = Prisma.TransactionClient;
@@ -454,6 +455,22 @@ export class MessagingService {
     row: ConversationInvitation,
   ) {
     return c.ConversationInvitationSchema.parse({
+      notification: {
+        invitationId: row.id,
+        kind: 'CONVERSATION',
+        targetId: conv.id,
+        targetDisplayName: conv.title ?? 'Conversation',
+        inviterDisplayName: await this.authority.displayName(
+          tx,
+          conv.spaceId,
+          row.inviterActorId,
+        ),
+        role: 'MEMBER',
+        createdAt: row.createdAt.toISOString(),
+        readAt: row.notificationReadAt?.toISOString() ?? null,
+        revision: row.revision,
+        expiresAt: row.expiresAt.toISOString(),
+      },
       id: row.id,
       conversationId: row.conversationId,
       kind: conv.kind,
@@ -809,7 +826,7 @@ export class MessagingService {
         revision: { increment: 1 },
       },
     });
-    return s.tx.conversationInvitation.create({
+    const invitation = await s.tx.conversationInvitation.create({
       data: {
         id: input.id,
         spaceId: s.conv.spaceId,
@@ -829,6 +846,14 @@ export class MessagingService {
         expiresAt: new Date(s.now.getTime() + 7 * 86400000),
       },
     });
+    await enqueueInvitationPush(
+      s.tx,
+      input.userId,
+      'MESSAGING_MEETINGS',
+      { conversationInvitationId: invitation.id },
+      s.now,
+    );
+    return invitation;
   }
   async create(
     actor: RequestActor,
@@ -1221,6 +1246,145 @@ export class MessagingService {
       [body.userId],
     );
   }
+  /** Durable recipient materialization and preference-aware post-commit email. */
+  async consumeEmailInvitations() {
+    const db = this.db.client,
+      now = new Date();
+    const rows = await db.conversationEmailInvitation.findMany({
+      where: {
+        encryptedDeliveryProof: { not: null },
+        state: { in: ['PENDING', 'CLAIMED'] },
+        expiresAt: { gt: now },
+        deliveryAttempts: { lt: 5 },
+        deliveryNotBefore: { lte: now },
+      },
+      take: 10,
+      orderBy: { deliveryNotBefore: 'asc' },
+    });
+    for (const hint of rows) {
+      const claim = await db.conversationEmailInvitation.updateMany({
+        where: {
+          id: hint.id,
+          encryptedDeliveryProof: hint.encryptedDeliveryProof,
+          deliveryAttempts: hint.deliveryAttempts,
+          deliveryNotBefore: { lte: now },
+        },
+        data: {
+          deliveryAttempts: { increment: 1 },
+          deliveryNotBefore: new Date(now.getTime() + 300000),
+        },
+      });
+      if (!claim.count) continue;
+      let state = 'FAILED';
+      try {
+        const issuer = (await this.authority.hints([hint.inviterActorId]))[0];
+        if (!issuer) throw new NotFoundException();
+        const requestId = randomUUID();
+        const actor = { userId: issuer, requestId, correlationId: requestId };
+        const offer = await this.operation(
+          actor,
+          hint.conversationId,
+          'messaging.email.invitation.delivery',
+          async (s) => {
+            s.proof = await this.proof(s);
+            const manager = await this.administer(s);
+            const row =
+              await s.tx.conversationEmailInvitation.findUniqueOrThrow({
+                where: { id: hint.id },
+              });
+            if (
+              !['PENDING', 'CLAIMED'].includes(row.state) ||
+              row.expiresAt <= s.now ||
+              row.encryptedDeliveryProof !== hint.encryptedDeliveryProof ||
+              s.proof!.accessId !== row.inviterAccessId ||
+              s.proof!.generation !== row.inviterGeneration ||
+              s.proof!.restoreGeneration !== row.restoreGeneration ||
+              (manager?.id ?? null) !== row.inviterMemberId ||
+              (manager?.generation ?? null) !== row.inviterMemberGeneration
+            )
+              throw new NotFoundException();
+            const pending =
+              row.state === 'CLAIMED'
+                ? await s.tx.conversationInvitation.findUnique({
+                    where: { id: row.id },
+                  })
+                : null;
+            if (
+              row.state === 'CLAIMED' &&
+              (!pending || pending.state !== 'PENDING')
+            )
+              throw new NotFoundException();
+            return {
+              ...row,
+              email: row.email ?? pending?.invitedEmail ?? null,
+            };
+          },
+          [],
+          true,
+          [],
+          true,
+        );
+        if (!offer.email) throw new NotFoundException();
+        const proof = await this.emailDelivery.decrypt(
+          hint.encryptedDeliveryProof!,
+        );
+        const recipient = await this.emailDelivery.recipient(offer.email);
+        if (
+          recipient?.emailVerified &&
+          offer.state === 'PENDING' &&
+          !offer.inAppClaimed
+        )
+          await this.claimEmailInvitation(
+            { ...actor, userId: recipient.id },
+            offer.id,
+            proof,
+            offer.revision,
+            true,
+          );
+        const notBefore = await this.emailDelivery.notBefore(offer.email);
+        if (notBefore.getTime() > Date.now()) {
+          await db.conversationEmailInvitation.updateMany({
+            where: {
+              id: hint.id,
+              encryptedDeliveryProof: hint.encryptedDeliveryProof,
+              deliveryAttempts: hint.deliveryAttempts + 1,
+            },
+            data: {
+              deliveryNotBefore: notBefore,
+              deliveryAttempts: { decrement: 1 },
+            },
+          });
+          continue;
+        }
+        state = await this.emailDelivery.send(
+          offer.id,
+          offer.email,
+          proof,
+          'CONVERSATION',
+        );
+      } catch {
+        /* bounded retry; no account, address or proof disclosure */
+      }
+      await db.conversationEmailInvitation.updateMany({
+        where: {
+          id: hint.id,
+          encryptedDeliveryProof: hint.encryptedDeliveryProof,
+          deliveryAttempts: hint.deliveryAttempts + 1,
+        },
+        data: {
+          emailDeliveryState: state,
+          encryptedDeliveryProof:
+            state === 'FAILED' && hint.deliveryAttempts < 4
+              ? hint.encryptedDeliveryProof
+              : null,
+          deliveryNotBefore: new Date(
+            Date.now() + 60000 * 2 ** hint.deliveryAttempts,
+          ),
+        },
+      });
+    }
+    return rows.length > 0;
+  }
   async inviteEmail(
     actor: RequestActor,
     id: string,
@@ -1233,7 +1397,6 @@ export class MessagingService {
       email = body.email.toLowerCase(),
       bodyHash = fingerprint({ ...body, email }),
       proof = invitationProof();
-    let created = false;
     const result = await this.operation(
       actor,
       id,
@@ -1286,6 +1449,7 @@ export class MessagingService {
             restoreGeneration: p.restoreGeneration,
             email,
             proofHash: invitationProofHash(proof),
+            encryptedDeliveryProof: await this.emailDelivery.encrypt(proof),
             keyHash: digest,
             fingerprint: bodyHash,
             expiresAt: new Date(s.now.getTime() + 604800000),
@@ -1296,26 +1460,9 @@ export class MessagingService {
           data: { revision: { increment: 1 } },
         });
         await this.effect(s, 'messaging.email.invitation.create', row.id);
-        created = true;
         return this.emailOffer(row, s.now);
       },
     );
-    if (created) {
-      const state = await this.emailDelivery.send(
-        result.id,
-        email,
-        proof,
-        'CONVERSATION',
-      );
-      await this.db.client.conversationEmailInvitation.updateMany({
-        where: {
-          id: result.id,
-          state: 'PENDING',
-          proofHash: invitationProofHash(proof),
-        },
-        data: { emailDeliveryState: state },
-      });
-    }
     return result;
   }
   private emailOffer(
@@ -1350,6 +1497,17 @@ export class MessagingService {
         if (revision !== undefined) {
           match(revision, row.revision);
           if (row.state !== 'PENDING') throw new ConflictException();
+          if (row.inAppClaimed) {
+            const pending = await s.tx.conversationInvitation.updateMany({
+              where: { id: row.id, state: 'PENDING' },
+              data: {
+                state: 'REVOKED',
+                invitedEmail: null,
+                revision: { increment: 1 },
+              },
+            });
+            if (!pending.count) throw new ConflictException();
+          }
           row = await s.tx.conversationEmailInvitation.update({
             where: { id: offerId },
             data: {
@@ -1370,6 +1528,7 @@ export class MessagingService {
     offerId: string,
     rawProof: string | undefined,
     revision: number,
+    background = false,
   ) {
     const hint = await this.db.client.conversationEmailInvitation.findUnique({
       where: { id: offerId },
@@ -1419,22 +1578,45 @@ export class MessagingService {
           actor: { ...s.actor, userId: issuer },
           proof: p,
         };
-        const invite = await this.issue(
-          issuerOperation,
-          { id: offer.id, userId: actor.userId },
-          'email-invite:' + offer.id,
-        );
+        const invite = offer.inAppClaimed
+          ? await s.tx.conversationInvitation.findUniqueOrThrow({
+              where: { id: offer.id },
+            })
+          : await this.issue(
+              issuerOperation,
+              { id: offer.id, userId: actor.userId },
+              'email-invite:' + offer.id,
+            );
+        if (
+          invite.state !== 'PENDING' ||
+          (offer.inAppClaimed &&
+            (await this.authority.user(
+              s.tx,
+              s.conv.spaceId,
+              invite.recipientActorId,
+            )) !== actor.userId)
+        )
+          throw new NotFoundException();
         const row = await s.tx.conversationInvitation.update({
           where: { id: invite.id },
-          data: { expiresAt: offer.expiresAt, invitedEmail: offer.email },
+          data: {
+            expiresAt: offer.expiresAt,
+            invitedEmail: offer.email,
+            createdAt: new Date(offer.expiresAt.getTime() - 604800000),
+          },
         });
         await s.tx.conversationEmailInvitation.update({
           where: { id: offer.id },
           data: {
-            state: 'CLAIMED',
-            email: null,
-            proofHash: null,
-            revision: { increment: 1 },
+            ...(background
+              ? { inAppClaimed: true }
+              : {
+                  state: 'CLAIMED',
+                  inAppClaimed: false,
+                  email: null,
+                  proofHash: null,
+                  revision: { increment: 1 },
+                }),
           },
         });
         await this.effect(
@@ -1448,6 +1630,8 @@ export class MessagingService {
       },
       users,
       true,
+      [],
+      background,
     );
   }
   private async recipientOperation<T>(
@@ -1455,6 +1639,7 @@ export class MessagingService {
     invitationId: string,
     action: string,
     work: (s: Operation, row: ConversationInvitation) => Promise<T>,
+    background = false,
   ) {
     const hint = await this.db.client.conversationInvitation.findUnique({
       where: { id: invitationId },
@@ -1490,6 +1675,20 @@ export class MessagingService {
         return work(s, row);
       },
       users,
+      true,
+      [],
+      background,
+    );
+  }
+  validateInvitationNotification(id: string, userId: string) {
+    return this.recipientOperation(
+      { userId, requestId: id, correlationId: id },
+      id,
+      'messaging.invitation.notification.authorize',
+      async (s, row) => {
+        if (row.state !== 'PENDING') throw new NotFoundException();
+        await this.eligibleInvitation(s, row);
+      },
       true,
     );
   }
@@ -1528,6 +1727,31 @@ export class MessagingService {
         s.proof.generation !== row.recipientGeneration)
     )
       throw new NotFoundException();
+  }
+  markInvitationRead(actor: RequestActor, id: string) {
+    return this.recipientOperation(
+      actor,
+      id,
+      'messaging.invitation.notification.read',
+      async (s, row) => {
+        await this.eligibleInvitation(s, row);
+        const changed = await s.tx.conversationInvitation.update({
+          where: { id },
+          data: { notificationReadAt: row.notificationReadAt ?? s.now },
+        });
+        await this.effect(
+          s,
+          'messaging.invitation.notification.read',
+          id,
+          undefined,
+          row.recipientActorId,
+        );
+        return {
+          invitationId: id,
+          readAt: changed.notificationReadAt!.toISOString(),
+        };
+      },
+    );
   }
   async invitations(actor: RequestActor, q: Page) {
     const context = 'conversation-invitations',

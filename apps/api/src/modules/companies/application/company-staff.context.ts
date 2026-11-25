@@ -119,6 +119,20 @@ export class CompanyStaffContext {
     )
       throw new ForbiddenException();
   }
+  async invitationContext(
+    ctx: CompanyTransaction,
+    scopeId: string,
+  ): Promise<StaffContext> {
+    await this.companies.staffVisibility(ctx, scopeId, false);
+    return {
+      ...ctx,
+      scopeId,
+      me: await this.access.seat(ctx, scopeId),
+      change: async () => {
+        await ctx.begin();
+      },
+    };
+  }
   self(s: StaffContext, m: StaffMember) {
     return s.me.accessId === m.accessId && s.me.generation === m.generation;
   }

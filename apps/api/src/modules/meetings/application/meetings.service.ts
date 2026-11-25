@@ -11,6 +11,7 @@ import { randomUUID } from 'node:crypto';
 import type { z } from 'zod';
 import * as c from '@mehran/api-contracts';
 import { InvitationMailService } from '../../spaces/public/index.js';
+import { enqueueInvitationPush } from '../../notifications/public/enqueue-invitation-push.js';
 import {
   invitationProof,
   invitationProofHash,
@@ -548,6 +549,22 @@ export class MeetingsService {
     const issuer = await this.issuer(s, row),
       event = await this.event(issuer);
     return c.MeetingInvitationSchema.parse({
+      notification: {
+        invitationId: row.id,
+        kind: 'MEETING',
+        targetId: s.meeting.id,
+        targetDisplayName: event.title,
+        inviterDisplayName: await this.op.authority.displayName(
+          s.tx,
+          s.spaceId,
+          issuer.proof.actorId,
+        ),
+        role: 'PARTICIPANT',
+        createdAt: row.createdAt.toISOString(),
+        readAt: row.notificationReadAt?.toISOString() ?? null,
+        revision: row.revision,
+        expiresAt: row.expiresAt.toISOString(),
+      },
       id: row.id,
       meetingId: s.meeting.id,
       title: event.title,
@@ -616,7 +633,7 @@ export class MeetingsService {
         revision: { increment: 1 },
       },
     });
-    return s.tx.meetingInvitation.create({
+    const invitation = await s.tx.meetingInvitation.create({
       data: {
         id: input.id,
         meetingId: s.meeting.id,
@@ -635,6 +652,14 @@ export class MeetingsService {
         expiresAt: new Date(s.now.getTime() + 7 * 86400000),
       },
     });
+    await enqueueInvitationPush(
+      s.tx,
+      userId,
+      'MESSAGING_MEETINGS',
+      { meetingInvitationId: invitation.id },
+      s.now,
+    );
+    return invitation;
   }
   async invite(
     actor: RequestActor,
@@ -695,6 +720,145 @@ export class MeetingsService {
       expiresAt: row.expiresAt.toISOString(),
     });
   }
+  /** Durable recipient materialization and preference-aware post-commit email. */
+  async consumeEmailInvitations() {
+    const db = this.op.db.client,
+      now = new Date();
+    const rows = await db.meetingEmailInvitation.findMany({
+      where: {
+        encryptedDeliveryProof: { not: null },
+        state: { in: ['PENDING', 'CLAIMED'] },
+        expiresAt: { gt: now },
+        deliveryAttempts: { lt: 5 },
+        deliveryNotBefore: { lte: now },
+      },
+      take: 10,
+      orderBy: { deliveryNotBefore: 'asc' },
+    });
+    for (const hint of rows) {
+      const claim = await db.meetingEmailInvitation.updateMany({
+        where: {
+          id: hint.id,
+          encryptedDeliveryProof: hint.encryptedDeliveryProof,
+          deliveryAttempts: hint.deliveryAttempts,
+          deliveryNotBefore: { lte: now },
+        },
+        data: {
+          deliveryAttempts: { increment: 1 },
+          deliveryNotBefore: new Date(now.getTime() + 300000),
+        },
+      });
+      if (!claim.count) continue;
+      let state = 'FAILED';
+      try {
+        const issuer = (
+          await this.op.authority.hints([hint.inviterActorId])
+        )[0];
+        if (!issuer) throw new NotFoundException();
+        const requestId = randomUUID();
+        const actor = { userId: issuer, requestId, correlationId: requestId };
+        const offer = await this.op.operation(
+          actor,
+          hint.meetingId,
+          'meeting.email.invitation.delivery',
+          async (s) => {
+            s.proof = await this.op.proof(s);
+            const manager = await this.op.organizer(s);
+            const row = await s.tx.meetingEmailInvitation.findUniqueOrThrow({
+              where: { id: hint.id },
+            });
+            if (
+              !['PENDING', 'CLAIMED'].includes(row.state) ||
+              row.expiresAt <= s.now ||
+              row.encryptedDeliveryProof !== hint.encryptedDeliveryProof ||
+              s.proof!.accessId !== row.inviterAccessId ||
+              s.proof!.generation !== row.inviterGeneration ||
+              s.proof!.restoreGeneration !== row.restoreGeneration ||
+              (manager?.id ?? null) !== row.inviterMemberId ||
+              (manager?.generation ?? null) !== row.inviterMemberGeneration
+            )
+              throw new NotFoundException();
+            const pending =
+              row.state === 'CLAIMED'
+                ? await s.tx.meetingInvitation.findUnique({
+                    where: { id: row.id },
+                  })
+                : null;
+            if (
+              row.state === 'CLAIMED' &&
+              (!pending || pending.state !== 'PENDING')
+            )
+              throw new NotFoundException();
+            return {
+              ...row,
+              email: row.email ?? pending?.invitedEmail ?? null,
+            };
+          },
+          [],
+          true,
+          true,
+        );
+        if (!offer.email) throw new NotFoundException();
+        const proof = await this.emailDelivery.decrypt(
+          hint.encryptedDeliveryProof!,
+        );
+        const recipient = await this.emailDelivery.recipient(offer.email);
+        if (
+          recipient?.emailVerified &&
+          offer.state === 'PENDING' &&
+          !offer.inAppClaimed
+        )
+          await this.claimEmailInvitation(
+            { ...actor, userId: recipient.id },
+            offer.id,
+            proof,
+            offer.revision,
+            true,
+          );
+        const notBefore = await this.emailDelivery.notBefore(offer.email);
+        if (notBefore.getTime() > Date.now()) {
+          await db.meetingEmailInvitation.updateMany({
+            where: {
+              id: hint.id,
+              encryptedDeliveryProof: hint.encryptedDeliveryProof,
+              deliveryAttempts: hint.deliveryAttempts + 1,
+            },
+            data: {
+              deliveryNotBefore: notBefore,
+              deliveryAttempts: { decrement: 1 },
+            },
+          });
+          continue;
+        }
+        state = await this.emailDelivery.send(
+          offer.id,
+          offer.email,
+          proof,
+          'MEETING',
+        );
+      } catch {
+        /* bounded retry; no account, address or proof disclosure */
+      }
+      await db.meetingEmailInvitation.updateMany({
+        where: {
+          id: hint.id,
+          encryptedDeliveryProof: hint.encryptedDeliveryProof,
+          deliveryAttempts: hint.deliveryAttempts + 1,
+        },
+        data: {
+          emailDeliveryState: state,
+          encryptedDeliveryProof:
+            state === 'FAILED' && hint.deliveryAttempts < 4
+              ? hint.encryptedDeliveryProof
+              : null,
+          deliveryNotBefore: new Date(
+            Date.now() + 60000 * 2 ** hint.deliveryAttempts,
+          ),
+        },
+      });
+    }
+    return rows.length > 0;
+  }
   async inviteEmail(
     actor: RequestActor,
     id: string,
@@ -707,7 +871,6 @@ export class MeetingsService {
       email = body.email.toLowerCase(),
       fingerprint = meetingHash({ ...body, email }),
       proof = invitationProof();
-    let created = false;
     const result = await this.op.operation(
       actor,
       id,
@@ -756,6 +919,7 @@ export class MeetingsService {
             restoreGeneration: p.restoreGeneration,
             email,
             proofHash: invitationProofHash(proof),
+            encryptedDeliveryProof: await this.emailDelivery.encrypt(proof),
             keyHash: digest,
             fingerprint,
             expiresAt: new Date(s.now.getTime() + 604800000),
@@ -766,26 +930,9 @@ export class MeetingsService {
           data: { revision: { increment: 1 } },
         });
         await this.op.effect(s, 'meeting.email.invitation.create', row.id);
-        created = true;
         return this.emailOffer(row, s.now);
       },
     );
-    if (created) {
-      const state = await this.emailDelivery.send(
-        result.id,
-        email,
-        proof,
-        'MEETING',
-      );
-      await this.op.db.client.meetingEmailInvitation.updateMany({
-        where: {
-          id: result.id,
-          state: 'PENDING',
-          proofHash: invitationProofHash(proof),
-        },
-        data: { emailDeliveryState: state },
-      });
-    }
     return result;
   }
   emailInvitation(
@@ -809,6 +956,17 @@ export class MeetingsService {
         if (revision !== undefined) {
           meetingRevision(revision, row.revision);
           if (row.state !== 'PENDING') throw new ConflictException();
+          if (row.inAppClaimed) {
+            const pending = await s.tx.meetingInvitation.updateMany({
+              where: { id: row.id, state: 'PENDING' },
+              data: {
+                state: 'REVOKED',
+                invitedEmail: null,
+                revision: { increment: 1 },
+              },
+            });
+            if (!pending.count) throw new ConflictException();
+          }
           row = await s.tx.meetingEmailInvitation.update({
             where: { id: offerId },
             data: {
@@ -829,6 +987,7 @@ export class MeetingsService {
     offerId: string,
     rawProof: string | undefined,
     revision: number | undefined,
+    background = false,
   ) {
     const hint = await this.op.db.client.meetingEmailInvitation.findUnique({
       where: { id: offerId },
@@ -870,22 +1029,45 @@ export class MeetingsService {
           actor: { ...s.actor, userId: issuer.userId },
           proof: issuer.proof,
         };
-        const invite = await this.issue(
-          issuerOperation,
-          { id: offer.id, userId: actor.userId },
-          'email-invite:' + offer.id,
-        );
+        const invite = offer.inAppClaimed
+          ? await s.tx.meetingInvitation.findUniqueOrThrow({
+              where: { id: offer.id },
+            })
+          : await this.issue(
+              issuerOperation,
+              { id: offer.id, userId: actor.userId },
+              'email-invite:' + offer.id,
+            );
+        if (
+          invite.state !== 'PENDING' ||
+          (offer.inAppClaimed &&
+            (await this.op.authority.user(
+              s.tx,
+              s.spaceId,
+              invite.recipientActorId,
+            )) !== actor.userId)
+        )
+          throw new NotFoundException();
         const row = await s.tx.meetingInvitation.update({
           where: { id: invite.id },
-          data: { expiresAt: offer.expiresAt, invitedEmail: offer.email },
+          data: {
+            expiresAt: offer.expiresAt,
+            invitedEmail: offer.email,
+            createdAt: new Date(offer.expiresAt.getTime() - 604800000),
+          },
         });
         await s.tx.meetingEmailInvitation.update({
           where: { id: offer.id },
           data: {
-            state: 'CLAIMED',
-            email: null,
-            proofHash: null,
-            revision: { increment: 1 },
+            ...(background
+              ? { inAppClaimed: true }
+              : {
+                  state: 'CLAIMED',
+                  inAppClaimed: false,
+                  email: null,
+                  proofHash: null,
+                  revision: { increment: 1 },
+                }),
           },
         });
         await this.op.shared.offerEffect(
@@ -901,6 +1083,7 @@ export class MeetingsService {
       },
       users,
       true,
+      background,
     );
   }
   organizerInvitations(actor: RequestActor, id: string, q: Page) {
@@ -942,6 +1125,96 @@ export class MeetingsService {
           ),
         );
       },
+    );
+  }
+  async validateInvitationNotification(id: string, userId: string) {
+    const hint = await this.op.db.client.meetingInvitation.findUnique({
+      where: { id },
+    });
+    if (!hint) throw new NotFoundException();
+    const users = await this.op.authority.hints([hint.recipientActorId]);
+    return this.op.operation(
+      { userId, requestId: id, correlationId: id },
+      hint.meetingId,
+      'meeting.invitation.notification.authorize',
+      async (s) => {
+        const row = await s.tx.meetingInvitation.findUniqueOrThrow({
+          where: { id },
+        });
+        if (
+          row.state !== 'PENDING' ||
+          row.expiresAt <= s.now ||
+          (await this.op.authority.user(
+            s.tx,
+            s.spaceId,
+            row.recipientActorId,
+          )) !== userId ||
+          (row.invitedEmail &&
+            row.invitedEmail !==
+              (await this.op.authority.verifiedEmail(s.tx, userId)))
+        )
+          throw new NotFoundException();
+        await this.invitationView(s, row);
+        if (row.recipientAccessId) {
+          const proof = await this.op.proof(s);
+          if (
+            proof.accessId !== row.recipientAccessId ||
+            proof.generation !== row.recipientGeneration
+          )
+            throw new NotFoundException();
+        }
+      },
+      users,
+      true,
+      true,
+    );
+  }
+  async markInvitationRead(actor: RequestActor, id: string) {
+    const hint = await this.op.db.client.meetingInvitation.findUnique({
+      where: { id },
+    });
+    if (!hint) throw new NotFoundException();
+    const users = await this.op.authority.hints([hint.recipientActorId]);
+    return this.op.operation(
+      actor,
+      hint.meetingId,
+      'meeting.invitation.notification.read',
+      async (s) => {
+        const row = await s.tx.meetingInvitation.findUniqueOrThrow({
+          where: { id },
+        });
+        if (
+          row.state !== 'PENDING' ||
+          row.expiresAt <= s.now ||
+          (await this.op.authority.user(
+            s.tx,
+            s.spaceId,
+            row.recipientActorId,
+          )) !== actor.userId ||
+          (row.invitedEmail &&
+            row.invitedEmail !==
+              (await this.op.authority.verifiedEmail(s.tx, actor.userId)))
+        )
+          throw new NotFoundException();
+        await this.invitationView(s, row);
+        const readAt = row.notificationReadAt ?? s.now;
+        await s.tx.meetingInvitation.update({
+          where: { id },
+          data: { notificationReadAt: readAt },
+        });
+        await this.op.shared.offerEffect(
+          s.tx,
+          actor,
+          s.scopeId,
+          row.recipientActorId,
+          'meeting.invitation.notification.read',
+          id,
+          await s.begin(),
+        );
+        return { invitationId: id, readAt: readAt.toISOString() };
+      },
+      users,
+      true,
     );
   }
   async invitations(actor: RequestActor, q: Page) {

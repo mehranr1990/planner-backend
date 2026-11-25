@@ -282,6 +282,7 @@ export class MeetingKernel {
     work: (s: MeetingOperation) => Promise<T>,
     extraUsers: string[] = [],
     pending = false,
+    background = false,
   ) {
     this.shared.assertEnabled();
     const hint = await this.db.client.meeting.findUnique({ where: { id } });
@@ -296,10 +297,13 @@ export class MeetingKernel {
       ...new Set([
         ...(await this.authority.hints(members.map((v) => v.actorId))),
         ...extraUsers,
+        ...(background
+          ? await this.shared.offerUserHints(hint.scopeId, actor.userId)
+          : []),
       ]),
     ];
     return this.collaboration.signed(
-      actor,
+      background ? null : actor,
       hint.scopeId,
       users,
       action,
@@ -333,7 +337,10 @@ export class MeetingKernel {
           open: true,
         };
         try {
-          if (!pending || meeting.kind !== 'INDEPENDENT')
+          if (
+            !(background && pending) &&
+            (!pending || meeting.kind !== 'INDEPENDENT')
+          )
             s.proof = await this.authority.proof(
               tx,
               actor,
@@ -347,6 +354,16 @@ export class MeetingKernel {
           s.open = false;
         }
       },
+      false,
+      'MEETING',
+      background
+        ? (body) =>
+            this.shared.messagingMaintenance(
+              [...new Set([actor.userId, ...users])],
+              [hint.scopeId],
+              (tx, now, locked) => body(tx, now, locked),
+            )
+        : undefined,
     );
   }
   async proof(

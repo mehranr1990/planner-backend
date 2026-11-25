@@ -6,6 +6,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
+import { hasInvitationPushIntent } from '../../notifications/public/enqueue-invitation-push.js';
 import type { z } from 'zod';
 import * as c from '@mehran/api-contracts';
 import type {
@@ -382,7 +383,16 @@ export class MessageNotices {
             s.tx,
             context.owner,
             hint.activity.createdAt,
-          ))
+          )) {
+            if (
+              hint.activity.kind === 'INVITATION' &&
+              (await hasInvitationPushIntent(
+                s.tx,
+                hint.activity.invitationId!,
+                subscription.id,
+              ))
+            )
+              continue;
             await s.tx.messageNoticeAttempt.upsert({
               where: {
                 noticeId_subscriptionId: {
@@ -399,6 +409,7 @@ export class MessageNotices {
               },
               update: {},
             });
+          }
         }
         return true;
       });

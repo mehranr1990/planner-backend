@@ -42,9 +42,41 @@ export const HabitScheduleDefinitionSchema = z.strictObject({
   rule: HabitRuleSchema,
 });
 export const HabitStatusSchema = z.enum(['ACTIVE', 'PAUSED', 'ARCHIVED']);
+const Clock = z.string().regex(/^(?:[01][0-9]|2[0-3]):[0-5][0-9]$/);
+const DisplayLabel = z
+  .string()
+  .trim()
+  .min(1)
+  .max(100)
+  .refine((v) => !/[\x00-\x1f\x7f\ud800-\udfff]/u.test(v));
+export const HabitMetadataFields = {
+  icon: z
+    .enum([
+      'DEFAULT',
+      'WATER',
+      'BOOK',
+      'EXERCISE',
+      'SLEEP',
+      'FOOD',
+      'MEDITATION',
+      'STUDY',
+      'WORK',
+      'HEALTH',
+    ])
+    .optional(),
+  reminder: z
+    .strictObject({ time: Clock, ifNotDone: z.boolean().default(true) })
+    .nullable()
+    .optional(),
+  category: DisplayLabel.nullable().optional(),
+  unitLabel: DisplayLabel.nullable().optional(),
+  timeOfDay: z.enum(['ANYTIME', 'MORNING', 'AFTERNOON', 'EVENING']).optional(),
+  preferredTime: Clock.nullable().optional(),
+};
 export const HabitCreateSchema = z
   .strictObject({
     title: Title,
+    ...HabitMetadataFields,
     type: z.enum(['CHECKBOX', 'QUANTITY', 'DURATION']),
     unit: z.string().regex(/^[A-Z][A-Z0-9_]{0,29}$/),
     purpose: z.enum(['GENERIC', 'WATER']).default('GENERIC'),
@@ -62,6 +94,7 @@ export const HabitCreateSchema = z
 export const HabitPatchSchema = z
   .strictObject({
     title: Title.optional(),
+    ...HabitMetadataFields,
     target: HabitAmountSchema.refine((v) => v !== '0').optional(),
     timezone: CalendarZoneSchema.optional(),
     schedule: HabitScheduleDefinitionSchema.optional(),
@@ -143,6 +176,7 @@ export const HabitScheduleSchema = z.strictObject({
 export const HabitSchema = z.strictObject({
   ...Base,
   title: Title,
+  ...HabitMetadataFields,
   type: z.enum(['CHECKBOX', 'QUANTITY', 'DURATION']),
   unit: z.string(),
   purpose: z.enum(['GENERIC', 'WATER']),

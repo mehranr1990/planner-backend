@@ -27,6 +27,10 @@ export class SharedIdentity {
       select: { id: true, email: true, emailVerified: true },
     });
   }
+  async verifiedByEmail(tx: Prisma.TransactionClient, email: string) {
+    const user = await this.byEmail(tx, email);
+    return user?.emailVerified ? user : null;
+  }
   directory(tx: Prisma.TransactionClient, userId: string) {
     return tx.user.findUnique({
       where: { id: userId },

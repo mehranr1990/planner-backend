@@ -1,4 +1,21 @@
 import type { Prisma } from '../../../generated/prisma/client.js';
+import { SharedIdentity } from '../../../platform/auth/shared-identity.js';
+import { notificationRecipientSettings } from '../../account/public/notification-settings.js';
+export async function personalNotificationOwner(
+  tx: Prisma.TransactionClient,
+  userId: string,
+) {
+  const user = await new SharedIdentity().current(tx, userId);
+  const settings = await notificationRecipientSettings(tx, userId);
+  if (!user?.emailVerified || settings.suspended) return null;
+  const space = await tx.space.findFirst({
+    where: { ownerUserId: userId, kind: 'PERSONAL', accessClosedAt: null },
+    select: { id: true },
+  });
+  return space
+    ? { spaceId: space.id, timezone: settings?.timezone ?? 'UTC' }
+    : null;
+}
 export async function sharedNotificationModule(
   tx: Prisma.TransactionClient,
   scopeId: string,

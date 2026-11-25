@@ -39,6 +39,7 @@ import type { z } from 'zod';
 import * as c from '@mehran/api-contracts';
 import { Readable } from 'node:stream';
 import { InvitationMailService } from '../../src/modules/spaces/public/index.js';
+import { ClientInvitationNotificationsController } from '../../src/modules/client-invitations/client-invitations.module.js';
 import {
   MeetingsService,
   MeetingDocuments,
@@ -385,6 +386,36 @@ describe('P5-05 meetings decisions and announcements', () => {
     );
     return documents.finalize(owner.actor, id, v.id, v.revision, randomUUID());
   }
+  it('Client: materializes verified Meeting offers privately and revokes the pending in-app offer', async () => {
+    const m = await meeting([]);
+    const offer = await meetings.inviteEmail(
+      owner.actor,
+      m.id,
+      m.revision,
+      { id: randomUUID(), email: alice.email },
+      randomUUID(),
+    );
+    await meetings.consumeEmailInvitations();
+    expect(await meetings.emailInvitation(owner.actor, m.id, offer.id)).toEqual(
+      offer,
+    );
+    const feed = app.get(ClientInvitationNotificationsController);
+    expect(
+      (await feed.list(alice.actor, { kind: 'MEETING', limit: 25 })).items.find(
+        (v) => v.invitationId === offer.id,
+      ),
+    ).toMatchObject({ kind: 'MEETING', targetId: m.id });
+    await meetings.markInvitationRead(alice.actor, offer.id);
+    await meetings.emailInvitation(owner.actor, m.id, offer.id, offer.revision);
+    expect(
+      (await meetings.invitations(alice.actor, page)).items.find(
+        (v) => v.id === offer.id,
+      ),
+    ).toBeUndefined();
+    expect(await db.meetingMember.count({ where: { meetingId: m.id } })).toBe(
+      1,
+    );
+  });
   it('meeting email claims reject expiry, revocation, departed issuers and unrelated scope access', async () => {
     const delivery = vi
       .spyOn(app.get(InvitationMailService), 'send')
@@ -398,7 +429,13 @@ describe('P5-05 meetings decisions and announcements', () => {
           { id: randomUUID(), email: alice.email },
           randomUUID(),
         ),
-        proof = delivery.mock.calls.at(-1)![2];
+        proof = await app.get(InvitationMailService).decrypt(
+          (
+            await db.meetingEmailInvitation.findUniqueOrThrow({
+              where: { id: offer.id },
+            })
+          ).encryptedDeliveryProof!,
+        );
       if (state === 'expired')
         await db.meetingEmailInvitation.update({
           where: { id: offer.id },
@@ -428,7 +465,13 @@ describe('P5-05 meetings decisions and announcements', () => {
       meetings.claimEmailInvitation(
         alice.actor,
         offer.id,
-        delivery.mock.calls.at(-1)![2],
+        await app.get(InvitationMailService).decrypt(
+          (
+            await db.meetingEmailInvitation.findUniqueOrThrow({
+              where: { id: offer.id },
+            })
+          ).encryptedDeliveryProof!,
+        ),
         1,
       ),
     ).rejects.toThrow();
@@ -447,7 +490,13 @@ describe('P5-05 meetings decisions and announcements', () => {
         { id: randomUUID(), email },
         randomUUID(),
       ),
-      proof = delivery.mock.calls.at(-1)![2];
+      proof = await app.get(InvitationMailService).decrypt(
+        (
+          await db.meetingEmailInvitation.findUniqueOrThrow({
+            where: { id: offer.id },
+          })
+        ).encryptedDeliveryProof!,
+      );
     const after = await person(false);
     await db.user.update({
       where: { id: after.actor.userId },
@@ -492,7 +541,13 @@ describe('P5-05 meetings decisions and announcements', () => {
         { id: randomUUID(), email: alice.email },
         randomUUID(),
       ),
-      proof = delivery.mock.calls[0]![2];
+      proof = await app.get(InvitationMailService).decrypt(
+        (
+          await db.meetingEmailInvitation.findUniqueOrThrow({
+            where: { id: offer.id },
+          })
+        ).encryptedDeliveryProof!,
+      );
     await expect(
       meetings.claimEmailInvitation(bob.actor, offer.id, proof, 1),
     ).rejects.toThrow();
@@ -704,6 +759,7 @@ describe('P5-05 meetings decisions and announcements', () => {
       'expiresAt',
       'id',
       'meetingId',
+      'notification',
       'revision',
       'schedule',
       'state',

@@ -2,6 +2,7 @@ import {
   RetentionController,
   RetentionGuard,
 } from './http/retention.controller.js';
+import { CompanyInvitationStaff } from './public/company-invitation-staff.js';
 import { RetentionSelectionService } from './application/retention-selection.service.js';
 import { CompanyAccess } from './application/company-access.service.js';
 import { InvitationMailService } from './application/invitation-mail.service.js';
@@ -41,6 +42,7 @@ import {
 @Module({
   imports: [DatabaseModule, AuditModule],
   providers: [
+    CompanyInvitationStaff,
     TeamDomainLifecycle,
     CompanyDomainParent,
     TeamCustodyTransfer,
@@ -73,6 +75,8 @@ import {
     RetentionController,
   ],
   exports: [
+    CollaborationGuard,
+    CompanyInvitationStaff,
     CompanyDomainParent,
     TeamCustodyTransfer,
     AdminCollaboration,

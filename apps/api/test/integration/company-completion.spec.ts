@@ -324,6 +324,96 @@ describe('Company Backend completion: currency, directory, KPIs, resource approv
       randomUUID(),
     );
   }
+  it('Client: applies invitation staff fields atomically and rejects foreign or stale supervisors', async () => {
+    const co = await company(),
+      supervisor = await admit(co.id, member);
+    const offer = await companies.invite(
+      owner.actor,
+      co.id,
+      co.id,
+      {
+        memberRole: 'MEMBER',
+        recipient: { userId: outsider.actor.userId },
+        position: 'مهندس',
+        supervisorMemberId: supervisor.id,
+      },
+      randomUUID(),
+    );
+    const accepted = await access.decide(
+      outsider.actor,
+      offer.invitation.id,
+      offer.proof!,
+      1,
+      true,
+    );
+    const profile = await client.companyStaffProfile.findFirstOrThrow({
+      where: { spaceId: co.id, memberAccessId: accepted.membership!.id },
+    });
+    expect(profile).toMatchObject({
+      position: 'مهندس',
+      supervisorAccessId: supervisor.id,
+      supervisorGeneration: supervisor.generation,
+    });
+    await access.decide(
+      outsider.actor,
+      offer.invitation.id,
+      offer.proof!,
+      1,
+      true,
+    );
+    expect(
+      await client.companyStaffProfile.count({
+        where: { spaceId: co.id, memberAccessId: accepted.membership!.id },
+      }),
+    ).toBe(1);
+    const other = await company(),
+      foreign = await admit(other.id, member);
+    await expect(
+      companies.invite(
+        owner.actor,
+        co.id,
+        co.id,
+        {
+          memberRole: 'MEMBER',
+          recipient: { userId: viewer.actor.userId },
+          supervisorMemberId: foreign.id,
+        },
+        randomUUID(),
+      ),
+    ).rejects.toThrow();
+    const stale = await companies.invite(
+      owner.actor,
+      co.id,
+      co.id,
+      {
+        memberRole: 'MEMBER',
+        recipient: { userId: viewer.actor.userId },
+        position: 'Position',
+        supervisorMemberId: supervisor.id,
+      },
+      randomUUID(),
+    );
+    await companies.changeMember(
+      owner.actor,
+      co.id,
+      co.id,
+      supervisor.id,
+      supervisor.revision,
+      { memberRole: 'MEMBER', state: 'REVOKED' },
+    );
+    await expect(
+      access.decide(viewer.actor, stale.invitation.id, stale.proof!, 1, true),
+    ).rejects.toThrow();
+    expect(
+      await client.contextAccess.count({
+        where: {
+          spaceId: co.id,
+          SharedActor: { userId: viewer.actor.userId },
+          state: 'ACTIVE',
+        },
+      }),
+    ).toBe(0);
+  });
   async function category(id: string, scope = id) {
     return finance.categoryCreate(
       owner.actor,

@@ -22,8 +22,8 @@ production-readiness preparation.
 
 - Approves `mp-rpc-v2.0-work`, `-conversation`, `-meeting` and `-social-group`
   as defined in docs/retention-policy-catalog-v2.md §2 (7-day recovery; class
-  retention unchanged), plus the Company policy once its durations below are
-  decided.
+  retention unchanged), plus the final Company policy and durations confirmed
+  in the Company section below.
 - Seed values: `--approval-reference=MP-RET-V2-2026-11-20-001`
   `--accountable-operator="Mehran Planner Product Owner"`.
 

@@ -1,6 +1,7 @@
 import { appendSyncChanges } from '../../../platform/sync/change-feed.js';
 import * as c from '@mehran/api-contracts';
 import { RoutineReminders } from '../../notifications/public/routine-reminders.js';
+import { syncHabitReminder } from '../../notifications/public/habit-reminders.js';
 import { CaptureHabits } from '../public/capture-habits.js';
 import { HabitsService } from '../application/habits.service.js';
 import type { HabitEntryCreate } from '@mehran/api-contracts';
@@ -39,6 +40,7 @@ import type {
   HabitsTransaction,
   EntryWrite,
   ScheduleWrite,
+  HabitMetadata,
   PageQuery,
 } from '../application/habits.port.js';
 import type {
@@ -59,6 +61,9 @@ const habitView = (r: HabitRow): Habit => ({
   ...r,
   type: r.type as Habit['type'],
   purpose: r.purpose as Habit['purpose'],
+  timeOfDay: r.timeOfDay as NonNullable<Habit['timeOfDay']>,
+  icon: r.icon as NonNullable<Habit['icon']>,
+  reminder: c.HabitMetadataFields.reminder.parse(r.reminder) ?? null,
   createdAt: r.createdAt.toISOString(),
   updatedAt: r.updatedAt.toISOString(),
 });
@@ -151,21 +156,57 @@ export class Store implements HabitsTransaction {
     if (rows.length > 1000) dense();
     return rows.map(habitView);
   }
-  async createHabit(input: Pick<Habit, 'title' | 'type' | 'unit' | 'purpose'>) {
+  async createHabit(
+    input: Pick<Habit, 'title' | 'type' | 'unit' | 'purpose'> & HabitMetadata,
+  ) {
+    const { reminder, ...rest } = input;
     return habitView(
-      await this.tx.habit.create({ data: { ...this.owner(), ...input } }),
+      await this.tx.habit.create({
+        data: {
+          ...this.owner(),
+          ...rest,
+          ...(reminder === undefined
+            ? {}
+            : { reminder: reminder === null ? Prisma.DbNull : reminder }),
+        },
+      }),
     );
   }
-  async updateHabit(before: Habit, title?: string) {
+  async updateHabit(
+    before: Habit,
+    title?: string,
+    metadata: HabitMetadata = {},
+  ) {
+    const { reminder, ...rest } = metadata;
     const result = await this.tx.habit.updateMany({
       where: this.where({ id: before.id, revision: before.revision }),
       data: {
+        ...rest,
+        ...(reminder === undefined
+          ? {}
+          : { reminder: reminder === null ? Prisma.DbNull : reminder }),
         ...(title === undefined ? {} : { title }),
         revision: { increment: 1 },
       },
     });
     if (result.count !== 1) throw new ConflictException();
+    await this.syncHabitReminder(before.id);
     return this.habit(before.id);
+  }
+  private async syncHabitReminder(id: string) {
+    const habit = await this.habit(id),
+      versions = await this.schedules(id);
+    const schedule = currentSchedule(versions, new Date()) ?? versions.at(-1);
+    if (!schedule) return;
+    await syncHabitReminder(this.tx, this.scope, {
+      id,
+      title: habit.title,
+      timezone: schedule.timezone,
+      startDate: schedule.schedule.startDate,
+      // Effective schedules can resume on a future date without another write.
+      // The notification owner checks each date's status before scheduling/sending.
+      reminder: habit.reminder ?? null,
+    });
   }
   async schedules(id: string) {
     const rows = await this.tx.habitSchedule.findMany({
@@ -210,6 +251,7 @@ export class Store implements HabitsTransaction {
         definition: input.schedule as Prisma.InputJsonValue,
       },
     });
+    await this.syncHabitReminder(habit.id);
   }
   async entriesRange(habitIds: string[], from: string, to: string) {
     const rows = await this.tx.habitEntry.findMany({

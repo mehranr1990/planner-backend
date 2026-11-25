@@ -7,6 +7,8 @@ import {
   DmContactPageSchema,
 } from './communication-lifecycle.js';
 import { embeddedJsonSchema, pointerSegment } from './embedded-json-schema.js';
+import { SocialPendingInvitationPageSchema } from './client-invitations.js';
+import { RecipientInvitationProofSchema } from './backend-completion.js';
 export function socialPaths(): Record<string, Record<string, unknown>> {
   const paths: Record<string, Record<string, unknown>> = {};
   type Options = {
@@ -368,6 +370,20 @@ export function socialPaths(): Record<string, Record<string, unknown>> {
     'post',
     shared.OwnerHandoverSchema,
     shared.HandoverAcceptSchema,
+    { revision: true },
+  );
+  add(
+    '/social-group-invitations',
+    'get',
+    SocialPendingInvitationPageSchema,
+    undefined,
+    { page: true },
+  );
+  add(
+    '/social-group-invitations/{id}/proof',
+    'post',
+    RecipientInvitationProofSchema,
+    empty,
     { revision: true },
   );
   add(

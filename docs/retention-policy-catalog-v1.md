@@ -4,6 +4,11 @@ Status: **prepared for development and pre-production testing only.** Production
 
 Source: owner product configuration, 2026-11-14. Data: `tooling/retention/catalog-v1.ts`. Seed: `pnpm retention:catalog:seed --target=development|pre-production [--apply]`.
 
+Historical catalog: current approved seven-day recovery configuration, including
+Social Group and Company, is [catalog v2](retention-policy-catalog-v2.md) under the
+[confirmed owner records](approvals/2026-11-20-owner-approval-records.md). Existing
+v1 policy rows remain immutable; their prior recovery windows are not rewritten.
+
 ## How the existing model works
 
 `SharedRetentionPolicy` covers **Shared Spaces only**: `PROJECT`, `TEAM`, `COMPANY`, `CONVERSATION`, `MEETING` and `SOCIAL_GROUP`.

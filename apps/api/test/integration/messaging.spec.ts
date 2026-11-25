@@ -1,5 +1,10 @@
 import { MessagingExtensionsService } from '../../src/modules/messaging/application/messaging-extensions.service.js';
 import { InvitationMailService } from '../../src/modules/spaces/public/index.js';
+import { IdentityMailService } from '../../src/platform/auth/mail.service.js';
+import { ClientInvitationNotificationsController } from '../../src/modules/client-invitations/client-invitations.module.js';
+import { ClientInvitationWorker } from '../../src/modules/client-invitations/public/index.js';
+import { InvitationPushDeliveries } from '../../src/modules/notifications/public/invitation-push-module.js';
+import { NotificationTransport } from '../../src/modules/notifications/application/transport.port.js';
 import 'reflect-metadata';
 import {
   beforeAll,
@@ -318,6 +323,8 @@ describe('P5-01 durable messaging, explicit participation and polling', () => {
         }),
         SHARED_CONTROL_ACTIVE_KEY_ID: 'k1',
         SHARED_SECURITY_ACCEPTANCE_REFERENCE: 'SYNTHETIC-P501-ONLY',
+        INVITATION_ACCEPT_URL: 'http://localhost:3000/invite',
+        NOTIFICATION_EMAIL_ENABLED: 'true',
       },
     });
     control = app.get(SharedControl);
@@ -459,6 +466,13 @@ describe('P5-01 durable messaging, explicit participation and polling', () => {
         contextLabel: 'Team',
         revision: 1,
         expiresAt: offer.invitation.expiresAt,
+        notification: expect.objectContaining({
+          invitationId: offer.invitation.id,
+          kind: 'TEAM',
+          targetId: team.id,
+          role: 'MEMBER',
+          readAt: null,
+        }),
       },
     ]);
     expect(
@@ -653,6 +667,339 @@ describe('P5-01 durable messaging, explicit participation and polling', () => {
       ),
     ).toMatchObject({ unreadCount: 0, lastMessage: null });
   });
+  it('Client: context invitations use recipient preferences and a private, resolvable feed', async () => {
+    const team = await work('TEAM'),
+      mail = app.get(InvitationMailService),
+      sink = app.get(IdentityMailService);
+    const send = vi.spyOn(sink, 'send');
+    const known = await collaboration.createInvitation(
+      owner.actor,
+      team.id,
+      {
+        kind: 'MEMBERSHIP',
+        memberRole: 'MEMBER',
+        recipient: { email: alice.email },
+      },
+      randomUUID(),
+    );
+    const email = randomUUID() + '@example.test';
+    const unknown = await collaboration.createInvitation(
+      owner.actor,
+      team.id,
+      {
+        kind: 'MEMBERSHIP',
+        memberRole: 'MEMBER',
+        recipient: { email },
+      },
+      randomUUID(),
+    );
+    expect(Object.keys(known).sort()).toEqual(Object.keys(unknown).sort());
+    expect(known.invitation.state).toBe(unknown.invitation.state);
+    expect(send).not.toHaveBeenCalled();
+    const feed = app.get(ClientInvitationNotificationsController);
+    const before = await feed.list(alice.actor, { kind: 'TEAM', limit: 25 });
+    expect(
+      before.items.find((v) => v.invitationId === known.invitation.id),
+    ).toMatchObject({
+      kind: 'TEAM',
+      targetId: team.id,
+      targetDisplayName: team.title,
+      role: 'MEMBER',
+      readAt: null,
+    });
+    expect(
+      (await feed.list(bob.actor, { kind: 'TEAM', limit: 25 })).items,
+    ).toEqual([]);
+    const read = await feed.read(
+      alice.actor,
+      'TEAM',
+      known.invitation.id,
+      {},
+      {},
+    );
+    expect(read.readAt).toBeTruthy();
+    await expect(
+      feed.read(bob.actor, 'TEAM', known.invitation.id, {}, {}),
+    ).rejects.toThrow();
+    for (
+      let n = 0;
+      n < 10 &&
+      (await db.contextInvitation.count({
+        where: {
+          id: { in: [known.invitation.id, unknown.invitation.id] },
+          encryptedDeliveryProof: { not: null },
+        },
+      }));
+      n++
+    ) {
+      await mail.consumeContext(async (row, proof) => {
+        if (row.companyScopeId) return app.get(CompanyAccess).preview(proof);
+        return collaboration.preview(
+          proof,
+          (await collaboration.invitationKind(row.scopeId)) as
+            'PROJECT' | 'TEAM',
+        );
+      });
+    }
+    expect(sink.latestForTest(alice.email, 'invitation')).toBeUndefined();
+    expect(sink.latestForTest(email, 'invitation')).toBeDefined();
+    const fresh = await collaboration.issueRecipientProof(
+      alice.actor,
+      'TEAM',
+      known.invitation.id,
+      known.invitation.revision,
+    );
+    await collaboration.decideInvitation(
+      alice.actor,
+      known.invitation.id,
+      fresh.proof,
+      fresh.revision,
+      true,
+      'TEAM',
+    );
+    expect(
+      (await feed.list(alice.actor, { kind: 'TEAM', limit: 25 })).items,
+    ).toEqual([]);
+    send.mockRestore();
+  });
+  it('Client: verified email recipients get durable in-app offers without revealing automatic materialization', async () => {
+    const conv = await create('PRIVATE_GROUP', []),
+      mail = app.get(InvitationMailService),
+      sink = app.get(IdentityMailService);
+    const offer = await messages.inviteEmail(
+      owner.actor,
+      conv.id,
+      conv.revision,
+      { id: randomUUID(), email: alice.email },
+      randomUUID(),
+    );
+    const queued = await db.conversationEmailInvitation.findUniqueOrThrow({
+      where: { id: offer.id },
+    });
+    const proof = await mail.decrypt(queued.encryptedDeliveryProof!);
+    expect(sink.latestForTest(alice.email, 'invitation')).toBeUndefined();
+    await messages.consumeEmailInvitations();
+    expect(
+      await messages.emailInvitation(owner.actor, conv.id, offer.id),
+    ).toEqual(offer);
+    const pending = (await messages.invitations(alice.actor, page)).items.find(
+      (v) => v.id === offer.id,
+    )!;
+    expect(pending.notification).toMatchObject({
+      kind: 'CONVERSATION',
+      targetId: conv.id,
+      readAt: null,
+    });
+    expect(sink.latestForTest(alice.email, 'invitation')).toBeUndefined();
+    await messages.markInvitationRead(alice.actor, offer.id);
+    expect(
+      (await messages.invitations(alice.actor, page)).items.find(
+        (v) => v.id === offer.id,
+      )?.notification?.readAt,
+    ).toBeTruthy();
+    await expect(
+      messages.markInvitationRead(bob.actor, offer.id),
+    ).rejects.toThrow();
+    const replay = await messages.claimEmailInvitation(
+      alice.actor,
+      offer.id,
+      proof,
+      1,
+    );
+    expect(replay.id).toBe(offer.id);
+    expect(
+      await db.conversationInvitation.count({ where: { id: offer.id } }),
+    ).toBe(1);
+    expect(
+      await db.conversationMember.count({ where: { conversationId: conv.id } }),
+    ).toBe(1);
+  });
+  it('Client: invitation push survives restart and rechecks revocation before generic delivery', async () => {
+    const space = await db.space.findFirstOrThrow({
+      where: { ownerUserId: alice.actor.userId, kind: 'PERSONAL' },
+    });
+    await db.notificationPreference.create({
+      data: {
+        spaceId: space.id,
+        ownerUserId: alice.actor.userId,
+        createdByUserId: alice.actor.userId,
+        webPush: true,
+        inApp: true,
+        email: false,
+      },
+    });
+    const ecdh = createECDH('prime256v1');
+    ecdh.generateKeys();
+    await db.pushSubscription.create({
+      data: {
+        spaceId: space.id,
+        ownerUserId: alice.actor.userId,
+        createdByUserId: alice.actor.userId,
+        endpointHost: 'push.example.test',
+        endpoint: 'https://push.example.test/' + randomUUID(),
+        endpointHash: createHash('sha256').update(randomUUID()).digest('hex'),
+        auth: randomBytes(16).toString('base64url'),
+        p256dh: ecdh.getPublicKey().toString('base64url'),
+        createdAt: new Date(Date.now() - 1000),
+        updatedAt: new Date(Date.now() - 1000),
+      },
+    });
+    const team = await work('TEAM');
+    const offer = await collaboration.createInvitation(
+      owner.actor,
+      team.id,
+      {
+        kind: 'MEMBERSHIP',
+        memberRole: 'MEMBER',
+        recipient: { email: alice.email },
+      },
+      randomUUID(),
+    );
+    for (
+      let n = 0;
+      n < 10 &&
+      !(await db.invitationPushAttempt.findFirst({
+        where: { contextInvitationId: offer.invitation.id },
+      }));
+      n++
+    )
+      await app
+        .get(InvitationMailService)
+        .consumeContext((row, proof) => collaboration.preview(proof, 'TEAM'));
+    const attempt = await db.invitationPushAttempt.findFirstOrThrow({
+      where: { contextInvitationId: offer.invitation.id },
+    });
+    await db.invitationPushAttempt.update({
+      where: { id: attempt.id },
+      data: { state: 'PROCESSING', leaseUntil: new Date(Date.now() - 1000) },
+    });
+    const worker = app.get(ClientInvitationWorker);
+    await worker.consume();
+    expect(
+      (
+        await db.invitationPushAttempt.findUniqueOrThrow({
+          where: { id: attempt.id },
+        })
+      ).state,
+    ).toBe('RETRY');
+    await worker.consume();
+    expect(
+      (
+        await db.invitationPushAttempt.findUniqueOrThrow({
+          where: { id: attempt.id },
+        })
+      ).state,
+    ).toBe('DELIVERED');
+    const second = await collaboration.createInvitation(
+      owner.actor,
+      team.id,
+      {
+        kind: 'MEMBERSHIP',
+        memberRole: 'MEMBER',
+        recipient: { email: alice.email },
+      },
+      randomUUID(),
+    );
+    for (
+      let n = 0;
+      n < 10 &&
+      !(await db.invitationPushAttempt.findFirst({
+        where: { contextInvitationId: second.invitation.id },
+      }));
+      n++
+    )
+      await app
+        .get(InvitationMailService)
+        .consumeContext((row, proof) => collaboration.preview(proof, 'TEAM'));
+    const checked = barrier(),
+      resume = barrier();
+    const send = vi.spyOn(app.get(NotificationTransport), 'send');
+    const stale = app.get(InvitationPushDeliveries).consume(async (row) => {
+      await collaboration.validateInvitationNotification(
+        row.contextInvitationId!,
+        row.userId,
+      );
+      checked.release();
+      await resume.promise;
+    });
+    await checked.promise;
+    try {
+      // A paused worker may resume after another worker recovered its lease.
+      await db.invitationPushAttempt.updateMany({
+        where: { contextInvitationId: second.invitation.id },
+        data: { leaseUntil: new Date(Date.now() - 1000) },
+      });
+      await worker.consume();
+      await collaboration.revokeInvitation(
+        owner.actor,
+        team.id,
+        second.invitation.id,
+        second.invitation.revision,
+      );
+      await worker.consume();
+    } finally {
+      resume.release();
+      await stale;
+    }
+    expect(send).not.toHaveBeenCalled();
+    send.mockRestore();
+    expect(
+      (
+        await db.invitationPushAttempt.findFirstOrThrow({
+          where: { contextInvitationId: second.invitation.id },
+        })
+      ).state,
+    ).toBe('CANCELED');
+    await db.notificationPreference.update({
+      where: { spaceId: space.id },
+      data: {
+        messagingWebPush: true,
+        messagingEnabledAt: new Date(Date.now() - 1000),
+      },
+    });
+    const conv = await create();
+    const invite = await db.conversationInvitation.findFirstOrThrow({
+      where: { conversationId: conv.id },
+    });
+    const activity = await db.messageActivity.findFirstOrThrow({
+      where: { invitationId: invite.id },
+    });
+    const notice = await db.messageNotice.create({
+      data: {
+        id: randomUUID(),
+        spaceId: invite.spaceId,
+        conversationId: conv.id,
+        activityId: activity.id,
+        actorId: invite.recipientActorId,
+        memberId: null,
+        generation: null,
+      },
+    });
+    for (
+      let n = 0;
+      n < 20 &&
+      (await db.messageNotice.findUniqueOrThrow({ where: { id: notice.id } }))
+        .state === 'PENDING';
+      n++
+    )
+      await notices.prepare();
+    expect(
+      await db.messageNoticeAttempt.count({ where: { noticeId: notice.id } }),
+    ).toBe(0);
+    expect(
+      await db.invitationPushAttempt.count({
+        where: { conversationInvitationId: invite.id },
+      }),
+    ).toBe(1);
+    await worker.consume();
+    expect(
+      (
+        await db.invitationPushAttempt.findFirstOrThrow({
+          where: { conversationInvitationId: invite.id },
+        })
+      ).state,
+    ).toBe('DELIVERED');
+  });
   it('email claims reject expired/revoked offers, departed issuers, and unrelated source members', async () => {
     const delivery = vi
       .spyOn(app.get(InvitationMailService), 'send')
@@ -666,7 +1013,13 @@ describe('P5-01 durable messaging, explicit participation and polling', () => {
           { id: randomUUID(), email: alice.email },
           randomUUID(),
         ),
-        proof = delivery.mock.calls.at(-1)![2];
+        proof = await app.get(InvitationMailService).decrypt(
+          (
+            await db.conversationEmailInvitation.findUniqueOrThrow({
+              where: { id: offer.id },
+            })
+          ).encryptedDeliveryProof!,
+        );
       if (state === 'expired')
         await db.conversationEmailInvitation.update({
           where: { id: offer.id },
@@ -712,7 +1065,13 @@ describe('P5-01 durable messaging, explicit participation and polling', () => {
       messages.claimEmailInvitation(
         alice.actor,
         offer.id,
-        delivery.mock.calls.at(-1)![2],
+        await app.get(InvitationMailService).decrypt(
+          (
+            await db.conversationEmailInvitation.findUniqueOrThrow({
+              where: { id: offer.id },
+            })
+          ).encryptedDeliveryProof!,
+        ),
         1,
       ),
     ).rejects.toThrow();
@@ -731,7 +1090,13 @@ describe('P5-01 durable messaging, explicit participation and polling', () => {
         { id: randomUUID(), email },
         randomUUID(),
       ),
-      proof = delivery.mock.calls.at(-1)![2];
+      proof = await app.get(InvitationMailService).decrypt(
+        (
+          await db.conversationEmailInvitation.findUniqueOrThrow({
+            where: { id: offer.id },
+          })
+        ).encryptedDeliveryProof!,
+      );
     const personAfter = await person(false);
     await db.user.update({
       where: { id: personAfter.actor.userId },
@@ -779,7 +1144,13 @@ describe('P5-01 durable messaging, explicit participation and polling', () => {
       { id: randomUUID(), email: alice.email.toUpperCase() },
       randomUUID(),
     );
-    const proof = delivery.mock.calls[0]![2];
+    const proof = await app.get(InvitationMailService).decrypt(
+      (
+        await db.conversationEmailInvitation.findUniqueOrThrow({
+          where: { id: offer.id },
+        })
+      ).encryptedDeliveryProof!,
+    );
     expect(await db.sharedActor.count({ where: { spaceId: conv.id } })).toBe(
       beforeActors,
     );

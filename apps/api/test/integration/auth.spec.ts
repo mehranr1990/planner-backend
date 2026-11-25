@@ -44,6 +44,10 @@ describe('Better Auth identity and ownership', () => {
       }),
     ).toBe(1);
     expect(await db.client.userSettings.count({ where: { userId } })).toBe(1);
+    expect(
+      (await db.client.userSettings.findUniqueOrThrow({ where: { userId } }))
+        .timezone,
+    ).toBe('Asia/Tehran');
     const credential = await db.client.authAccount.findFirstOrThrow({
       where: { userId, providerId: 'credential' },
     });

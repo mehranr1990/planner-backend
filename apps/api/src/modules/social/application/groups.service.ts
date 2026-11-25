@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import type { z } from 'zod';
+import { socialInvitationDisplay } from '../public/invitation-display.js';
 import * as c from '@mehran/api-contracts';
 import { DatabaseService } from '../../../platform/database/database.service.js';
 import type { RequestActor } from '../../../platform/auth/request-actor.js';
@@ -655,6 +656,94 @@ export class SocialGroupsService {
             audit,
           );
         return c.SocialJoinRequestSchema.strip().parse(result);
+      },
+    );
+  }
+  pendingInvitations(
+    actor: RequestActor,
+    query: { after?: string | undefined; limit: number },
+  ) {
+    return this.collaboration.pendingOffers(
+      actor,
+      'SOCIAL_GROUP',
+      query,
+      async (tx, _now, locked, row) => {
+        const issuer = await tx.contextAccess.findUniqueOrThrow({
+          where: { id: row.inviterAccessId },
+          include: { SharedActor: true },
+        });
+        if (!issuer.SharedActor.userId) throw new NotFoundException();
+        await this.contacts.require(
+          tx,
+          actor.userId,
+          issuer.SharedActor.userId,
+          locked,
+          row.createdAt,
+        );
+      },
+      socialInvitationDisplay,
+    );
+  }
+  invitationProof(actor: RequestActor, id: string, revision: number) {
+    return this.collaboration.issueRecipientProof(
+      actor,
+      'SOCIAL_GROUP',
+      id,
+      revision,
+      async (tx, _now, locked, row) => {
+        const issuer = await tx.contextAccess.findUniqueOrThrow({
+          where: { id: row.inviterAccessId },
+          include: { SharedActor: true },
+        });
+        if (!issuer.SharedActor.userId) throw new NotFoundException();
+        await this.contacts.require(
+          tx,
+          actor.userId,
+          issuer.SharedActor.userId,
+          locked,
+          row.createdAt,
+        );
+      },
+    );
+  }
+  markInvitationRead(actor: RequestActor, id: string) {
+    return this.collaboration.markInvitationRead(
+      actor,
+      'SOCIAL_GROUP',
+      id,
+      async (tx, _now, locked, row) => {
+        const issuer = await tx.contextAccess.findUniqueOrThrow({
+          where: { id: row.inviterAccessId },
+          include: { SharedActor: true },
+        });
+        if (!issuer.SharedActor.userId) throw new NotFoundException();
+        await this.contacts.require(
+          tx,
+          actor.userId,
+          issuer.SharedActor.userId,
+          locked,
+          row.createdAt,
+        );
+      },
+    );
+  }
+  validateInvitationNotification(id: string, userId: string) {
+    return this.collaboration.validateInvitationNotification(
+      id,
+      userId,
+      async (tx, _now, locked, row) => {
+        const issuer = await tx.contextAccess.findUniqueOrThrow({
+          where: { id: row.inviterAccessId },
+          include: { SharedActor: true },
+        });
+        if (!issuer.SharedActor.userId) throw new NotFoundException();
+        await this.contacts.require(
+          tx,
+          userId,
+          issuer.SharedActor.userId,
+          locked,
+          row.createdAt,
+        );
       },
     );
   }

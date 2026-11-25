@@ -7,6 +7,7 @@ import { testApplication } from '../support/application.js';
 import { isolatedTestDatabaseUrl } from '../../../../tooling/testing/test-database.js';
 import { DatabaseService } from '../../src/platform/database/database.service.js';
 import { IdentityMailService } from '../../src/platform/auth/mail.service.js';
+import { NotificationsPort } from '../../src/modules/notifications/application/notifications.port.js';
 import {
   HabitSchema,
   HabitEntrySchema,
@@ -181,6 +182,198 @@ describe('P1-05 habit histories, routines, water and personal isolation', () => 
     expect(await db.client.task.count({ where: { spaceId: a.spaceId } })).toBe(
       before,
     );
+  });
+  it('Client: persists Unicode metadata and reminder configuration with revision and isolation checks', async () => {
+    const habit = await create({
+      ...quantity(),
+      category: 'سلامتی',
+      unitLabel: 'لیوان',
+      timeOfDay: 'MORNING',
+      preferredTime: '08:30',
+      icon: 'WATER',
+      reminder: { time: '09:00', ifNotDone: true },
+    });
+    expect(
+      (await call(a, 'get', '/habits/' + habit.id).expect(200)).body,
+    ).toMatchObject({
+      category: 'سلامتی',
+      unitLabel: 'لیوان',
+      unit: 'ML',
+      icon: 'WATER',
+      timeOfDay: 'MORNING',
+      preferredTime: '08:30',
+      reminder: { time: '09:00', ifNotDone: true },
+    });
+    const reminder = await db.client.reminder.findFirstOrThrow({
+      where: { habitId: habit.id },
+    });
+    expect(reminder.spaceId).toBe(a.spaceId);
+    expect(reminder.channels).toEqual(['IN_APP', 'EMAIL', 'WEB_PUSH']);
+    await call(b, 'patch', '/habits/' + habit.id, habit.revision)
+      .send({ category: 'foreign' })
+      .expect(404);
+    const cleared = await patch(habit, {
+      category: null,
+      unitLabel: null,
+      preferredTime: null,
+      reminder: null,
+    });
+    expect(cleared.unit).toBe('ML');
+    expect(cleared.reminder).toBeNull();
+    expect(
+      (
+        await db.client.reminder.findUniqueOrThrow({
+          where: { id: reminder.id },
+        })
+      ).state,
+    ).toBe('CANCELED');
+    await call(a, 'patch', '/habits/' + habit.id, habit.revision)
+      .send({ unitLabel: 'stale' })
+      .expect(409);
+  });
+  it('Client: rechecks completion, skips and due dates before durable habit delivery', async () => {
+    const now = (
+      await db.client.$queryRaw<{ now: Date }[]>`SELECT clock_timestamp() now`
+    )[0]!.now;
+    const today = now.toISOString().slice(0, 10),
+      time = now.toISOString().slice(11, 16);
+    const port = app.get(NotificationsPort);
+    const make = (ifNotDone: boolean) =>
+      create({
+        ...checkbox(),
+        schedule: { startDate: today, rule: { kind: 'DAILY' } },
+        reminder: { time, ifNotDone },
+      });
+    const completed = await make(true);
+    await record(completed, today, '1');
+    await port.sweep();
+    const reminder = await db.client.reminder.findFirstOrThrow({
+      where: { habitId: completed.id },
+    });
+    const delivery = await db.client.notificationDelivery.findFirstOrThrow({
+      where: {
+        reminderId: reminder.id,
+        channel: 'IN_APP',
+        localDate: new Date(today + 'T00:00:00Z'),
+      },
+    });
+    await port.dispatch(delivery.id);
+    expect(
+      (
+        await db.client.notificationDelivery.findUniqueOrThrow({
+          where: { id: delivery.id },
+        })
+      ).state,
+    ).toBe('CANCELED');
+    const unconditional = await make(false);
+    await record(unconditional, today, '1');
+    await port.sweep();
+    const r2 = await db.client.reminder.findFirstOrThrow({
+      where: { habitId: unconditional.id },
+    });
+    const d2 = await db.client.notificationDelivery.findFirstOrThrow({
+      where: {
+        reminderId: r2.id,
+        channel: 'IN_APP',
+        localDate: new Date(today + 'T00:00:00Z'),
+      },
+    });
+    await port.dispatch(d2.id);
+    expect(
+      (
+        await db.client.notificationDelivery.findUniqueOrThrow({
+          where: { id: d2.id },
+        })
+      ).state,
+    ).toBe('DELIVERED');
+    const skipped = await make(false);
+    await record(skipped, today, undefined, 'SKIP');
+    await port.sweep();
+    const r3 = await db.client.reminder.findFirstOrThrow({
+      where: { habitId: skipped.id },
+    });
+    const d3 = await db.client.notificationDelivery.findFirstOrThrow({
+      where: {
+        reminderId: r3.id,
+        channel: 'IN_APP',
+        localDate: new Date(today + 'T00:00:00Z'),
+      },
+    });
+    await port.dispatch(d3.id);
+    expect(
+      (
+        await db.client.notificationDelivery.findUniqueOrThrow({
+          where: { id: d3.id },
+        })
+      ).state,
+    ).toBe('CANCELED');
+    const rest = await create({
+      ...checkbox(),
+      schedule: {
+        startDate: today,
+        rule: {
+          kind: 'WEEKDAYS',
+          weekdays: [((((now.getUTCDay() + 6) % 7) + 1) % 7) + 1],
+        },
+      },
+      reminder: { time, ifNotDone: true },
+    });
+    await port.sweep();
+    const r4 = await db.client.reminder.findFirstOrThrow({
+      where: { habitId: rest.id },
+    });
+    expect(
+      await db.client.notificationDelivery.count({
+        where: { reminderId: r4.id, localDate: new Date(today + 'T00:00:00Z') },
+      }),
+    ).toBe(0);
+  });
+  it('Client: schedules a future resume in its effective timezone while suppressing paused dates', async () => {
+    const now = (
+      await db.client.$queryRaw<{ now: Date }[]>`SELECT clock_timestamp() now`
+    )[0]!.now;
+    const today = now.toISOString().slice(0, 10);
+    const tomorrow = new Date(now.getTime() + 86400000)
+      .toISOString()
+      .slice(0, 10);
+    let habit = await create({
+      ...checkbox(),
+      schedule: { startDate: today, rule: { kind: 'DAILY' } },
+      reminder: { time: '09:00', ifNotDone: true },
+    });
+    habit = await patch(habit, { status: 'PAUSED', effectiveFrom: today });
+    await patch(habit, {
+      status: 'ACTIVE',
+      effectiveFrom: tomorrow,
+      timezone: 'Asia/Tehran',
+    });
+    await app.get(NotificationsPort).sweep();
+    const reminder = await db.client.reminder.findFirstOrThrow({
+      where: { habitId: habit.id },
+    });
+    expect(
+      await db.client.notificationDelivery.count({
+        where: {
+          reminderId: reminder.id,
+          state: 'PENDING',
+          localDate: new Date(today + 'T00:00:00Z'),
+        },
+      }),
+    ).toBe(0);
+    expect(
+      await db.client.notificationDelivery.findFirstOrThrow({
+        where: {
+          reminderId: reminder.id,
+          channel: 'IN_APP',
+          state: 'PENDING',
+          localDate: new Date(tomorrow + 'T00:00:00Z'),
+        },
+      }),
+    ).toMatchObject({
+      timezone: 'Asia/Tehran',
+      localTime: '09:00',
+      scheduledAt: new Date(tomorrow + 'T05:30:00Z'),
+    });
   });
   it('enforces daily checkbox uniqueness under concurrency and allows multiple exact quantities', async () => {
     const h = await create(),

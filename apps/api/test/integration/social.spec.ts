@@ -292,6 +292,63 @@ describe('P6-01 private social graph and approved Group admission', () => {
     await watcher?.end();
     await sandbox?.close();
   });
+  it('Client: Social pending offers are recipient-only and fresh proofs enforce contact and admission checks', async () => {
+    await friendship();
+    const g = await group();
+    const offer = await groups.invite(
+      alice.actor,
+      g.id,
+      {
+        kind: 'MEMBERSHIP',
+        memberRole: 'MEMBER',
+        recipient: { email: bob.email },
+      },
+      randomUUID(),
+    );
+    const pending = await groups.pendingInvitations(bob.actor, page);
+    expect(
+      pending.items.find((v) => v.id === offer.invitation.id),
+    ).toMatchObject({
+      contextLabel: 'Social Group',
+      notification: {
+        kind: 'SOCIAL_GROUP',
+        targetId: g.id,
+        targetDisplayName: 'Private Social Group',
+        role: 'MEMBER',
+        readAt: null,
+      },
+    });
+    expect((await groups.pendingInvitations(carol.actor, page)).items).toEqual(
+      [],
+    );
+    await expect(
+      groups.invitationProof(carol.actor, offer.invitation.id, 1),
+    ).rejects.toThrow();
+    const proof = await groups.invitationProof(
+      bob.actor,
+      offer.invitation.id,
+      1,
+    );
+    await expect(
+      groups.decideInvitation(
+        bob.actor,
+        offer.invitation.id,
+        offer.proof!,
+        1,
+        true,
+      ),
+    ).rejects.toThrow();
+    await groups.decideInvitation(
+      bob.actor,
+      offer.invitation.id,
+      proof.proof,
+      proof.revision,
+      false,
+    );
+    expect((await groups.pendingInvitations(bob.actor, page)).items).toEqual(
+      [],
+    );
+  });
   it('social integration: names belong only to authorized connection and applicant projections, never receipts', async () => {
     const connection = await friendship();
     const listed = (await social.list(alice.actor, page)).items.find(

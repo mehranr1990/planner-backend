@@ -176,6 +176,12 @@ export function createOpenApiDocument() {
     extraPaths[name][method.toLowerCase()] = {
       operationId: `auth${path.replace(/[^a-z]/gi, '_')}`,
       tags: ['auth'],
+      ...(path === '/sign-up/email'
+        ? {
+            description:
+              'Creates the account and Personal settings atomically. New accounts default to Asia/Tehran; existing settings and saved schedules are unchanged. Change an IANA timezone through PATCH /api/v1/me/settings.',
+          }
+        : {}),
       security: authRequired ? [{ sessionCookie: [] }] : [],
       ...(method === 'POST'
         ? {
@@ -293,6 +299,7 @@ export function createOpenApiDocument() {
       ...teamCompletionPaths(),
       ...companyCompletionPaths(),
       ...backendCompletionPaths(),
+      ...clientInvitationPaths(),
       ...teamFilePaths(),
       ...gapClosurePaths(),
       ...finalClosurePaths(),
@@ -374,3 +381,4 @@ import { companySettlementPaths } from './company-settlements-openapi.js';
 import { messagingPaths, advancedMessagingPaths } from './messaging-openapi.js';
 import { messagingMediaPaths } from './messaging-media-openapi.js';
 import { personalCompletionPaths } from './personal-completion-openapi.js';
+import { clientInvitationPaths } from './client-invitations-openapi.js';

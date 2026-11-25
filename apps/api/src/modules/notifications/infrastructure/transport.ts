@@ -199,12 +199,16 @@ export class ChannelTransport extends NotificationTransport {
         JSON.stringify({
           title: 'Mehran Planner',
           body:
-            m.purpose === 'MESSAGING'
-              ? 'You have new activity.'
-              : 'You have a reminder.',
-          ...(m.purpose === 'MESSAGING'
-            ? { type: 'MESSAGING', version: 1 }
-            : {}),
+            m.purpose === 'INVITATION'
+              ? 'You have a new invitation.'
+              : m.purpose === 'MESSAGING'
+                ? 'You have new activity.'
+                : 'You have a reminder.',
+          ...(m.purpose === 'INVITATION'
+            ? { type: 'INVITATION', version: 1 }
+            : m.purpose === 'MESSAGING'
+              ? { type: 'MESSAGING', version: 1 }
+              : {}),
           notificationId: m.notificationId,
           tag: m.notificationId,
         }),

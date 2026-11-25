@@ -24,9 +24,14 @@ import type { RequestActor } from '../../../platform/auth/request-actor.js';
 import { SharedControl } from '../../../platform/storage/shared-control.js';
 import type { SharedControlRecord } from '../../../platform/storage/shared-control.js';
 import { SharedKernel } from './shared-kernel.service.js';
+import {
+  validatedRecipientInvitation,
+  type RecipientInvitationAuthority,
+} from './recipient-invitation-authority.js';
 import { SharedAuthority } from '../public/shared-authority.js';
 import { CollaborationLimit } from './collaboration-limit.js';
 import { InvitationMailService } from './invitation-mail.service.js';
+import { enqueueInvitationPush } from '../../notifications/public/enqueue-invitation-push.js';
 import type { SharedTraffic } from '../domain/http-rate-policy.js';
 import {
   roleAdministration,
@@ -87,6 +92,9 @@ const handoverView = (r: OwnerHandover) =>
 
 @Injectable()
 export class CollaborationService {
+  invitationKind(scopeId: string) {
+    return this.contextKind(this.db.client, scopeId);
+  }
   invitationRate(tx: Prisma.TransactionClient, scopeId: string) {
     return this.limit.take('invitation.context:' + scopeId, 20, tx);
   }
@@ -483,8 +491,14 @@ export class CollaborationService {
       'email' in body.recipient
         ? this.identity.canonicalEmail(body.recipient.email)
         : null;
+    // Child Company scopes keep their mandatory root-admission snapshots.
+    // Root email offers never branch on whether an account exists.
+    const requiresRootAdmission =
+      (await this.kernel.custodySpace(spaceId)) !== spaceId;
     const hinted = email
-      ? await this.identity.byEmail(this.db.client, email)
+      ? requiresRootAdmission
+        ? await this.identity.verifiedByEmail(this.db.client, email)
+        : null
       : await this.identity.current(
           this.db.client,
           'userId' in body.recipient ? body.recipient.userId : '',
@@ -539,7 +553,9 @@ export class CollaborationService {
           });
         }
         const recipient = email
-          ? await this.identity.byEmail(tx, email)
+          ? requiresRootAdmission
+            ? await this.identity.verifiedByEmail(tx, email)
+            : null
           : await this.identity.current(
               tx,
               'userId' in body.recipient ? body.recipient.userId : '',
@@ -611,6 +627,12 @@ export class CollaborationService {
             recipientRevision: target?.revision ?? null,
             memberRole: body.memberRole,
             proofHash: hash(proof),
+            ...(email || recipient?.emailVerified
+              ? {
+                  encryptedDeliveryProof:
+                    await this.invitationMail.encrypt(proof),
+                }
+              : {}),
             keyHash: keyValue,
             fingerprint,
             createdAt: now,
@@ -647,16 +669,23 @@ export class CollaborationService {
           fingerprint,
           id,
         );
+        if (recipient?.emailVerified)
+          await enqueueInvitationPush(
+            tx,
+            recipient.id,
+            custodyKind === 'TEAM'
+              ? 'TEAMS'
+              : custodyKind === 'SOCIAL_GROUP'
+                ? 'SOCIAL'
+                : 'PROJECTS',
+            { contextInvitationId: result.id },
+            now,
+          );
         return c.ContextInvitationDeliverySchema.parse({
           invitation: invitationView(result),
           proof,
         });
       },
-    );
-    await this.invitationMail.deliver(
-      delivery.invitation.id,
-      email,
-      delivery.proof,
     );
     return delivery;
   }
@@ -872,6 +901,11 @@ export class CollaborationService {
                 where: { id },
                 data: {
                   proofHash: hash(mail.proof),
+                  encryptedDeliveryProof: await this.invitationMail.encrypt(
+                    mail.proof,
+                  ),
+                  deliveryAttempts: 0,
+                  deliveryNotBefore: now,
                   emailDeliveryState: 'NONE',
                   resentAt: now,
                   revision: { increment: 1 },
@@ -972,9 +1006,13 @@ export class CollaborationService {
   /** Recipient-only metadata. Acceptance requires a one-time proof (issued in-app via issueRecipientProof). */
   async pendingOffers(
     actor: RequestActor,
-    kind: 'TEAM' | 'COMPANY' | 'PROJECT',
+    kind: 'TEAM' | 'COMPANY' | 'PROJECT' | 'SOCIAL_GROUP',
     q: { after?: string | undefined; limit: number },
     check?: RecipientCheck,
+    display?: (
+      tx: Prisma.TransactionClient,
+      row: RecipientInvitationAuthority,
+    ) => Promise<string>,
   ) {
     this.kernel.assertEnabled();
     const identity = await this.db.client.$transaction(async (tx) => {
@@ -1032,15 +1070,41 @@ export class CollaborationService {
             return (
               kind === 'PROJECT'
                 ? c.ProjectPendingInvitationSummarySchema
-                : c.PendingInvitationSummarySchema
+                : kind === 'SOCIAL_GROUP'
+                  ? c.SocialPendingInvitationSummarySchema
+                  : c.PendingInvitationSummarySchema
             ).parse({
               id: row.id,
+              notification: {
+                invitationId: row.id,
+                kind,
+                targetId: row.companyScopeId ?? row.scopeId,
+                targetDisplayName: display
+                  ? await display(tx, validatedRecipientInvitation(tx, row))
+                  : kind,
+                inviterDisplayName: await this.displayName(
+                  tx,
+                  row.spaceId,
+                  (
+                    await tx.contextAccess.findUniqueOrThrow({
+                      where: { id: row.inviterAccessId },
+                    })
+                  ).actorId,
+                ),
+                role: row.memberRole,
+                createdAt: row.createdAt.toISOString(),
+                readAt: row.notificationReadAt?.toISOString() ?? null,
+                revision: row.revision,
+                expiresAt: row.expiresAt.toISOString(),
+              },
               contextLabel:
                 kind === 'TEAM'
                   ? 'Team'
                   : kind === 'PROJECT'
                     ? 'Project'
-                    : 'Company',
+                    : kind === 'SOCIAL_GROUP'
+                      ? 'Social Group'
+                      : 'Company',
               revision: row.revision,
               expiresAt: row.expiresAt.toISOString(),
             });
@@ -1062,6 +1126,99 @@ export class CollaborationService {
         candidates.length > q.limit ? candidates[q.limit - 1]!.id : null,
     });
   }
+  async validateInvitationNotification(
+    id: string,
+    userId: string,
+    check?: RecipientCheck,
+  ) {
+    const hint = await this.db.client.contextInvitation.findUnique({
+      where: { id },
+    });
+    const issuer = hint
+      ? await this.userForAccess(this.db.client, hint.inviterAccessId)
+      : null;
+    if (!hint || !issuer) throw new NotFoundException();
+    const actor = { userId, requestId: id, correlationId: id };
+    const locked = [
+      ...new Set([
+        userId,
+        issuer,
+        ...(await this.kernel.offerUserHints(hint.scopeId, userId)),
+      ]),
+    ];
+    return this.kernel.offerMaintenance(
+      hint.spaceId,
+      locked,
+      async (tx, now) => {
+        const kind = (await this.contextKind(tx, hint.scopeId)) as
+          'PROJECT' | 'TEAM' | 'COMPANY' | 'SOCIAL_GROUP';
+        await this.recipientOffer(
+          tx,
+          now,
+          locked,
+          actor,
+          id,
+          issuer,
+          kind,
+          check,
+        );
+      },
+    );
+  }
+  async markInvitationRead(
+    actor: RequestActor,
+    kind: 'PROJECT' | 'TEAM' | 'COMPANY' | 'SOCIAL_GROUP',
+    id: string,
+    check?: RecipientCheck,
+  ) {
+    const hint = await this.db.client.contextInvitation.findUnique({
+      where: { id },
+    });
+    const issuer = hint
+      ? await this.userForAccess(this.db.client, hint.inviterAccessId)
+      : null;
+    if (!hint || !issuer) throw new NotFoundException();
+    return this.signed(
+      actor,
+      hint.scopeId,
+      [issuer],
+      'invitation.notification.read',
+      id,
+      async (tx, now, locked, begin) => {
+        const row = await this.recipientOffer(
+          tx,
+          now,
+          locked,
+          actor,
+          id,
+          issuer,
+          kind,
+          check,
+        );
+        if (!row.notificationReadAt) {
+          const local = await this.actor(tx, row.spaceId, actor.userId),
+            audit = await begin();
+          await tx.contextInvitation.update({
+            where: { id },
+            data: { notificationReadAt: now },
+          });
+          await this.kernel.offerEffect(
+            tx,
+            actor,
+            row.scopeId,
+            local.id,
+            'invitation.notification.read',
+            id,
+            audit,
+          );
+        }
+        return {
+          invitationId: id,
+          readAt: (row.notificationReadAt ?? now).toISOString(),
+        };
+      },
+    );
+  }
   /** Verified intended recipient of a current, unexpired offer whose issuer still holds authority. */
   private async recipientOffer(
     tx: Prisma.TransactionClient,
@@ -1070,7 +1227,7 @@ export class CollaborationService {
     actor: RequestActor,
     id: string,
     issuer: string,
-    kind: 'TEAM' | 'COMPANY' | 'PROJECT',
+    kind: 'TEAM' | 'COMPANY' | 'PROJECT' | 'SOCIAL_GROUP',
     check?: RecipientCheck,
   ) {
     const row = await tx.contextInvitation.findUnique({ where: { id } });
@@ -1089,6 +1246,12 @@ export class CollaborationService {
         row.recipientEmail !== this.identity.canonicalEmail(current.email))
     )
       throw new NotFoundException();
+    if (row.initiatedByAdminId)
+      await AdminCommand.requireInitiator(
+        tx,
+        row.initiatedByAdminId,
+        'admin.memberships.add',
+      );
     if (kind !== 'COMPANY') {
       const authority = await this.kernel.participantAuthority(
         tx,
@@ -1117,7 +1280,7 @@ export class CollaborationService {
    */
   async issueRecipientProof(
     actor: RequestActor,
-    kind: 'TEAM' | 'COMPANY' | 'PROJECT',
+    kind: 'TEAM' | 'COMPANY' | 'PROJECT' | 'SOCIAL_GROUP',
     id: string,
     revision: number,
     check?: RecipientCheck,
@@ -1153,7 +1316,12 @@ export class CollaborationService {
         const auditId = await begin();
         const updated = await tx.contextInvitation.update({
           where: { id, revision: row.revision },
-          data: { proofHash: hash(proof), revision: { increment: 1 } },
+          data: {
+            proofHash: hash(proof),
+            encryptedDeliveryProof: null,
+            notificationReadAt: row.notificationReadAt ?? now,
+            revision: { increment: 1 },
+          },
         });
         await this.kernel.offerEffect(
           tx,

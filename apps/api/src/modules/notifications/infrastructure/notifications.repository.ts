@@ -6,6 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
+import { habitReminderState } from '../../habits/public/reminder-state.js';
 import * as c from '@mehran/api-contracts';
 import type {
   Prisma,
@@ -316,6 +317,8 @@ export class NotificationsRepository extends NotificationsPort {
       if (cmd.action === 'create')
         return this.create(s, c.ReminderCreateSchema.parse(cmd.body));
       const before = await s.reminder(cmd.id!);
+      if (before.habitId)
+        throw new BadRequestException({ code: 'HABIT_MANAGED_REMINDER' });
       this.expected(before, cmd.revision);
       if (cmd.action === 'patch') {
         const patch = c.ReminderPatchSchema.parse(cmd.body),
@@ -861,6 +864,32 @@ export class NotificationsRepository extends NotificationsPort {
     const now = await s.now(),
       prefs = await s.preferences(),
       identity = await s.identity();
+    if (r.habitId) {
+      const habit = await habitReminderState(
+        s.tx,
+        s.scope,
+        r.habitId,
+        d.localDate.toISOString().slice(0, 10),
+      );
+      if (
+        !habit ||
+        habit.skip ||
+        habit.timezone !== d.timezone ||
+        habit.time !== d.localTime ||
+        d.cancelRequestedAt
+      ) {
+        await s.tx.notificationDelivery.update({
+          where: { id },
+          data: {
+            state: 'CANCELED',
+            reason: 'HABIT_INACTIVE',
+            canceledAt: now,
+            revision: { increment: 1 },
+          },
+        });
+        return null;
+      }
+    }
     if (
       r.state !== 'ACTIVE' ||
       !s.enabled(d.channel, prefs) ||
@@ -891,7 +920,8 @@ export class NotificationsRepository extends NotificationsPort {
       });
       return null;
     }
-    if (await s.defer(d, r, prefs, r.timezone, now)) return null;
+    if (await s.defer(d, r, prefs, r.habitId ? d.timezone : r.timezone, now))
+      return null;
     if (
       d.kind === 'CHANNEL' &&
       (await s.tx.notificationDelivery.findFirst({

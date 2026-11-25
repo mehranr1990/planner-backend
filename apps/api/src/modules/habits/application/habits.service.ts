@@ -11,6 +11,7 @@ import type {
   HabitsPort,
   HabitsTransaction,
   PageQuery,
+  HabitMetadata,
 } from './habits.port.js';
 import {
   localDate,
@@ -29,6 +30,13 @@ function invalid(code: string): never {
     code: 'VALIDATION_ERROR',
     details: [{ path: 'habit', code }],
   });
+}
+function metadata(input: c.HabitCreate | c.HabitPatch): HabitMetadata {
+  return Object.fromEntries(
+    ['category', 'unitLabel', 'timeOfDay', 'preferredTime', 'icon', 'reminder']
+      .filter((key) => input[key as keyof typeof input] !== undefined)
+      .map((key) => [key, input[key as keyof typeof input]]),
+  );
 }
 @Injectable()
 export class HabitsService {
@@ -68,6 +76,7 @@ export class HabitsService {
           type: input.type,
           unit: input.unit,
           purpose: input.purpose,
+          ...metadata(input),
         });
       await tx.createSchedule(h, {
         effectiveFrom: input.schedule.startDate,
@@ -133,7 +142,7 @@ export class HabitsService {
           schedule: input.schedule ?? base.schedule,
         };
       }
-      const updated = await tx.updateHabit(h, input.title);
+      const updated = await tx.updateHabit(h, input.title, metadata(input));
       if (next) await tx.createSchedule(updated, next);
       await tx.audit('HABIT_UPDATE', id);
       return this.view(tx, updated);

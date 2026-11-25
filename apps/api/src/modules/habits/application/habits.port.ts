@@ -22,6 +22,10 @@ export type ScheduleWrite = Pick<
   Schedule,
   'effectiveFrom' | 'timezone' | 'target' | 'status' | 'schedule'
 >;
+export type HabitMetadata = Pick<
+  Habit,
+  'category' | 'unitLabel' | 'timeOfDay' | 'preferredTime' | 'icon' | 'reminder'
+>;
 export interface HabitsTransaction {
   routineSchedule(id: string): Promise<RoutineSchedule | null>;
   setRoutineSchedule(
@@ -43,9 +47,13 @@ export interface HabitsTransaction {
   habits(query: PageQuery): Promise<Page<Habit>>;
   waterHabits(id?: string): Promise<Habit[]>;
   createHabit(
-    input: Pick<Habit, 'title' | 'type' | 'unit' | 'purpose'>,
+    input: Pick<Habit, 'title' | 'type' | 'unit' | 'purpose'> & HabitMetadata,
   ): Promise<Habit>;
-  updateHabit(before: Habit, title?: string): Promise<Habit>;
+  updateHabit(
+    before: Habit,
+    title?: string,
+    metadata?: HabitMetadata,
+  ): Promise<Habit>;
   schedules(id: string): Promise<Schedule[]>;
   schedulePage(id: string, query: PageQuery): Promise<Page<Schedule>>;
   createSchedule(habit: Habit, input: ScheduleWrite): Promise<void>;

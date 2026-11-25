@@ -16,7 +16,11 @@ import type {
   Prisma,
 } from '../../../generated/prisma/client.js';
 import type { RequestActor } from '../../../platform/auth/request-actor.js';
-import { CompanyErasure } from '../../spaces/public/index.js';
+import {
+  CompanyErasure,
+  CompanyInvitationStaff,
+} from '../../spaces/public/index.js';
+import { randomUUID } from 'node:crypto';
 import { CompanyStaffContext } from './company-staff.context.js';
 import type {
   StaffContext,
@@ -54,8 +58,57 @@ export class CompanyStaffService implements OnModuleInit {
   constructor(
     @Inject(CompanyStaffContext) readonly op: CompanyStaffContext,
     @Inject(CompanyErasure) private readonly erasure: CompanyErasure,
+    @Inject(CompanyInvitationStaff)
+    private readonly invitationStaff: CompanyInvitationStaff,
   ) {}
   onModuleInit() {
+    this.invitationStaff.register({
+      validate: async (ctx, scopeId, draft) => {
+        const s = await this.op.invitationContext(ctx, scopeId);
+        this.op.manage(s);
+        if (!draft.supervisorMemberId)
+          return { ...draft, supervisorGeneration: null };
+        const supervisor = (
+          await this.op.access.staffMembers(ctx, ctx.spaceId)
+        ).find((m) => m.accessId === draft.supervisorMemberId);
+        if (
+          !supervisor ||
+          (draft.supervisorGeneration != null &&
+            supervisor.generation !== draft.supervisorGeneration)
+        )
+          throw new NotFoundException();
+        return { ...draft, supervisorGeneration: supervisor.generation };
+      },
+      apply: async (ctx, scopeId, member, draft) => {
+        const s = await this.op.invitationContext(ctx, scopeId);
+        this.op.manage(s);
+        await this.op.member(s, member);
+        if (member.accessId === draft.supervisorMemberId)
+          throw new ConflictException();
+        await this.op.growth(
+          s,
+          'company.staff-profile',
+          await s.tx.companyStaffProfile.count({
+            where: { spaceId: ctx.spaceId },
+          }),
+        );
+        await s.tx.companyStaffProfile.create({
+          data: {
+            id: randomUUID(),
+            spaceId: ctx.spaceId,
+            scopeId,
+            memberAccessId: member.accessId,
+            memberGeneration: member.generation,
+            position: draft.position ?? null,
+            supervisorAccessId: draft.supervisorMemberId ?? null,
+            supervisorGeneration: draft.supervisorGeneration ?? null,
+            workStatus: 'ACTIVE',
+          },
+        });
+        // Spaces records membership and profile usage together through its existing
+        // batch-effect contract, covered by the acceptance's signed intent.
+      },
+    });
     this.erasure.register((tx, id, actorId) =>
       this.eraseActor(tx, id, actorId),
     );

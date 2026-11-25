@@ -143,6 +143,7 @@ export class AppModule {
     return {
       module: AppModule,
       imports: [
+        ClientInvitationsModule.register(meetingWorkflows),
         AdminModule,
         OperationsModule.register(storage),
         ManagementModule.register([teams, companies, accountLifecycle]),
@@ -194,3 +195,4 @@ export class AppModule {
   }
 }
 import { TeamsModule } from './modules/teams/public/index.js';
+import { ClientInvitationsModule } from './modules/client-invitations/public/index.js';

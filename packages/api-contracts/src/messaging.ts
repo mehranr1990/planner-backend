@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { InvitationNotificationSchema } from './client-invitations.js';
 const id = z.uuid();
 const sequence = z.string().regex(/^(0|[1-9][0-9]{0,18})$/);
 const label = z.string().trim().min(1).max(200);
@@ -85,6 +86,7 @@ export const ConversationMemberSchema = z.strictObject({
   joinedAt: z.iso.datetime(),
 });
 export const ConversationInvitationSchema = z.strictObject({
+  notification: InvitationNotificationSchema.optional(),
   inviterDisplayName: z.string().nullable().optional(),
   id,
   conversationId: id,

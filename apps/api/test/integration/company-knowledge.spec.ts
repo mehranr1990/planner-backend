@@ -501,12 +501,19 @@ describe('P4-05 Company knowledge, reports and privacy', () => {
       randomUUID(),
     );
     const pending = await access.pending(next.actor, { limit: 100 });
-    expect(pending.items).toContainEqual({
-      id: offer.invitation.id,
-      contextLabel: 'Company',
-      revision: 1,
-      expiresAt: offer.invitation.expiresAt,
-    });
+    expect(pending.items).toContainEqual(
+      expect.objectContaining({
+        id: offer.invitation.id,
+        contextLabel: 'Company',
+        revision: 1,
+        expiresAt: offer.invitation.expiresAt,
+        notification: expect.objectContaining({
+          invitationId: offer.invitation.id,
+          kind: 'COMPANY',
+          readAt: null,
+        }),
+      }),
+    );
     expect(JSON.stringify(pending)).not.toContain(offer.proof!);
     expect(
       (

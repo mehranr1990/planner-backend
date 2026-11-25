@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { InvitationNotificationSchema } from './client-invitations.js';
 import {
   CalendarEventCreateSchema,
   CalendarEventPatchSchema,
@@ -99,6 +100,7 @@ export const MeetingInviteInputSchema = z.union([
   z.strictObject({ id, actorId: id }),
 ]);
 export const MeetingInvitationSchema = z.strictObject({
+  notification: InvitationNotificationSchema.optional(),
   id,
   meetingId: id,
   title: text(300),

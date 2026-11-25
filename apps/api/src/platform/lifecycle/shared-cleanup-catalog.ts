@@ -75,7 +75,11 @@ export const SHARED_CLEANUP_FK_SHA256 =
   // neither broaden cleanup custody nor retain the erased User/Team/Company.
   // P3 adds twelve references confined to Admin identities, operational policy,
   // incidents and backup reviews (1,198 FKs). No edge enters customer custody.
-  '9077bb4de8abcd51704d71cabee07adfa375e46bf6087f3e6b79953b155755f5';
+  // Client completion adds eight reviewed edges (1,206 total): Personal habit
+  // reminder cascade; Company invitation supervisor snapshots removed with offers
+  // before memberships; push attempts cascade from their typed offer, subscription
+  // or recipient. No independent content gains a new retention dependency.
+  '706787266edfd0e24cdc15f47ad8a3e060c663af4ccc390f42c39e0ad4d80266';
 export async function assertSharedCleanupCatalog(tx: Prisma.TransactionClient) {
   const rows = await tx.$queryRaw<
     { table: string; name: string; target: string; definition: string }[]

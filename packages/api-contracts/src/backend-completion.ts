@@ -530,6 +530,7 @@ export const RecipientInvitationProofSchema = z.strictObject({
   expiresAt: datetime,
 });
 export const ProjectPendingInvitationSummarySchema = z.strictObject({
+  notification: InvitationNotificationSchema.optional(),
   id,
   contextLabel: z.literal('Project'),
   revision,
@@ -549,3 +550,4 @@ export const CompanyExpenseReviewSchema = z.strictObject({
   createdAt: datetime,
 });
 export const CompanyExpenseReviewPageSchema = page(CompanyExpenseReviewSchema);
+import { InvitationNotificationSchema } from './client-invitations.js';

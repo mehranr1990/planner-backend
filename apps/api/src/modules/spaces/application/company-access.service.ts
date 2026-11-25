@@ -24,9 +24,11 @@ import { CollaborationService } from './collaboration.service.js';
 import { CollaborationLimit } from './collaboration-limit.js';
 import { InvitationMailService } from './invitation-mail.service.js';
 import { SharedAuthority } from '../public/shared-authority.js';
-import type { SharedAccess } from '../public/shared-authority.js';
+import type { RecipientInvitationAuthority } from './recipient-invitation-authority.js';
 import { companyDefaultPolicy } from '../domain/shared-policy.js';
 import { SharedRetentionSchema } from './shared-retention.js';
+import { CompanyInvitationStaff } from '../public/company-invitation-staff.js';
+import { enqueueInvitationPush } from '../../notifications/public/enqueue-invitation-push.js';
 type Tx = Prisma.TransactionClient;
 type Role = z.infer<typeof c.CompanyMemberRoleSchema>;
 type Page = z.infer<typeof c.CompanyPageQuerySchema>;
@@ -44,15 +46,8 @@ function proofHash(v: string | undefined) {
     throw new NotFoundException();
   return digest(v);
 }
-export type CompanyTransaction = {
-  tx: Tx;
-  now: Date;
-  locked: string[];
-  root: SharedAccess;
-  actor: RequestActor;
-  spaceId: string;
-  begin: () => Promise<string>;
-};
+import type { CompanyTransaction } from '../public/company-transaction.js';
+export type { CompanyTransaction } from '../public/company-transaction.js';
 @Injectable()
 export class CompanyAccess {
   sensitiveAudit(actor: RequestActor, id: string, q: Page) {
@@ -327,6 +322,11 @@ export class CompanyAccess {
               where: { id: offerId },
               data: {
                 proofHash: digest(mail.proof),
+                encryptedDeliveryProof: await this.invitationMail.encrypt(
+                  mail.proof,
+                ),
+                deliveryAttempts: 0,
+                deliveryNotBefore: ctx.now,
                 emailDeliveryState: 'NONE',
                 resentAt: ctx.now,
                 revision: { increment: 1 },
@@ -355,6 +355,8 @@ export class CompanyAccess {
     @Inject(CollaborationLimit) private readonly limit: CollaborationLimit,
     @Inject(InvitationMailService)
     private readonly invitationMail: InvitationMailService,
+    @Inject(CompanyInvitationStaff)
+    private readonly invitationStaff: CompanyInvitationStaff,
   ) {}
   private async context(
     tx: Tx,
@@ -1171,11 +1173,15 @@ export class CompanyAccess {
           ? this.identity.canonicalEmail(body.recipient.email)
           : null;
     const hinted = email
-      ? await this.identity.byEmail(this.db.client, email)
+      ? scopeId !== spaceId
+        ? await this.identity.verifiedByEmail(this.db.client, email)
+        : null
       : await this.identity.current(
           this.db.client,
           'userId' in body.recipient ? body.recipient.userId : '',
         );
+    const hasStaff =
+      body.position !== undefined || body.supervisorMemberId !== undefined;
     const delivery = await this.write(
       actor,
       spaceId,
@@ -1184,8 +1190,20 @@ export class CompanyAccess {
       async (ctx) => {
         await check(ctx);
         const issuer = await this.administer(ctx, scopeId, [body.memberRole]);
+        const staff = hasStaff
+          ? await this.invitationStaff.validate(ctx, scopeId, {
+              ...(body.position === undefined
+                ? {}
+                : { position: body.position }),
+              ...(body.supervisorMemberId === undefined
+                ? {}
+                : { supervisorMemberId: body.supervisorMemberId }),
+            })
+          : null;
         const target = email
-          ? await this.identity.byEmail(ctx.tx, email)
+          ? scopeId !== spaceId
+            ? await this.identity.verifiedByEmail(ctx.tx, email)
+            : null
           : await this.identity.current(
               ctx.tx,
               'userId' in body.recipient ? body.recipient.userId : '',
@@ -1247,9 +1265,19 @@ export class CompanyAccess {
             keyHash,
             fingerprint,
             proofHash: digest(proof),
+            ...(email || target?.emailVerified
+              ? {
+                  encryptedDeliveryProof:
+                    await this.invitationMail.encrypt(proof),
+                }
+              : {}),
             createdAt: ctx.now,
             expiresAt: new Date(ctx.now.getTime() + 604800000),
             companyScopeId: scopeId,
+            staffFieldsProvided: hasStaff,
+            staffPosition: staff?.position ?? null,
+            staffSupervisorAccessId: staff?.supervisorMemberId ?? null,
+            staffSupervisorGeneration: staff?.supervisorGeneration ?? null,
             companyAdmissionVersion: 1,
             companyTargetAccessId: targetSeat?.id ?? null,
             companyTargetGeneration: targetSeat?.generation ?? null,
@@ -1267,14 +1295,20 @@ export class CompanyAccess {
           },
         });
         await this.effect(ctx, 'company.invitation.create', id, audit);
+        if (target?.emailVerified)
+          await enqueueInvitationPush(
+            ctx.tx,
+            target.id,
+            'COMPANY',
+            { contextInvitationId: id },
+            ctx.now,
+          );
         return { invitation: this.invitation(row), proof };
       },
-      hinted ? [hinted.id] : [],
-    );
-    await this.invitationMail.deliver(
-      delivery.invitation.id,
-      email,
-      delivery.proof,
+      [
+        ...(hinted ? [hinted.id] : []),
+        ...(hasStaff ? await this.staffHints(spaceId) : []),
+      ],
     );
     return delivery;
   }
@@ -1354,12 +1388,32 @@ export class CompanyAccess {
     await this.effect(ctx, 'company.invitation.revoke', id, audit);
     return this.invitation(changed);
   }
-  pending(actor: RequestActor, q: Page) {
+  pending(
+    actor: RequestActor,
+    q: Page,
+    display?: (tx: Tx, row: RecipientInvitationAuthority) => Promise<string>,
+  ) {
     return this.collaboration.pendingOffers(
       actor,
       'COMPANY',
       q,
       this.recipientCheck(actor),
+      display,
+    );
+  }
+  markInvitationRead(actor: RequestActor, id: string) {
+    return this.collaboration.markInvitationRead(
+      actor,
+      'COMPANY',
+      id,
+      this.recipientCheck(actor),
+    );
+  }
+  validateInvitationNotification(id: string, userId: string) {
+    return this.collaboration.validateInvitationNotification(
+      id,
+      userId,
+      this.recipientCheck({ userId, requestId: id, correlationId: id }),
     );
   }
   /** OD-4: in-app proof delivery to the verified recipient, under the same checks as the pending list. */
@@ -1592,7 +1646,12 @@ export class CompanyAccess {
     return this.collaboration.signed(
       actor,
       hint.spaceId,
-      issuer ? [issuer] : [],
+      [
+        ...(issuer ? [issuer] : []),
+        ...(hint.staffFieldsProvided
+          ? await this.staffHints(hint.spaceId)
+          : []),
+      ],
       'company.invitation.decide',
       id,
       async (tx, now, locked, begin) => {
@@ -1721,6 +1780,31 @@ export class CompanyAccess {
               now,
             )
           : null;
+        if (admitted && row.staffFieldsProvided) {
+          const issuerCtx = {
+            ...ctx,
+            actor: { ...actor, userId: issuer! },
+            root: await this.seat(ctx, row.spaceId, issuer!),
+          };
+          const staff = await this.invitationStaff.validate(
+            issuerCtx,
+            row.companyScopeId!,
+            {
+              position: row.staffPosition,
+              supervisorMemberId: row.staffSupervisorAccessId,
+              supervisorGeneration: row.staffSupervisorGeneration,
+            },
+          );
+          await this.invitationStaff.apply(
+            issuerCtx,
+            row.companyScopeId!,
+            {
+              accessId: admitted.row.id,
+              generation: admitted.row.generation,
+            },
+            staff,
+          );
+        }
         const changed = await tx.contextInvitation.update({
           where: { id },
           data: {
@@ -1760,19 +1844,40 @@ export class CompanyAccess {
           ...ctx,
           root: { ...ctx.root, actorId: actingActorId },
         };
-        await this.effect(
-          effectCtx,
-          'company.invitation.decide',
-          id,
-          audit,
-          accept
-            ? row.companyScopeId === row.spaceId
-              ? 'shared.membership'
-              : 'company.context-membership'
-            : undefined,
-          1,
-          admitted?.row.actorId,
-        );
+        if (accept && row.staffFieldsProvided)
+          await this.kernel.offerBatchEffect(
+            tx,
+            actor,
+            row.spaceId,
+            actingActorId,
+            'company.invitation.decide',
+            id,
+            audit,
+            [
+              {
+                feature:
+                  row.companyScopeId === row.spaceId
+                    ? 'shared.membership'
+                    : 'company.context-membership',
+                delta: 1,
+              },
+              { feature: 'company.staff-profile', delta: 1 },
+            ],
+          );
+        else
+          await this.effect(
+            effectCtx,
+            'company.invitation.decide',
+            id,
+            audit,
+            accept
+              ? row.companyScopeId === row.spaceId
+                ? 'shared.membership'
+                : 'company.context-membership'
+              : undefined,
+            1,
+            admitted?.row.actorId,
+          );
         return {
           invitation: this.invitation(changed),
           membership: admitted ? await this.membership(tx, admitted.row) : null,

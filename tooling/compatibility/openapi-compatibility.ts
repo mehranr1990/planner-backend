@@ -20,7 +20,10 @@ const teamExtensions = JSON.parse(
 ) as Record<string, { previous: string[]; approved: string }>;
 export function approvedTeamHash(contract: string, previous: string) {
   const change = teamExtensions[contract];
-  return change?.previous.includes(previous) ? change.approved : previous;
+  return approvedClientBackendHash(
+    contract,
+    change?.previous.includes(previous) ? change.approved : previous,
+  );
 }
 const projectExtensions = JSON.parse(
   fs.readFileSync(
@@ -248,7 +251,10 @@ const companyGapExtensions = JSON.parse(
 ) as Record<string, { previous: string[]; approved: string }>;
 export function approvedCompanyHash(contract: string, previous: string) {
   const change = companyGapExtensions[contract];
-  return change?.previous.includes(previous) ? change.approved : previous;
+  return approvedClientBackendHash(
+    contract,
+    change?.previous.includes(previous) ? change.approved : previous,
+  );
 }
 const messagesMeetingsExtensions = JSON.parse(
   fs.readFileSync(
@@ -261,7 +267,10 @@ export function approvedMessagesMeetingsHash(
   previous: string,
 ) {
   const change = messagesMeetingsExtensions[contract];
-  return change?.previous.includes(previous) ? change.approved : previous;
+  return approvedClientBackendHash(
+    contract,
+    change?.previous.includes(previous) ? change.approved : previous,
+  );
 }
 export function assertApiCompatible(
   document: unknown,
@@ -269,6 +278,8 @@ export function assertApiCompatible(
 ): void {
   const current = apiSignatures(historicalCompanyCustodyResponses(document));
   for (const [contract, hash] of Object.entries(baseline)) {
+    if (current[contract] === approvedClientBackendHash(contract, hash))
+      continue;
     if (current[contract] === approvedFiveFeaturesHash(contract, hash))
       continue;
     const extension = responseExtensions[contract];
@@ -321,6 +332,21 @@ const fiveFeaturesExtensions = JSON.parse(
 ) as Record<string, { previous: string[]; approved: string }>;
 export function approvedFiveFeaturesHash(contract: string, previous: string) {
   const change = fiveFeaturesExtensions[contract];
+  return approvedClientBackendHash(
+    contract,
+    change?.previous.includes(previous) ? change.approved : previous,
+  );
+}
+// ADR 0075: exact optional Client metadata/staff-field extensions. Historical
+// baselines, required inputs, permissions and every unlisted contract stay frozen.
+const clientBackendExtensions = JSON.parse(
+  fs.readFileSync(
+    new URL('./client-backend-api-extensions.json', import.meta.url),
+    'utf8',
+  ),
+) as Record<string, { previous: string[]; approved: string }>;
+export function approvedClientBackendHash(contract: string, previous: string) {
+  const change = clientBackendExtensions[contract];
   return change?.previous.includes(previous) ? change.approved : previous;
 }
 // ADR 0064 decision B: the reviewed SocialNotice kind enum widening (P6-04 lending
@@ -333,7 +359,10 @@ const socialLendingExtensions = JSON.parse(
 ) as Record<string, { previous: string[]; approved: string }>;
 export function approvedSocialLendingHash(contract: string, previous: string) {
   const change = socialLendingExtensions[contract];
-  return change?.previous.includes(previous) ? change.approved : previous;
+  return approvedClientBackendHash(
+    contract,
+    change?.previous.includes(previous) ? change.approved : previous,
+  );
 }
 // ADR 0065: the reviewed SocialNotice kind enum widening (P6-05 Social goal kinds);
 // no field, status or request contract changed.
@@ -345,7 +374,10 @@ const socialGoalsExtensions = JSON.parse(
 ) as Record<string, { previous: string[]; approved: string }>;
 export function approvedSocialGoalsHash(contract: string, previous: string) {
   const change = socialGoalsExtensions[contract];
-  return change?.previous.includes(previous) ? change.approved : previous;
+  return approvedClientBackendHash(
+    contract,
+    change?.previous.includes(previous) ? change.approved : previous,
+  );
 }
 // ADR 0066: the leave request gains one optional confirmation field; an empty
 // or absent body stays valid. No response, status or other contract changed.
@@ -360,7 +392,10 @@ export function approvedSocialLifecycleHash(
   previous: string,
 ) {
   const change = socialLifecycleExtensions[contract];
-  return change?.previous.includes(previous) ? change.approved : previous;
+  return approvedClientBackendHash(
+    contract,
+    change?.previous.includes(previous) ? change.approved : previous,
+  );
 }
 // ADR 0067 (owner decision D3): additive Group ledger actor references
 // (payerActorId, payeeActorId, shares[].actorId, balance actorId); every
@@ -376,5 +411,8 @@ export function approvedSocialLedgerActorHash(
   previous: string,
 ) {
   const change = socialLedgerActorExtensions[contract];
-  return change?.previous.includes(previous) ? change.approved : previous;
+  return approvedClientBackendHash(
+    contract,
+    change?.previous.includes(previous) ? change.approved : previous,
+  );
 }
