@@ -15,7 +15,9 @@ export async function verifyAdminP4Upgrade() {
       '202611260117_p4_delivery_preferences',
       '202611260118_p4_audience_scope',
     ],
-    names = reviewMigrations();
+    names = reviewMigrations().filter(
+      (n) => n <= '202611260118_p4_audience_scope',
+    );
   fs.copyFileSync(
     'prisma/migrations/migration_lock.toml',
     path.join(migrations, 'migration_lock.toml'),

@@ -69,7 +69,7 @@ export class FilesRepository {
     key?: string,
   ) {
     const work = async (tx: Prisma.TransactionClient) => {
-      await scope.fence(tx);
+      await scope.assertWritable(tx);
       const file = await tx.storedFile.create({
         data: {
           id: randomUUID(),
@@ -109,7 +109,7 @@ export class FilesRepository {
   async claim(scope: AuthorizedSpace, id: string, attempt: string) {
     const file = await this.owned(scope, id);
     return this.database.client.$transaction(async (tx) => {
-      await scope.fence(tx);
+      await scope.assertWritable(tx);
       const update = await tx.storedFile.updateMany({
         where: {
           ...this.where(scope, id),
@@ -143,7 +143,7 @@ export class FilesRepository {
     auditId: string,
   ) {
     return this.database.client.$transaction(async (tx) => {
-      await scope.fence(tx);
+      await scope.assertWritable(tx);
       const update = await tx.storedFile.updateMany({
         where: {
           ...this.where(scope, id),

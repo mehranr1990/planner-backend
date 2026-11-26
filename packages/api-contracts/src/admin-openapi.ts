@@ -1,3 +1,4 @@
+import { adminCommerceRoutes } from './admin-commerce.js';
 import { adminEngagementRoutes } from './admin-engagement.js';
 import { z } from 'zod';
 import { adminAuthRoutes } from './admin.js';
@@ -20,6 +21,7 @@ for (const [route, spec] of Object.entries({
   ...adminPrivacyRoutes,
   ...adminOperationsRoutes,
   ...adminEngagementRoutes,
+  ...adminCommerceRoutes,
 })) {
   const [method, suffix] = route.split(' ') as [string, string];
   const path = '/api/v1/admin/' + suffix.replace(':id', '{id}');

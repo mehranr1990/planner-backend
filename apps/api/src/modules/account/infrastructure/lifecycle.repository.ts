@@ -1,3 +1,4 @@
+import { CommerceData } from '../../admin-commerce/public/commerce-data.js';
 import { EngagementData } from '../../admin-engagement/public/engagement-data.js';
 import {
   Inject,
@@ -382,10 +383,12 @@ export class LifecycleRepository
     @Optional()
     @Inject(EngagementData)
     private readonly engagement?: EngagementData,
+    @Optional() @Inject(CommerceData) commerce?: CommerceData,
   ) {
     super();
     this.owners = [
       ...(engagement ? [engagement] : []),
+      ...(commerce ? [commerce] : []),
       capture,
       notifications,
       planning,

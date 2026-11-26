@@ -1762,10 +1762,21 @@ export class CompanyAccess {
         )
           throw new NotFoundException();
         const audit = await begin();
+        const commercialTeam =
+          accept && row.companyScopeId !== row.spaceId
+            ? await tx.domainScopeCustody.findFirst({
+                where: {
+                  scopeId: row.companyScopeId!,
+                  spaceId: row.spaceId,
+                  kind: 'TEAM',
+                },
+                select: { scopeId: true },
+              })
+            : null;
         if (accept)
           await this.kernel.featureGrowth(
             tx,
-            row.spaceId,
+            commercialTeam?.scopeId ?? row.spaceId,
             row.companyScopeId === row.spaceId
               ? 'shared.membership'
               : 'company.context-membership',

@@ -108,6 +108,7 @@ export class AdminCommand {
   async execute<T extends Prisma.InputJsonValue>(
     tx: Prisma.TransactionClient,
     work: () => Promise<T>,
+    auditProjection?: (result: T) => Prisma.InputJsonValue,
   ): Promise<T> {
     await this.verify(tx);
     const keyHash = digest(this.key),
@@ -150,7 +151,11 @@ export class AdminCommand {
       data: {
         actorAdminId: this.adminId,
         outcome: 'SUCCEEDED',
-        metadata: { ...metadata, result, replayed: Boolean(prior) },
+        metadata: {
+          ...metadata,
+          result: auditProjection ? auditProjection(result) : result,
+          replayed: Boolean(prior),
+        },
       },
     });
     return result;

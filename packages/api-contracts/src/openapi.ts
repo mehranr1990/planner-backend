@@ -1,3 +1,4 @@
+import { commercePaths } from './admin-commerce-openapi.js';
 import { engagementPaths } from './admin-engagement-openapi.js';
 import { adminPaths, adminEngagementPaths } from './admin-openapi.js';
 import { teamCustodyPaths } from './team-custody.js';
@@ -330,6 +331,7 @@ export function createOpenApiDocument() {
       [healthRoutes.live]: { get: operation('healthLive', 'LiveHealth') },
       [healthRoutes.ready]: { get: operation('healthReady', 'ReadyHealth') },
       ...engagementPaths(),
+      ...commercePaths(),
       ...adminEngagementPaths,
     },
     components: {

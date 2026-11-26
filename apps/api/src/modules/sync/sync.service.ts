@@ -93,7 +93,7 @@ export class SyncService {
       results.push(
         await this.db.client.$transaction(
           async (tx) => {
-            await scope.fence(tx);
+            await scope.assertWritable(tx);
             const state = await scope.syncState(tx);
             if (state.epoch !== input.epoch)
               throw new ConflictException({ code: 'RESYNC_REQUIRED' });

@@ -1669,6 +1669,8 @@ export class CollaborationService {
             accept &&
             (!access?.memberRole ||
               !['ACTIVE', 'SUSPENDED'].includes(access.state));
+        if (addsMember)
+          await this.kernel.featureGrowth(tx, row.scopeId, 'shared.membership');
         if (accept) {
           if (!access) {
             access = await tx.contextAccess.create({

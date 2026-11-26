@@ -1,3 +1,4 @@
+import { CommerceModule } from './modules/admin-commerce/public/index.js';
 import { protectsEngagementEvidence } from './modules/admin-engagement/public/storage-reference.js';
 import { EngagementModule } from './modules/admin-engagement/public/index.js';
 import { AdminModule } from './platform/admin/admin.module.js';
@@ -129,6 +130,7 @@ export class AppModule {
     );
     const engagement = EngagementModule.register(storage);
     const accountLifecycle = AccountLifecycleModule.register([
+      CommerceModule,
       engagement,
       projects,
       SocialModule,
@@ -155,6 +157,7 @@ export class AppModule {
         AdminModule,
         OperationsModule.register(storage),
         engagement,
+        CommerceModule,
         ManagementModule.register([teams, companies, accountLifecycle]),
         SocialModule,
         SocialActivitiesModule.register(tasks, calendar, finance),

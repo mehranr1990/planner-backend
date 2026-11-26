@@ -1,3 +1,4 @@
+import { CommerceWorker } from './modules/admin-commerce/public/index.js';
 import { EngagementWorker } from './modules/admin-engagement/public/index.js';
 import 'reflect-metadata';
 import { ClientInvitationWorker } from './modules/client-invitations/public/index.js';
@@ -62,6 +63,7 @@ process.once('SIGINT', () => {
 });
 try {
   await worker.start(async () => {
+    const commerce = await app.get(CommerceWorker).consume();
     const communicationDelivery = await app.get(EngagementWorker).consume();
     const adminDelivery = await app.get(AdminDeliveryService).consume();
     const securityAlerts = await app.get(AdminSecurityAlerts).consume();
@@ -107,6 +109,7 @@ try {
     const meetings = await app.get(MeetingFiles).consume();
     const announcements = await app.get(AnnouncementSchedulesService).consume();
     return (
+      commerce ||
       communicationDelivery ||
       adminDelivery ||
       securityAlerts ||

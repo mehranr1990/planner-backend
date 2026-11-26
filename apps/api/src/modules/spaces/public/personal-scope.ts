@@ -1,3 +1,4 @@
+import { assertCommercialFeature } from '../../admin-commerce/public/entitlements.js';
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { AuthorizedSpace } from '../../../platform/authorization/authorized-space.js';
 import type { RequestActor } from '../../../platform/auth/request-actor.js';
@@ -31,8 +32,12 @@ export function personalScope(
       if (found.accessClosedAt)
         throw new ForbiddenException({ code: 'ACCOUNT_CLOSED' });
     },
+    async writeFence(tx: Prisma.TransactionClient) {
+      await assertCommercialFeature(tx, row!.id, 'personal.write');
+    },
     async reserve(tx: Prisma.TransactionClient, count: number) {
       await scope.fence(tx);
+      await assertCommercialFeature(tx, row!.id, 'personal.write');
       const changed = await tx.space.update({
         where: { id: row!.id, ownerUserId: actor.userId },
         data: { syncSequence: { increment: count } },

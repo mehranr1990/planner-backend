@@ -1,4 +1,11 @@
 const applicationUserRelations: Readonly<Record<string, string>> = {
+  // ADR 0077: exact application inverse navigation, no provider scalar change.
+  r_CommerceFinancialGrant_userId:
+    'r_CommerceFinancialGrant_userIdCommerceFinancialGrant[]@relation("CommerceFinancialGrant_userId")',
+  r_CommerceEvent_actorUserId:
+    'r_CommerceEvent_actorUserIdCommerceEvent[]@relation("CommerceEvent_actorUserId")',
+  r_CommerceReceipt_userId:
+    'r_CommerceReceipt_userIdCommerceReceipt[]@relation("CommerceReceipt_userId")',
   // ADR 0075: application-owned, recipient-only push delivery metadata.
   invitationPushAttempts: 'invitationPushAttemptsInvitationPushAttempt[]',
   keyedProjects: 'keyedProjectsProject[]@relation("ProjectKeyOwnerUser")',

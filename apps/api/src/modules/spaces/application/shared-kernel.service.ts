@@ -1,3 +1,4 @@
+import { assertCommercialFeature } from '../../admin-commerce/public/entitlements.js';
 import {
   Inject,
   Injectable,
@@ -581,7 +582,10 @@ export class SharedKernel {
   async assertWorkspaceWritable(
     tx: Prisma.TransactionClient,
     selector: string,
+    commercial = true,
   ) {
+    if (commercial)
+      await assertCommercialFeature(tx, selector, 'workspace.write');
     const spaceId = await this.custodySpaceInTransaction(tx, selector);
     const state = await tx.space.findUnique({
       where: { id: spaceId },
@@ -900,6 +904,7 @@ export class SharedKernel {
     feature: SharedFeatureKey,
     ownerUserId?: string,
   ) {
+    const selector = spaceId;
     if (!ownerUserId)
       spaceId = await this.custodySpaceInTransaction(tx, spaceId);
     const decision = await this.features.decide(
@@ -908,7 +913,11 @@ export class SharedKernel {
         currentUsage: await this.usageCount(tx, spaceId, feature, ownerUserId),
         usageOwner: ownerUserId
           ? { kind: 'PERSONAL_ACCOUNT', userId: ownerUserId }
-          : { kind: 'SHARED_CUSTODY', spaceId },
+          : {
+              kind: 'SHARED_CUSTODY',
+              spaceId,
+              ...(selector !== spaceId ? { scopeId: selector } : {}),
+            },
         growth: 1,
       },
       tx,
@@ -922,6 +931,7 @@ export class SharedKernel {
     feature: SharedFeatureKey,
     count: number,
   ) {
+    const selector = spaceId;
     spaceId = await this.custodySpaceInTransaction(tx, spaceId);
     if (!Number.isSafeInteger(count) || count < 1 || count > 200)
       throw new BadRequestException();
@@ -933,7 +943,12 @@ export class SharedKernel {
             {
               feature,
               currentUsage: current + i,
-              usageOwner: { kind: 'SHARED_CUSTODY', spaceId },
+              ...(selector !== spaceId ? { batchOffset: i } : {}),
+              usageOwner: {
+                kind: 'SHARED_CUSTODY',
+                spaceId,
+                ...(selector !== spaceId ? { scopeId: selector } : {}),
+              },
               growth: 1,
             },
             tx,
@@ -2583,7 +2598,7 @@ export class SharedKernel {
         'membership.leave',
       ].includes(request.capability)
     )
-      await this.assertWorkspaceWritable(tx, request.scopeId);
+      await this.assertWorkspaceWritable(tx, request.scopeId, false);
     const custody = await tx.sharedCustody.findUnique({
       where: { spaceId: request.spaceId },
     });
@@ -2858,6 +2873,21 @@ export class SharedKernel {
       custody.authorizationVersion,
       (await this.controlView(tx)).records,
     );
+    if (
+      ![
+        'task.read',
+        'file.read',
+        'export.visible',
+        'membership.leave',
+        'custody.dissolve',
+      ].includes(request.capability)
+    ) {
+      await assertCommercialFeature(tx, request.scopeId, 'workspace.write');
+      if (request.capability.startsWith('task.'))
+        await assertCommercialFeature(tx, request.scopeId, 'task.shared');
+      if (request.capability === 'goal.manage')
+        await assertCommercialFeature(tx, request.scopeId, 'goal.shared');
+    }
     return {
       spaceId: request.spaceId,
       scopeId: request.scopeId,

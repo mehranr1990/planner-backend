@@ -2,6 +2,14 @@
 
 ## Current execution authorization
 
+P5 final local acceptance, 2026-11-26: **COMPLETE — LOCAL DEVELOPMENT**.
+P4 publication was verified on origin/main
+as `13c45246bad4fc817bf96dd8f5023c6cb7e17585`. Plans/Entitlements, Subscriptions and
+Billing are implemented locally with PostgreSQL history, APIs, workers and
+free-by-default enforcement. Mandatory full gates and successful affected reruns
+are recorded in the [P5 work record](docs/platform-admin-p5-work-record.md). P5 commit/push, P6 and
+deployment remain excluded by the current owner instruction.
+
 Owner update, 2026-11-26: P4 is accepted for local development subject to verification
 of its documented final evidence; that evidence, diff and migration checksums were
 verified. Publication of only P4 to origin/main is authorized, followed after the
@@ -118,6 +126,12 @@ This is a multi-phase charter for work performed while the Codex session is acti
 ---
 
 ## B. Status baseline and phased roadmap
+
+Verified current status, 2026-11-26: P0–P4 are published; P4 is
+`13c45246bad4fc817bf96dd8f5023c6cb7e17585`. P5 is COMPLETE — LOCAL DEVELOPMENT,
+with all three modules, frozen M119–M121 and documented final acceptance evidence.
+P5 remains uncommitted/unpushed. Existing features remain commercially free;
+automatic charging is unavailable. P6/P7 have not started and are outside this task.
 
 **Historical baseline from the last user-provided Codex handoff (not a live inspection; superseded for P1 by the verified update above):**
 

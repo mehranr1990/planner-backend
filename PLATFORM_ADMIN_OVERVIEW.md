@@ -1,5 +1,17 @@
 # Platform Admin
 
+2026-11-26 P5: **COMPLETE — LOCAL DEVELOPMENT**. Plans/Entitlements, Subscriptions and
+Billing have real PostgreSQL persistence, APIs, durable workers, financial history
+and free-by-default request enforcement. Final acceptance evidence is in the
+[P5 work record](docs/platform-admin-p5-work-record.md). P4 is published as
+13c45246bad4fc817bf96dd8f5023c6cb7e17585. P5 remains uncommitted; P6/deployment are excluded.
+
+Mandatory gates: 1,008 repository tests passed; the full PostgreSQL checkpoint and
+successful six-case/126-test affected reruns resolve all nine initial failures.
+Migration preservation, build/type/lint/format, architecture, provider schema and
+OpenAPI checks passed. No active commercial paywall or automatic charging.
+The following paragraphs retain historical checkpoints superseded by this status.
+
 2026-11-26 final P4 checkpoint: **COMPLETE — LOCAL DEVELOPMENT**. Communications,
 Support (including secure disabled-by-default inbound processing) and Moderation
 are connected to real PostgreSQL, private storage, explicit APIs/RBAC and durable

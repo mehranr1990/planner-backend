@@ -1,5 +1,24 @@
 # Platform Admin implementation progress
 
+2026-11-26 P5: **COMPLETE — LOCAL DEVELOPMENT**. All three commercial modules are connected
+to PostgreSQL, APIs, durable workers and request enforcement. Commercial enforcement
+defaults off; online charging remains unavailable. M119–M121 add 27 tables and 61
+FKs; the populated P4 upgrade and financial-history preservation rehearsal passed.
+Final acceptance: 1,008 repository tests passed; full PostgreSQL checkpoint plus
+successful six-case and 126-test affected reruns resolve all nine initial failures.
+All 29 P5 integration cases pass. Full migration rehearsals preserve predecessor
+data, checksums and financial history. Build/type/lint/format, architecture, provider
+schema and OpenAPI checks pass. See the [P5 work record](platform-admin-p5-work-record.md)
+for exact commands, initial failures, corrections and release-only exclusions.
+P4 was published as 13c45246bad4fc817bf96dd8f5023c6cb7e17585. P5 is uncommitted;
+P6 and deployment remain excluded.
+
+All 145 tracked migration files equal HEAD bytes; M119–M121 are frozen. Owner
+compose remains byte-for-byte preserved and no P5 file is staged. ADR 0077,
+1,536-operation OpenAPI and backend frontend handoff are current. Next phase P6
+is NOT STARTED; the current owner instruction stops at completed P5.
+Entries below retain historical authorization and acceptance checkpoints.
+
 2026-11-26: owner accepted P4 for local development subject to verification. Its
 documented final evidence, implementation diff, M116–M118 hashes and all historical
 migration bytes were verified. P4-only publication is authorized; after successful

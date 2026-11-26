@@ -1,3 +1,4 @@
+import { verifyAdminP5Upgrade } from '../testing/admin-p5-upgrade.ts';
 import { verifyAdminP4Upgrade } from '../testing/admin-p4-upgrade.ts';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -48,7 +49,7 @@ try {
     )
   ).rows;
   // Six P0 Admin identity/audit tables and three P1 bulk/receipt/delivery tables.
-  assert.equal(emptyTables.length, 397); // Client completion adds typed invitation push attempts
+  assert.equal(emptyTables.length, 424); // Client completion adds typed invitation push attempts
   // Required reset capability is restricted to this disposable, newly-created namespace.
   await sandbox.resetOwnedSchema();
   const folder = path.resolve('.tools/migration-check-' + randomUUID());
@@ -731,3 +732,5 @@ await verifyProjectUpgrade(names);
 await verifyAdminP3Upgrade();
 await verifyClientBackendUpgrade();
 await verifyAdminP4Upgrade();
+
+await verifyAdminP5Upgrade();

@@ -1,3 +1,4 @@
+import { adminCommerceRoutes } from '@mehran/api-contracts';
 import { adminEngagementRoutes } from '@mehran/api-contracts';
 import {
   adminManagementRoutes,
@@ -10,6 +11,7 @@ import {
 } from '@mehran/api-contracts';
 
 export const adminPermissions = [
+  ...Object.values(adminCommerceRoutes).map((r) => r.permission),
   ...Object.values(adminEngagementRoutes).map((r) => r.permission),
   'admin.session.read',
   'admin.session.revoke',
@@ -81,5 +83,15 @@ export const adminRolePermissions: Record<string, readonly string[]> = {
     'admin.audit.export',
     'admin.audit.category.security',
   ],
-  BILLING_MANAGER: ownSession,
+  BILLING_MANAGER: [
+    ...ownSession,
+    'admin.plans.read',
+    'admin.subscriptions.read',
+    'admin.subscriptions.manage',
+    'admin.billing.read',
+    'admin.billing.manage',
+    'admin.billing.verify',
+    'admin.billing.correct',
+    'admin.billing.refund',
+  ],
 };

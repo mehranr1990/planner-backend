@@ -82,7 +82,10 @@ export const SHARED_CLEANUP_FK_SHA256 =
   // P4 adds 43 explicit references (1,249 FKs): ticket content/receipts/notices
   // cascade with the ticket/user; evidence detaches for durable blob cleanup;
   // reported sources and operators SET NULL. No FK blocks source-owner erasure.
-  '1c9526945ea43445b056b84a1280f2f8e229129d7ed2068c6fcbc9417240bb7c';
+  // P5 adds 61 edges (1,310 total). Financial history references pseudonymous
+  // customers; live Space/scope/evidence/actor references detach, user receipts
+  // and grants cascade. No new reference retains customer work content.
+  '8c8c192c87bdd4b471fa1c4f081ccd89b1da41a9fffda74531bfe676a9204047';
 export async function assertSharedCleanupCatalog(tx: Prisma.TransactionClient) {
   const rows = await tx.$queryRaw<
     { table: string; name: string; target: string; definition: string }[]

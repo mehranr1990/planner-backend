@@ -28,7 +28,7 @@ import { CollaborationService } from './application/collaboration.service.js';
 import { ResourceGrants } from './application/resource-grants.service.js';
 import {
   SharedFeaturePolicy,
-  freeSharedFeaturePolicy,
+  configuredSharedFeaturePolicy,
 } from './public/shared-features.js';
 import { CollaborationLimit } from './application/collaboration-limit.js';
 import {
@@ -58,7 +58,7 @@ import {
     SharedControl,
     CollaborationService,
     ResourceGrants,
-    { provide: SharedFeaturePolicy, useValue: freeSharedFeaturePolicy },
+    { provide: SharedFeaturePolicy, useValue: configuredSharedFeaturePolicy },
     CollaborationLimit,
     CollaborationGuard,
     RetentionGuard,

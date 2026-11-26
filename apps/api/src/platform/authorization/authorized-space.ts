@@ -4,6 +4,7 @@ import type { Prisma } from '../../generated/prisma/client.js';
 export type SpaceTransactionAuthority = {
   fence(tx: Prisma.TransactionClient): Promise<void>;
   reserve(tx: Prisma.TransactionClient, count: number): Promise<bigint>;
+  writeFence?(tx: Prisma.TransactionClient): Promise<void>;
   syncState(
     tx: Prisma.TransactionClient,
   ): Promise<{ epoch: string; sequence: bigint; retained: bigint }>;
@@ -34,6 +35,10 @@ export class AuthorizedSpace {
   async fence(tx: Prisma.TransactionClient): Promise<void> {
     if (!this.transactions) throw new NotFoundException();
     await this.transactions.fence(tx);
+  }
+  async assertWritable(tx: Prisma.TransactionClient): Promise<void> {
+    await this.fence(tx);
+    if (this.transactions?.writeFence) await this.transactions.writeFence(tx);
   }
   async reserveSync(
     tx: Prisma.TransactionClient,

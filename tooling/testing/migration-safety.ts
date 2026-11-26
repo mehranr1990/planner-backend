@@ -1,4 +1,16 @@
 import {
+  adminP5ClosureMigrationName,
+  assertReviewedAdminP5ClosureMigration,
+} from './reviewed-admin-p5-migration.ts';
+import {
+  adminP5ClockMigrationName,
+  assertReviewedAdminP5ClockMigration,
+} from './reviewed-admin-p5-migration.ts';
+import {
+  adminP5MigrationName,
+  assertReviewedAdminP5Migration,
+} from './reviewed-admin-p5-migration.ts';
+import {
   adminP4AudienceMigrationName,
   assertReviewedAdminP4AudienceMigration,
 } from './reviewed-admin-p4-migration.ts';
@@ -272,7 +284,12 @@ export function reviewMigrations(directory = 'prisma/migrations'): string[] {
       path.join(directory, name, 'migration.sql'),
       'utf8',
     );
-    if (name === adminP4AudienceMigrationName)
+    if (name === adminP5ClosureMigrationName)
+      assertReviewedAdminP5ClosureMigration(sql);
+    else if (name === adminP5ClockMigrationName)
+      assertReviewedAdminP5ClockMigration(sql);
+    else if (name === adminP5MigrationName) assertReviewedAdminP5Migration(sql);
+    else if (name === adminP4AudienceMigrationName)
       assertReviewedAdminP4AudienceMigration(sql);
     else if (name === adminP4PreferencesMigrationName)
       assertReviewedAdminP4PreferencesMigration(sql);

@@ -83,7 +83,12 @@ export class AdminService {
     id: string,
     permission: string,
     input: unknown,
-    target?: { userId?: string; spaceId?: string; adminId?: string },
+    target?: {
+      userId?: string;
+      spaceId?: string;
+      adminId?: string;
+      resourceId?: string;
+    },
   ) {
     const reason =
       input &&
@@ -99,8 +104,13 @@ export class AdminService {
         reason,
         ...(target?.userId ? { targetUserId: target.userId } : {}),
         ...(target?.spaceId ? { targetSpaceId: target.spaceId } : {}),
-        ...(target?.adminId
-          ? { metadata: { targetAdminId: target.adminId } }
+        ...(target?.adminId || target?.resourceId
+          ? {
+              metadata: {
+                ...(target.adminId ? { targetAdminId: target.adminId } : {}),
+                ...(target.resourceId ? { resourceId: target.resourceId } : {}),
+              },
+            }
           : {}),
       },
     });

@@ -40,4 +40,44 @@ describe('provider auth schema ownership', () => {
       ),
     ).toThrow('Unreviewed');
   });
+  it('accepts only the three exact commercial inverse relations and rejects changed ownership', () => {
+    const additions =
+      ' r_CommerceFinancialGrant_userId CommerceFinancialGrant[] @relation("CommerceFinancialGrant_userId")\n r_CommerceEvent_actorUserId CommerceEvent[] @relation("CommerceEvent_actorUserId")\n r_CommerceReceipt_userId CommerceReceipt[] @relation("CommerceReceipt_userId")\n';
+    expect(
+      normalizedAuthModel(
+        provider.replace(' id String', additions + ' id String'),
+        'User',
+      ),
+    ).toBe(normalizedAuthModel(provider, 'User'));
+    expect(() =>
+      normalizedAuthModel(
+        provider.replace(
+          ' id String',
+          additions.replace('CommerceReceipt_userId")', 'wrong_owner")') +
+            ' id String',
+        ),
+        'User',
+      ),
+    ).toThrow('Unreviewed');
+  });
+  it('accepts only the three exact commercial inverse relations and rejects changed ownership', () => {
+    const additions =
+      ' r_CommerceFinancialGrant_userId CommerceFinancialGrant[] @relation("CommerceFinancialGrant_userId")\n r_CommerceEvent_actorUserId CommerceEvent[] @relation("CommerceEvent_actorUserId")\n r_CommerceReceipt_userId CommerceReceipt[] @relation("CommerceReceipt_userId")\n';
+    expect(
+      normalizedAuthModel(
+        provider.replace(' id String', additions + ' id String'),
+        'User',
+      ),
+    ).toBe(normalizedAuthModel(provider, 'User'));
+    expect(() =>
+      normalizedAuthModel(
+        provider.replace(
+          ' id String',
+          additions.replace('CommerceReceipt_userId")', 'wrong_owner")') +
+            ' id String',
+        ),
+        'User',
+      ),
+    ).toThrow('Unreviewed');
+  });
 });
