@@ -156,6 +156,24 @@ export class AppModule {
         ClientInvitationsModule.register(meetingWorkflows),
         AdminModule,
         OperationsModule.register(storage),
+        PlatformConfigurationModule.register([SpacesModule], {
+          provide: CONFIGURATION_SCOPE_AUTHORITY,
+          inject: [SpacesService, SharedKernel, DatabaseService],
+          useFactory:
+            (
+              spaces: SpacesService,
+              kernel: SharedKernel,
+              db: DatabaseService,
+            ): ConfigurationScopeAuthority =>
+            async (actor, selector) => {
+              if (!selector)
+                return (await spaces.authorizePersonal(actor)).spaceId;
+              await db.client.$transaction((tx) =>
+                commerceScope(tx, selector, actor, kernel),
+              );
+              return selector;
+            },
+        }),
         engagement,
         CommerceModule,
         ManagementModule.register([teams, companies, accountLifecycle]),
@@ -208,3 +226,11 @@ export class AppModule {
 }
 import { TeamsModule } from './modules/teams/public/index.js';
 import { ClientInvitationsModule } from './modules/client-invitations/public/index.js';
+import { PlatformConfigurationModule } from './platform/configuration/configuration.module.js';
+import {
+  CONFIGURATION_SCOPE_AUTHORITY,
+  type ConfigurationScopeAuthority,
+} from './platform/configuration/configuration.controller.js';
+import { commerceScope } from './modules/spaces/public/commerce-context.js';
+import { SharedKernel } from './modules/spaces/public/index.js';
+import { DatabaseService } from './platform/database/database.service.js';

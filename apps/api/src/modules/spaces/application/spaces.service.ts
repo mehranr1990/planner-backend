@@ -3,6 +3,7 @@ import {
   Injectable,
   ForbiddenException,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { PersonalSpaceSchema } from '@mehran/api-contracts';
 import { SPACES_REPOSITORY } from './spaces.port.js';
@@ -12,6 +13,8 @@ import type { RequestActor } from '../../../platform/auth/request-actor.js';
 import type { Prisma } from '../../../generated/prisma/client.js';
 import type { AuthorizedSpace } from '../../../platform/authorization/authorized-space.js';
 import { personalScope } from '../public/personal-scope.js';
+import { OperationsControl } from '../../../platform/operations/operations-control.js';
+import { configurationAction } from '../../../platform/configuration/action-context.js';
 import { PrivacyGate } from '../../../platform/authorization/privacy-gate.js';
 import { DatabaseService } from '../../../platform/database/database.service.js';
 import { SharedKernel } from './shared-kernel.service.js';
@@ -157,6 +160,13 @@ export class SpacesService {
     return personalScope(
       { userId: row.ownerUserId, requestId, correlationId },
       row,
+      () =>
+        this.independent?.assert(
+          configurationAction.getStore() ?? {
+            module: 'account',
+            operation: 'write',
+          },
+        ) ?? Promise.resolve(),
     );
   }
   constructor(
@@ -165,6 +175,9 @@ export class SpacesService {
     @Inject(PrivacyGate) private readonly privacy: PrivacyGate,
     @Inject(DatabaseService) private readonly database: DatabaseService,
     @Inject(SharedKernel) private readonly shared: SharedKernel,
+    @Optional()
+    @Inject(OperationsControl)
+    private readonly independent?: OperationsControl,
   ) {}
   async personalFor(userId: string) {
     const space = await this.repository.personalFor(userId);
@@ -189,7 +202,17 @@ export class SpacesService {
     this.policy.assertOwner(actor.userId, space);
     if (space.accessClosedAt)
       throw new ForbiddenException({ code: 'ACCOUNT_CLOSED' });
-    return personalScope(actor, space);
+    return personalScope(
+      actor,
+      space,
+      () =>
+        this.independent?.assert(
+          configurationAction.getStore() ?? {
+            module: 'account',
+            operation: 'write',
+          },
+        ) ?? Promise.resolve(),
+    );
   }
   async admit(userId: string) {
     this.privacy.assert();

@@ -1,4 +1,7 @@
 const applicationUserRelations: Readonly<Record<string, string>> = {
+  // ADR 0078: exact application-only target navigation.
+  r_PlatformConfigTarget_userId:
+    'r_PlatformConfigTarget_userIdPlatformConfigTarget[]@relation("PlatformConfigTarget_userId")',
   // ADR 0077: exact application inverse navigation, no provider scalar change.
   r_CommerceFinancialGrant_userId:
     'r_CommerceFinancialGrant_userIdCommerceFinancialGrant[]@relation("CommerceFinancialGrant_userId")',

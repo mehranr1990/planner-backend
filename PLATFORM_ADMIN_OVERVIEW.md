@@ -1,5 +1,12 @@
 # Platform Admin
 
+2026-11-26: P5 accepted and published as `85c78390692e9d5bae108a068f46c4358efb8051`.
+P6 Feature Flags, Product Configuration and Platform Settings are
+**COMPLETE — LOCAL DEVELOPMENT**. Final complete runs: 1,018 repository tests and
+1,362 PostgreSQL tests passed; one conditional live-scanner skip. All applicable
+migration/quality gates passed. [P6 work record](docs/platform-admin-p6-work-record.md).
+P6 commit/push, P7 and deployment remain excluded. Earlier status is historical.
+
 2026-11-26 P5: **COMPLETE — LOCAL DEVELOPMENT**. Plans/Entitlements, Subscriptions and
 Billing have real PostgreSQL persistence, APIs, durable workers, financial history
 and free-by-default request enforcement. Final acceptance evidence is in the

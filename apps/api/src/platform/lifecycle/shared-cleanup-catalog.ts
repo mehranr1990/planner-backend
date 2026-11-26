@@ -85,7 +85,10 @@ export const SHARED_CLEANUP_FK_SHA256 =
   // P5 adds 61 edges (1,310 total). Financial history references pseudonymous
   // customers; live Space/scope/evidence/actor references detach, user receipts
   // and grants cascade. No new reference retains customer work content.
-  '8c8c192c87bdd4b471fa1c4f081ccd89b1da41a9fffda74531bfe676a9204047';
+  // P6 adds 13 edges (1,323 total). Typed targets SET NULL on erasure/custody
+  // purge. All other edges join configuration/approval evidence, never content.
+  // M123 adds two configuration/approval-only release-schedule references.
+  'bfd87eee40804a75865e0a2c88a9edaca6e1bde241ca34bae153172c2a56c9eb';
 export async function assertSharedCleanupCatalog(tx: Prisma.TransactionClient) {
   const rows = await tx.$queryRaw<
     { table: string; name: string; target: string; definition: string }[]

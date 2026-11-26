@@ -6,6 +6,7 @@ import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { OperatorTargetRegistrySchema } from '../../apps/api/dist/platform/operations/backup-operator.js';
 import { parseEnvironment } from '../../apps/api/src/bootstrap/environment.ts';
+import { MaintenanceValueSchema } from '../../packages/api-contracts/dist/index.js';
 import type { StoragePort } from '../../apps/api/src/platform/storage/storage.port.ts';
 import { OperationsControl } from '../../apps/api/dist/platform/operations/operations-control.js';
 import { PersonalEvidenceKeys } from '../../apps/api/dist/platform/lifecycle/personal-evidence-keys.js';
@@ -109,11 +110,32 @@ try {
     if (command === 'emergency-pause') {
       if (!/^[a-f0-9-]{36}$/i.test(id ?? ''))
         throw new Error('Run ID required');
-      await control.write('MAINTENANCE', id!);
+      const inputFile = process.argv[4];
+      let maintenance;
+      if (inputFile) {
+        const stat = await fs.lstat(inputFile);
+        if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 30000)
+          throw new Error('Unsafe maintenance input');
+        maintenance = MaintenanceValueSchema.parse(
+          JSON.parse(await fs.readFile(inputFile, 'utf8')),
+        );
+      }
+      await control.restrict(id!, maintenance);
     }
     const state = await control.status();
     process.stdout.write(
       JSON.stringify(state ?? { state: 'UNCONFIGURED' }) + '\n',
+    );
+  } else if (command === 'emergency-reopen') {
+    if (!/^[a-f0-9-]{36}$/i.test(id ?? '')) throw new Error('Run ID required');
+    const reason = process.argv[4];
+    if (!reason) throw new Error('Recovery reason required');
+    const { ConfigurationMaintenance } =
+      await import('../../apps/api/dist/platform/configuration/maintenance.js');
+    app = await application();
+    await app.get(ConfigurationMaintenance).recoverIndependent(id!, reason);
+    process.stdout.write(
+      'PASS: independent maintenance reopened after current health/recovery checks; database maintenance fences remain authoritative.\n',
     );
   } else {
     if (

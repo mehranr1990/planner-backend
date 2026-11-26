@@ -15,6 +15,7 @@ import type { AppConfig } from './environment.js';
 import { applyTrustedProxies, trustedOrigins } from './environment.js';
 import { ApiMetrics } from '../platform/operations/api-metrics.js';
 import { OperationsControl } from '../platform/operations/operations-control.js';
+import { trafficBinding } from '../platform/configuration/traffic.js';
 
 export async function configureApp(app: NestExpressApplication): Promise<void> {
   app.use(requestContext);
@@ -81,13 +82,14 @@ export async function configureApp(app: NestExpressApplication): Promise<void> {
     );
     if (
       /^\/api\/v1\/admin(?:\/|$)/i.test(req.path) ||
-      req.path === '/health/live'
+      req.path.toLowerCase() === '/health/live' ||
+      req.path.toLowerCase() === '/api/v1/platform/maintenance'
     ) {
       next();
       return;
     }
     void operations
-      .assert()
+      .assert(trafficBinding(req.path, req.method) ?? undefined)
       .then(() => next())
       .catch((error: unknown) =>
         errors.reply(error, req as ContextRequest, res),

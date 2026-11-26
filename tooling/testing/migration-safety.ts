@@ -284,7 +284,10 @@ export function reviewMigrations(directory = 'prisma/migrations'): string[] {
       path.join(directory, name, 'migration.sql'),
       'utf8',
     );
-    if (name === adminP5ClosureMigrationName)
+    if (name === adminP6ScheduleMigrationName)
+      assertReviewedAdminP6ScheduleMigration(sql);
+    else if (name === adminP6MigrationName) assertReviewedAdminP6Migration(sql);
+    else if (name === adminP5ClosureMigrationName)
       assertReviewedAdminP5ClosureMigration(sql);
     else if (name === adminP5ClockMigrationName)
       assertReviewedAdminP5ClockMigration(sql);
@@ -451,3 +454,9 @@ import {
   clientPushConsentMigrationName,
   assertReviewedClientPushConsentMigration,
 } from './reviewed-client-backend-migration.ts';
+import {
+  adminP6MigrationName,
+  assertReviewedAdminP6Migration,
+  adminP6ScheduleMigrationName,
+  assertReviewedAdminP6ScheduleMigration,
+} from './reviewed-admin-p6-migration.ts';

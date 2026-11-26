@@ -209,7 +209,11 @@ export class TasksService {
           chain = await tx.ancestors(normalized.parentTaskId);
         }
         validateHierarchy(id, chain, []);
-        const task = await tx.insertTask({ ...normalized, id });
+        const insert = { ...normalized, id };
+        // Keep the historical idempotency fingerprint while allowing the
+        // persistence owner to resolve a current configured creation default.
+        if (input.priority === undefined) delete insert.priority;
+        const task = await tx.insertTask(insert);
         await tx.record([
           history(null, task, 'CREATED', [
             'title',

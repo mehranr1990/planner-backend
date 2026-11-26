@@ -32,6 +32,7 @@ export class OperationsModule {
       exports: [
         ApiMetrics,
         OperationsControl,
+        SystemHealth,
         OperationsWorker,
         BackupRuns,
         BackupOperator,

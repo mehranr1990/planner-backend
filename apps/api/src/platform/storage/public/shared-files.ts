@@ -28,6 +28,7 @@ import type {
 import { FileScanRecords } from '../file-scan-records.js';
 import { safeCommunicationContent } from '../communication-content.js';
 import { assertFileContentAvailable } from '../file-content-policy.js';
+import { OperationsControl } from '../../operations/operations-control.js';
 import { sharedDeleteBatch } from '../../lifecycle/shared-cleanup.js';
 import type { SharedRestoreScope } from '../../lifecycle/shared-replay.js';
 import type {
@@ -98,6 +99,20 @@ export class SharedFiles {
     @Inject(APP_CONFIG) private readonly config: AppConfig,
     @Inject(FileScanRecords) private readonly scans: FileScanRecords,
   ) {}
+  private async configurationContext(
+    tx: Prisma.TransactionClient,
+    s: SharedFileScope,
+  ) {
+    const actor = await tx.sharedActor.findUniqueOrThrow({
+      where: { id: s.actorId },
+      select: { userId: true },
+    });
+    return {
+      workspaceId: s.scopeId,
+      ...(actor.userId ? { userId: actor.userId } : {}),
+      clientVersion: 1,
+    };
+  }
   async restoreDeleted(
     tx: Prisma.TransactionClient,
     scope: SharedRestoreScope,
@@ -326,6 +341,12 @@ export class SharedFiles {
   ) {
     s.verify(tx, true);
     assertFileContentAvailable(this.config);
+    const configurationContext = await this.configurationContext(tx, s);
+    await assertRuntimeConfiguration(tx, configurationContext, {
+      module: 'files',
+      operation: 'upload',
+    });
+    await assertConfiguredUpload(tx, configurationContext, input.expectedSize);
     if (input.expectedSize > this.config.FILE_MAX_BYTES)
       throw new PayloadTooLargeException();
     return tx.storedFile.create({
@@ -354,6 +375,12 @@ export class SharedFiles {
   ): Promise<SharedUploadTicket> {
     s.verify(tx, true);
     const file = await this.row(tx, s, id);
+    const configurationContext = await this.configurationContext(tx, s);
+    await assertRuntimeConfiguration(tx, configurationContext, {
+      module: 'files',
+      operation: 'upload',
+    });
+    await assertConfiguredUpload(tx, configurationContext, file.expectedSize);
     if (file.createdByActorId !== s.actorId) throw new ForbiddenException();
     // Never reclaim a live/stale attempt into a new writer. Reconcile first, then initiate a new file.
     if (
@@ -429,6 +456,16 @@ export class SharedFiles {
   ) {
     s.verify(tx, true);
     assertFileContentAvailable(this.config);
+    await new OperationsControl(this.config).assert({
+      module: 'files',
+      operation: 'upload',
+    });
+    const configurationContext = await this.configurationContext(tx, s);
+    await assertRuntimeConfiguration(tx, configurationContext, {
+      module: 'files',
+      operation: 'upload',
+    });
+    await assertConfiguredUpload(tx, configurationContext, e.size);
     const file = await this.row(tx, s, ticket.file.id);
     if (
       file.status !== 'INITIATED' ||
@@ -555,3 +592,7 @@ export class SharedFiles {
     });
   }
 }
+import {
+  assertRuntimeConfiguration,
+  assertConfiguredUpload,
+} from '../../configuration/runtime.js';

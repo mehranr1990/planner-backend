@@ -465,6 +465,25 @@ export class ScopedTasksStore
     };
   }
   async insertTask(input: TaskCreate & { id: string }): Promise<TaskRecord> {
+    await assertRuntimeConfiguration(
+      this.db,
+      {
+        userId: this.scope.actor.userId,
+        workspaceId: this.scope.spaceId,
+        clientVersion: 1,
+      },
+      { module: 'tasks', operation: 'write' },
+    );
+    const defaultPriority = await productConfiguration(
+      this.db,
+      'tasks.defaultPriority',
+      {
+        userId: this.scope.actor.userId,
+        workspaceId: this.scope.spaceId,
+        clientVersion: 1,
+      },
+      'NONE',
+    );
     const row = await this.db.task.create({
       data: {
         id: input.id,
@@ -473,7 +492,9 @@ export class ScopedTasksStore
         title: input.title,
         descriptionContent: input.description?.content ?? null,
         status: input.status ?? 'OPEN',
-        priority: input.priority ?? 'NONE',
+        priority:
+          input.priority ??
+          (defaultPriority as 'NONE' | 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT'),
         parentTaskId: input.parentTaskId ?? null,
         plannedStartAt: input.plannedStartAt
           ? new Date(input.plannedStartAt)
@@ -689,6 +710,15 @@ export class TasksRepository implements TasksPort {
   }
   private async locked(tx: Prisma.TransactionClient, scope: AuthorizedSpace) {
     await scope.fence(tx);
+    await assertRuntimeConfiguration(
+      tx,
+      {
+        userId: scope.actor.userId,
+        workspaceId: scope.spaceId,
+        clientVersion: 1,
+      },
+      { module: 'tasks', operation: 'write' },
+    );
     // One personal-space hierarchy writer at a time; never a cross-tenant lock.
     await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`tasks:${scope.spaceId}`},0))::text`;
     return new ScopedTasksStore(tx, scope, this.files);
@@ -858,3 +888,7 @@ export class CaptureTasksRepository extends CaptureTasks {
     }));
   }
 }
+import {
+  assertRuntimeConfiguration,
+  productConfiguration,
+} from '../../../platform/configuration/runtime.js';

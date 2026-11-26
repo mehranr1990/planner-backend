@@ -332,6 +332,7 @@ export function createOpenApiDocument() {
       [healthRoutes.ready]: { get: operation('healthReady', 'ReadyHealth') },
       ...engagementPaths(),
       ...commercePaths(),
+      ...configurationPaths(),
       ...adminEngagementPaths,
     },
     components: {
@@ -387,3 +388,4 @@ import { messagingPaths, advancedMessagingPaths } from './messaging-openapi.js';
 import { messagingMediaPaths } from './messaging-media-openapi.js';
 import { personalCompletionPaths } from './personal-completion-openapi.js';
 import { clientInvitationPaths } from './client-invitations-openapi.js';
+import { configurationPaths } from './admin-configuration-openapi.js';

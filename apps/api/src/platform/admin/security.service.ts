@@ -222,7 +222,7 @@ export class AdminSecurityService {
             },
           });
           // Password authentication can now enroll a new factor, but grants no privileged session.
-        } else {
+        } else if (input.action === 'SECURITY_POLICY') {
           const changed = await tx.adminSecurityPolicy.updateMany({
             where: { id: SECURITY_POLICY_ID, revision: input.revision },
             data: {
@@ -233,6 +233,10 @@ export class AdminSecurityService {
           });
           if (changed.count !== 1)
             throw new ConflictException({ code: 'STALE_REVISION' });
+        } else {
+          throw new ConflictException({
+            code: 'EXECUTE_APPROVAL_AT_CONFIGURATION_BOUNDARY',
+          });
         }
         return this.view(
           await tx.adminSecurityApproval.update({

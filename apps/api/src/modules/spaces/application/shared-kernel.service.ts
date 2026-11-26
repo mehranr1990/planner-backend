@@ -2888,6 +2888,19 @@ export class SharedKernel {
       if (request.capability === 'goal.manage')
         await assertCommercialFeature(tx, request.scopeId, 'goal.shared');
     }
+    const action = configurationAction.getStore() ?? {
+      module: 'spaces' as const,
+      operation: request.capability.endsWith('.read')
+        ? ('read' as const)
+        : request.capability === 'export.visible'
+          ? ('export' as const)
+          : ('write' as const),
+    };
+    await assertRuntimeConfiguration(
+      tx,
+      { userId: actor.userId, workspaceId: request.scopeId, clientVersion: 1 },
+      action,
+    );
     return {
       spaceId: request.spaceId,
       scopeId: request.scopeId,
@@ -4977,3 +4990,5 @@ export class SharedKernel {
     return result;
   }
 }
+import { assertRuntimeConfiguration } from '../../../platform/configuration/runtime.js';
+import { configurationAction } from '../../../platform/configuration/action-context.js';

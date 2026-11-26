@@ -829,6 +829,13 @@ export class NotificationsRepository extends NotificationsPort {
       where: { id },
     });
     if (!row) return;
+    await this.db.client.$transaction((tx) =>
+      assertRuntimeConfiguration(
+        tx,
+        { userId: row.ownerUserId, workspaceId: row.spaceId, clientVersion: 1 },
+        { module: 'notifications', operation: 'write' },
+      ),
+    );
     let scope: AuthorizedSpace;
     try {
       scope = await this.background(row.ownerUserId, row.spaceId);
@@ -1238,3 +1245,4 @@ export class NotificationsRepository extends NotificationsPort {
   }
 }
 import { moduleChannelView } from '../public/module-preferences.js';
+import { assertRuntimeConfiguration } from '../../../platform/configuration/runtime.js';

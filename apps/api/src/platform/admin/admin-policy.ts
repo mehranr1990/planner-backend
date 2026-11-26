@@ -11,6 +11,8 @@ import {
 } from '@mehran/api-contracts';
 
 export const adminPermissions = [
+  'admin.configuration.sensitive.publish',
+  ...Object.values(adminConfigurationRoutes).map((r) => r.permission),
   ...Object.values(adminCommerceRoutes).map((r) => r.permission),
   ...Object.values(adminEngagementRoutes).map((r) => r.permission),
   'admin.session.read',
@@ -95,3 +97,4 @@ export const adminRolePermissions: Record<string, readonly string[]> = {
     'admin.billing.refund',
   ],
 };
+import { adminConfigurationRoutes } from '@mehran/api-contracts';

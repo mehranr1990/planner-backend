@@ -1,5 +1,21 @@
 # Platform Admin implementation progress
 
+2026-11-26 P6: **COMPLETE — LOCAL DEVELOPMENT**. Feature Flags, Product Configuration
+and Platform Settings have real PostgreSQL persistence, strict APIs, targeted
+evaluation and backend enforcement, durable workflows and controlled maintenance.
+Final frozen-source runs passed all 1,018 repository tests and 1,362 runnable
+PostgreSQL cases; one conditional live-ClamAV case remains skipped. Build, types,
+lint, architecture, formatting, OpenAPI, Prisma/provider schema/config validation
+and full migration rehearsals passed. M122/M123 add eight tables and fifteen FKs;
+historical bytes/checksums and owner compose are preserved. ADR 0078, 1,555-operation
+OpenAPI and frontend handoff are current. Exact commands and evidence:
+[P6 work record](platform-admin-p6-work-record.md).
+
+P5 alone was accepted and published as `85c78390692e9d5bae108a068f46c4358efb8051`.
+P6 remains uncommitted/unpushed, index empty. P7 is NOT STARTED and not authorized.
+No deployment, frontend source, E2E, subagents or local/secret configuration changes.
+Earlier entries below retain historical checkpoints and authorization statements.
+
 2026-11-26 P5: **COMPLETE — LOCAL DEVELOPMENT**. All three commercial modules are connected
 to PostgreSQL, APIs, durable workers and request enforcement. Commercial enforcement
 defaults off; online charging remains unavailable. M119–M121 add 27 tables and 61
@@ -45,3 +61,10 @@ The final full checkpoint ran once. Its migration-inventory and audit-page fixtu
 The owner accepted P2 for local development on 2026-11-25; it was committed and pushed to origin/main as `8bfba88`. Platform Admin P3 is COMPLETE for local development: System Health, Jobs, Storage and Backup & Restore, with 24 Admin operations and an operator console. All 952 repository and 1,272 runnable PostgreSQL tests are verified through the final full checkpoints and documented successful affected reruns. One live-ClamAV test is conditionally skipped. Final code/architecture/contracts and migration gates passed. [P3 work record](platform-admin-p3-work-record.md).
 
 The owner authorized committing and pushing the existing P3 implementation on 2026-11-25. This publication includes the verified P3 changes and preserves the owner's compose.yaml outside the commit. P4 and deployment remain unauthorized. The existing M084 isolated-test ledger discrepancy is unchanged; physical backup/restore and other deployment acceptance remain subject to the recorded operational gates.
+2026-11-26: P5-only publication verified as
+`85c78390692e9d5bae108a068f46c4358efb8051`; owner compose preserved. P6 is explicitly
+authorized and IN PROGRESS. Platform configuration persistence, versioned workflows,
+targeting, runtime fences and maintenance are implemented; focused verification is
+underway. M122 is additive, with seven tables and thirteen FKs. Its isolated initial
+deployment passed (431-table, 1,323-FK catalog). Full acceptance is pending; see
+[the P6 work record](platform-admin-p6-work-record.md). No P6 commit/push or P7.

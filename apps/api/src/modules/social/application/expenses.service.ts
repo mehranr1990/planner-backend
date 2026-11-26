@@ -732,7 +732,40 @@ export class SocialExpensesService {
     revision: number,
     key: string | undefined,
   ) {
-    return this.run(actor, ref, [], async (tx, now, l) => {
+    // Notices take recipient User FK locks. Predeclare those accounts before
+    // taking the Activity/expense lock, using the existing sorted identity fence.
+    const hints =
+      action === 'withdraw'
+        ? null
+        : await this.rt.db.client.socialExpense.findFirst({
+            where: {
+              id: expenseId,
+              ...(ref.kind === 'ACTIVITY'
+                ? { activityId: ref.id }
+                : { groupId: ref.id }),
+            },
+            select: {
+              revisions: {
+                where: { state: 'PENDING' },
+                take: 1,
+                orderBy: { number: 'desc' },
+                select: {
+                  proposedByUserId: true,
+                  payerUserId: true,
+                  shares: { select: { userId: true } },
+                },
+              },
+            },
+          });
+    const recipients =
+      hints?.revisions
+        .flatMap((r) => [
+          r.proposedByUserId,
+          r.payerUserId,
+          ...r.shares.map((s) => s.userId),
+        ])
+        .filter((id): id is string => !!id) ?? [];
+    return this.run(actor, ref, recipients, async (tx, now, l, locked) => {
       if (action !== 'withdraw' && !l.approver)
         throw new ForbiddenException({ code: 'EXPENSE_APPROVER_REQUIRED' });
       return this.rt.once(
@@ -750,6 +783,17 @@ export class SocialExpensesService {
           // Concurrent or repeated decisions find no pending revision and cannot double-apply.
           if (!pending)
             throw new ConflictException({ code: 'EXPENSE_NOT_PENDING' });
+          if (
+            action !== 'withdraw' &&
+            [
+              pending.proposedByUserId,
+              pending.payerUserId,
+              ...pending.shares.map((s) => s.userId),
+            ].some((id) => id && !locked.includes(id))
+          )
+            throw new ConflictException({
+              code: 'EXPENSE_PARTICIPANTS_CHANGED',
+            });
           if (
             action === 'withdraw' &&
             pending.proposedByUserId !== actor.userId

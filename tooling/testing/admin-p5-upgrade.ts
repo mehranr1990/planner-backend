@@ -15,7 +15,9 @@ export async function verifyAdminP5Upgrade() {
       '202611260120_p5_term_clock_history',
       '202611260121_p5_term_closure',
     ],
-    names = reviewMigrations();
+    names = reviewMigrations().filter(
+      (n) => n <= '202611260121_p5_term_closure',
+    );
   fs.copyFileSync(
     'prisma/migrations/migration_lock.toml',
     path.join(migrations, 'migration_lock.toml'),

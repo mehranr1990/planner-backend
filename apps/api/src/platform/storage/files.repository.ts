@@ -14,6 +14,7 @@ import { writeAudit, AuditService } from '../audit/audit.service.js';
 import type { AuthorizedSpace } from '../authorization/authorized-space.js';
 import type { FileEvidence } from './storage.port.js';
 import { FileScanRecords } from './file-scan-records.js';
+import { OperationsControl } from '../operations/operations-control.js';
 
 @Injectable()
 export class FilesRepository {
@@ -21,6 +22,7 @@ export class FilesRepository {
     @Inject(DatabaseService) private readonly database: DatabaseService,
     @Inject(AuditService) private readonly auditSink: AuditService,
     @Inject(FileScanRecords) private readonly scans: FileScanRecords,
+    @Inject(OperationsControl) private readonly control: OperationsControl,
   ) {}
   private where(scope: AuthorizedSpace, id: string) {
     return scopedWhere(scope, { id, ownerUserId: scope.actor.userId });
@@ -70,6 +72,24 @@ export class FilesRepository {
   ) {
     const work = async (tx: Prisma.TransactionClient) => {
       await scope.assertWritable(tx);
+      await assertRuntimeConfiguration(
+        tx,
+        {
+          userId: scope.actor.userId,
+          workspaceId: scope.spaceId,
+          clientVersion: 1,
+        },
+        { module: 'files', operation: 'upload' },
+      );
+      await assertConfiguredUpload(
+        tx,
+        {
+          userId: scope.actor.userId,
+          workspaceId: scope.spaceId,
+          clientVersion: 1,
+        },
+        input.expectedSize,
+      );
       const file = await tx.storedFile.create({
         data: {
           id: randomUUID(),
@@ -110,6 +130,24 @@ export class FilesRepository {
     const file = await this.owned(scope, id);
     return this.database.client.$transaction(async (tx) => {
       await scope.assertWritable(tx);
+      await assertRuntimeConfiguration(
+        tx,
+        {
+          userId: scope.actor.userId,
+          workspaceId: scope.spaceId,
+          clientVersion: 1,
+        },
+        { module: 'files', operation: 'upload' },
+      );
+      await assertConfiguredUpload(
+        tx,
+        {
+          userId: scope.actor.userId,
+          workspaceId: scope.spaceId,
+          clientVersion: 1,
+        },
+        file.expectedSize,
+      );
       const update = await tx.storedFile.updateMany({
         where: {
           ...this.where(scope, id),
@@ -143,7 +181,26 @@ export class FilesRepository {
     auditId: string,
   ) {
     return this.database.client.$transaction(async (tx) => {
+      await this.control.assert({ module: 'files', operation: 'upload' });
       await scope.assertWritable(tx);
+      await assertRuntimeConfiguration(
+        tx,
+        {
+          userId: scope.actor.userId,
+          workspaceId: scope.spaceId,
+          clientVersion: 1,
+        },
+        { module: 'files', operation: 'upload' },
+      );
+      await assertConfiguredUpload(
+        tx,
+        {
+          userId: scope.actor.userId,
+          workspaceId: scope.spaceId,
+          clientVersion: 1,
+        },
+        evidence.size,
+      );
       const update = await tx.storedFile.updateMany({
         where: {
           ...this.where(scope, id),
@@ -279,3 +336,7 @@ export class FilesRepository {
     });
   }
 }
+import {
+  assertRuntimeConfiguration,
+  assertConfiguredUpload,
+} from '../configuration/runtime.js';

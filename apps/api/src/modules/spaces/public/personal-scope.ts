@@ -8,6 +8,7 @@ import { effectiveSuspension } from '../../../platform/admin/management-policy.j
 export function personalScope(
   actor: RequestActor,
   row: { id: string; kind: string; ownerUserId: string | null } | null,
+  independent?: () => Promise<void>,
 ) {
   const scope = AuthorizedSpace.personal(actor, row, {
     async fence(tx: Prisma.TransactionClient) {
@@ -33,11 +34,19 @@ export function personalScope(
         throw new ForbiddenException({ code: 'ACCOUNT_CLOSED' });
     },
     async writeFence(tx: Prisma.TransactionClient) {
+      await independent?.();
+      await assertRuntimeConfiguration(
+        tx,
+        { userId: actor.userId, workspaceId: row!.id, clientVersion: 1 },
+        configurationAction.getStore() ?? {
+          module: 'account',
+          operation: 'write',
+        },
+      );
       await assertCommercialFeature(tx, row!.id, 'personal.write');
     },
     async reserve(tx: Prisma.TransactionClient, count: number) {
-      await scope.fence(tx);
-      await assertCommercialFeature(tx, row!.id, 'personal.write');
+      await scope.assertWritable(tx);
       const changed = await tx.space.update({
         where: { id: row!.id, ownerUserId: actor.userId },
         data: { syncSequence: { increment: count } },
@@ -74,3 +83,5 @@ export function personalScope(
   });
   return scope;
 }
+import { assertRuntimeConfiguration } from '../../../platform/configuration/runtime.js';
+import { configurationAction } from '../../../platform/configuration/action-context.js';

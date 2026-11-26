@@ -2,6 +2,17 @@
 
 ## Current execution authorization
 
+Owner update, 2026-11-26: P5 is accepted for local development. Its final evidence,
+diff, ADR 0077 and M119–M121/historical migration bytes were verified; P5 alone was
+committed and pushed as `85c78390692e9d5bae108a068f46c4358efb8051`, with remote HEAD
+verified. All remaining P6 implementation and local acceptance are authorized.
+P6 is **COMPLETE — LOCAL DEVELOPMENT** in [its work record](docs/platform-admin-p6-work-record.md):
+all 1,018 repository tests and 1,362 runnable PostgreSQL tests passed in the final
+complete runs. Migration and quality gates passed; one conditional live-scanner
+case remains skipped. P6 is uncommitted and no deployment readiness is claimed.
+Do not commit/push P6, start P7, deploy, change frontend source, use subagents or
+write E2E tests. Earlier authorization/status paragraphs are historical.
+
 P5 final local acceptance, 2026-11-26: **COMPLETE — LOCAL DEVELOPMENT**.
 P4 publication was verified on origin/main
 as `13c45246bad4fc817bf96dd8f5023c6cb7e17585`. Plans/Entitlements, Subscriptions and

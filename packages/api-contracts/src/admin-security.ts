@@ -22,6 +22,16 @@ export const AdminSecurityPolicyViewSchema = z.strictObject({
 });
 export const AdminCriticalRequestSchema = z.discriminatedUnion('action', [
   z.strictObject({
+    action: z.enum([
+      'CONFIG_PUBLICATION',
+      'CONFIG_KILL_RELEASE',
+      'MAINTENANCE_REOPEN',
+    ]),
+    targetId: uuid,
+    fingerprint: z.string().regex(/^[a-f0-9]{64}$/),
+    reason,
+  }),
+  z.strictObject({
     action: z.literal('MFA_RECOVERY'),
     targetAdminId: uuid,
     identityReviewReference: z
@@ -40,7 +50,13 @@ export const AdminCriticalRequestSchema = z.discriminatedUnion('action', [
 export const AdminApprovalViewSchema = z.strictObject({
   request: AdminCriticalRequestSchema,
   id: uuid,
-  action: z.enum(['MFA_RECOVERY', 'SECURITY_POLICY']),
+  action: z.enum([
+    'MFA_RECOVERY',
+    'SECURITY_POLICY',
+    'CONFIG_PUBLICATION',
+    'CONFIG_KILL_RELEASE',
+    'MAINTENANCE_REOPEN',
+  ]),
   state: z.enum(['PENDING', 'APPROVED', 'EXECUTED', 'REJECTED', 'EXPIRED']),
   requesterAdminId: uuid,
   approverAdminId: uuid.nullable(),

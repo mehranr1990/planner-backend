@@ -1,6 +1,7 @@
 import { adminCommerceRoutes } from './admin-commerce.js';
 import { adminEngagementRoutes } from './admin-engagement.js';
 import { z } from 'zod';
+import { embeddedJsonSchema, pointerSegment } from './embedded-json-schema.js';
 import { adminAuthRoutes } from './admin.js';
 import { adminSecurityRoutes } from './admin-security.js';
 import { adminAuditRoutes } from './admin-audit.js';
@@ -22,9 +23,13 @@ for (const [route, spec] of Object.entries({
   ...adminOperationsRoutes,
   ...adminEngagementRoutes,
   ...adminCommerceRoutes,
+  ...adminConfigurationRoutes,
 })) {
   const [method, suffix] = route.split(' ') as [string, string];
   const path = '/api/v1/admin/' + suffix.replace(':id', '{id}');
+  const p6 = suffix.startsWith('configuration/');
+  const pointer =
+    '#/paths/' + pointerSegment(path) + '/' + method.toLowerCase();
   const csv = route === 'GET audit/export';
   const file =
     route === 'GET operations/storage/files/:id/content' ||
@@ -33,11 +38,13 @@ for (const [route, spec] of Object.entries({
     ...adminPaths[path],
     [method.toLowerCase()]: {
       operationId:
-        (/^(communications|support|moderation|engagement)\//.test(suffix)
-          ? 'platformAdminP4_'
-          : suffix.startsWith('operations/')
-            ? 'platformAdminP3_'
-            : 'platformAdminP2_') +
+        (p6
+          ? 'platformAdminP6_'
+          : /^(communications|support|moderation|engagement)\//.test(suffix)
+            ? 'platformAdminP4_'
+            : suffix.startsWith('operations/')
+              ? 'platformAdminP3_'
+              : 'platformAdminP2_') +
         method.toLowerCase() +
         '_' +
         suffix.replace(/[^a-zA-Z]/g, '_'),
@@ -79,7 +86,15 @@ for (const [route, spec] of Object.entries({
             requestBody: {
               required: true,
               content: {
-                'application/json': { schema: z.toJSONSchema(spec.schema) },
+                'application/json': {
+                  schema: p6
+                    ? embeddedJsonSchema(
+                        z.toJSONSchema(spec.schema),
+                        pointer +
+                          '/requestBody/content/application~1json/schema',
+                      )
+                    : z.toJSONSchema(spec.schema),
+                },
               },
             },
           }
@@ -94,7 +109,7 @@ for (const [route, spec] of Object.entries({
           409,
           429,
           500,
-          ...(suffix.startsWith('operations/') ? [503] : []),
+          ...(suffix.startsWith('operations/') || p6 ? [503] : []),
         ].map((code) => [
           String(code),
           {
@@ -114,7 +129,13 @@ for (const [route, spec] of Object.entries({
                   code === 200 && file
                     ? { type: 'string', format: 'binary' }
                     : code === 200
-                      ? z.toJSONSchema(spec.response)
+                      ? p6
+                        ? embeddedJsonSchema(
+                            z.toJSONSchema(spec.response),
+                            pointer +
+                              '/responses/200/content/application~1json/schema',
+                          )
+                        : z.toJSONSchema(spec.response)
                       : { $ref: '#/components/schemas/ApiError' },
               },
             },
@@ -308,3 +329,4 @@ for (const [path, methods] of Object.entries(adminEngagementPaths)) {
         };
     }
 }
+import { adminConfigurationRoutes } from './admin-configuration.js';

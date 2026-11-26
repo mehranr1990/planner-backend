@@ -19,6 +19,8 @@ export class EngagementWorker {
     @Inject(CommunicationsService)
     private readonly communications: CommunicationsService,
     @Inject(EngagementDelivery) private readonly delivery: EngagementDelivery,
+    @Inject(ConfigurationRuntime)
+    private readonly configuration: ConfigurationRuntime,
   ) {}
   async consume() {
     this.core.privacy.assert();
@@ -43,8 +45,14 @@ export class EngagementWorker {
       });
       this.lastSweep = Date.now();
     }
-    const notice = await this.consumeNotice();
-    return (await this.communications.consume()) || notice;
+    const notice = await this.configuration.worker('notifications', () =>
+      this.consumeNotice(),
+    );
+    return (
+      (await this.configuration.worker('notifications', () =>
+        this.communications.consume(),
+      )) || notice
+    );
   }
   async consumeNotice() {
     const claim = await this.core.db.client.$transaction(async (tx) => {
@@ -178,3 +186,4 @@ export class EngagementWorker {
     );
   }
 }
+import { ConfigurationRuntime } from '../../platform/configuration/runtime.js';
