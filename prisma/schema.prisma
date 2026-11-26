@@ -8258,3 +8258,247 @@ model InvitationPushAttempt {
  meetingInvitation MeetingInvitation? @relation(fields:[meetingInvitationId],references:[id],onDelete:Cascade,onUpdate:NoAction)
  @@index([state,notBefore])
 }
+
+// Platform Admin P4: external ownership FKs are explicitly reviewed in M116.
+
+model P4Policy {
+section String @id @db.VarChar(20)
+revision Int @default(1)
+value Json
+updatedAt DateTime @default(now()) @db.Timestamptz(3)
+}
+
+model AdminCommunicationTemplate {
+id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+name String @db.VarChar(100)
+version Int
+fallbackLocale String @db.VarChar(30)
+translations Json
+state String @default("DRAFT") @db.VarChar(12)
+createdByAdminId String @db.Uuid
+approvedByAdminId String? @db.Uuid
+createdAt DateTime @default(now()) @db.Timestamptz(3)
+@@unique([name,version])
+}
+
+model AdminCommunication {
+id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+templateId String @db.Uuid
+kind String @db.VarChar(12)
+audience Json
+variables Json
+channels Json
+createdByAdminId String @db.Uuid
+approvedByAdminId String? @db.Uuid
+state String @default("PREVIEW") @db.VarChar(16)
+revision Int @default(1)
+expiresAt DateTime @db.Timestamptz(3)
+scheduledAt DateTime @db.Timestamptz(3)
+testedAt DateTime? @db.Timestamptz(3)
+createdAt DateTime @default(now()) @db.Timestamptz(3)
+@@index([state,scheduledAt])
+}
+
+model AdminCommunicationRecipient {
+id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+communicationId String @db.Uuid
+userId String @db.Uuid
+channel String @db.VarChar(10)
+subscriptionId String? @db.Uuid
+subscriptionRevision Int?
+intent String @unique @db.VarChar(150)
+state String @default("PENDING") @db.VarChar(16)
+attempts Int @default(0)
+nextAt DateTime @default(now()) @db.Timestamptz(3)
+leaseToken String? @db.Uuid
+leaseUntil DateTime? @db.Timestamptz(3)
+networkStartedAt DateTime? @db.Timestamptz(3)
+lastCode String? @db.VarChar(80)
+readAt DateTime? @db.Timestamptz(3)
+locale String? @db.VarChar(30)
+subject String? @db.VarChar(200)
+body String? @db.VarChar(10000)
+createdAt DateTime @default(now()) @db.Timestamptz(3)
+@@index([state,nextAt])
+}
+
+model SupportQueue {
+id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+name String @unique @db.VarChar(100)
+active Boolean @default(true)
+slaMinutes Int @default(1440)
+revision Int @default(1)
+createdAt DateTime @default(now()) @db.Timestamptz(3)
+}
+
+model SupportTicket {
+id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+ownerUserId String @db.Uuid
+spaceId String? @db.Uuid
+scopeId String? @db.Uuid
+queueId String @db.Uuid
+assigneeAdminId String? @db.Uuid
+subject String @db.VarChar(200)
+category String @db.VarChar(80)
+priority String @default("NORMAL") @db.VarChar(10)
+state String @default("NEW") @db.VarChar(24)
+revision Int @default(1)
+slaDueAt DateTime @db.Timestamptz(3)
+slaAlertedAt DateTime? @db.Timestamptz(3)
+resolvedAt DateTime? @db.Timestamptz(3)
+archivedAt DateTime? @db.Timestamptz(3)
+feedback Int?
+feedbackText String? @db.VarChar(2000)
+correlationHash String? @unique @db.Char(64)
+correlationEmailHash String? @db.Char(64)
+correlationExpiresAt DateTime? @db.Timestamptz(3)
+createdAt DateTime @default(now()) @db.Timestamptz(3)
+updatedAt DateTime @default(now()) @db.Timestamptz(3)
+@@index([ownerUserId,id])
+@@index([state,slaDueAt])
+}
+
+model SupportReply {
+id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+ticketId String @db.Uuid
+authorUserId String? @db.Uuid
+authorAdminId String? @db.Uuid
+internal Boolean @default(false)
+body String @db.VarChar(20000)
+source String @default("IN_APP") @db.VarChar(12)
+createdAt DateTime @default(now()) @db.Timestamptz(3)
+@@index([ticketId,id])
+}
+
+model ModerationCase {
+ targetScopeId String? @db.Uuid
+id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+reporterUserId String? @db.Uuid
+reporterAdminId String? @db.Uuid
+targetUserId String? @db.Uuid
+targetSpaceId String? @db.Uuid
+taskId String? @db.Uuid
+noteId String? @db.Uuid
+messageId String? @db.Uuid
+sourceKind String @db.VarChar(12)
+category String @db.VarChar(80)
+description String @db.VarChar(20000)
+priority String @default("NORMAL") @db.VarChar(10)
+state String @default("NEW") @db.VarChar(20)
+revision Int @default(1)
+dedupHash String @unique @db.Char(64)
+publicOutcome String? @db.VarChar(2000)
+internalOutcome String? @db.VarChar(10000)
+decisionAdminId String? @db.Uuid
+appealReviewerAdminId String? @db.Uuid
+decidedAt DateTime? @db.Timestamptz(3)
+appealedAt DateTime? @db.Timestamptz(3)
+appealText String? @db.VarChar(10000)
+restrictionUntil DateTime? @db.Timestamptz(3)
+restrictionKind String? @db.VarChar(20)
+retentionAt DateTime? @db.Timestamptz(3)
+createdAt DateTime @default(now()) @db.Timestamptz(3)
+updatedAt DateTime @default(now()) @db.Timestamptz(3)
+@@index([state,id])
+@@index([targetUserId,restrictionUntil])
+}
+
+model P4CaseEvent {
+id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+ticketId String? @db.Uuid
+caseId String? @db.Uuid
+actorAdminId String? @db.Uuid
+actorUserId String? @db.Uuid
+kind String @db.VarChar(50)
+public Boolean @default(false)
+text String? @db.VarChar(10000)
+createdAt DateTime @default(now()) @db.Timestamptz(3)
+@@index([ticketId,id])
+@@index([caseId,id])
+}
+
+model P4Evidence {
+id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+ownerUserId String? @db.Uuid
+ticketId String? @db.Uuid
+caseId String? @db.Uuid
+replyId String? @db.Uuid
+objectKey String @unique @db.VarChar(100)
+attemptId String @db.Uuid
+filename String @db.VarChar(200)
+mediaType String @db.VarChar(100)
+size Int
+sha256 String @db.Char(64)
+scanEngine String @db.VarChar(100)
+state String @default("STAGED") @db.VarChar(12)
+stagingGroup String @db.Uuid
+expiresAt DateTime @db.Timestamptz(3)
+createdAt DateTime @default(now()) @db.Timestamptz(3)
+@@index([state,expiresAt])
+}
+
+model SupportInboundReceipt {
+id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+transportId String @db.VarChar(80)
+providerMessageHash String @db.Char(64)
+messageHash String @unique @db.Char(64)
+fingerprint String @db.Char(64)
+ticketId String? @db.Uuid
+result Json
+createdAt DateTime @default(now()) @db.Timestamptz(3)
+@@unique([transportId,providerMessageHash])
+}
+
+model P4RateBucket {
+key String @db.VarChar(160)
+windowMs Int
+startAt DateTime @db.Timestamptz(3)
+count Int
+@@id([key,windowMs])
+}
+
+model P4UserReceipt {
+userId String @db.Uuid
+operation String @db.VarChar(80)
+keyHash String @db.Char(64)
+fingerprint String @db.Char(64)
+result Json
+createdAt DateTime @default(now()) @db.Timestamptz(3)
+@@id([userId,operation,keyHash])
+}
+
+model P4Notice {
+ inApp Boolean @default(true)
+ deliveryState String @default("PENDING") @db.VarChar(16)
+ attempts Int @default(0)
+ leaseUntil DateTime? @db.Timestamptz(3)
+ nextAt DateTime @default(now()) @db.Timestamptz(3)
+ lastCode String? @db.VarChar(80)
+
+id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+userId String? @db.Uuid
+adminId String? @db.Uuid
+ticketId String? @db.Uuid
+caseId String? @db.Uuid
+kind String @db.VarChar(30)
+intent String @unique @db.VarChar(150)
+readAt DateTime? @db.Timestamptz(3)
+createdAt DateTime @default(now()) @db.Timestamptz(3)
+}
+
+model P4CommunicationPreference {
+ userId String @db.Uuid
+ kind String @db.VarChar(12)
+ inApp Boolean @default(true)
+ email Boolean @default(true)
+ webPush Boolean @default(true)
+ revision Int @default(1)
+ @@id([userId,kind])
+}
+
+model AdminCommunicationTarget {
+ communicationId String @db.Uuid
+ userId String @db.Uuid
+ pushState String @default("NOT_REQUESTED") @db.VarChar(20)
+ @@id([communicationId,userId])
+}

@@ -148,8 +148,18 @@ export class ChannelTransport extends NotificationTransport {
         await transport.sendMail({
           from: this.config.MAIL_FROM,
           to: m.email,
-          subject: 'Mehran Planner reminder',
-          text: 'Mehran Planner has a reminder for you. Open your private notification inbox.',
+          subject:
+            m.purpose === 'ADMIN' && m.content
+              ? m.content.subject
+              : 'Mehran Planner reminder',
+          headers: {
+            'Auto-Submitted': 'auto-generated',
+            'X-Auto-Response-Suppress': 'All',
+          },
+          text:
+            m.purpose === 'ADMIN' && m.content
+              ? m.content.text
+              : 'Mehran Planner has a reminder for you. Open your private notification inbox.',
           messageId: '<' + m.deliveryId + '@planner.invalid>',
         });
         return { outcome: 'ACCEPTED', code: 'SMTP_ACCEPTED' };

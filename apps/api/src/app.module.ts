@@ -1,3 +1,5 @@
+import { protectsEngagementEvidence } from './modules/admin-engagement/public/storage-reference.js';
+import { EngagementModule } from './modules/admin-engagement/public/index.js';
 import { AdminModule } from './platform/admin/admin.module.js';
 import { OperationsModule } from './platform/operations/operations.module.js';
 import {
@@ -79,7 +81,11 @@ export class AppModule {
       },
       {
         provide: EXPORT_STORAGE_REFERENCES,
-        useValue: protectsAccountExportKey,
+        useValue: async (
+          ...args: Parameters<typeof protectsAccountExportKey>
+        ) =>
+          (await protectsAccountExportKey(...args)) ||
+          (await protectsEngagementEvidence(...args)),
       },
     );
     const tasks = TasksModule.register(storage);
@@ -121,7 +127,9 @@ export class AppModule {
       calendar,
       goals,
     );
+    const engagement = EngagementModule.register(storage);
     const accountLifecycle = AccountLifecycleModule.register([
+      engagement,
       projects,
       SocialModule,
       storage,
@@ -146,6 +154,7 @@ export class AppModule {
         ClientInvitationsModule.register(meetingWorkflows),
         AdminModule,
         OperationsModule.register(storage),
+        engagement,
         ManagementModule.register([teams, companies, accountLifecycle]),
         SocialModule,
         SocialActivitiesModule.register(tasks, calendar, finance),

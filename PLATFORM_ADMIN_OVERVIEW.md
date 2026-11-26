@@ -1,5 +1,20 @@
 # Platform Admin
 
+2026-11-26 final P4 checkpoint: **COMPLETE — LOCAL DEVELOPMENT**. Communications,
+Support (including secure disabled-by-default inbound processing) and Moderation
+are connected to real PostgreSQL, private storage, explicit APIs/RBAC and durable
+workers. M116–M118 add 16 tables and 43 FKs; 36 Admin and 22 ordinary operations.
+Full repository 999 tests passed. The full PostgreSQL checkpoint and successful
+affected reruns resolve all five failures; final P4 27, privacy/export 30 and
+affected policy/contracts/compatibility 114 tests passed. Build/type/lint/format,
+architecture/OpenAPI and migration checks passed. Full actual results and the one
+conditional live-ClamAV skip are in the [P4 work record](docs/platform-admin-p4-work-record.md).
+P3 29aed23 and Client 0f9ff0a were already published. P4 remains uncommitted and
+unpushed; owner compose and historical SQL are preserved. No live inbound activation
+or deployment occurred. P5 is NOT STARTED and separately unauthorized.
+
+Status text below describes historical checkpoints.
+
 P1 was pushed to `origin/main` at `b9746e17f0087d5019ce39eb86e8beac438a8538`. The owner authorized local P2 implementation and verification. The status paragraphs below record previous work items. [Current Platform Admin progress](docs/platform-admin-implementation-progress.md)
 
 Historical P1 status (2026-11-24): P0 is committed as `651b0ec` and pushed to

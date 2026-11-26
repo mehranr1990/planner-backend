@@ -1,3 +1,4 @@
+import { adminEngagementRoutes } from './admin-engagement.js';
 import { z } from 'zod';
 import { adminAuthRoutes } from './admin.js';
 import { adminSecurityRoutes } from './admin-security.js';
@@ -18,18 +19,23 @@ for (const [route, spec] of Object.entries({
   ...adminRetentionRoutes,
   ...adminPrivacyRoutes,
   ...adminOperationsRoutes,
+  ...adminEngagementRoutes,
 })) {
   const [method, suffix] = route.split(' ') as [string, string];
   const path = '/api/v1/admin/' + suffix.replace(':id', '{id}');
   const csv = route === 'GET audit/export';
-  const file = route === 'GET operations/storage/files/:id/content';
+  const file =
+    route === 'GET operations/storage/files/:id/content' ||
+    route.endsWith('/evidence');
   adminPaths[path] = {
     ...adminPaths[path],
     [method.toLowerCase()]: {
       operationId:
-        (suffix.startsWith('operations/')
-          ? 'platformAdminP3_'
-          : 'platformAdminP2_') +
+        (/^(communications|support|moderation|engagement)\//.test(suffix)
+          ? 'platformAdminP4_'
+          : suffix.startsWith('operations/')
+            ? 'platformAdminP3_'
+            : 'platformAdminP2_') +
         method.toLowerCase() +
         '_' +
         suffix.replace(/[^a-zA-Z]/g, '_'),
@@ -276,4 +282,27 @@ for (const [route, spec] of Object.entries(adminManagementRoutes)) {
     ),
   };
   adminPaths[path] = { ...adminPaths[path], [method.toLowerCase()]: operation };
+}
+
+export const adminEngagementPaths: Record<string, Record<string, unknown>> = {};
+for (const route of Object.keys(adminEngagementRoutes)) {
+  const suffix = route.split(' ')[1]!,
+    path = '/api/v1/admin/' + suffix.replace(':id', '{id}');
+  adminEngagementPaths[path] = adminPaths[path]!;
+}
+for (const path of Object.keys(adminEngagementPaths)) delete adminPaths[path];
+
+for (const [path, methods] of Object.entries(adminEngagementPaths)) {
+  if (path.includes('/engagement/policies/{id}'))
+    for (const operation of Object.values(methods)) {
+      const item = operation as {
+        parameters?: { name: string; schema: unknown }[];
+      };
+      const parameter = item.parameters?.find((p) => p.name === 'id');
+      if (parameter)
+        parameter.schema = {
+          type: 'string',
+          enum: ['SUPPORT', 'MODERATION', 'COMMUNICATIONS'],
+        };
+    }
 }

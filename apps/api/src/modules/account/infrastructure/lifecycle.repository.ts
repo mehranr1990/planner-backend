@@ -1,3 +1,4 @@
+import { EngagementData } from '../../admin-engagement/public/engagement-data.js';
 import {
   Inject,
   Injectable,
@@ -378,9 +379,13 @@ export class LifecycleRepository
     @Optional() @Inject(MessagingData) messaging?: MessagingData,
     @Optional() @Inject(SocialData) social?: SocialData,
     @Optional() @Inject(MeetingData) meetings?: MeetingData,
+    @Optional()
+    @Inject(EngagementData)
+    private readonly engagement?: EngagementData,
   ) {
     super();
     this.owners = [
+      ...(engagement ? [engagement] : []),
       capture,
       notifications,
       planning,
@@ -594,6 +599,15 @@ export class LifecycleRepository
     });
     return job;
   }
+  private engagementBytes(
+    tx: Prisma.TransactionClient,
+    scope: AuthorizedSpace,
+    item: AttachmentManifest,
+  ) {
+    if (!this.engagement)
+      throw new NotFoundException({ code: 'ATTACHMENT_UNAVAILABLE' });
+    return this.engagement.bytes(tx, scope, item);
+  }
   async download(
     scope: AuthorizedSpace,
     id: string,
@@ -607,7 +621,9 @@ export class LifecycleRepository
       if (!item) throw new NotFoundException();
       const stream = await this.db.client.$transaction(async (tx) => {
         await scope.fence(tx);
-        return this.files.bytes(tx, scope, item);
+        return item.source === 'P4_EVIDENCE'
+          ? this.engagementBytes(tx, scope, item)
+          : this.files.bytes(tx, scope, item);
       });
       return { stream, mimeType: item.mimeType };
     }
@@ -1025,11 +1041,19 @@ export class LifecycleRepository
         for (const owner of this.owners)
           await owner.snapshot(tx, scope, budget);
         await this.platform.snapshot(tx, scope, budget);
-        const manifest = await this.files.manifest(
+        const manifest: AttachmentManifest[] = await this.files.manifest(
           tx,
           scope,
           budget.remaining() + 1,
         );
+        if (this.engagement)
+          manifest.push(
+            ...(await this.engagement.manifest(
+              tx,
+              scope,
+              budget.remaining() + 1,
+            )),
+          );
         budget.add(
           'attachments',
           manifest.map((v) => ({
@@ -1042,7 +1066,10 @@ export class LifecycleRepository
         );
         for (const item of manifest)
           if (item.status === 'READY') {
-            const stream = await this.files.bytes(tx, scope, item);
+            const stream =
+              item.source === 'P4_EVIDENCE'
+                ? await this.engagementBytes(tx, scope, item)
+                : await this.files.bytes(tx, scope, item);
             stream.destroy();
           }
         const bytes = Buffer.from(

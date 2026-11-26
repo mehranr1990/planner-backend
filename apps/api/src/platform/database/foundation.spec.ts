@@ -340,6 +340,9 @@ describe('scoped persistence and API conventions', () => {
       '202611250113_client_backend_completion',
       '202611250114_client_invitation_materialization',
       '202611250115_client_invitation_push_consent',
+      '202611260116_platform_admin_p4',
+      '202611260117_p4_delivery_preferences',
+      '202611260118_p4_audience_scope',
     ]);
     for (const sql of [
       '',

@@ -16,7 +16,9 @@ export async function verifyClientBackendUpgrade() {
   const folder = fs.mkdtempSync(path.resolve('.tools/client-upgrade-'));
   const migrations = path.join(folder, 'migrations');
   fs.mkdirSync(migrations);
-  const names = reviewMigrations();
+  const names = reviewMigrations().filter(
+    (name) => name <= '202611250115_client_invitation_push_consent',
+  );
   const additions = [
     clientBackendMigrationName,
     clientMaterializationMigrationName,

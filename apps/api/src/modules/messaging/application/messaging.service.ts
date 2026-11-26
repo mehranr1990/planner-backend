@@ -2083,6 +2083,43 @@ export class MessagingService {
       return messageView(row);
     });
   }
+  async withReportableMessage<T>(
+    actor: RequestActor,
+    id: string,
+    work: (tx: Prisma.TransactionClient) => Promise<T>,
+  ) {
+    const hint = await this.db.client.conversationMessage.findUnique({
+      where: { id },
+      select: { conversationId: true },
+    });
+    if (!hint) throw new NotFoundException();
+    return this.operation(
+      actor,
+      hint.conversationId,
+      'messaging.messages.read',
+      async (s) => {
+        const member = await this.currentMember(s);
+        const row = await s.tx.conversationMessage.findFirst({
+          where: {
+            id,
+            conversationId: hint.conversationId,
+            sequence: { gt: member.historyAfter },
+            MessageEntry_text: {
+              none: {
+                OR: [
+                  { deletedAt: { not: null } },
+                  { MessageHidden_message: { some: { memberId: member.id } } },
+                ],
+              },
+            },
+          },
+          select: { id: true },
+        });
+        if (!row) throw new NotFoundException();
+        return work(s.tx);
+      },
+    );
+  }
   messages(actor: RequestActor, id: string, q: Page) {
     return this.operation(actor, id, 'messaging.messages.read', async (s) => {
       const member = await this.currentMember(s),

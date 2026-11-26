@@ -16,6 +16,9 @@ import { transferCatalog } from '../../../platform/database/transfer-catalog.js'
 import { PersonalTaskTransfer } from '../public/personal-transfer.js';
 import { MeetingKernel } from '../../meetings/public/kernel.js';
 const known = [
+  // P4 case metadata follows the stable global Task ID. It does not pin Space,
+  // copy private content or participate in the transferred resource graph.
+  'ModerationCase_taskId_fk',
   'MeetingTaskLink_task_fk',
   'TeamWorkItem_sourceSpaceId_taskId_fkey',
   'CaptureItem_spaceId_targetTaskId_fkey',

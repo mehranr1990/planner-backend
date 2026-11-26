@@ -10,6 +10,7 @@ import { STORAGE_PORT } from '../storage.port.js';
 import type { StoragePort } from '../storage.port.js';
 import { FileScanRecords } from '../file-scan-records.js';
 export type AttachmentManifest = {
+  source?: 'P4_EVIDENCE';
   id: string;
   filename: string;
   mimeType: string;

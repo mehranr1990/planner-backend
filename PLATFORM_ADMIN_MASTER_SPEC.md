@@ -2,6 +2,22 @@
 
 ## Current execution authorization
 
+Owner update, 2026-11-26: P4 is accepted for local development subject to verification
+of its documented final evidence; that evidence, diff and migration checksums were
+verified. Publication of only P4 to origin/main is authorized, followed after the
+successful push by all three P5 modules. P5 must remain uncommitted; P6, deployment,
+frontend, E2E and subagents are excluded. Prior authorization paragraphs are historical.
+
+Owner update, 2026-11-25: Client backend local acceptance and separate publication
+were explicitly authorized. P3 `29aed23` and Client `0f9ff0a` are published on
+origin/main. Local P4 (Communications, Support and Moderation) is authorized without
+intermediate approvals; P4 commit/push, P5 and deployment are not authorized.
+Inbound email replies remain required: implement a provider-independent verified
+adapter boundary and secure processing infrastructure, keeping activation disabled
+until a trusted transport is configured and verified. P4 is COMPLETE for local development, with actual final gates and successful
+affected reruns recorded; owner acceptance/publication remain separate. See [P4 work record](docs/platform-admin-p4-work-record.md). Earlier
+authorization/status paragraphs below describe historical checkpoints.
+
 On 2026-11-25 the owner accepted Platform Admin P2 for local development based on its final documented verification, authorized committing and pushing only P2 to origin/main, and authorized local P3 implementation after the successful push. Preserve the owner's compose.yaml. P3 commit/push, P4, frontend work and deployment require separate approval. Earlier authorization paragraphs below are historical. [P2 work record](docs/platform-admin-p2-work-record.md)
 
 Verified implementation update, 2026-11-25: P2 was pushed as `8bfba88`. P3 is COMPLETE for local development, with 24 Admin operations, eleven additive control tables and the trusted backup/restore operator console. Its full checkpoints and successful affected reruns verify 952 repository tests and 1,272 runnable PostgreSQL tests; code, architecture, contracts and migration gates passed. One conditional live-ClamAV skip and deployment-only gates remain explicit. P3 is uncommitted/unpushed; P4 is NOT STARTED. [P3 work record](docs/platform-admin-p3-work-record.md)

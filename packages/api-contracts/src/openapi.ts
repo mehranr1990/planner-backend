@@ -1,4 +1,5 @@
-import { adminPaths } from './admin-openapi.js';
+import { engagementPaths } from './admin-engagement-openapi.js';
+import { adminPaths, adminEngagementPaths } from './admin-openapi.js';
 import { teamCustodyPaths } from './team-custody.js';
 import { messagesMeetingsGapPaths } from './messages-meetings-gap-openapi.js';
 import { companyGapPaths } from './company-gap-closure-openapi.js';
@@ -328,6 +329,8 @@ export function createOpenApiDocument() {
       ...extraPaths,
       [healthRoutes.live]: { get: operation('healthLive', 'LiveHealth') },
       [healthRoutes.ready]: { get: operation('healthReady', 'ReadyHealth') },
+      ...engagementPaths(),
+      ...adminEngagementPaths,
     },
     components: {
       securitySchemes: {

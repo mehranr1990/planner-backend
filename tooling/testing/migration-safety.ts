@@ -1,4 +1,16 @@
 import {
+  adminP4AudienceMigrationName,
+  assertReviewedAdminP4AudienceMigration,
+} from './reviewed-admin-p4-migration.ts';
+import {
+  adminP4PreferencesMigrationName,
+  assertReviewedAdminP4PreferencesMigration,
+} from './reviewed-admin-p4-migration.ts';
+import {
+  adminP4MigrationName,
+  assertReviewedAdminP4Migration,
+} from './reviewed-admin-p4-migration.ts';
+import {
   retentionPolicyRecoveryMigrationName,
   assertReviewedRetentionPolicyRecoveryMigration,
 } from './reviewed-retention-policy-recovery-migration.ts';
@@ -260,7 +272,12 @@ export function reviewMigrations(directory = 'prisma/migrations'): string[] {
       path.join(directory, name, 'migration.sql'),
       'utf8',
     );
-    if (name === clientBackendMigrationName) {
+    if (name === adminP4AudienceMigrationName)
+      assertReviewedAdminP4AudienceMigration(sql);
+    else if (name === adminP4PreferencesMigrationName)
+      assertReviewedAdminP4PreferencesMigration(sql);
+    else if (name === adminP4MigrationName) assertReviewedAdminP4Migration(sql);
+    else if (name === clientBackendMigrationName) {
       assertReviewedClientBackendMigration(sql);
       assertAdditiveMigration(sql);
     } else if (name === clientMaterializationMigrationName) {

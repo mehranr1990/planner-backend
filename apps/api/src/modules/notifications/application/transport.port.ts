@@ -2,7 +2,8 @@ export type TransportMessage = {
   deliveryId: string;
   notificationId: string;
   channel: 'EMAIL' | 'WEB_PUSH';
-  purpose?: 'MESSAGING' | 'INVITATION';
+  purpose?: 'MESSAGING' | 'INVITATION' | 'ADMIN';
+  content?: { subject: string; text: string };
   email?: string;
   subscription?: { endpoint: string; keys: { auth: string; p256dh: string } };
 };

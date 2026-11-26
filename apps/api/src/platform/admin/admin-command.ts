@@ -65,6 +65,17 @@ export class AdminCommand {
   require(permission: string) {
     if (this.permission !== permission) throw new ForbiddenException();
   }
+  async queueNotice(
+    tx: Prisma.TransactionClient,
+    userId: string,
+    kind: 'ACCOUNT_CHANGED' | 'WORKSPACE_CHANGED',
+    payload: { reason: string; workspaceId?: string },
+  ) {
+    await this.verify(tx);
+    await tx.adminDelivery.create({
+      data: { auditId: this.auditId, targetUserId: userId, kind, payload },
+    });
+  }
   async recordChange(
     tx: Prisma.TransactionClient,
     before: Prisma.InputJsonValue | null,

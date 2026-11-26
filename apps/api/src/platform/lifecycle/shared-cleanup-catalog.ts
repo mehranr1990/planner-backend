@@ -79,7 +79,10 @@ export const SHARED_CLEANUP_FK_SHA256 =
   // reminder cascade; Company invitation supervisor snapshots removed with offers
   // before memberships; push attempts cascade from their typed offer, subscription
   // or recipient. No independent content gains a new retention dependency.
-  '706787266edfd0e24cdc15f47ad8a3e060c663af4ccc390f42c39e0ad4d80266';
+  // P4 adds 43 explicit references (1,249 FKs): ticket content/receipts/notices
+  // cascade with the ticket/user; evidence detaches for durable blob cleanup;
+  // reported sources and operators SET NULL. No FK blocks source-owner erasure.
+  '1c9526945ea43445b056b84a1280f2f8e229129d7ed2068c6fcbc9417240bb7c';
 export async function assertSharedCleanupCatalog(tx: Prisma.TransactionClient) {
   const rows = await tx.$queryRaw<
     { table: string; name: string; target: string; definition: string }[]

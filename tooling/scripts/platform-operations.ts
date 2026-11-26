@@ -1,3 +1,4 @@
+import { EngagementEvidence } from '../../apps/api/dist/modules/admin-engagement/public/index.js';
 import 'reflect-metadata';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -338,6 +339,9 @@ try {
             void chunk;
           }
         }
+        const caseFiles = await restored
+          .get(EngagementEvidence)
+          .verifyForRestore();
         const current = await shared.currentEvidence(),
           replayDigest = createHash('sha256')
             .update(JSON.stringify(current))
@@ -349,7 +353,7 @@ try {
             .update(JSON.stringify(bundle))
             .digest('hex'),
           migrations: migrations.length,
-          files: files.length,
+          files: files.length + caseFiles,
           replayDigest,
           readiness: true,
         });

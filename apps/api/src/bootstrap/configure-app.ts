@@ -101,6 +101,14 @@ export async function configureApp(app: NestExpressApplication): Promise<void> {
     })),
   });
   app.getHttpAdapter().getInstance().disable('x-powered-by');
+  app.useBodyParser('json', {
+    limit: '7mb',
+    type: (req) =>
+      req.method === 'POST' &&
+      /^\/api\/v1\/(?:support\/tickets|moderation\/reports)\/[a-f0-9-]{36}\/evidence$/.test(
+        (req.url ?? '').split('?')[0]!,
+      ),
+  });
   app.useBodyParser('json', { limit: '128kb' });
   app.enableShutdownHooks();
   await app.init();

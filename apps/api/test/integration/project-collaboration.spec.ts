@@ -2174,4 +2174,68 @@ describe('P2-07 authorized Project content and consistent views', () => {
       await copy.close();
     }
   }, 60000);
+  it('preserves an exact moderation reference through Task transfer without copying private case data', async () => {
+    const p = await project(),
+      source = await personalTask(),
+      caseId = randomUUID();
+    await db.moderationCase.create({
+      data: {
+        id: caseId,
+        taskId: source.id,
+        targetSpaceId: source.spaceId,
+        reporterUserId: owner.actor.userId,
+        targetUserId: owner.actor.userId,
+        sourceKind: 'TASK',
+        category: 'SYNTHETIC',
+        description: 'PRIVATE-MODERATION-CASE-ONLY',
+        dedupHash: caseId.replaceAll('-', '').padEnd(64, '0'),
+      },
+    });
+    try {
+      const plan = await transfer.preview(
+        owner.actor,
+        p.id,
+        {
+          id: randomUUID(),
+          tasks: [{ id: source.id, revision: 1 }],
+          goals: [],
+          consent,
+        },
+        randomUUID(),
+      );
+      expect(plan.manifest.candidates[0]?.blockers).toEqual([]);
+      expect(JSON.stringify(plan)).not.toContain(
+        'PRIVATE-MODERATION-CASE-ONLY',
+      );
+      const accepted = await transfer.accept(
+        owner.actor,
+        p.id,
+        plan.id,
+        1,
+        plan.manifestHash,
+      );
+      const result = await transfer.apply(
+        owner.actor,
+        p.id,
+        plan.id,
+        accepted.revision,
+        {
+          manifestHash: plan.manifestHash,
+          password: 'synthetic-p207-password-123!',
+        },
+        randomUUID(),
+      );
+      expect(result.state).toBe('APPLIED');
+      const linked = await db.moderationCase.findUniqueOrThrow({
+        where: { id: caseId },
+      });
+      expect(linked.taskId).toBe(source.id);
+      expect(linked.targetSpaceId).toBe(source.spaceId);
+      expect(
+        (await db.task.findUniqueOrThrow({ where: { id: source.id } })).spaceId,
+      ).toBe(p.id);
+    } finally {
+      await db.moderationCase.delete({ where: { id: caseId } });
+    }
+  });
 });

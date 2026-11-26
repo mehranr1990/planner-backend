@@ -1,3 +1,4 @@
+import { adminEngagementRoutes } from '@mehran/api-contracts';
 import {
   adminManagementRoutes,
   adminSecurityRoutes,
@@ -9,6 +10,7 @@ import {
 } from '@mehran/api-contracts';
 
 export const adminPermissions = [
+  ...Object.values(adminEngagementRoutes).map((r) => r.permission),
   'admin.session.read',
   'admin.session.revoke',
   'admin.super',
@@ -49,6 +51,9 @@ export const adminRolePermissions: Record<string, readonly string[]> = {
   SUPPORT: [
     ...ownSession,
     ...metadataRead,
+    'admin.support.read',
+    'admin.support.reply',
+    'admin.support.assign',
     'admin.users.update',
     'admin.users.recovery_initiate',
     'admin.users.sessions.revoke',
@@ -56,6 +61,11 @@ export const adminRolePermissions: Record<string, readonly string[]> = {
     'admin.audit.category.control',
   ],
   SECURITY_REVIEWER: [
+    'admin.moderation.read',
+    'admin.moderation.report',
+    'admin.moderation.manage',
+    'admin.moderation.content.read',
+    'admin.moderation.penalty',
     'admin.health.read',
     ...ownSession,
     ...metadataRead,

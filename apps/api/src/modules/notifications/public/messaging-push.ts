@@ -1,3 +1,4 @@
+import { EngagementDelivery } from './engagement-delivery.js';
 import {
   Inject,
   Injectable,
@@ -270,8 +271,9 @@ export class MessagingPush {
   providers: [
     { provide: NotificationTransport, useClass: ChannelTransport },
     MessagingPush,
+    EngagementDelivery,
   ],
-  exports: [NotificationTransport, MessagingPush],
+  exports: [NotificationTransport, MessagingPush, EngagementDelivery],
 })
 export class NotificationChannelModule {}
 import { moduleChannelEnabled } from './module-preferences.js';
