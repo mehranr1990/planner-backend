@@ -47,6 +47,7 @@ export async function verifyAdminP6Upgrade() {
   };
   try {
     reviewMigrations()
+      .filter((n) => n <= adminP6ScheduleMigrationName)
       .filter((n) => n < adminP6MigrationName)
       .forEach(copy);
     deploy();

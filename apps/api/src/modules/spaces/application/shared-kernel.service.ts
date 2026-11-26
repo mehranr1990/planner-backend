@@ -1,3 +1,4 @@
+import { captureAnalytics } from '../../../platform/outbox/analytics-capture.js';
 import { assertCommercialFeature } from '../../admin-commerce/public/entitlements.js';
 import {
   Inject,
@@ -3362,6 +3363,28 @@ export class SharedKernel {
         authorizationVersion: custody.authorizationVersion,
       },
     });
+    if (
+      [
+        'task.create',
+        'team.task.create',
+        'project.task.create',
+        'company.task.create',
+        'task.complete',
+        'team.task.complete',
+        'project.task.complete',
+        'company.task.complete',
+      ].includes(action) &&
+      actor.userId &&
+      actor.sessionId
+    )
+      await captureAnalytics(tx, {
+        id,
+        type: action.endsWith('.complete') ? 'task.completed' : 'task.created',
+        version: 1,
+        userId: actor.userId,
+        spaceId: access.spaceId,
+        scopeId: access.scopeId,
+      });
     if (usage)
       await tx.sharedUsageEntry.create({
         data: {

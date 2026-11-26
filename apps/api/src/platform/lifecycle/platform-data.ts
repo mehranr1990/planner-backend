@@ -9,6 +9,28 @@ export class PlatformPersonalData {
     scope: AuthorizedSpace,
     budget: ExportBudget,
   ) {
+    await budget.collect(
+      'productAnalytics',
+      (after: string | undefined) =>
+        tx.productAnalyticsEvent.findMany({
+          where: {
+            userId: scope.actor.userId,
+            ...(after ? { id: { gt: after } } : {}),
+          },
+          orderBy: { id: 'asc' },
+          take: 250,
+          select: {
+            id: true,
+            name: true,
+            version: true,
+            feature: true,
+            workspaceType: true,
+            meaningful: true,
+            occurredAt: true,
+          },
+        }),
+      (r) => r.id,
+    );
     budget.add(
       'securityAudit',
       await tx.securityAuditEvent.findMany({
@@ -32,6 +54,9 @@ export class PlatformPersonalData {
     );
   }
   async erase(tx: Prisma.TransactionClient, scope: AuthorizedSpace) {
+    await tx.productAnalyticsEvent.deleteMany({
+      where: { userId: scope.actor.userId },
+    });
     await tx.securityAuditEvent.deleteMany({
       where: { actorUserId: scope.actor.userId },
     });

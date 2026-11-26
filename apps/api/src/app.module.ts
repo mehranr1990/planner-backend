@@ -1,3 +1,8 @@
+import {
+  AnalyticsModule,
+  ANALYTICS_SCOPE_AUTHORITY,
+  type AnalyticsScopeAuthority,
+} from './modules/admin-analytics/public/index.js';
 import { CommerceModule } from './modules/admin-commerce/public/index.js';
 import { protectsEngagementEvidence } from './modules/admin-engagement/public/storage-reference.js';
 import { EngagementModule } from './modules/admin-engagement/public/index.js';
@@ -176,6 +181,32 @@ export class AppModule {
         }),
         engagement,
         CommerceModule,
+        AnalyticsModule.register([SpacesModule], {
+          provide: ANALYTICS_SCOPE_AUTHORITY,
+          inject: [SpacesService, SharedKernel],
+          useFactory:
+            (
+              spaces: SpacesService,
+              kernel: SharedKernel,
+            ): AnalyticsScopeAuthority =>
+            async (tx, actor, selector) => {
+              if (!selector) {
+                const scope = await spaces.authorizePersonal(actor);
+                await scope.fence(tx);
+                return {
+                  spaceId: scope.spaceId,
+                  scopeId: null,
+                  kind: 'PERSONAL',
+                };
+              }
+              const scope = await commerceScope(tx, selector, actor, kernel);
+              return {
+                spaceId: scope.spaceId,
+                scopeId: scope.scopeId,
+                kind: scope.kind,
+              };
+            },
+        }),
         ManagementModule.register([teams, companies, accountLifecycle]),
         SocialModule,
         SocialActivitiesModule.register(tasks, calendar, finance),

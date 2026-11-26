@@ -1,3 +1,4 @@
+import { AnalyticsWorker } from './modules/admin-analytics/public/index.js';
 import { CommerceWorker } from './modules/admin-commerce/public/index.js';
 import { EngagementWorker } from './modules/admin-engagement/public/index.js';
 import 'reflect-metadata';
@@ -67,6 +68,15 @@ try {
     const maintenanceRelease = await app
       .get(ConfigurationMaintenance)
       .consume();
+    const analytics = await app
+      .get(AnalyticsWorker)
+      .consume()
+      .catch(() => {
+        process.stderr.write(
+          'Analytics reconciliation failed; durable pending work will retry.\n',
+        );
+        return false;
+      });
     const commerce = await app.get(CommerceWorker).consume();
     const communicationDelivery = await app.get(EngagementWorker).consume();
     const adminDelivery = await app.get(AdminDeliveryService).consume();
@@ -134,6 +144,7 @@ try {
     return (
       configuration ||
       maintenanceRelease ||
+      analytics ||
       commerce ||
       communicationDelivery ||
       adminDelivery ||

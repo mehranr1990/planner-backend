@@ -88,7 +88,9 @@ export const SHARED_CLEANUP_FK_SHA256 =
   // P6 adds 13 edges (1,323 total). Typed targets SET NULL on erasure/custody
   // purge. All other edges join configuration/approval evidence, never content.
   // M123 adds two configuration/approval-only release-schedule references.
-  'bfd87eee40804a75865e0a2c88a9edaca6e1bde241ca34bae153172c2a56c9eb';
+  // P7 adds four metadata-only cascade references: User, Space, logical AccessScope and AdminUser.
+  // Erasure invalidates aggregates and reports; no retained analytics identity blocks deletion.
+  '2a50bd949621a3ed30c7fac0e96333a78160a2b1fade7b7938dce6cfa37f3915';
 export async function assertSharedCleanupCatalog(tx: Prisma.TransactionClient) {
   const rows = await tx.$queryRaw<
     { table: string; name: string; target: string; definition: string }[]

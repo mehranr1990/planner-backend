@@ -1,0 +1,2 @@
+ALTER TABLE "ProductAnalyticsReport" ADD COLUMN type varchar(9) NOT NULL DEFAULT 'PRODUCT'
+ CHECK(type IN ('PRODUCT','FINANCIAL'));

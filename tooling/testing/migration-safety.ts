@@ -1,4 +1,24 @@
 import {
+  adminP7FinancialMigrationName,
+  assertReviewedAdminP7FinancialMigration,
+} from './reviewed-admin-p7-migration.ts';
+import {
+  adminP7ContextMigrationName,
+  assertReviewedAdminP7ContextMigration,
+} from './reviewed-admin-p7-migration.ts';
+import {
+  adminP7FenceMigrationName,
+  assertReviewedAdminP7FenceMigration,
+} from './reviewed-admin-p7-migration.ts';
+import {
+  adminP7OrderMigrationName,
+  assertReviewedAdminP7OrderMigration,
+} from './reviewed-admin-p7-migration.ts';
+import {
+  adminP7MigrationName,
+  assertReviewedAdminP7Migration,
+} from './reviewed-admin-p7-migration.ts';
+import {
   adminP5ClosureMigrationName,
   assertReviewedAdminP5ClosureMigration,
 } from './reviewed-admin-p5-migration.ts';
@@ -284,7 +304,16 @@ export function reviewMigrations(directory = 'prisma/migrations'): string[] {
       path.join(directory, name, 'migration.sql'),
       'utf8',
     );
-    if (name === adminP6ScheduleMigrationName)
+    if (name === adminP7FinancialMigrationName)
+      assertReviewedAdminP7FinancialMigration(sql);
+    else if (name === adminP7ContextMigrationName)
+      assertReviewedAdminP7ContextMigration(sql);
+    else if (name === adminP7FenceMigrationName)
+      assertReviewedAdminP7FenceMigration(sql);
+    else if (name === adminP7OrderMigrationName)
+      assertReviewedAdminP7OrderMigration(sql);
+    else if (name === adminP7MigrationName) assertReviewedAdminP7Migration(sql);
+    else if (name === adminP6ScheduleMigrationName)
       assertReviewedAdminP6ScheduleMigration(sql);
     else if (name === adminP6MigrationName) assertReviewedAdminP6Migration(sql);
     else if (name === adminP5ClosureMigrationName)

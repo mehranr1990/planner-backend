@@ -1,3 +1,4 @@
+import { adminAnalyticsRoutes } from '@mehran/api-contracts';
 import { adminCommerceRoutes } from '@mehran/api-contracts';
 import { adminEngagementRoutes } from '@mehran/api-contracts';
 import {
@@ -11,6 +12,8 @@ import {
 } from '@mehran/api-contracts';
 
 export const adminPermissions = [
+  'admin.analytics.financial.read',
+  ...Object.values(adminAnalyticsRoutes).map((r) => r.permission),
   'admin.configuration.sensitive.publish',
   ...Object.values(adminConfigurationRoutes).map((r) => r.permission),
   ...Object.values(adminCommerceRoutes).map((r) => r.permission),
@@ -86,6 +89,7 @@ export const adminRolePermissions: Record<string, readonly string[]> = {
     'admin.audit.category.security',
   ],
   BILLING_MANAGER: [
+    'admin.analytics.financial.read',
     ...ownSession,
     'admin.plans.read',
     'admin.subscriptions.read',

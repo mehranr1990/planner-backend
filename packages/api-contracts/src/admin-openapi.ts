@@ -1,3 +1,4 @@
+import { adminAnalyticsRoutes } from './admin-analytics.js';
 import { adminCommerceRoutes } from './admin-commerce.js';
 import { adminEngagementRoutes } from './admin-engagement.js';
 import { z } from 'zod';
@@ -24,10 +25,12 @@ for (const [route, spec] of Object.entries({
   ...adminEngagementRoutes,
   ...adminCommerceRoutes,
   ...adminConfigurationRoutes,
+  ...adminAnalyticsRoutes,
 })) {
   const [method, suffix] = route.split(' ') as [string, string];
   const path = '/api/v1/admin/' + suffix.replace(':id', '{id}');
-  const p6 = suffix.startsWith('configuration/');
+  const p6 =
+    suffix.startsWith('configuration/') || suffix.startsWith('analytics/');
   const pointer =
     '#/paths/' + pointerSegment(path) + '/' + method.toLowerCase();
   const csv = route === 'GET audit/export';
@@ -38,13 +41,15 @@ for (const [route, spec] of Object.entries({
     ...adminPaths[path],
     [method.toLowerCase()]: {
       operationId:
-        (p6
-          ? 'platformAdminP6_'
-          : /^(communications|support|moderation|engagement)\//.test(suffix)
-            ? 'platformAdminP4_'
-            : suffix.startsWith('operations/')
-              ? 'platformAdminP3_'
-              : 'platformAdminP2_') +
+        (suffix.startsWith('analytics/')
+          ? 'platformAdminP7_'
+          : p6
+            ? 'platformAdminP6_'
+            : /^(communications|support|moderation|engagement)\//.test(suffix)
+              ? 'platformAdminP4_'
+              : suffix.startsWith('operations/')
+                ? 'platformAdminP3_'
+                : 'platformAdminP2_') +
         method.toLowerCase() +
         '_' +
         suffix.replace(/[^a-zA-Z]/g, '_'),

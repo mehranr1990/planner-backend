@@ -1,3 +1,4 @@
+import { analyticsPaths } from './admin-analytics-openapi.js';
 import { commercePaths } from './admin-commerce-openapi.js';
 import { engagementPaths } from './admin-engagement-openapi.js';
 import { adminPaths, adminEngagementPaths } from './admin-openapi.js';
@@ -333,6 +334,7 @@ export function createOpenApiDocument() {
       ...engagementPaths(),
       ...commercePaths(),
       ...configurationPaths(),
+      ...analyticsPaths(),
       ...adminEngagementPaths,
     },
     components: {

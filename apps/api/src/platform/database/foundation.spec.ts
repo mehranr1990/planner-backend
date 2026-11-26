@@ -348,6 +348,11 @@ describe('scoped persistence and API conventions', () => {
       '202611260121_p5_term_closure',
       '202611260122_platform_admin_p6',
       '202611260123_p6_maintenance_release_schedule',
+      '202611260124_platform_admin_p7',
+      '202611260125_p7_privacy_refresh_order',
+      '202611260126_p7_erasure_fence',
+      '202611260127_p7_existing_context_activity',
+      '202611260128_p7_financial_reports',
     ]);
     for (const sql of [
       '',

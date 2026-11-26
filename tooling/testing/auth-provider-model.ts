@@ -1,4 +1,5 @@
 const applicationUserRelations: Readonly<Record<string, string>> = {
+  analyticsEvents: 'analyticsEventsProductAnalyticsEvent[]',
   // ADR 0078: exact application-only target navigation.
   r_PlatformConfigTarget_userId:
     'r_PlatformConfigTarget_userIdPlatformConfigTarget[]@relation("PlatformConfigTarget_userId")',

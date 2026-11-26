@@ -1,3 +1,4 @@
+import { CommerceAnalytics } from './public/analytics.js';
 import { Module } from '@nestjs/common';
 import { DatabaseModule } from '../../platform/database/database.module.js';
 import { AdminModule } from '../../platform/admin/admin.module.js';
@@ -19,6 +20,7 @@ import { CommerceData } from './public/commerce-data.js';
 @Module({
   imports: [DatabaseModule, AdminModule, SpacesModule, AuditModule],
   providers: [
+    CommerceAnalytics,
     CommerceCore,
     CatalogService,
     SubscriptionsService,
@@ -33,6 +35,6 @@ import { CommerceData } from './public/commerce-data.js';
     CommerceUserController,
     CommerceCatalogController,
   ],
-  exports: [CommerceWorker, CommerceData],
+  exports: [CommerceWorker, CommerceData, CommerceAnalytics],
 })
 export class CommerceModule {}

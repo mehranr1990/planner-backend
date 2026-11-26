@@ -927,190 +927,237 @@ export class BillingService extends FinancialLedger {
         data: { active: b.active, revision: { increment: 1 } },
       });
     }
-    if (route === 'GET commerce/reports') {
-      const b = parse(route, input),
-        from = new Date(b.from),
-        to = new Date(b.to);
-      if (to <= from || to.getTime() - from.getTime() > 366 * dayMs)
-        fail('REPORT_WINDOW_LIMIT');
-      const payments = await tx.commercePayment.groupBy({
-          by: ['currency'],
-          where: { state: 'VERIFIED', verifiedAt: { gte: from, lt: to } },
-          _sum: { amount: true },
-        }),
-        refunds = await tx.commerceRefund.groupBy({
-          by: ['currency'],
-          where: { createdAt: { gte: from, lt: to } },
-          _sum: { amount: true },
-        }),
-        charges = await tx.commerceLedger.groupBy({
-          by: ['currency'],
-          where: {
-            kind: { in: ['CHARGE', 'ADJUSTMENT', 'WRITE_OFF'] },
-            createdAt: { gte: from, lt: to },
-          },
-          _sum: { amount: true },
-        });
-      const outstanding = await tx.commerceLedger.groupBy({
+    if (route === 'GET commerce/reports')
+      return this.analyticsReport(tx, input);
+    throw new NotFoundException();
+  }
+  async analyticsReport(
+    tx: Prisma.TransactionClient,
+    input: unknown,
+    includePrices = false,
+  ) {
+    const b = parse('GET commerce/reports', input),
+      from = new Date(b.from),
+      to = new Date(b.to);
+    if (to <= from || to.getTime() - from.getTime() > 366 * dayMs)
+      fail('REPORT_WINDOW_LIMIT');
+    const payments = await tx.commercePayment.groupBy({
         by: ['currency'],
-        where: { kind: { in: balanceKinds }, invoiceId: { not: null } },
+        where: { state: 'VERIFIED', verifiedAt: { gte: from, lt: to } },
+        _sum: { amount: true },
+      }),
+      refunds = await tx.commerceRefund.groupBy({
+        by: ['currency'],
+        where: { createdAt: { gte: from, lt: to } },
+        _sum: { amount: true },
+      }),
+      charges = await tx.commerceLedger.groupBy({
+        by: ['currency'],
+        where: {
+          kind: { in: ['CHARGE', 'ADJUSTMENT', 'WRITE_OFF'] },
+          createdAt: { gte: from, lt: to },
+        },
         _sum: { amount: true },
       });
-      const snapshotAt = new Date();
-      const recurring = await tx.commerceSubscription.findMany({
-        where: {
-          origin: 'EXTERNAL',
-          state: { in: ['SCHEDULED', 'ACTIVE', 'GRACE'] },
-          startsAt: { lte: snapshotAt },
-          r_customerId: { closedAt: null },
-        },
-        include: {
-          r_priceId: true,
-          r_CommerceTerm_subscriptionId: {
-            where: { closure: null },
-            include: {
-              shifts: true,
-              closure: true,
-              r_CommercePayment_termId: {
-                where: { state: 'VERIFIED', verifiedAt: { lt: snapshotAt } },
-                include: {
-                  r_CommerceRefund_paymentId: {
-                    where: { createdAt: { lt: snapshotAt } },
-                  },
+    const outstanding = await tx.commerceLedger.groupBy({
+      by: ['currency'],
+      where: { kind: { in: balanceKinds }, invoiceId: { not: null } },
+      _sum: { amount: true },
+    });
+    const snapshotAt = new Date();
+    const recurring = await tx.commerceSubscription.findMany({
+      where: {
+        origin: 'EXTERNAL',
+        state: { in: ['SCHEDULED', 'ACTIVE', 'GRACE'] },
+        startsAt: { lte: snapshotAt },
+        r_customerId: { closedAt: null },
+      },
+      include: {
+        r_priceId: true,
+        r_CommerceTerm_subscriptionId: {
+          where: { closure: null },
+          include: {
+            shifts: true,
+            closure: true,
+            r_CommercePayment_termId: {
+              where: { state: 'VERIFIED', verifiedAt: { lt: snapshotAt } },
+              include: {
+                r_CommerceRefund_paymentId: {
+                  where: { createdAt: { lt: snapshotAt } },
                 },
               },
             },
           },
         },
+      },
+      take: 10001,
+    });
+    if (recurring.length > 10000) fail('REPORT_ROW_LIMIT');
+    const codes = new Set(
+      [...payments, ...refunds, ...charges, ...outstanding].map(
+        (v) => v.currency,
+      ),
+    );
+    for (const s of recurring) codes.add(s.r_priceId.currency);
+    const pricing = new Map<
+      string,
+      {
+        priceId: string;
+        productId: string;
+        kind: 'PLAN' | 'ADDON';
+        currency: string;
+        collected: bigint;
+        customers: Set<string>;
+      }
+    >();
+    const currencies = [];
+    for (const code of [...codes].sort()) {
+      const collected = minor(
+          payments.find((p) => p.currency === code)?._sum.amount ?? '0',
+        ),
+        refunded = minor(
+          refunds.find((p) => p.currency === code)?._sum.amount ?? '0',
+        ),
+        receivable = minor(
+          outstanding.find((p) => p.currency === code)?._sum.amount ?? '0',
+        );
+      const eligible = recurring.filter(
+        (s) =>
+          s.r_priceId.currency === code &&
+          s.r_priceId.recurring &&
+          s.r_priceId.termDays &&
+          s.endsAt &&
+          s.endsAt > snapshotAt &&
+          effectiveSubscription(s, snapshotAt) === 'ACTIVE' &&
+          s.renewal === 'MANUAL' &&
+          !s.cancelAtEnd,
+      );
+      let mrr = 0n;
+      for (const sub of eligible) {
+        const term = sub.r_CommerceTerm_subscriptionId.find((t) => {
+          const w = termWindow(t);
+          return (
+            w.startsAt <= snapshotAt && (!w.endsAt || w.endsAt > snapshotAt)
+          );
+        });
+        if (!term || term.origin !== 'EXTERNAL') continue;
+        const paid = term.r_CommercePayment_termId.reduce(
+          (n, p) =>
+            n +
+            minor(p.amount) -
+            p.r_CommerceRefund_paymentId.reduce(
+              (a, r) => a + minor(r.amount),
+              0n,
+            ),
+          0n,
+        );
+        if (paid > 0n)
+          mrr += (minor(term.amount) * 30n) / BigInt(sub.r_priceId.termDays!);
+      }
+      const breakdown = await tx.commercePayment.findMany({
+        where: {
+          currency: code,
+          state: 'VERIFIED',
+          verifiedAt: { gte: from, lt: to },
+          termId: { not: null },
+        },
+        include: {
+          r_termId: {
+            include: { r_versionId: { include: { r_productId: true } } },
+          },
+        },
         take: 10001,
       });
-      if (recurring.length > 10000) fail('REPORT_ROW_LIMIT');
-      const codes = new Set(
-        [...payments, ...refunds, ...charges, ...outstanding].map(
-          (v) => v.currency,
-        ),
-      );
-      for (const s of recurring) codes.add(s.r_priceId.currency);
-      const currencies = [];
-      for (const code of [...codes].sort()) {
-        const collected = minor(
-            payments.find((p) => p.currency === code)?._sum.amount ?? '0',
-          ),
-          refunded = minor(
-            refunds.find((p) => p.currency === code)?._sum.amount ?? '0',
-          ),
-          receivable = minor(
-            outstanding.find((p) => p.currency === code)?._sum.amount ?? '0',
-          );
-        const eligible = recurring.filter(
-          (s) =>
-            s.r_priceId.currency === code &&
-            s.r_priceId.recurring &&
-            s.r_priceId.termDays &&
-            s.endsAt &&
-            s.endsAt > snapshotAt &&
-            effectiveSubscription(s, snapshotAt) === 'ACTIVE' &&
-            s.renewal === 'MANUAL' &&
-            !s.cancelAtEnd,
-        );
-        let mrr = 0n;
-        for (const sub of eligible) {
-          const term = sub.r_CommerceTerm_subscriptionId.find((t) => {
-            const w = termWindow(t);
-            return (
-              w.startsAt <= snapshotAt && (!w.endsAt || w.endsAt > snapshotAt)
-            );
-          });
-          if (!term || term.origin !== 'EXTERNAL') continue;
-          const paid = term.r_CommercePayment_termId.reduce(
-            (n, p) =>
-              n +
-              minor(p.amount) -
-              p.r_CommerceRefund_paymentId.reduce(
-                (a, r) => a + minor(r.amount),
-                0n,
-              ),
-            0n,
-          );
-          if (paid > 0n)
-            mrr += (minor(term.amount) * 30n) / BigInt(sub.r_priceId.termDays!);
+      if (breakdown.length > 10000) fail('REPORT_ROW_LIMIT');
+      const totals = new Map<
+        string,
+        { productId: string; kind: 'PLAN' | 'ADDON'; collected: bigint }
+      >();
+      for (const p of breakdown) {
+        const sub = p.r_termId!.r_versionId.r_productId;
+        if (includePrices) {
+          const priceId = p.r_termId!.priceId,
+            key = code + ':' + priceId,
+            entry = pricing.get(key) ?? {
+              priceId,
+              productId: sub.id,
+              kind: sub.kind as 'PLAN' | 'ADDON',
+              currency: code,
+              collected: 0n,
+              customers: new Set<string>(),
+            };
+          entry.collected += minor(p.amount);
+          entry.customers.add(p.customerId);
+          pricing.set(key, entry);
         }
-        const breakdown = await tx.commercePayment.findMany({
-          where: {
-            currency: code,
-            state: 'VERIFIED',
-            verifiedAt: { gte: from, lt: to },
-            termId: { not: null },
-          },
-          include: {
-            r_termId: {
-              include: { r_versionId: { include: { r_productId: true } } },
-            },
-          },
-          take: 10001,
-        });
-        if (breakdown.length > 10000) fail('REPORT_ROW_LIMIT');
-        const totals = new Map<
-          string,
-          { productId: string; kind: 'PLAN' | 'ADDON'; collected: bigint }
-        >();
-        for (const p of breakdown) {
-          const sub = p.r_termId!.r_versionId.r_productId;
-          const key = sub.id,
-            old = totals.get(key);
-          totals.set(key, {
-            productId: key,
-            kind: sub.kind as 'PLAN' | 'ADDON',
-            collected: (old?.collected ?? 0n) + minor(p.amount),
-          });
-        }
-        const converted = await tx.commercePayment.groupBy({
-          by: ['customerId'],
-          where: { currency: code, state: 'VERIFIED', verifiedAt: { lt: to } },
-          _sum: { amount: true },
-          orderBy: { customerId: 'asc' },
-          take: 10001,
-        });
-        const reversed = await tx.commerceRefund.groupBy({
-          by: ['customerId'],
-          where: { currency: code, createdAt: { lt: to } },
-          _sum: { amount: true },
-          orderBy: { customerId: 'asc' },
-          take: 10001,
-        });
-        if (converted.length > 10000 || reversed.length > 10000)
-          fail('REPORT_ROW_LIMIT');
-        const conversions = converted.filter(
-          (p) =>
-            minor(p._sum.amount ?? '0') >
-            minor(
-              reversed.find((r) => r.customerId === p.customerId)?._sum
-                .amount ?? '0',
-            ),
-        ).length;
-        currencies.push({
-          currency: code,
-          payments: collected.toString(),
-          refunds: refunded.toString(),
-          netCash: (collected - refunded).toString(),
-          receivables: (receivable > 0n ? receivable : 0n).toString(),
-          invoiceCharges: minor(
-            charges.find((p) => p.currency === code)?._sum.amount ?? '0',
-          ).toString(),
-          mrr: mrr.toString(),
-          arr: (mrr * 12n).toString(),
-          conversionNumerator: conversions,
-          conversionDenominator: await tx.commerceCustomer.count({
-            where: { createdAt: { lt: to } },
-          }),
-          byProduct: [...totals.values()].map((v) => ({
-            ...v,
-            collected: v.collected.toString(),
-          })),
+        const key = sub.id,
+          old = totals.get(key);
+        totals.set(key, {
+          productId: key,
+          kind: sub.kind as 'PLAN' | 'ADDON',
+          collected: (old?.collected ?? 0n) + minor(p.amount),
         });
       }
-      return { currencies, snapshotAt: snapshotAt.toISOString() };
+      const converted = await tx.commercePayment.groupBy({
+        by: ['customerId'],
+        where: { currency: code, state: 'VERIFIED', verifiedAt: { lt: to } },
+        _sum: { amount: true },
+        orderBy: { customerId: 'asc' },
+        take: 10001,
+      });
+      const reversed = await tx.commerceRefund.groupBy({
+        by: ['customerId'],
+        where: { currency: code, createdAt: { lt: to } },
+        _sum: { amount: true },
+        orderBy: { customerId: 'asc' },
+        take: 10001,
+      });
+      if (converted.length > 10000 || reversed.length > 10000)
+        fail('REPORT_ROW_LIMIT');
+      const conversions = converted.filter(
+        (p) =>
+          minor(p._sum.amount ?? '0') >
+          minor(
+            reversed.find((r) => r.customerId === p.customerId)?._sum.amount ??
+              '0',
+          ),
+      ).length;
+      currencies.push({
+        currency: code,
+        payments: collected.toString(),
+        refunds: refunded.toString(),
+        netCash: (collected - refunded).toString(),
+        receivables: (receivable > 0n ? receivable : 0n).toString(),
+        invoiceCharges: minor(
+          charges.find((p) => p.currency === code)?._sum.amount ?? '0',
+        ).toString(),
+        mrr: mrr.toString(),
+        arr: (mrr * 12n).toString(),
+        conversionNumerator: conversions,
+        conversionDenominator: await tx.commerceCustomer.count({
+          where: { createdAt: { lt: to } },
+        }),
+        byProduct: [...totals.values()].map((v) => ({
+          ...v,
+          collected: v.collected.toString(),
+        })),
+      });
     }
-    throw new NotFoundException();
+    return {
+      currencies,
+      snapshotAt: snapshotAt.toISOString(),
+      ...(includePrices
+        ? {
+            prices: [...pricing.values()].map((r) => ({
+              priceId: r.priceId,
+              productId: r.productId,
+              kind: r.kind,
+              currency: r.currency,
+              collected: r.collected.toString(),
+              payingCustomers: r.customers.size,
+            })),
+          }
+        : {}),
+    };
   }
 }

@@ -1,3 +1,4 @@
+import { verifyAdminP7Upgrade } from '../testing/admin-p7-upgrade.ts';
 import { verifyAdminP6Upgrade } from '../testing/admin-p6-upgrade.ts';
 import { verifyAdminP5Upgrade } from '../testing/admin-p5-upgrade.ts';
 import { verifyAdminP4Upgrade } from '../testing/admin-p4-upgrade.ts';
@@ -50,7 +51,7 @@ try {
     )
   ).rows;
   // Six P0 Admin identity/audit tables and three P1 bulk/receipt/delivery tables.
-  assert.equal(emptyTables.length, 432); // P6 adds eight independent configuration tables
+  assert.equal(emptyTables.length, 437); // P7 adds five metadata-only analytics tables
   // Required reset capability is restricted to this disposable, newly-created namespace.
   await sandbox.resetOwnedSchema();
   const folder = path.resolve('.tools/migration-check-' + randomUUID());
@@ -737,3 +738,5 @@ await verifyAdminP4Upgrade();
 await verifyAdminP5Upgrade();
 
 await verifyAdminP6Upgrade();
+
+await verifyAdminP7Upgrade();

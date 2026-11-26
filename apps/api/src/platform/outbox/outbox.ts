@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+import { captureAnalytics } from './analytics-capture.js';
 import { z } from 'zod';
 import type { Prisma } from '../../generated/prisma/client.js';
 import type { AuthorizedSpace } from '../authorization/authorized-space.js';
@@ -73,9 +75,19 @@ export async function appendOutbox(
   event: DomainEvent,
 ) {
   const value = EventSchema.parse(event);
+  const id = randomUUID();
+  if (scope.actor.sessionId)
+    await captureAnalytics(tx, {
+      id,
+      type: value.type,
+      version: value.version,
+      userId: scope.actor.userId,
+      spaceId: scope.spaceId,
+    });
   return tx.outboxEvent.create({
     data: {
       ...value,
+      id,
       spaceId: scope.spaceId,
       correlationId: scope.actor.correlationId,
     },
@@ -88,8 +100,19 @@ export async function appendOutboxBatch(
   events: DomainEvent[],
 ): Promise<void> {
   if (!events.length) return;
+  const ids = events.map(() => randomUUID());
+  for (const [i, event] of events.entries())
+    if (scope.actor.sessionId)
+      await captureAnalytics(tx, {
+        id: ids[i]!,
+        type: event.type,
+        version: event.version,
+        userId: scope.actor.userId,
+        spaceId: scope.spaceId,
+      });
   await tx.outboxEvent.createMany({
-    data: events.map((event) => ({
+    data: events.map((event, i) => ({
+      id: ids[i]!,
       ...EventSchema.parse(event),
       spaceId: scope.spaceId,
       correlationId: scope.actor.correlationId,
