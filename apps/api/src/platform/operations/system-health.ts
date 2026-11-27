@@ -346,6 +346,12 @@ export class SystemHealth {
         incident.state !== 'OPEN';
       if (!canceled)
         await this.mail.send({
+          metadata: {
+            sourceKind: 'OPERATIONAL_ALERT',
+            sourceId: claim.id,
+            category: 'SYSTEM_NOTICE',
+            adminUserId: claim.adminUserId,
+          },
           to: user.email,
           kind: 'administrative',
           url: new URL(

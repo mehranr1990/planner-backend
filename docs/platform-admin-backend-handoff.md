@@ -3,7 +3,12 @@
 2026-11-27. P0-P7 are accepted for local development and published. P7 commit
 `9b2d7768265fe6444be17cd4d2695fbaa798237c` was pushed and verified on origin/main.
 The final Backend Integration Readiness batch adds CB-INV-1 and the narrow Admin
-retention-catalog adapter; its changes remain uncommitted pending separate approval.
+retention-catalog adapter; its 32 approved files were accepted and published as
+`3b1e19bc59b58e4f60c5cce14749d0091b4c7f6e`, verified on origin/main.
+The final Registration Diagnostics and System Email Delivery Logs batch extends
+modules 03/13. The owner accepted local development and authorized publication
+after review of the final evidence. This revision contains the synchronized final
+OpenAPI, generated reference, consolidated handoff and 22-module matrix.
 This handoff reuses unchanged phase evidence. It is not production or live frontend
 acceptance.
 
@@ -21,7 +26,7 @@ and its [frontend mirror](frontend-handoff/openapi.json) define exact wire schem
 | ------------------------ | ----------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
 | 01 Authentication/RBAC   | platform/admin, separate Better Auth realm, default-deny guard, persisted MFA, operator provisioning                    | ADR 0071; ordinary auth compatibility; P6 complete regression baseline                   |
 | 02 Dashboard             | admin-management, permission-scoped metadata metrics and bounded CSV                                                    | P1 work record, dashboard unit/PostgreSQL cases                                          |
-| 03 Users                 | admin-management plus Account public facade, account state/bulk/session controls                                        | P1 27-route inventory and authorization/concurrency cases                                |
+| 03 Users                 | admin-management plus Account public facade, state/bulk/session controls and observed registration history              | P1/P2 evidence, ADR 0081 and final diagnostics tests                                     |
 | 04 Workspaces            | admin-management plus Spaces/Teams/Companies facades, logical child identities                                          | P1 owner-consented custody and suspension matrices; ADRs 0029/0043/0072                  |
 | 05 Memberships           | existing ContextAccess/Invitation/Handover, signed admission and user consent                                           | P1 current membership, revocation, transfer and delivery evidence                        |
 | 06 Security              | platform/admin, two-person critical approval, recovery, login restrictions and alerts                                   | ADR 0073; P2 security/audit PostgreSQL suite                                             |
@@ -31,7 +36,7 @@ and its [frontend mirror](frontend-handoff/openapi.json) define exact wire schem
 | 10 Jobs                  | existing pg-boss plus operations job allowlist, bounded state/retry/cancel/schedules                                    | P3 work record; normal durable worker retained through P7                                |
 | 11 Storage               | existing StoragePort/private volume, usage/quota/orphan review, dedicated Super Admin file exception                    | P3 source-owner streaming/scanner/custody tests; no generic content browsing             |
 | 12 Backup/Restore        | P3 operator console and approved adapters, signed controls, two-person restore and deletion replay                      | P3 local rehearsal/offline evidence; physical deployment drills remain below             |
-| 13 Communications        | admin-engagement, versioned templates, targets, previews, approvals, durable channel delivery/preferences               | ADR 0076; P4 27-case focused suite and corrected full checkpoints                        |
+| 13 Communications        | admin-engagement templates/campaigns plus source-owned unified system email metadata and safe retry                     | P4 evidence, ADR 0081 and final diagnostics tests                                        |
 | 14 Support               | admin-engagement, user-supplied ticket material, queue/SLA/replies/internal-note separation, verified inbound boundary  | P4 work record and current contract; trusted inbound activation deferred                 |
 | 15 Moderation            | admin-engagement, exact case-resource disclosure, audited decisions, different-reviewer appeals                         | P4 report/content/access/appeal and retention tests                                      |
 | 16 Plans                 | admin-commerce, dynamic versioned catalog/allowances/prices/add-ons/overrides                                           | ADR 0077; P5 catalog and effective-entitlement tests; enforcement remains off            |
@@ -103,8 +108,8 @@ settings, signed independent controls, encryption/evidence keys and retention
 policy provisioning follow the existing operational runbook. Do not publish keys.
 
 Migrations are controlled one-off deployment work, never startup schema mutation.
-P7 adds M124-M128; P0–P6 bytes/checksums and owner compose are preserved. The new
-metadata FK catalog is 1,329 references; source erasure invalidates cached analytics
+P7 adds M124-M128; P0–P6 bytes/checksums and owner compose are preserved. Diagnostics adds M129/M130; the current
+metadata FK catalog is 1,331 references; source erasure invalidates cached analytics
 and P2 export/deletion includes the user's analytics metadata. Restore replay must
 complete before privacy quarantine is released. Finances and audit history retain
 their separate approved policies.
@@ -151,7 +156,7 @@ No unresolved approved local P0-P7 backend requirement was identified. The readi
 review closes the two additive contract gaps described below. Optional prototype
 controls and unavailable projections are classified explicitly in the matrix;
 frontend Live integration and deployment checks remain pending. P7 is published;
-readiness changes are uncommitted, with an empty index. Owner compose and all 155
+readiness is published and Diagnostics publication is owner-approved. Owner compose and all 155
 published migration files are byte-for-byte preserved.
 
 ## Integration contract details
@@ -345,7 +350,9 @@ secured control storage. Run the worker for durable deliveries, policy schedules
 aggregation, exports/reports and recovery. Provision approved retention policies,
 Admin identities/MFA, trusted origins/proxies and keys through existing runbooks.
 No dependency, environment secret or local configuration is added by readiness.
-No migration is added; M001-M128 history remains frozen.
+Readiness added no migration. Diagnostics adds M129/M130; all 155 published
+predecessor migration files remain frozen. No new dependency or configuration
+secret is required.
 
 Deployment-only requirements remain those listed above: production checksum
 preflight (including the recorded historical local M084 ledger discrepancy),
@@ -354,8 +361,8 @@ real delivery/scanner/inbound activation, off-host backup/physical restore and
 deletion-replay drills, key custody, capacity and traffic switch. They are not
 backend contract blockers or local test passes. No deployment is performed.
 See the [readiness work record](backend-integration-readiness-work-record.md)
-for final exact commands/results and protected-file evidence. Readiness publication
-requires the owner's separate approval.
+for its final exact commands/results and protected-file evidence. Readiness is
+published; Diagnostics publication has now received separate owner approval.
 
 Final readiness acceptance, 2026-11-27: COMPLETE - LOCAL DEVELOPMENT.
 All 1,038 repository tests passed. All 234 affected PostgreSQL cases passed using
@@ -365,3 +372,106 @@ passed. Final contract: 1,571 operations, 208 Admin operations, 22 mapped module
 The readiness work record contains exact commands, initial fixture/style failures,
 successful reruns, preserved-file evidence and reused P0-P7 verification. No new
 migration or dependency and no unresolved approved backend contract blocker.
+
+## Final registration and system email diagnostics contracts
+
+The final batch extends existing modules 03 and 13; all 22 module mappings and
+exact closed role sets are regenerated in the API reference. There is no new
+mail provider, queue, worker, role or frontend change. Ordinary Client request and
+response contracts are preserved. See [ADR 0081](adr/0081-registration-email-diagnostics.md)
+and [the verification record](registration-email-diagnostics-work-record.md).
+
+| Method / path under `/api/v1/admin`              | Permission                        | Role / additional requirements                                                              |
+| ------------------------------------------------ | --------------------------------- | ------------------------------------------------------------------------------------------- |
+| `GET users`, `GET users/:id` (extended existing) | `admin.users.read`                | SUPER_ADMIN, SUPPORT, SECURITY_REVIEWER                                                     |
+| `POST users/:id/resend-verification`             | `admin.users.verification.resend` | SUPER_ADMIN, SUPPORT; recent MFA, reason, revision, Idempotency-Key                         |
+| `GET system-emails`                              | `admin.email.read`                | SUPER_ADMIN; recent MFA, audited read                                                       |
+| `GET system-emails/:id`                          | `admin.email.read`                | SUPER_ADMIN; recent MFA, audited read                                                       |
+| `POST system-emails/:id/retry`                   | `admin.email.retry`               | SUPER_ADMIN; recent MFA, reason, Idempotency-Key and action-specific revision/attempt count |
+
+User list filters add `verificationStatus=VERIFIED|UNVERIFIED`,
+`loginStatus=RECORDED_SUCCESS|NO_RECORDED_SUCCESS`,
+`loginHistory=COMPLETE|PARTIAL|UNKNOWN`; existing `status`, `search`, registration
+`from`/`until` and cursor limits remain. Verification and suspension are independent.
+Detail `registration` returns registeredAt, verificationStatus, emailVerifiedAt,
+verificationDateEvidence, firstSuccessfulLoginAt, firstLoginEvidence,
+firstRecordedSuccessfulLoginAt, lastSuccessfulLoginAt, loginStatus, loginHistory
+and loginEvidence. `NO_RECORDED_SUCCESS` means no retained recorded evidence; it
+must not be displayed as "never signed in" for UNKNOWN/PARTIAL history. For legacy
+users, lifetime first login remains null even when retained audit proves an older
+successful login. Capture completeness is established only at new registration.
+Historical verification dates remain unknown until an actual current-email
+transition is observed. Active session counts remain independent metadata.
+
+Mail list accepts `limit` 1-100 (default 25), opaque `cursor`, `category`, `status`,
+`sourceKind`, exact `userId`/`resourceId`, escaped literal `search` (recipient/source
+ID, max 100, no controls), and UTC creation range `from` inclusive / `until`
+exclusive. Unknown creation times remain null and are excluded from dated ranges.
+Every owning projection filters before its bound; the merged page uses the existing
+actor/filter-bound cursor and has no invented total. Follow nextCursor until null.
+Detail IDs identify stable typed source projections, not tokens or admission links.
+
+Safe fields include recipient plus OBSERVED/PLANNED/UNKNOWN evidence, category,
+related user/resource, nullable createdAt with evidence, sourceState, status,
+attemptCount and observedAttemptCount, firstRecordedAttemptAt,
+lastRecordedAttemptAt, lastRecordedCompletionAt, nextAttemptAt, sanitized failureCode
+and providerMessageReference. Recorded timestamp/count labels describe retained
+observations, not fabricated lifetime history. No raw provider error, body,
+password, proof, secret URL, credential or queue payload is returned.
+
+Statuses are QUEUED, PROCESSING, SMTP_ACCEPTED, FAILED, BOUNCED, UNKNOWN, CANCELED
+and SINK_ACCEPTED. Only the transport's actual accepted recipient establishes
+SMTP_ACCEPTED; it never establishes inbox receipt. Historical SENT without that
+evidence is UNKNOWN. Missing SMTP receipt or expired processing evidence remains
+UNKNOWN. `inboxDelivery` is always UNKNOWN. BOUNCED is reserved for authoritative
+bounce evidence; no authenticated bounce feed is configured by this batch and SMTP
+rejection is FAILED, never a fabricated bounce. Sinks are explicit local evidence.
+
+Read returned retryActions; refresh after mutations. Verification/recovery actions
+require a current account revision and their existing supplemental account
+permission. Responses acknowledge `{action,queuedDeliveryId}`, not delivery.
+The existing worker rechecks recipient/state, verification/suspension and operator
+authority where required, then generates fresh provider verification/recovery
+proofs. Idempotent replay returns the same queued acknowledgement without another
+send or rate-limit charge. Verification queueing permits at most three actual
+requests per recipient per minute. Existing recovery and ordinary provider limits
+remain enforced. Failed plain ACCOUNT_CHANGED/WORKSPACE_CHANGED notices alone
+support RETRY_NOTICE with exact attempts; a replacement outbox record preserves
+the original attempt history. Invitation, deletion-link and other credential
+messages cannot be blindly replayed through this view; use existing owner APIs.
+
+Existing 400/401/403/404/409 sanitized error handling, strict schemas, Admin realm,
+Origin policy, five-minute MFA evidence and command audit/idempotency rules apply.
+No Admin identity may call ordinary recipient APIs as a user or bypass invitation
+preferences, current admission, tenant, commercial or lifecycle boundaries.
+
+M129 records actual registration evidence and adds metadata-only observations;
+M130 retains a private pre-commit subject reference so deleting a user erases old
+address observations even when signup mail preceded the provider transaction's
+commit. That reference confers no authorization and is not exposed unless an
+actual User exists. Existing source deletion triggers and User/Admin ownership
+cascades apply. Personal portability includes only the owner's safe mail metadata;
+erasure removes it. The existing P4 COMMUNICATIONS retentionDays policy, impact
+preview and worker sweep expire observations; source queues retain their existing
+owner policy. Stale processing is marked UNKNOWN, never automatically replayed.
+
+Run the existing durable pg-boss worker and existing SMTP configuration; migrate
+M129/M130 only through the controlled release process. No production migration was
+performed here. Live SMTP acceptance/provider receipt behavior, optional trusted
+bounce ingestion, real inbox receipt and production retention/restore drills are
+operational integration checks, not local successes. Inbox delivery remains
+unknown until an authoritative integration exists. Frontend Live wiring and
+operator provisioning remain separate; no genuine approved backend contract gap
+is deferred to a frontend workaround.
+
+Final diagnostics acceptance, 2026-11-27: **COMPLETE - LOCAL DEVELOPMENT**.
+The full checkpoints and successful affected reruns cover 1,042 repository and
+1,395 runnable PostgreSQL cases; the conditional live-scanner case remains
+skipped. Build/types, official provider schema, Prisma, configuration, architecture,
+lint, formatting, exact API/reference compatibility and full migrations through
+M130 pass with recorded affected corrections. See the diagnostics work record for
+exact original failures and successful reruns; full failed commands are not
+relabeled passed. All 212 Admin operations map to 22 modules. No genuine approved
+local backend contract blocker remains. Readiness is published as `3b1e19b`;
+Diagnostics is accepted and approved for publication in this revision. Live provider/receipt and
+production release checks above remain explicit; no production readiness claimed.

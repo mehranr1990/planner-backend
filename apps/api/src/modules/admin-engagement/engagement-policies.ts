@@ -1,3 +1,4 @@
+import { SystemEmailEvidence } from '../../platform/auth/email-evidence.js';
 import {
   Injectable,
   Inject,
@@ -17,7 +18,11 @@ const publishRoute = 'PATCH engagement/policies/:id';
 type Values = Record<string, number>;
 @Injectable()
 export class EngagementPolicies {
-  constructor(@Inject(EngagementCore) private readonly core: EngagementCore) {}
+  constructor(
+    @Inject(EngagementCore) private readonly core: EngagementCore,
+    @Inject(SystemEmailEvidence)
+    private readonly emailEvidence: SystemEmailEvidence,
+  ) {}
   private validate(section: string, current: Values, value: Values) {
     if (
       Object.keys(value).sort().join(',') !==
@@ -120,7 +125,11 @@ export class EngagementPolicies {
       deleteRecords: deleted.length,
       evidenceFiles: evidence,
       publicAndInternalReplies: replies,
-      deliveryRecords: recipients,
+      deliveryRecords:
+        recipients +
+        (section === 'COMMUNICATIONS'
+          ? await this.emailEvidence.retentionImpact(tx, value.retentionDays!)
+          : 0),
       idempotencyReceipts: receipts,
       existingModerationDeadlinesUnchanged: true as const,
       fingerprint: hash(

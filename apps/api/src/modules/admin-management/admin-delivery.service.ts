@@ -1,3 +1,4 @@
+import { AdminCommand } from '../../platform/admin/admin-command.js';
 import { Inject, Injectable } from '@nestjs/common';
 import { DatabaseService } from '../../platform/database/database.service.js';
 import { AdminAccounts, PersonalLifecycle } from '../account/public/index.js';
@@ -66,6 +67,50 @@ export class AdminDeliveryService {
         where: { id: row.targetUserId },
         select: { email: true, emailVerified: true },
       });
+      const snapshot = row.payload as { expectedEmail?: string };
+      if (snapshot.expectedEmail && user?.email !== snapshot.expectedEmail) {
+        await this.db.client.adminDelivery.updateMany({
+          where: { id: row.id, attempts: row.attempts },
+          data: { state: 'CANCELED', leaseUntil: null },
+        });
+        return true;
+      }
+      if (row.kind === 'EMAIL_VERIFICATION') {
+        const payload = row.payload as { expectedEmail: string };
+        const audit = await this.db.client.adminAuditEvent.findUniqueOrThrow({
+          where: { id: row.auditId },
+        });
+        if (
+          !user ||
+          user.emailVerified ||
+          user.email !== payload.expectedEmail ||
+          !audit.actorAdminId
+        ) {
+          await this.db.client.adminDelivery.updateMany({
+            where: { id: row.id, attempts: row.attempts },
+            data: { state: 'CANCELED', leaseUntil: null },
+          });
+          return true;
+        }
+        await this.db.client.$transaction((tx) =>
+          AdminCommand.requireInitiator(
+            tx,
+            audit.actorAdminId!,
+            'admin.users.verification.resend',
+          ),
+        );
+        await this.accounts.verification(row.targetUserId, {
+          sourceKind: 'ADMIN_DELIVERY',
+          sourceId: row.id,
+          category: 'REGISTRATION_VERIFICATION',
+          userId: row.targetUserId,
+        });
+        await this.db.client.adminDelivery.updateMany({
+          where: { id: row.id, state: 'SENDING', attempts: row.attempts },
+          data: { state: 'SENT', leaseUntil: null },
+        });
+        return true;
+      }
       if (!user?.emailVerified) {
         await this.db.client.adminDelivery.updateMany({
           where: { id: row.id, state: 'SENDING', attempts: row.attempts },
@@ -80,7 +125,12 @@ export class AdminDeliveryService {
         });
         if (account && effectiveSuspension(account))
           throw new Error('Recovery unavailable');
-        await this.accounts.recovery(row.targetUserId);
+        await this.accounts.recovery(row.targetUserId, {
+          sourceKind: 'ADMIN_DELIVERY',
+          sourceId: row.id,
+          category: 'PASSWORD_RECOVERY',
+          userId: row.targetUserId,
+        });
       } else if (row.kind === 'ACCOUNT_DELETION') {
         const data = row.payload as { jobId: string };
         const notice = await this.lifecycle.deletionNotice(
@@ -100,6 +150,12 @@ export class AdminDeliveryService {
           recoveryCapability: notice.recovery,
         }).toString();
         await this.mail.send({
+          metadata: {
+            sourceKind: 'ADMIN_DELIVERY',
+            sourceId: row.id,
+            category: 'SYSTEM_NOTICE',
+            userId: row.targetUserId,
+          },
           to: user.email,
           kind: 'administrative',
           url: url.toString(),
@@ -123,6 +179,12 @@ export class AdminDeliveryService {
           ...(data.handoverId ? { handoverId: data.handoverId } : {}),
         }).toString();
         await this.mail.send({
+          metadata: {
+            sourceKind: 'ADMIN_DELIVERY',
+            sourceId: row.id,
+            category: 'SYSTEM_NOTICE',
+            userId: row.targetUserId,
+          },
           to: user.email,
           kind: 'administrative',
           url: link.toString(),

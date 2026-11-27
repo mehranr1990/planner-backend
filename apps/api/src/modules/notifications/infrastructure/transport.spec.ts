@@ -1,3 +1,15 @@
+import type {
+  SystemEmailEvidence,
+  EmailMetadata,
+  EmailReceipt,
+} from '../../../platform/auth/email-evidence.js';
+const evidence = {
+  observe: async (
+    _recipient: string,
+    _metadata: EmailMetadata,
+    work: () => Promise<EmailReceipt>,
+  ) => work(),
+} as unknown as SystemEmailEvidence;
 import { afterEach, describe, it, expect, vi } from 'vitest';
 import { createECDH, randomUUID } from 'node:crypto';
 import webpush from 'web-push';
@@ -52,9 +64,9 @@ describe('P1-10 configured external adapters without live provider calls', () =>
       .spyOn(webpush, 'sendNotification')
       .mockResolvedValue({ statusCode: 201, headers: {}, body: '' });
     const m = { ...message(), purpose: 'MESSAGING' as const };
-    expect((await new ChannelTransport(config()).send(m)).outcome).toBe(
-      'ACCEPTED',
-    );
+    expect(
+      (await new ChannelTransport(config(), evidence).send(m)).outcome,
+    ).toBe('ACCEPTED');
     const payload = String(send.mock.calls[0]![1]);
     expect(JSON.parse(payload)).toMatchObject({
       type: 'MESSAGING',
@@ -93,9 +105,9 @@ describe('P1-10 configured external adapters without live provider calls', () =>
         .spyOn(webpush, 'sendNotification')
         .mockResolvedValue({ statusCode: 201, headers: {}, body: '' }),
       m = message();
-    expect((await new ChannelTransport(config()).send(m)).outcome).toBe(
-      'ACCEPTED',
-    );
+    expect(
+      (await new ChannelTransport(config(), evidence).send(m)).outcome,
+    ).toBe('ACCEPTED');
     const args = send.mock.calls[0]!;
     expect(JSON.parse(args[1] as string)).toEqual({
       title: 'Mehran Planner',
@@ -122,13 +134,18 @@ describe('P1-10 configured external adapters without live provider calls', () =>
         statusCode: status,
         message: 'private-marker endpoint key',
       });
-      const result = await new ChannelTransport(config()).send(message());
+      const result = await new ChannelTransport(config(), evidence).send(
+        message(),
+      );
       expect(result.outcome).toBe(outcome);
       expect(JSON.stringify(result)).not.toContain('private-marker');
     },
   );
   it('emits generic SMTP text and a deterministic message ID', async () => {
-    const sendMail = vi.fn().mockResolvedValue({}),
+    const sendMail = vi.fn().mockResolvedValue({
+        accepted: ['owner@example.test'],
+        messageId: '<fixture@planner.invalid>',
+      }),
       close = vi.fn();
     vi.spyOn(nodemailer, 'createTransport').mockReturnValue({
       sendMail,
@@ -139,9 +156,9 @@ describe('P1-10 configured external adapters without live provider calls', () =>
       channel: 'EMAIL' as const,
       email: 'owner@example.test',
     };
-    expect((await new ChannelTransport(config()).send(m)).outcome).toBe(
-      'ACCEPTED',
-    );
+    expect(
+      (await new ChannelTransport(config(), evidence).send(m)).outcome,
+    ).toBe('ACCEPTED');
     expect(sendMail.mock.calls[0]![0]).toMatchObject({
       to: m.email,
       messageId: '<' + m.deliveryId + '@planner.invalid>',
@@ -162,7 +179,7 @@ describe('P1-10 configured external adapters without live provider calls', () =>
           .mockRejectedValue({ responseCode, message: 'private-marker' }),
         close: vi.fn(),
       } as unknown as ReturnType<typeof nodemailer.createTransport>);
-      const result = await new ChannelTransport(config()).send({
+      const result = await new ChannelTransport(config(), evidence).send({
         ...message(),
         channel: 'EMAIL',
         email: 'owner@example.test',

@@ -1,3 +1,11 @@
+import {
+  AdminRegistrationDiagnosticsSchema,
+  AdminEmailQuerySchema,
+  AdminEmailLogSchema,
+  AdminEmailPageSchema,
+  AdminEmailRetrySchema,
+  AdminEmailRetryResultSchema,
+} from './admin-email-diagnostics.js';
 import { z } from 'zod';
 import { RetentionPolicyCatalogSchema } from './backend-completion.js';
 
@@ -34,7 +42,13 @@ export const AdminDashboardQuerySchema = z.strictObject({
   from: z.iso.datetime().optional(),
   until: z.iso.datetime().optional(),
 });
-export const AdminUserQuerySchema = AdminPageSchema.omit({ type: true });
+export const AdminUserQuerySchema = AdminPageSchema.omit({ type: true }).extend(
+  {
+    verificationStatus: z.enum(['VERIFIED', 'UNVERIFIED']).optional(),
+    loginStatus: z.enum(['RECORDED_SUCCESS', 'NO_RECORDED_SUCCESS']).optional(),
+    loginHistory: z.enum(['COMPLETE', 'PARTIAL', 'UNKNOWN']).optional(),
+  },
+);
 export const AdminWorkspaceQuerySchema = AdminPageSchema.extend({
   status: z.enum(['ACTIVE', 'SUSPENDED']).optional(),
 });
@@ -134,6 +148,22 @@ export const AdminBulkExecuteSchema = z.strictObject({
 });
 
 export const adminManagementRoutes = {
+  'GET system-emails': {
+    permission: 'admin.email.read',
+    schema: AdminEmailQuerySchema,
+  },
+  'GET system-emails/:id': {
+    permission: 'admin.email.read',
+    schema: z.strictObject({}),
+  },
+  'POST system-emails/:id/retry': {
+    permission: 'admin.email.retry',
+    schema: AdminEmailRetrySchema,
+  },
+  'POST users/:id/resend-verification': {
+    permission: 'admin.users.verification.resend',
+    schema: AdminReasonSchema,
+  },
   'GET dashboard': {
     permission: 'admin.dashboard.read',
     schema: AdminDashboardQuerySchema,
@@ -259,6 +289,7 @@ const suspension = z
   })
   .nullable();
 export const AdminUserDetailSchema = z.strictObject({
+  registration: AdminRegistrationDiagnosticsSchema,
   id: z.uuid(),
   name: z.string(),
   email: z.email(),
@@ -422,6 +453,10 @@ export const adminManagementResponses: Record<
   keyof typeof adminManagementRoutes,
   z.ZodType
 > = {
+  'GET system-emails': AdminEmailPageSchema,
+  'GET system-emails/:id': AdminEmailLogSchema,
+  'POST system-emails/:id/retry': AdminEmailRetryResultSchema,
+  'POST users/:id/resend-verification': AdminEmailRetryResultSchema,
   'GET dashboard': AdminDashboardSchema,
   'GET dashboard/export': z.string(),
   'GET users': page(AdminUserDetailSchema),

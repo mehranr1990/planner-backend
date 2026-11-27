@@ -1,3 +1,17 @@
+import type {
+  SystemEmailEvidence,
+  EmailMetadata,
+  EmailReceipt,
+} from './email-evidence.js';
+const evidence = {
+  observe: async (
+    _recipient: string,
+    _metadata: EmailMetadata,
+    work: () => Promise<EmailReceipt>,
+  ) => work(),
+} as unknown as SystemEmailEvidence;
+const createMailService = (config: ReturnType<typeof parseEnvironment>) =>
+  new IdentityMailService(config, evidence);
 import { describe, expect, it, vi } from 'vitest';
 import { mkdtemp, readdir, readFile, mkdir } from 'node:fs/promises';
 import path from 'node:path';
@@ -12,7 +26,7 @@ vi.mock('nodemailer', () => ({
   default: {
     createTransport: (...args: unknown[]) => {
       createTransport(...args);
-      return { sendMail };
+      return { sendMail, close: vi.fn() };
     },
   },
 }));
@@ -30,7 +44,7 @@ const message = {
 
 describe('identity email transport', () => {
   it('keeps test messages in a non-public in-memory sink', async () => {
-    const service = new IdentityMailService(
+    const service = createMailService(
       parseEnvironment({ ...base, NODE_ENV: 'test' }),
     );
     await service.send(message);
@@ -42,7 +56,7 @@ describe('identity email transport', () => {
     const directory = await mkdtemp(
       path.resolve('.tools/mail-transport-test-'),
     );
-    const service = new IdentityMailService(
+    const service = createMailService(
       parseEnvironment({
         ...base,
         NODE_ENV: 'development',
@@ -60,7 +74,7 @@ describe('identity email transport', () => {
     );
   });
   it('uses authenticated TLS SMTP with debug logging disabled in production', async () => {
-    const service = new IdentityMailService(
+    const service = createMailService(
       parseEnvironment({
         ...base,
         NODE_ENV: 'production',

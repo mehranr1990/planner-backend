@@ -256,6 +256,29 @@ export class InvitationMailService {
         }).toString();
         try {
           await this.mail.send({
+            metadata: {
+              sourceKind:
+                kind === 'CONVERSATION'
+                  ? 'CONVERSATION_INVITATION'
+                  : kind === 'MEETING'
+                    ? 'MEETING_INVITATION'
+                    : 'CONTEXT_INVITATION',
+              sourceId: id,
+              category:
+                kind === 'CONVERSATION'
+                  ? 'CONVERSATION_INVITATION'
+                  : kind === 'MEETING'
+                    ? 'MEETING_INVITATION'
+                    : (
+                        {
+                          PROJECTS: 'PROJECT_INVITATION',
+                          TEAMS: 'TEAM_INVITATION',
+                          COMPANY: 'COMPANY_INVITATION',
+                          SOCIAL: 'SOCIAL_GROUP_INVITATION',
+                        } as const
+                      )[await this.contextModule(id)],
+              ...(recipient ? { userId: recipient.id } : {}),
+            },
             to: email,
             kind: 'invitation',
             url: url.toString(),
@@ -277,10 +300,18 @@ export class InvitationMailService {
       select: { scopeId: true, companyScopeId: true },
     });
     if (offer.companyScopeId) return 'COMPANY' as const;
-    const scope = await tx.accessScope.findUniqueOrThrow({
-      where: { id: offer.scopeId },
+    const domain = await tx.domainScopeCustody.findUnique({
+      where: { scopeId: offer.scopeId },
       select: { kind: true },
     });
+    const scope =
+      domain ??
+      (await tx.sharedCustody.findUniqueOrThrow({
+        where: { spaceId: offer.scopeId },
+        select: { kind: true },
+      }));
+    if (!['PROJECT', 'TEAM', 'SOCIAL_GROUP'].includes(scope.kind))
+      throw new Error('Unsupported invitation context');
     return scope.kind === 'PROJECT'
       ? ('PROJECTS' as const)
       : scope.kind === 'TEAM'

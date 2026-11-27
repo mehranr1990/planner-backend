@@ -319,12 +319,16 @@ export class CommunicationsService {
           template.fallbackLocale,
           { ...(row.variables as object), recipientName: actor.name },
         );
-        await this.mail.send({
-          to: actor.email,
-          kind: 'administrative',
-          url: this.config.BETTER_AUTH_URL,
-          message: rendered.subject + '\n' + rendered.body,
-        });
+        await this.mail.send(
+          {
+            to: actor.email,
+            metadata: { category: 'COMMUNICATIONS', adminUserId: actor.id },
+            kind: 'administrative',
+            url: this.config.BETTER_AUTH_URL,
+            message: rendered.subject + '\n' + rendered.body,
+          },
+          tx,
+        );
         await tx.adminCommunication.update({
           where: { id: id! },
           data: { testedAt: new Date(), revision: { increment: 1 } },

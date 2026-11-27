@@ -90,7 +90,8 @@ export const SHARED_CLEANUP_FK_SHA256 =
   // M123 adds two configuration/approval-only release-schedule references.
   // P7 adds four metadata-only cascade references: User, Space, logical AccessScope and AdminUser.
   // Erasure invalidates aggregates and reports; no retained analytics identity blocks deletion.
-  '2a50bd949621a3ed30c7fac0e96333a78160a2b1fade7b7938dce6cfa37f3915';
+  // M129 adds User/AdminUser CASCADEs for metadata-only email observations.
+  'fd9bab48ca1951a86b8fd2a9b2d7d79d5219996cfe27f91edc2180e5284f987c';
 export async function assertSharedCleanupCatalog(tx: Prisma.TransactionClient) {
   const rows = await tx.$queryRaw<
     { table: string; name: string; target: string; definition: string }[]

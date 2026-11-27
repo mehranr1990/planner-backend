@@ -6,13 +6,22 @@ describe('provider auth schema ownership', () => {
   it('excludes exactly approved application inverse relations without treating them as auth-column drift', () => {
     const extended = provider.replace(
       ' id String',
-      ' socialRequestsSent SocialConnection[] @relation("SocialConnection_requester")\n receivedDmBlocks DmContactBlock[] @relation("DmContactBlock_target_fk")\n invitationPushAttempts InvitationPushAttempt[]\n id String',
+      ' systemEmailObservations SystemEmailObservation[]\n socialRequestsSent SocialConnection[] @relation("SocialConnection_requester")\n receivedDmBlocks DmContactBlock[] @relation("DmContactBlock_target_fk")\n invitationPushAttempts InvitationPushAttempt[]\n id String',
     );
     expect(normalizedAuthModel(extended, 'User')).toBe(
       normalizedAuthModel(provider, 'User'),
     );
   });
   it('does not ignore changed auth scalar types, indexes, unknown fields or relations with altered ownership', () => {
+    expect(() =>
+      normalizedAuthModel(
+        provider.replace(
+          ' id String',
+          ' systemEmailObservations String\n id String',
+        ),
+        'User',
+      ),
+    ).toThrow('Unreviewed');
     for (const mutation of [
       provider.replace('email String', 'email Int'),
       provider.replace('@@unique([email])', '@@index([email])'),

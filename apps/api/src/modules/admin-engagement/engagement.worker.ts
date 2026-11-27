@@ -1,3 +1,4 @@
+import { SystemEmailEvidence } from '../../platform/auth/email-evidence.js';
 import { lockEngagementPersonal } from '../spaces/public/engagement-availability.js';
 import { engagementPersonalOpen } from '../spaces/public/engagement-availability.js';
 import { Injectable, Inject } from '@nestjs/common';
@@ -12,6 +13,8 @@ import { engagementIdentity } from '../account/public/engagement.js';
 export class EngagementWorker {
   private lastSweep = 0;
   constructor(
+    @Inject(SystemEmailEvidence)
+    private readonly emailEvidence: SystemEmailEvidence,
     @Inject(EngagementCore) private readonly core: EngagementCore,
     @Inject(EngagementEvidence) private readonly evidence: EngagementEvidence,
     @Inject(SupportService) private readonly support: SupportService,
@@ -25,6 +28,11 @@ export class EngagementWorker {
   async consume() {
     this.core.privacy.assert();
     if (Date.now() - this.lastSweep > 30000) {
+      const mailPolicy = await this.core.policy(
+        this.core.db.client,
+        'COMMUNICATIONS',
+      );
+      await this.emailEvidence.sweep(mailPolicy.retentionDays!);
       await this.support.sweep();
       await this.moderation.sweep();
       await this.communications.sweep();
@@ -149,6 +157,7 @@ export class EngagementWorker {
           return false;
         }
         const result = await this.delivery.send(tx, {
+          emailCategory: essential ? 'SECURITY_NOTICE' : 'SUPPORT',
           id: row.id,
           communicationId: row.id,
           userId: row.userId!,

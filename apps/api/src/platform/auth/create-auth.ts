@@ -87,8 +87,24 @@ export function createIdentityAuth(
     emailVerification: {
       sendOnSignUp: true,
       autoSignInAfterVerification: false,
-      sendVerificationEmail: async ({ user, url }) =>
-        send({ to: user.email, url, kind: 'verify-email' }),
+      sendVerificationEmail: async ({ user, url }) => {
+        const current = await client.user.findUnique({
+          where: { id: user.id },
+          select: { email: true },
+        });
+        return send({
+          to: user.email,
+          url,
+          kind: 'verify-email',
+          metadata: {
+            category:
+              current && current.email !== user.email
+                ? 'EMAIL_CHANGE_VERIFICATION'
+                : 'REGISTRATION_VERIFICATION',
+            userId: user.id,
+          },
+        });
+      },
       afterEmailVerification: async (user) => {
         // Library-managed revocation also forces reauthentication after an email change.
         await revokeUserSessions(user.id);
@@ -100,7 +116,15 @@ export function createIdentityAuth(
         enabled: true,
         updateEmailWithoutVerification: false,
         sendChangeEmailConfirmation: async ({ user, url }) =>
-          send({ to: user.email, url, kind: 'confirm-email-change' }),
+          send({
+            to: user.email,
+            url,
+            kind: 'confirm-email-change',
+            metadata: {
+              category: 'EMAIL_CHANGE_VERIFICATION',
+              userId: user.id,
+            },
+          }),
       },
     },
     advanced: {

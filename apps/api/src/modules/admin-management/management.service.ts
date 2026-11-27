@@ -1,3 +1,4 @@
+import { EmailDiagnosticsService } from './email-diagnostics.service.js';
 import {
   Inject,
   Injectable,
@@ -56,6 +57,8 @@ export class ManagementService {
     };
   }
   constructor(
+    @Inject(EmailDiagnosticsService)
+    private readonly emailDiagnostics: EmailDiagnosticsService,
     @Inject(TeamsService) private readonly teams: TeamsService,
     @Inject(CompaniesService) private readonly companies: CompaniesService,
     @Inject(AdminCollaboration)
@@ -70,16 +73,17 @@ export class ManagementService {
   async handle(route: Route, id: string | undefined, req: ContextRequest) {
     const spec = adminManagementRoutes[route];
     const write = !route.startsWith('GET') || route.endsWith('/export');
-    const event = write
-      ? await this.db.client.adminAuditEvent.create({
-          data: {
-            action: route,
-            outcome: 'ATTEMPTED',
-            permission: spec.permission,
-            requestId: req.id,
-          },
-        })
-      : null;
+    const event =
+      write || route.startsWith('GET system-emails')
+        ? await this.db.client.adminAuditEvent.create({
+            data: {
+              action: route,
+              outcome: 'ATTEMPTED',
+              permission: spec.permission,
+              requestId: req.id,
+            },
+          })
+        : null;
     let actor: Awaited<ReturnType<AdminService['authorize']>> | undefined;
     try {
       actor = await this.admin.authorize(req.headers, spec.permission);
@@ -106,7 +110,7 @@ export class ManagementService {
                       : null,
                 }
               : {}),
-            ...(id
+            ...(id && !route.includes('system-emails')
               ? route.includes('users/')
                 ? { targetUserId: id }
                 : { targetSpaceId: id }
@@ -125,6 +129,36 @@ export class ManagementService {
             : '',
           json({ route, id: id ?? null, input }),
         );
+      if (route.includes('system-emails')) {
+        this.admin.requireRecent(actor);
+        new ZodValidationPipe(contracts.EmptyQuerySchema).transform(
+          route.startsWith('GET') ? {} : req.query,
+        );
+        const result =
+          route === 'GET system-emails'
+            ? await this.emailDiagnostics.list(
+                actor.user.id,
+                contracts.AdminEmailQuerySchema.parse(input),
+              )
+            : route === 'GET system-emails/:id'
+              ? await this.emailDiagnostics.detail(id!)
+              : await this.emailDiagnostics.retry(
+                  command(),
+                  id!,
+                  contracts.AdminEmailRetrySchema.parse(input),
+                );
+        if (route.startsWith('GET'))
+          await this.admin.auditOutcome(event!.id, 'SUCCEEDED', actor.user.id);
+        return result;
+      }
+      if (route === 'POST users/:id/resend-verification') {
+        new ZodValidationPipe(contracts.EmptyQuerySchema).transform(req.query);
+        return this.emailDiagnostics.resendVerification(
+          command(),
+          id!,
+          contracts.AdminReasonSchema.parse(input),
+        );
+      }
       if (route === 'GET workspaces/retention-policies')
         return this.spaces.retentionCatalog(
           contracts.AdminWorkspaceRetentionQuerySchema.parse(input),
@@ -320,7 +354,7 @@ export class ManagementService {
       if (route === 'GET users')
         return this.accounts.list(
           actor.user.id,
-          input as z.infer<typeof AdminPageSchema>,
+          input as z.infer<typeof contracts.AdminUserQuerySchema>,
         );
       if (route === 'GET users/:id') return this.accounts.detail(id!);
       if (route === 'GET workspaces') {

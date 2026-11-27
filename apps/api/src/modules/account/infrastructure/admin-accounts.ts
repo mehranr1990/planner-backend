@@ -1,3 +1,6 @@
+import type { AdminUserQuerySchema } from '@mehran/api-contracts';
+import type { z } from 'zod';
+import type { EmailMetadata } from '../../../platform/auth/email-evidence.js';
 import {
   Inject,
   Injectable,
@@ -7,10 +10,7 @@ import {
 } from '@nestjs/common';
 import type { Prisma } from '../../../generated/prisma/client.js';
 import { DatabaseService } from '../../../platform/database/database.service.js';
-import {
-  AdminIdentity,
-  type AdminPage,
-} from '../../../platform/auth/admin-identity.js';
+import { AdminIdentity } from '../../../platform/auth/admin-identity.js';
 import { AuthService } from '../../../platform/auth/auth.service.js';
 import { effectiveSuspension } from '../../../platform/admin/management-policy.js';
 
@@ -34,7 +34,7 @@ export class AdminAccounts {
     @Inject(AdminIdentity) private readonly identity: AdminIdentity,
     @Inject(AuthService) private readonly auth: AuthService,
   ) {}
-  async list(actorId: string, q: AdminPage) {
+  async list(actorId: string, q: z.infer<typeof AdminUserQuerySchema>) {
     const page = await this.identity.list(actorId, q);
     return {
       ...page,
@@ -47,6 +47,11 @@ export class AdminAccounts {
       tx.userSettings.findUniqueOrThrow({
         where: { userId: id },
         select: {
+          firstRecordedLoginAt: true,
+          lastRecordedLoginAt: true,
+          signInHistoryComplete: true,
+          signInEvidence: true,
+          emailVerifiedAt: true,
           adminRevision: true,
           suspendedAt: true,
           suspensionExpiresAt: true,
@@ -58,6 +63,34 @@ export class AdminAccounts {
       }),
     ]).then(([user, state, activeSessions]) => ({
       ...user,
+      registration: {
+        registeredAt: user.createdAt.toISOString(),
+        verificationStatus: user.emailVerified ? 'VERIFIED' : 'UNVERIFIED',
+        emailVerifiedAt: state.emailVerifiedAt?.toISOString() ?? null,
+        verificationDateEvidence: !user.emailVerified
+          ? 'NOT_VERIFIED'
+          : state.emailVerifiedAt
+            ? 'RECORDED'
+            : 'UNKNOWN',
+        loginStatus: state.lastRecordedLoginAt
+          ? 'RECORDED_SUCCESS'
+          : 'NO_RECORDED_SUCCESS',
+        firstSuccessfulLoginAt: state.signInHistoryComplete
+          ? (state.firstRecordedLoginAt?.toISOString() ?? null)
+          : null,
+        firstLoginEvidence: state.signInHistoryComplete
+          ? 'COMPLETE_HISTORY'
+          : 'UNKNOWN',
+        firstRecordedSuccessfulLoginAt:
+          state.firstRecordedLoginAt?.toISOString() ?? null,
+        lastSuccessfulLoginAt: state.lastRecordedLoginAt?.toISOString() ?? null,
+        loginHistory: state.signInHistoryComplete
+          ? 'COMPLETE'
+          : state.lastRecordedLoginAt
+            ? 'PARTIAL'
+            : 'UNKNOWN',
+        loginEvidence: state.signInEvidence,
+      },
       revision: state.adminRevision,
       status: effectiveSuspension(state)
         ? 'SUSPENDED'
@@ -112,15 +145,44 @@ export class AdminAccounts {
     if (operation === 'update' || operation === 'verify-email')
       await this.identity.update(tx, id, operation, input);
     if (operation === 'verify-email') await this.auth.revokeAllInside(tx, id);
+    if (operation === 'resend-verification') {
+      const user = await this.identity.detail(tx, id);
+      if (user.emailVerified || effectiveSuspension(state))
+        throw new ForbiddenException();
+    }
+    if (operation === 'resend-verification') {
+      const queued = await tx.adminDelivery.count({
+        where: {
+          targetUserId: id,
+          kind: 'EMAIL_VERIFICATION',
+          createdAt: { gte: new Date(Date.now() - 60000) },
+        },
+      });
+      if (queued >= 3)
+        throw new ForbiddenException({ code: 'VERIFICATION_THROTTLED' });
+    }
     if (operation === 'recovery') {
       const user = await this.identity.detail(tx, id);
-      if (!user.emailVerified || effectiveSuspension(state))
+      if (
+        (operation === 'recovery' && !user.emailVerified) ||
+        effectiveSuspension(state)
+      )
         throw new ForbiddenException();
       const recent = await tx.adminAuditEvent.count({
         where: {
           targetUserId: id,
           action: {
-            in: ['POST users/:id/recovery', 'POST security/users/:id/recovery'],
+            in:
+              operation === 'recovery'
+                ? [
+                    'POST users/:id/recovery',
+                    'POST security/users/:id/recovery',
+                    'POST system-emails/:id/retry',
+                  ]
+                : [
+                    'POST users/:id/resend-verification',
+                    'POST system-emails/:id/retry',
+                  ],
           },
           createdAt: { gte: new Date(Date.now() - 60000) },
         },
@@ -149,8 +211,11 @@ export class AdminAccounts {
     });
     return this.detail(id, tx);
   }
-  async recovery(id: string) {
-    await this.auth.dispatchRecovery(id);
+  async recovery(id: string, metadata?: EmailMetadata) {
+    await this.auth.dispatchRecovery(id, metadata);
+  }
+  async verification(id: string, metadata?: EmailMetadata) {
+    await this.auth.dispatchVerification(id, metadata);
   }
   async metrics(from: Date, until: Date) {
     const now = new Date();

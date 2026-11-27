@@ -1,3 +1,4 @@
+import { EmailDiagnosticsService } from './email-diagnostics.service.js';
 import { Module } from '@nestjs/common';
 import { AdminPrivacyService } from './privacy.service.js';
 import { AdminPrivacyController } from './privacy.controller.js';
@@ -14,6 +15,7 @@ import { AdminDeliveryService } from './admin-delivery.service.js';
 @Module({
   imports: [AccountModule, SpacesModule, AdminModule, DatabaseModule],
   providers: [
+    EmailDiagnosticsService,
     ManagementService,
     AdminDeliveryService,
     UserSecurityService,

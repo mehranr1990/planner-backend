@@ -1,3 +1,4 @@
+import { EmailDiagnosticsService } from '../../src/modules/admin-management/email-diagnostics.service.js';
 import 'reflect-metadata';
 import {
   beforeAll,
@@ -324,6 +325,17 @@ describe('P6-01 private social graph and approved Group admission', () => {
   it('Client: Social pending offers are recipient-only and fresh proofs enforce contact and admission checks', async () => {
     await friendship();
     const g = await group();
+    const personal = await db.space.findFirstOrThrow({
+      where: { ownerUserId: bob.actor.userId, kind: 'PERSONAL' },
+    });
+    await db.notificationPreference.create({
+      data: {
+        spaceId: personal.id,
+        ownerUserId: bob.actor.userId,
+        createdByUserId: bob.actor.userId,
+        email: true,
+      },
+    });
     const offer = await groups.invite(
       alice.actor,
       g.id,
@@ -334,6 +346,18 @@ describe('P6-01 private social graph and approved Group admission', () => {
       },
       randomUUID(),
     );
+    const mailPage = await app.get(EmailDiagnosticsService).list(randomUUID(), {
+      limit: 100,
+      category: 'SOCIAL_GROUP_INVITATION',
+      resourceId: g.id,
+    });
+    expect(
+      mailPage.items.some(
+        (row) =>
+          row.sourceId === offer.invitation.id &&
+          row.category === 'SOCIAL_GROUP_INVITATION',
+      ),
+    ).toBe(true);
     const pending = await groups.pendingInvitations(bob.actor, page);
     expect(
       pending.items.find((v) => v.id === offer.invitation.id),

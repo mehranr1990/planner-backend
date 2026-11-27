@@ -1,3 +1,5 @@
+import { SystemEmailEvidence } from '../../../platform/auth/email-evidence.js';
+import type { EmailCategory } from '../../../platform/auth/email-evidence.js';
 import { Injectable, Inject } from '@nestjs/common';
 import type { Prisma } from '../../../generated/prisma/client.js';
 import { APP_CONFIG } from '../../../bootstrap/configuration.module.js';
@@ -11,6 +13,7 @@ import { NotificationTransport } from '../application/transport.port.js';
 @Injectable()
 export class EngagementDelivery {
   constructor(
+    @Inject(SystemEmailEvidence) private readonly evidence: SystemEmailEvidence,
     @Inject(NotificationTransport)
     private readonly transport: NotificationTransport,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
@@ -37,6 +40,7 @@ export class EngagementDelivery {
   async send(
     tx: Prisma.TransactionClient,
     input: {
+      emailCategory?: EmailCategory;
       id: string;
       communicationId: string;
       userId: string;
@@ -51,14 +55,27 @@ export class EngagementDelivery {
     if (input.channel === 'EMAIL' && !this.config.NOTIFICATION_EMAIL_ENABLED)
       return { outcome: 'FAILED' as const, code: 'EMAIL_DISABLED' };
     if (input.channel === 'EMAIL')
-      return this.transport.send({
-        deliveryId: input.id,
-        notificationId: input.communicationId,
-        channel: 'EMAIL',
-        purpose: 'ADMIN',
-        email: input.email,
-        content: { subject: input.subject, text: input.body },
-      });
+      return this.evidence.inTransaction(tx, () =>
+        this.transport.send({
+          deliveryId: input.id,
+          notificationId: input.communicationId,
+          channel: 'EMAIL',
+          purpose: 'ADMIN',
+          emailMetadata: {
+            sourceKind:
+              input.id === input.communicationId ? 'NOTICE' : 'COMMUNICATION',
+            sourceId: input.id,
+            userId: input.userId,
+            category:
+              input.emailCategory ??
+              (input.id === input.communicationId
+                ? 'SUPPORT'
+                : 'COMMUNICATIONS'),
+          },
+          email: input.email,
+          content: { subject: input.subject, text: input.body },
+        }),
+      );
     const sub = await tx.pushSubscription.findFirst({
       where: {
         id: input.subscriptionId!,

@@ -1,4 +1,6 @@
 const applicationUserRelations: Readonly<Record<string, string>> = {
+  // ADR 0081: application-only metadata ownership; no provider scalar change.
+  systemEmailObservations: 'systemEmailObservationsSystemEmailObservation[]',
   analyticsEvents: 'analyticsEventsProductAnalyticsEvent[]',
   // ADR 0078: exact application-only target navigation.
   r_PlatformConfigTarget_userId:

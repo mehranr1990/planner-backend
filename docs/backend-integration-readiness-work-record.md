@@ -177,3 +177,15 @@ not reported as passed here.
 - Next eligible action: owner review and separately approved readiness publication.
   Frontend integration, deployment and further Client work are NOT STARTED and
   are not authorized by this batch.
+
+## Owner acceptance and publication, 2026-11-27
+
+The owner accepted this completed batch based on the final evidence above.
+Its 32 approved files alone were committed and pushed as
+`3b1e19bc59b58e4f60c5cce14749d0091b4c7f6e`; origin/main was verified at that
+exact commit. The 155 historical migration files matched HEAD, owner compose
+retained its recorded SHA256, and only compose remained dirty after publication.
+No secret, local configuration, temporary artifact or frontend file was included.
+Earlier uncommitted/approval statements describe the pre-publication checkpoint.
+The separately authorized diagnostics batch is tracked in its own work record
+and remains uncommitted pending separate approval.

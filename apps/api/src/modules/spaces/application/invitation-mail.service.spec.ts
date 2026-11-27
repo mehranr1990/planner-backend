@@ -66,6 +66,12 @@ function fixture(
           accessScope: {
             findUniqueOrThrow: vi.fn().mockResolvedValue({ kind: 'TEAM' }),
           },
+          sharedCustody: {
+            findUniqueOrThrow: vi.fn().mockResolvedValue({ kind: 'TEAM' }),
+          },
+          domainScopeCustody: {
+            findUnique: vi.fn().mockResolvedValue(null),
+          },
         },
       } as unknown as DatabaseService,
     ),

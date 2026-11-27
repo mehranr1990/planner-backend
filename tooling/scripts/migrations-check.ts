@@ -1,3 +1,4 @@
+import { verifyRegistrationEmailUpgrade } from '../testing/registration-email-upgrade.ts';
 import { verifyAdminP7Upgrade } from '../testing/admin-p7-upgrade.ts';
 import { verifyAdminP6Upgrade } from '../testing/admin-p6-upgrade.ts';
 import { verifyAdminP5Upgrade } from '../testing/admin-p5-upgrade.ts';
@@ -51,7 +52,7 @@ try {
     )
   ).rows;
   // Six P0 Admin identity/audit tables and three P1 bulk/receipt/delivery tables.
-  assert.equal(emptyTables.length, 437); // P7 adds five metadata-only analytics tables
+  assert.equal(emptyTables.length, 438); // Diagnostics adds one metadata-only email observation table
   // Required reset capability is restricted to this disposable, newly-created namespace.
   await sandbox.resetOwnedSchema();
   const folder = path.resolve('.tools/migration-check-' + randomUUID());
@@ -740,3 +741,5 @@ await verifyAdminP5Upgrade();
 await verifyAdminP6Upgrade();
 
 await verifyAdminP7Upgrade();
+
+await verifyRegistrationEmailUpgrade();

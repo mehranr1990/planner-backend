@@ -1,3 +1,4 @@
+import type { EmailMetadata } from './email-evidence.js';
 import {
   Inject,
   Injectable,
@@ -28,6 +29,13 @@ export class AuthService {
     userId: string;
     email: string;
     delivery?: Promise<void>;
+    metadata?: EmailMetadata;
+  }>();
+  private readonly verificationDeliveries = new AsyncLocalStorage<{
+    userId: string;
+    email: string;
+    delivery?: Promise<void>;
+    metadata?: EmailMetadata;
   }>();
   readonly auth: ReturnType<typeof createIdentityAuth>;
   constructor(
@@ -41,7 +49,24 @@ export class AuthService {
     this.auth = createIdentityAuth(
       config,
       identityClient(database.client, relations),
-      (message) => mail.send(message),
+      (message) => {
+        const context = this.verificationDeliveries.getStore();
+        if (!context) return mail.send(message);
+        if (
+          context.email !== message.to ||
+          message.kind !== 'verify-email' ||
+          message.metadata?.userId !== context.userId
+        )
+          throw new ForbiddenException();
+        context.delivery = mail.send({
+          ...message,
+          metadata: context.metadata ?? {
+            category: 'REGISTRATION_VERIFICATION',
+            userId: context.userId,
+          },
+        });
+        return context.delivery;
+      },
       () => logger.warn({ provider: 'better-auth' }, 'Identity provider event'),
       admission,
       async (userId, message) => {
@@ -51,7 +76,13 @@ export class AuthService {
             throw new ForbiddenException();
           context.delivery = (async () => {
             await admission(userId);
-            await mail.send(message);
+            await mail.send({
+              ...message,
+              metadata: context.metadata ?? {
+                category: 'PASSWORD_RECOVERY',
+                userId,
+              },
+            });
           })();
           return context.delivery;
         }
@@ -60,19 +91,65 @@ export class AuthService {
     );
   }
   /** Observe the actual SMTP promise; the provider intentionally hides delivery failures from public recovery. */
-  async dispatchRecovery(userId: string) {
+  async dispatchRecovery(userId: string, metadata?: EmailMetadata) {
     await this.admission(userId);
     const user = await this.database.client.user.findUniqueOrThrow({
       where: { id: userId },
       select: { email: true, emailVerified: true },
     });
     if (!user.emailVerified) throw new ForbiddenException();
-    const context: { userId: string; email: string; delivery?: Promise<void> } =
-      { userId, email: user.email };
+    const context: {
+      userId: string;
+      email: string;
+      delivery?: Promise<void>;
+      metadata?: EmailMetadata;
+    } = { userId, email: user.email, ...(metadata ? { metadata } : {}) };
     await this.recoveryDeliveries.run(context, async () => {
       await this.auth.api.requestPasswordReset({ body: { email: user.email } });
       if (!context.delivery)
         throw new Error('Recovery delivery was not dispatched');
+      await context.delivery;
+    });
+  }
+  async associateRegistrationMail(userId: string) {
+    await this.database.client.$transaction(async (tx) => {
+      const rows = await tx.$queryRaw<
+        { email: string; createdAt: Date }[]
+      >`SELECT email,"createdAt" FROM "User" WHERE id=${userId}::uuid FOR KEY SHARE`;
+      const user = rows[0];
+      // Anti-enumeration sign-up responses may contain a synthetic provider ID.
+      if (!user) return;
+      await tx.systemEmailObservation.updateMany({
+        where: {
+          userId: null,
+          recipient: user.email,
+          category: 'REGISTRATION_VERIFICATION',
+          sourceKind: 'DIRECT',
+          createdAt: { gte: user.createdAt },
+        },
+        data: { userId },
+      });
+    });
+  }
+  async dispatchVerification(userId: string, metadata?: EmailMetadata) {
+    await this.admission(userId);
+    const user = await this.database.client.user.findUniqueOrThrow({
+      where: { id: userId },
+      select: { email: true, emailVerified: true },
+    });
+    if (user.emailVerified) throw new ForbiddenException();
+    const context: {
+      userId: string;
+      email: string;
+      delivery?: Promise<void>;
+      metadata?: EmailMetadata;
+    } = { userId, email: user.email, ...(metadata ? { metadata } : {}) };
+    await this.verificationDeliveries.run(context, async () => {
+      await this.auth.api.sendVerificationEmail({
+        body: { email: user.email },
+      });
+      if (!context.delivery)
+        throw new Error('Verification delivery was not dispatched');
       await context.delivery;
     });
   }

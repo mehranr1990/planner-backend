@@ -1,3 +1,8 @@
+import type {
+  SystemEmailEvidence,
+  EmailMetadata,
+  EmailReceipt,
+} from '../../src/platform/auth/email-evidence.js';
 import { cleanupFixtureIdentities } from '../support/fixture-cleanup.js';
 import { describe, expect, it } from 'vitest';
 import request from 'supertest';
@@ -19,6 +24,13 @@ describe('production identity cookie configuration', () => {
         BETTER_AUTH_SECRET:
           'test-only-production-cookie-configuration-at-least-32-characters',
       }),
+      {
+        observe: async (
+          _recipient: string,
+          _metadata: EmailMetadata,
+          work: () => Promise<EmailReceipt>,
+        ) => work(),
+      } as unknown as SystemEmailEvidence,
     );
     const app = await testApplication({
       databaseUrl,

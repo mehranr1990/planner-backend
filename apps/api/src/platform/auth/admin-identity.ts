@@ -9,7 +9,10 @@ import { DatabaseService } from '../database/database.service.js';
 import { cursorPage, cursorPosition } from '../database/cursor-pagination.js';
 import { createHash } from 'node:crypto';
 import type { z } from 'zod';
-import type { AdminPageSchema } from '@mehran/api-contracts';
+import type {
+  AdminPageSchema,
+  AdminUserQuerySchema,
+} from '@mehran/api-contracts';
 
 const selection = {
   id: true,
@@ -40,7 +43,7 @@ export function adminPageContext(
 @Injectable()
 export class AdminIdentity {
   constructor(@Inject(DatabaseService) private readonly db: DatabaseService) {}
-  async list(actorId: string, q: AdminPage) {
+  async list(actorId: string, q: z.infer<typeof AdminUserQuerySchema>) {
     const { scope, filter, position } = adminPageContext(actorId, 'users', q);
     const desc = q.sort === 'createdAt_desc';
     const suspended = {
@@ -53,6 +56,39 @@ export class AdminIdentity {
     const rows = await this.db.client.user.findMany({
       where: {
         AND: [
+          ...(q.verificationStatus
+            ? [{ emailVerified: q.verificationStatus === 'VERIFIED' }]
+            : []),
+          ...(q.loginStatus
+            ? [
+                {
+                  settings: {
+                    lastRecordedLoginAt:
+                      q.loginStatus === 'RECORDED_SUCCESS'
+                        ? { not: null }
+                        : null,
+                  },
+                },
+              ]
+            : []),
+          ...(q.loginHistory
+            ? [
+                {
+                  settings:
+                    q.loginHistory === 'COMPLETE'
+                      ? { signInHistoryComplete: true }
+                      : q.loginHistory === 'PARTIAL'
+                        ? {
+                            signInHistoryComplete: false,
+                            lastRecordedLoginAt: { not: null },
+                          }
+                        : {
+                            signInHistoryComplete: false,
+                            lastRecordedLoginAt: null,
+                          },
+                },
+              ]
+            : []),
           ...(q.status === 'SUSPENDED'
             ? [{ settings: suspended }]
             : q.status === 'ACTIVE'

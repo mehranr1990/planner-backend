@@ -2,6 +2,26 @@
 
 ## Current execution authorization
 
+Owner publication approval, 2026-11-27: Registration Diagnostics and System Email
+Delivery Logs is accepted for local development after verification of its final
+diff, M129/M130 checksums, work record and protected-file evidence. Publication of
+only its 68 approved paths to origin/main is authorized. This revision contains
+the synchronized final contracts and handoff; prior uncommitted/approval notes
+are historical checkpoints. Stop after publication and final handoff. No new
+development, frontend changes, deployment or server configuration changes.
+
+Owner diagnostics update, 2026-11-27: Backend Integration Readiness was accepted
+and its 32 approved files published as
+`3b1e19bc59b58e4f60c5cce14749d0091b4c7f6e`, verified on origin/main.
+Registration Diagnostics and System Email Delivery Logs is the authorized final
+backend batch, tracked in [its work record](docs/registration-email-diagnostics-work-record.md)
+and [ADR 0081](docs/adr/0081-registration-email-diagnostics.md). It is COMPLETE -
+LOCAL DEVELOPMENT with final acceptance evidence in that record. Implement only
+missing registration evidence, safe unified mail observations and controlled
+resend/retry, reusing existing source owners, SMTP, outbox, audit and workers.
+No diagnostics commit/push without separate approval. No frontend, E2E, subagents,
+deployment or unrelated refactoring. Prior authorization paragraphs are historical.
+
 Owner readiness update, 2026-11-27: P7 was accepted for local development after
 reviewing final evidence, diff and protected-file checks. Its 52 approved files
 were committed/pushed as `9b2d7768265fe6444be17cd4d2695fbaa798237c`, verified on
@@ -199,6 +219,19 @@ automatic charging is unavailable. P6/P7 have not started and are outside this t
 
 ### P1 / 03. Users
 
+Owner-approved final diagnostics extension (2026-11-27, ADR 0081):
+
+- Filter registration by independent verification, suspension and recorded-login
+  status, registration date and complete/partial/unknown login history. Show real
+  registration, current-email verification and first/last recorded successful
+  login timestamps. Lifetime first login is nullable unless capture is complete.
+  Missing historical evidence is UNKNOWN; active sessions prove neither never
+  signed in nor lifetime completeness.
+- Audited verification resend requires its explicit permission, recent MFA,
+  current revision, reason, idempotency and rate limits. Generate a fresh proof
+  through the existing durable worker; recheck current recipient and authority.
+  Existing exceptional manual verification and recovery controls remain binding.
+
 - Paginated/searchable authorized identity/profile, account status, metadata, membership associations, aggregated usage without private user content.
 - Admin can suspend for fixed term or indefinitely, with **public reason** and separate confidential note; invalidate all active ordinary sessions and deny new login/refresh/protected mutation. Workspace owned by user **does not** automatically suspend.
 - Auto-expiry and manual reactivation; old sessions do not return after reactivation.
@@ -280,6 +313,21 @@ automatic charging is unavailable. P6/P7 have not started and are outside this t
 - Maintenance/restore interop must keep safe status and emergency control available if app/database unavailable.
 
 ### P4 / 13. Email & Push
+
+Owner-approved final diagnostics extension (2026-11-27, ADR 0081):
+
+- Unified authorized operational metadata across registration/recovery/email
+  changes, all six invitation kinds, support, security, communications and
+  existing system mail. Include recipient, category, typed owner reference,
+  known creation/attempt/completion times, attempt counts/retry schedule, safe
+  failure code and sanitized provider reference. No bodies, secrets or links.
+- Bounded search/filter/cursor pages distinguish queued, processing, SMTP
+  accepted, failed, bounced and unknown from actual evidence. Legacy SENT does
+  not establish SMTP acceptance; sinks are separate. Inbox delivery remains
+  unknown without authoritative receipts. No bounce feed is invented.
+- Explicitly authorized retries use existing owner workflows and fresh proofs,
+  never replay expired/consumed credentials. Preserve preferences, verification,
+  anti-enumeration, throttling, audit, privacy, source deletion and retention.
 
 - System, direct, segmented group and platform-wide communications.
 - Channels: existing SMTP email, in-app notifications, device Push where valid subscription/device capability exists; never falsely claim Push works absent implemented provider/device registration.

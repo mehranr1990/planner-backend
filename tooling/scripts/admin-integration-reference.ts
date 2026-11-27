@@ -31,6 +31,7 @@ const names = [
 function modules(path: string): number[] {
   const p = path.slice('/api/v1/admin/'.length);
   if (p === 'session' || p.startsWith('auth/')) return [1];
+  if (p.startsWith('system-emails')) return [13];
   if (p.startsWith('dashboard')) return [2];
   if (p.startsWith('users/')) return [p.includes('memberships') ? 5 : 3];
   if (p === 'users' || p.startsWith('bulk/')) return [3];

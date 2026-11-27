@@ -1,3 +1,4 @@
+import { SystemEmailEvidence } from './email-evidence.js';
 import { Global, Module } from '@nestjs/common';
 import { AdminIdentity } from './admin-identity.js';
 import type { DynamicModule, ModuleMetadata, Provider } from '@nestjs/common';
@@ -31,10 +32,12 @@ export class AuthModule {
         admission,
         AuthService,
         IdentityMailService,
+        SystemEmailEvidence,
         VerifiedSessionGuard,
         { provide: INITIAL_IDENTITY_RELATIONS, useValue: relations },
       ],
       exports: [
+        SystemEmailEvidence,
         AdminIdentity,
         AuthService,
         VerifiedSessionGuard,

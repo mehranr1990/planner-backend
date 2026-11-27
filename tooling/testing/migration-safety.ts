@@ -1,4 +1,12 @@
 import {
+  emailSubjectMigrationName,
+  assertReviewedEmailSubjectMigration,
+} from './reviewed-registration-email-migration.ts';
+import {
+  registrationEmailMigrationName,
+  assertReviewedRegistrationEmailMigration,
+} from './reviewed-registration-email-migration.ts';
+import {
   adminP7FinancialMigrationName,
   assertReviewedAdminP7FinancialMigration,
 } from './reviewed-admin-p7-migration.ts';
@@ -304,7 +312,11 @@ export function reviewMigrations(directory = 'prisma/migrations'): string[] {
       path.join(directory, name, 'migration.sql'),
       'utf8',
     );
-    if (name === adminP7FinancialMigrationName)
+    if (name === emailSubjectMigrationName)
+      assertReviewedEmailSubjectMigration(sql);
+    else if (name === registrationEmailMigrationName)
+      assertReviewedRegistrationEmailMigration(sql);
+    else if (name === adminP7FinancialMigrationName)
       assertReviewedAdminP7FinancialMigration(sql);
     else if (name === adminP7ContextMigrationName)
       assertReviewedAdminP7ContextMigration(sql);

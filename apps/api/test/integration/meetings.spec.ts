@@ -1,3 +1,4 @@
+import { EmailDiagnosticsService } from '../../src/modules/admin-management/email-diagnostics.service.js';
 import 'reflect-metadata';
 import {
   beforeAll,
@@ -426,6 +427,17 @@ describe('P5-05 meetings decisions and announcements', () => {
       { id: randomUUID(), email: alice.email },
       randomUUID(),
     );
+    const mailPage = await app.get(EmailDiagnosticsService).list(randomUUID(), {
+      limit: 100,
+      category: 'MEETING_INVITATION',
+      resourceId: m.id,
+    });
+    expect(
+      mailPage.items.some(
+        (row) =>
+          row.sourceId === offer.id && row.category === 'MEETING_INVITATION',
+      ),
+    ).toBe(true);
     await meetings.consumeEmailInvitations();
     expect(await meetings.emailInvitation(owner.actor, m.id, offer.id)).toEqual(
       offer,

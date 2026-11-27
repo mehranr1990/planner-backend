@@ -241,17 +241,23 @@ for (const [route, spec] of Object.entries(adminManagementRoutes)) {
       suffix.replace(/[^a-zA-Z]/g, '_'),
     tags: ['platform-admin'],
     security: [{ adminCookie: [] }],
-    description: `Requires ${spec.permission}. Metadata only. Mutations require successful MFA in the past five minutes. UTC date intervals include from and exclude until.`,
+    description: `Requires ${spec.permission}. Metadata only. ${suffix.startsWith('system-emails') ? 'All reads and mutations require successful MFA in the past five minutes and are audited.' : 'Mutations require successful MFA in the past five minutes.'} UTC date intervals include from and exclude until.`,
     parameters: [
-      ...(method !== 'GET' && !suffix.startsWith('users')
+      ...(method !== 'GET' &&
+      (!suffix.startsWith('users') || suffix.endsWith('resend-verification'))
         ? [
             {
               in: 'header',
               name: 'Idempotency-Key',
-              required: false,
+              required:
+                suffix.startsWith('system-emails') ||
+                suffix.endsWith('resend-verification'),
               schema: { type: 'string', minLength: 1, maxLength: 128 },
               description:
-                'Required for shared Workspace mutations; binds exact validated input and Admin actor.',
+                suffix.startsWith('system-emails') ||
+                suffix.endsWith('resend-verification')
+                  ? 'Required; binds exact validated input and Admin actor. Replay acknowledges the same queued delivery without another send.'
+                  : 'Required for shared Workspace mutations; binds exact validated input and Admin actor.',
             },
           ]
         : []),

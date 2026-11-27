@@ -56,6 +56,7 @@ const metadataRead = [
 export const adminRolePermissions: Record<string, readonly string[]> = {
   SUPER_ADMIN: [...new Set(adminPermissions)],
   SUPPORT: [
+    'admin.users.verification.resend',
     ...ownSession,
     ...metadataRead,
     'admin.support.read',

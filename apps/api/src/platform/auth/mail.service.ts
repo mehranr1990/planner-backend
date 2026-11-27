@@ -1,3 +1,6 @@
+import { SystemEmailEvidence, smtpReceipt } from './email-evidence.js';
+import type { EmailMetadata, EmailReceipt } from './email-evidence.js';
+import type { Prisma } from '../../generated/prisma/client.js';
 import { Inject, Injectable } from '@nestjs/common';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
@@ -7,6 +10,7 @@ import { APP_CONFIG } from '../../bootstrap/configuration.module.js';
 import type { AppConfig } from '../../bootstrap/environment.js';
 
 export type IdentityMail = {
+  metadata?: EmailMetadata;
   to: string;
   kind:
     | 'verify-email'
@@ -21,13 +25,35 @@ export type IdentityMail = {
 @Injectable()
 export class IdentityMailService {
   private readonly messages: IdentityMail[] = [];
-  constructor(@Inject(APP_CONFIG) private readonly config: AppConfig) {}
+  constructor(
+    @Inject(APP_CONFIG) private readonly config: AppConfig,
+    @Inject(SystemEmailEvidence) private readonly evidence: SystemEmailEvidence,
+  ) {}
 
-  async send(message: IdentityMail): Promise<void> {
+  async send(
+    message: IdentityMail,
+    tx?: Prisma.TransactionClient,
+  ): Promise<void> {
+    const category =
+      message.kind === 'verify-email'
+        ? 'REGISTRATION_VERIFICATION'
+        : message.kind === 'reset-password'
+          ? 'PASSWORD_RECOVERY'
+          : message.kind === 'confirm-email-change'
+            ? 'EMAIL_CHANGE_VERIFICATION'
+            : 'SYSTEM_NOTICE';
+    await this.evidence.observe(
+      message.to,
+      message.metadata ?? { category },
+      () => this.deliver(message),
+      tx,
+    );
+  }
+  private async deliver(message: IdentityMail): Promise<EmailReceipt> {
     if (this.config.NODE_ENV === 'test') {
       this.messages.push(message);
       if (this.messages.length > 1000) this.messages.shift();
-      return;
+      return { state: 'SINK_ACCEPTED', code: 'SINK_ACCEPTED' };
     }
     if (this.config.MAIL_MODE === 'sink') {
       const directory = path.resolve(this.config.MAIL_SINK_DIR);
@@ -37,7 +63,7 @@ export class IdentityMailService {
         JSON.stringify(message, null, 2),
         { mode: 0o600, flag: 'wx' },
       );
-      return;
+      return { state: 'SINK_ACCEPTED', code: 'SINK_ACCEPTED' };
     }
     const transport = nodemailer.createTransport({
       host: this.config.SMTP_HOST,
@@ -51,17 +77,25 @@ export class IdentityMailService {
       greetingTimeout: 5000,
       socketTimeout: 5000,
     });
-    await transport.sendMail({
-      from: this.config.MAIL_FROM,
-      to: message.to,
-      subject: `Mehran Planner: ${message.kind}`,
-      text:
-        message.kind === 'administrative'
-          ? `${message.message ?? 'An administrative event requires your attention.'}\n${message.url}`
-          : message.kind === 'invitation'
-            ? `You have been invited to Mehran Planner. Sign in or register with this email address, then explicitly accept. This invitation expires after seven days.\n${message.url}\nIf unexpected, ignore this email.`
-            : `Complete the requested account action:\n${message.url}\nIf you did not request this, ignore this email.`,
-    });
+    try {
+      const info = await transport.sendMail({
+        from: this.config.MAIL_FROM,
+        to: message.to,
+        subject: `Mehran Planner: ${message.kind}`,
+        text:
+          message.kind === 'administrative'
+            ? `${message.message ?? 'An administrative event requires your attention.'}\n${message.url}`
+            : message.kind === 'invitation'
+              ? `You have been invited to Mehran Planner. Sign in or register with this email address, then explicitly accept. This invitation expires after seven days.\n${message.url}\nIf unexpected, ignore this email.`
+              : `Complete the requested account action:\n${message.url}\nIf you did not request this, ignore this email.`,
+      });
+      if (Array.isArray(info.rejected) && info.rejected.length) {
+        throw Object.assign(new Error('SMTP rejected'), { responseCode: 550 });
+      }
+      return smtpReceipt(info, message.to);
+    } finally {
+      transport.close();
+    }
   }
 
   async check(): Promise<void> {

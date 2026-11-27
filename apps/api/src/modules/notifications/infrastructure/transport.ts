@@ -1,3 +1,7 @@
+import {
+  SystemEmailEvidence,
+  smtpReceipt,
+} from '../../../platform/auth/email-evidence.js';
 import { Inject, Injectable } from '@nestjs/common';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -91,10 +95,52 @@ export function publicAddress(address: string) {
 }
 @Injectable()
 export class ChannelTransport extends NotificationTransport {
-  constructor(@Inject(APP_CONFIG) private readonly config: AppConfig) {
+  constructor(
+    @Inject(APP_CONFIG) private readonly config: AppConfig,
+    @Inject(SystemEmailEvidence) private readonly evidence: SystemEmailEvidence,
+  ) {
     super();
   }
   async send(m: TransportMessage): Promise<TransportResult> {
+    if (m.channel !== 'EMAIL' || !m.email) return this.deliver(m);
+    let result!: TransportResult;
+    await this.evidence.observe(
+      m.email,
+      m.emailMetadata ?? {
+        sourceKind: 'NOTIFICATION',
+        sourceId: m.deliveryId,
+        category: 'REMINDER',
+      },
+      async () => {
+        result = await this.deliver(m);
+        const accepted =
+          result.code === 'SMTP_ACCEPTED' || result.code === 'SINK_ACCEPTED';
+        return {
+          state: accepted
+            ? result.code === 'SMTP_ACCEPTED'
+              ? 'SMTP_ACCEPTED'
+              : 'SINK_ACCEPTED'
+            : result.outcome === 'AMBIGUOUS'
+              ? 'UNKNOWN'
+              : 'FAILED',
+          code: accepted
+            ? result.code === 'SMTP_ACCEPTED'
+              ? 'SMTP_ACCEPTED'
+              : 'SINK_ACCEPTED'
+            : result.code === 'SMTP_REJECTED'
+              ? 'SMTP_REJECTED'
+              : result.code === 'SMTP_TEMPORARY'
+                ? 'SMTP_TEMPORARY'
+                : result.outcome === 'AMBIGUOUS'
+                  ? 'SMTP_ACCEPTANCE_UNKNOWN'
+                  : 'MAIL_TRANSPORT_FAILED',
+          providerReference: result.providerReference,
+        };
+      },
+    );
+    return result;
+  }
+  private async deliver(m: TransportMessage): Promise<TransportResult> {
     const sink =
       m.channel === 'EMAIL'
         ? this.config.MAIL_MODE === 'sink'
@@ -145,7 +191,7 @@ export class ChannelTransport extends NotificationTransport {
         socketTimeout: 10000,
       });
       try {
-        await transport.sendMail({
+        const info = await transport.sendMail({
           from: this.config.MAIL_FROM,
           to: m.email,
           subject:
@@ -162,7 +208,19 @@ export class ChannelTransport extends NotificationTransport {
               : 'Mehran Planner has a reminder for you. Open your private notification inbox.',
           messageId: '<' + m.deliveryId + '@planner.invalid>',
         });
-        return { outcome: 'ACCEPTED', code: 'SMTP_ACCEPTED' };
+        if (Array.isArray(info.rejected) && info.rejected.length)
+          return { outcome: 'FAILED', code: 'SMTP_REJECTED' };
+        const receipt = smtpReceipt(info, m.email);
+        return {
+          outcome:
+            receipt.state === 'SMTP_ACCEPTED'
+              ? 'ACCEPTED'
+              : receipt.state === 'FAILED'
+                ? 'FAILED'
+                : 'AMBIGUOUS',
+          code: receipt.code,
+          providerReference: receipt.providerReference,
+        };
       } catch (error) {
         const code =
           typeof error === 'object' && error !== null && 'responseCode' in error

@@ -83,6 +83,18 @@ export class AuthController {
           typeof body.user.id === 'string'
             ? body.user.id
             : actor;
+        if (
+          key === 'POST /sign-up/email' &&
+          body &&
+          typeof body === 'object' &&
+          'user' in body &&
+          body.user &&
+          typeof body.user === 'object' &&
+          'id' in body.user &&
+          typeof body.user.id === 'string'
+        ) {
+          await this.identity.associateRegistrationMail(body.user.id);
+        }
         await this.audit.outcome(event.id, outcome, loginActor);
       });
     } catch (error) {

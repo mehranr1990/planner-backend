@@ -132,6 +132,12 @@ export class AdminSecurityAlerts {
           { where: { id: row.alertId } },
         );
         await this.mail.send({
+          metadata: {
+            sourceKind: 'SECURITY_ALERT',
+            sourceId: row.id,
+            category: 'SECURITY_NOTICE',
+            adminUserId: user!.id,
+          },
           to: user!.email,
           kind: 'administrative',
           url: new URL(

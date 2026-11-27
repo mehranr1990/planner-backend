@@ -1,3 +1,4 @@
+import { EmailDiagnosticsService } from '../../src/modules/admin-management/email-diagnostics.service.js';
 import { MessagingExtensionsService } from '../../src/modules/messaging/application/messaging-extensions.service.js';
 import { InvitationMailService } from '../../src/modules/spaces/public/index.js';
 import { IdentityMailService } from '../../src/platform/auth/mail.service.js';
@@ -741,6 +742,39 @@ describe('P5-01 durable messaging, explicit participation and polling', () => {
       },
       randomUUID(),
     );
+    await collaboration.createInvitation(
+      owner.actor,
+      project.id,
+      {
+        kind: 'MEMBERSHIP',
+        memberRole: 'MEMBER',
+        recipient: { email: randomUUID() + '@example.test' },
+      },
+      randomUUID(),
+    );
+    await companies.invite(
+      owner.actor,
+      company.id,
+      company.id,
+      {
+        memberRole: 'MEMBER',
+        recipient: { email: randomUUID() + '@example.test' },
+      },
+      randomUUID(),
+    );
+    for (const [category, resourceId] of [
+      ['PROJECT_INVITATION', project.id],
+      ['COMPANY_INVITATION', company.id],
+    ] as const) {
+      const result = await app
+        .get(EmailDiagnosticsService)
+        .list(randomUUID(), { limit: 25, category, resourceId });
+      expect(
+        result.items.some(
+          (row) => row.resourceId === resourceId && row.category === category,
+        ),
+      ).toBe(true);
+    }
     await create('PRIVATE_GROUP', [alice]);
     const feed = app.get(ClientInvitationNotificationsController);
     const expected = {
@@ -811,6 +845,22 @@ describe('P5-01 durable messaging, explicit participation and polling', () => {
       mail = app.get(InvitationMailService),
       sink = app.get(IdentityMailService);
     const send = vi.spyOn(sink, 'send');
+    const personal = await db.space.findFirstOrThrow({
+      where: { ownerUserId: alice.actor.userId, kind: 'PERSONAL' },
+    });
+    await db.notificationPreference.create({
+      data: {
+        spaceId: personal.id,
+        ownerUserId: alice.actor.userId,
+        createdByUserId: alice.actor.userId,
+        email: true,
+        moduleChannels: {
+          TEAMS: { EMAIL: false, IN_APP: true, WEB_PUSH: false },
+          SOCIAL: { EMAIL: true, IN_APP: true, WEB_PUSH: false },
+        },
+      },
+    });
+
     const known = await collaboration.createInvitation(
       owner.actor,
       team.id,
@@ -831,6 +881,24 @@ describe('P5-01 durable messaging, explicit participation and polling', () => {
         recipient: { email },
       },
       randomUUID(),
+    );
+    const emailRows = await app
+      .get(EmailDiagnosticsService)
+      .list(randomUUID(), {
+        limit: 100,
+        category: 'TEAM_INVITATION',
+        resourceId: team.id,
+      });
+    expect(
+      emailRows.items.some(
+        (r) =>
+          r.sourceId === unknown.invitation.id &&
+          r.recipient === email &&
+          r.status === 'QUEUED',
+      ),
+    ).toBe(true);
+    expect(JSON.stringify(emailRows)).not.toMatch(
+      /encrypted|proof|#id|https?:/i,
     );
     expect(Object.keys(known).sort()).toEqual(Object.keys(unknown).sort());
     expect(known.invitation.state).toBe(unknown.invitation.state);
@@ -917,6 +985,17 @@ describe('P5-01 durable messaging, explicit participation and polling', () => {
     });
     const proof = await mail.decrypt(queued.encryptedDeliveryProof!);
     expect(sink.latestForTest(alice.email, 'invitation')).toBeUndefined();
+    const mailPage = await app.get(EmailDiagnosticsService).list(randomUUID(), {
+      limit: 100,
+      category: 'CONVERSATION_INVITATION',
+      resourceId: conv.id,
+    });
+    expect(
+      mailPage.items.some(
+        (r) =>
+          r.sourceId === offer.id && r.category === 'CONVERSATION_INVITATION',
+      ),
+    ).toBe(true);
     await messages.consumeEmailInvitations();
     expect(
       await messages.emailInvitation(owner.actor, conv.id, offer.id),

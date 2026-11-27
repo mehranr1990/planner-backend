@@ -31,6 +31,30 @@ export class PlatformPersonalData {
         }),
       (r) => r.id,
     );
+    await budget.collect(
+      'systemEmailMetadata',
+      (after: string | undefined) =>
+        tx.systemEmailObservation.findMany({
+          where: {
+            OR: [
+              { userId: scope.actor.userId },
+              { subjectUserId: scope.actor.userId },
+            ],
+            ...(after ? { id: { gt: after } } : {}),
+          },
+          orderBy: { id: 'asc' },
+          take: 250,
+          select: {
+            id: true,
+            category: true,
+            createdAt: true,
+            completedAt: true,
+            state: true,
+            code: true,
+          },
+        }),
+      (r) => r.id,
+    );
     budget.add(
       'securityAudit',
       await tx.securityAuditEvent.findMany({
@@ -54,6 +78,14 @@ export class PlatformPersonalData {
     );
   }
   async erase(tx: Prisma.TransactionClient, scope: AuthorizedSpace) {
+    await tx.systemEmailObservation.deleteMany({
+      where: {
+        OR: [
+          { userId: scope.actor.userId },
+          { subjectUserId: scope.actor.userId },
+        ],
+      },
+    });
     await tx.productAnalyticsEvent.deleteMany({
       where: { userId: scope.actor.userId },
     });

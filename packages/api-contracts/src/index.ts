@@ -130,3 +130,5 @@ export * from './admin-engagement.js';
 export * from './admin-configuration.js';
 
 export * from './admin-analytics.js';
+
+export * from './admin-email-diagnostics.js';
