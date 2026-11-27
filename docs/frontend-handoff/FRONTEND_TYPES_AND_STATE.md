@@ -1,6 +1,9 @@
 # Frontend types and state
 
-Use [openapi.json](./openapi.json) from the finished P1-12 release. Configure an
+Use the synchronized current [openapi.json](./openapi.json). The original P1-12
+examples below retain their phase scope; current Admin integration is defined by
+the [consolidated backend handoff](../platform-admin-backend-handoff.md) and
+[generated Admin reference](PLATFORM_ADMIN_API_REFERENCE.md). Configure an
 API origin separately: paths already contain `/api/v1`, and health paths are root.
 Transport types must not come from Prisma or copied database models.
 

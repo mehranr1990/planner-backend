@@ -35,6 +35,17 @@ export const InvitationNotificationPageSchema = z.strictObject({
   items: z.array(InvitationNotificationSchema).max(100),
   nextCursor: z.string().nullable(),
 });
+export const InvitationNotificationUnreadCountSchema = z.strictObject({
+  total: z.number().int().nonnegative(),
+  byKind: z.strictObject({
+    PROJECT: z.number().int().nonnegative(),
+    TEAM: z.number().int().nonnegative(),
+    COMPANY: z.number().int().nonnegative(),
+    CONVERSATION: z.number().int().nonnegative(),
+    MEETING: z.number().int().nonnegative(),
+    SOCIAL_GROUP: z.number().int().nonnegative(),
+  }),
+});
 export const SocialPendingInvitationSummarySchema = z.strictObject({
   notification: InvitationNotificationSchema.optional(),
   id: z.uuid(),

@@ -1126,6 +1126,67 @@ export class CollaborationService {
         candidates.length > q.limit ? candidates[q.limit - 1]!.id : null,
     });
   }
+  async unreadInvitationCount(
+    actor: RequestActor,
+    kind: 'TEAM' | 'COMPANY' | 'PROJECT' | 'SOCIAL_GROUP',
+    check?: RecipientCheck,
+  ) {
+    this.kernel.assertEnabled();
+    const identity = await this.db.client.$transaction(async (tx) => {
+      await this.kernel.personalIdentity(tx, actor);
+      return this.identity.current(tx, actor.userId);
+    });
+    if (!identity?.emailVerified) throw new NotFoundException();
+    const candidates = await this.db.client.contextInvitation.findMany({
+      where: {
+        state: 'PENDING',
+        notificationReadAt: null,
+        expiresAt: { gt: new Date() },
+        OR: [
+          { recipientUserId: actor.userId },
+          { recipientEmail: this.identity.canonicalEmail(identity.email) },
+        ],
+        companyScopeId: kind === 'COMPANY' ? { not: null } : null,
+      },
+      select: { id: true, spaceId: true, inviterAccessId: true },
+    });
+    let count = 0;
+    for (const hint of candidates) {
+      const issuer = await this.userForAccess(
+        this.db.client,
+        hint.inviterAccessId,
+      );
+      if (!issuer) continue;
+      try {
+        count += await this.kernel.participate(
+          actor,
+          hint.spaceId,
+          [issuer],
+          async (tx, now, locked) => {
+            const row = await this.recipientOffer(
+              tx,
+              now,
+              locked,
+              actor,
+              hint.id,
+              issuer,
+              kind,
+              check,
+            );
+            return row.notificationReadAt === null ? 1 : 0;
+          },
+        );
+      } catch (error) {
+        if (
+          !(error instanceof NotFoundException) &&
+          !(error instanceof ForbiddenException) &&
+          !(error instanceof ConflictException)
+        )
+          throw error;
+      }
+    }
+    return count;
+  }
   async validateInvitationNotification(
     id: string,
     userId: string,

@@ -1,5 +1,12 @@
 # Platform Admin P7 work record
 
+Publication update: owner accepted P7 based on this final evidence and authorized
+P7-only publication. The reviewed 52 files were committed and pushed as
+`9b2d7768265fe6444be17cd4d2695fbaa798237c`; origin/main was verified. Owner compose,
+all 150 predecessor migration files and M124-M128 checksums were preserved.
+The following implementation/acceptance checkpoints retain their historical
+authorization context. Subsequent work belongs to the separate readiness batch.
+
 Final acceptance is recorded below. Earlier implementation and continuation
 checkpoints are historical; queued review scripts have already been applied.
 

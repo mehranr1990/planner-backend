@@ -50,6 +50,48 @@ export class ClientInvitationNotificationsController {
     @Inject(MeetingsService) private readonly meetings: MeetingsService,
     @Inject(SharedKernel) private readonly kernel: SharedKernel,
   ) {}
+  @Get('unread-count')
+  async unreadCount(
+    @CurrentActor() actor: RequestActor,
+    @Query(new ZodValidationPipe(c.BackendCompletionEmptySchema))
+    _query: unknown,
+  ) {
+    const channels = await this.kernel.personalWork(actor, async (tx) => ({
+      PROJECT: (await invitationChannels(tx, actor.userId, 'PROJECTS')).inApp,
+      TEAM: (await invitationChannels(tx, actor.userId, 'TEAMS')).inApp,
+      COMPANY: (await invitationChannels(tx, actor.userId, 'COMPANY')).inApp,
+      SOCIAL_GROUP: (await invitationChannels(tx, actor.userId, 'SOCIAL'))
+        .inApp,
+      MESSAGING_MEETINGS: (
+        await invitationChannels(tx, actor.userId, 'MESSAGING_MEETINGS')
+      ).inApp,
+    }));
+    // Each owner revalidates every candidate; no page limit or client cursor.
+    const byKind = {
+      PROJECT: channels.PROJECT
+        ? await this.offers.unreadInvitationCount(actor, 'PROJECT')
+        : 0,
+      TEAM: channels.TEAM
+        ? await this.offers.unreadInvitationCount(actor, 'TEAM')
+        : 0,
+      COMPANY: channels.COMPANY
+        ? await this.company.unreadInvitationCount(actor)
+        : 0,
+      CONVERSATION: channels.MESSAGING_MEETINGS
+        ? await this.messaging.unreadInvitationCount(actor)
+        : 0,
+      MEETING: channels.MESSAGING_MEETINGS
+        ? await this.meetings.unreadInvitationCount(actor)
+        : 0,
+      SOCIAL_GROUP: channels.SOCIAL_GROUP
+        ? await this.social.unreadInvitationCount(actor)
+        : 0,
+    };
+    return c.InvitationNotificationUnreadCountSchema.parse({
+      total: Object.values(byKind).reduce((sum, count) => sum + count, 0),
+      byKind,
+    });
+  }
   @Get()
   async list(
     @CurrentActor() actor: RequestActor,

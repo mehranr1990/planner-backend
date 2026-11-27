@@ -39,6 +39,7 @@ import {
   SocialData,
   SocialLifecycle,
 } from '../../src/modules/social/public/index.js';
+import { ClientInvitationNotificationsController } from '../../src/modules/client-invitations/client-invitations.module.js';
 import { testApplication } from '../support/application.js';
 import { migrationSandbox } from '../../../../tooling/testing/migration-sandbox.js';
 import { isolatedTestDatabaseUrl } from '../../../../tooling/testing/test-database.js';
@@ -291,6 +292,34 @@ describe('P6-01 private social graph and approved Group admission', () => {
     await observer?.end();
     await watcher?.end();
     await sandbox?.close();
+  });
+  it('CB-INV-1 Social unread count honors read state, preferences and current contact authority', async () => {
+    await friendship();
+    const g = await group();
+    const offer = await groups.invite(
+      alice.actor,
+      g.id,
+      {
+        kind: 'MEMBERSHIP',
+        memberRole: 'MEMBER',
+        recipient: { userId: bob.actor.userId },
+      },
+      randomUUID(),
+    );
+    const feed = app.get(ClientInvitationNotificationsController);
+    expect((await feed.unreadCount(bob.actor, {})).byKind.SOCIAL_GROUP).toBe(1);
+    expect((await feed.unreadCount(carol.actor, {})).byKind.SOCIAL_GROUP).toBe(
+      0,
+    );
+    await groups.markInvitationRead(bob.actor, offer.invitation.id);
+    expect((await feed.unreadCount(bob.actor, {})).byKind.SOCIAL_GROUP).toBe(0);
+    await db.contextInvitation.update({
+      where: { id: offer.invitation.id },
+      data: { notificationReadAt: null },
+    });
+    expect((await feed.unreadCount(bob.actor, {})).byKind.SOCIAL_GROUP).toBe(1);
+    await social.block(bob.actor, alice.actor.userId, randomUUID(), 1);
+    expect((await feed.unreadCount(bob.actor, {})).byKind.SOCIAL_GROUP).toBe(0);
   });
   it('Client: Social pending offers are recipient-only and fresh proofs enforce contact and admission checks', async () => {
     await friendship();

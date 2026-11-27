@@ -6,6 +6,15 @@ Regenerate Client types from `docs/api/openapi.json` (also mirrored in
 
 ## Invitations
 
+- `GET /invitation-notifications/unread-count` accepts no query fields and returns
+  `{total,byKind:{PROJECT,TEAM,COMPANY,CONVERSATION,MEETING,SOCIAL_GROUP}}` with
+  nonnegative integer counts and every kind present at zero. Counts cover all
+  currently valid pending unread offers for the verified session recipient,
+  independently of pagination, using the same recipient/source/contact authority,
+  expiry and IN_APP preferences as the feed. No resource IDs or addresses are
+  returned. Refetch after read/proof/accept/decline/revoke or preference changes;
+  later concurrent commits can change subsequent results. Existing APIs and
+  offer revision rules are unchanged. See ADR 0080 and the readiness work record.
 - `GET /invitation-notifications?kind=PROJECT|TEAM|COMPANY|CONVERSATION|MEETING|SOCIAL_GROUP&limit=25&after=<opaque cursor>`
   returns `{items,nextCursor}`. Each item has `invitationId`, `kind`, `targetId`,
   `targetDisplayName`, nullable `inviterDisplayName`, nullable `role`, `createdAt`,

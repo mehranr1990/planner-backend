@@ -1753,6 +1753,36 @@ export class MessagingService {
       },
     );
   }
+  async unreadInvitationCount(actor: RequestActor) {
+    const actors = await this.authority.actors(actor);
+    const rows = await this.db.client.conversationInvitation.findMany({
+      where: {
+        state: 'PENDING',
+        recipientActorId: { in: actors },
+        expiresAt: { gt: new Date() },
+        notificationReadAt: null,
+      },
+      select: { id: true },
+    });
+    let count = 0;
+    for (const row of rows) {
+      try {
+        count += await this.recipientOperation(
+          actor,
+          row.id,
+          'messaging.invitation.read',
+          async (s, current) => {
+            await this.eligibleInvitation(s, current);
+            return current.notificationReadAt === null ? 1 : 0;
+          },
+        );
+      } catch (error) {
+        if (!hidden(error) && !(error instanceof ConflictException))
+          throw error;
+      }
+    }
+    return count;
+  }
   async invitations(actor: RequestActor, q: Page) {
     const context = 'conversation-invitations',
       stamp = hash('messaging-invitations-v1'),

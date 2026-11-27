@@ -259,6 +259,51 @@ describe('Platform Admin shared Workspace and membership boundaries', () => {
     await db?.$disconnect();
     await sandbox?.close();
   });
+  it('readiness: exposes only applicable safe retention catalog metadata to authorized Admin creators', async () => {
+    for (const context of ['TEAM', 'COMPANY']) {
+      const response = await get(
+        'workspaces/retention-policies?context=' + context,
+      ).expect(200);
+      const policy = response.body.items.find(
+        (p: { version: string }) => p.version === version,
+      );
+      expect(policy).toBeDefined();
+      expect(policy.applicableContexts).toContain(context);
+      expect(Object.keys(policy).sort()).toEqual(
+        [
+          'version',
+          'applicableContexts',
+          'marketScope',
+          'classRules',
+          'createdAt',
+        ].sort(),
+      );
+      expect(JSON.stringify(policy)).not.toMatch(
+        /accountableOperator|approvalReference|holds|obligations/,
+      );
+    }
+    for (const query of [
+      '',
+      '?context=PROJECT',
+      '?context=TEAM&ownerUserId=' + owner.userId,
+    ])
+      await get('workspaces/retention-policies' + query).expect(400);
+    await request(app.getHttpServer())
+      .get('/api/v1/admin/workspaces/retention-policies?context=TEAM')
+      .expect(401);
+    try {
+      await db.adminUser.update({
+        where: { id: adminId },
+        data: { role: 'SUPPORT' },
+      });
+      await get('workspaces/retention-policies?context=TEAM').expect(403);
+    } finally {
+      await db.adminUser.update({
+        where: { id: adminId },
+        data: { role: 'SUPER_ADMIN' },
+      });
+    }
+  });
   it('creates Team and Company atomically, attributes Admin, never enrolls the Admin as a member, and retries safely', async () => {
     teamId = randomUUID();
     companyId = randomUUID();

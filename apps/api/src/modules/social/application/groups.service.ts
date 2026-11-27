@@ -659,6 +659,31 @@ export class SocialGroupsService {
       },
     );
   }
+  private invitationRecipientCheck(
+    actor: RequestActor,
+  ): NonNullable<Parameters<CollaborationService['unreadInvitationCount']>[2]> {
+    return async (tx, _now, locked, row) => {
+      const issuer = await tx.contextAccess.findUniqueOrThrow({
+        where: { id: row.inviterAccessId },
+        include: { SharedActor: true },
+      });
+      if (!issuer.SharedActor.userId) throw new NotFoundException();
+      await this.contacts.require(
+        tx,
+        actor.userId,
+        issuer.SharedActor.userId,
+        locked,
+        row.createdAt,
+      );
+    };
+  }
+  unreadInvitationCount(actor: RequestActor) {
+    return this.collaboration.unreadInvitationCount(
+      actor,
+      'SOCIAL_GROUP',
+      this.invitationRecipientCheck(actor),
+    );
+  }
   pendingInvitations(
     actor: RequestActor,
     query: { after?: string | undefined; limit: number },
@@ -667,20 +692,7 @@ export class SocialGroupsService {
       actor,
       'SOCIAL_GROUP',
       query,
-      async (tx, _now, locked, row) => {
-        const issuer = await tx.contextAccess.findUniqueOrThrow({
-          where: { id: row.inviterAccessId },
-          include: { SharedActor: true },
-        });
-        if (!issuer.SharedActor.userId) throw new NotFoundException();
-        await this.contacts.require(
-          tx,
-          actor.userId,
-          issuer.SharedActor.userId,
-          locked,
-          row.createdAt,
-        );
-      },
+      this.invitationRecipientCheck(actor),
       socialInvitationDisplay,
     );
   }

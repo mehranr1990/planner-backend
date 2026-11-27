@@ -1,4 +1,9 @@
 import { z } from 'zod';
+import { RetentionPolicyCatalogSchema } from './backend-completion.js';
+
+export const AdminWorkspaceRetentionQuerySchema = z.strictObject({
+  context: z.enum(['TEAM', 'COMPANY']),
+});
 
 export const AdminReasonSchema = z.strictObject({
   reason: z.string().trim().min(1).max(500),
@@ -209,6 +214,10 @@ export const adminManagementRoutes = {
   'POST workspaces/:id/invitations/resend': {
     permission: 'admin.memberships.invitations.manage',
     schema: AdminInvitationActionSchema,
+  },
+  'GET workspaces/retention-policies': {
+    permission: 'admin.workspaces.create',
+    schema: AdminWorkspaceRetentionQuerySchema,
   },
   'GET workspaces/:id': {
     permission: 'admin.workspaces.read',
@@ -426,6 +435,7 @@ export const adminManagementResponses: Record<
   'POST users/bulk/preview': AdminBulkPreviewResultSchema,
   'POST users/bulk/execute': AdminBulkResultSchema,
   'GET workspaces': page(AdminWorkspaceDetailSchema),
+  'GET workspaces/retention-policies': RetentionPolicyCatalogSchema,
   'GET workspaces/:id': AdminWorkspaceDetailSchema,
   'POST workspaces': AdminWorkspaceDetailSchema,
   'PATCH workspaces/:id': AdminWorkspaceProfileResultSchema,

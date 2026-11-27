@@ -18,6 +18,7 @@ import type {
 } from '@mehran/api-contracts';
 import type { z } from 'zod';
 import { effectiveSuspension } from '../../../platform/admin/management-policy.js';
+import { RetentionSelectionService } from '../application/retention-selection.service.js';
 const projection = Prisma.sql`WITH workspaces AS (
  SELECT p.id,p.id AS "spaceId",CASE WHEN p.kind='PERSONAL' THEN 'PERSONAL' ELSE c.kind END AS type,p."ownerUserId",c."primaryOwnerAccessId" AS "ownerAccessId",COALESCE(c.state,'ACTIVE') AS "lifecycleState",COALESCE(c.revision,1) AS "custodyRevision",p."adminRevision",p."suspendedAt",p."suspensionExpiresAt",p."suspensionReason",p."createdAt",p."updatedAt",NULL::uuid AS "companyId",NULL::uuid AS "parentScopeId"
  FROM "Space" p LEFT JOIN "SharedCustody" c ON c."spaceId"=p.id WHERE p.kind='PERSONAL' OR c.kind IN ('TEAM','COMPANY')
@@ -59,7 +60,14 @@ export class AdminSpaces {
       })),
     };
   }
-  constructor(@Inject(DatabaseService) private readonly db: DatabaseService) {}
+  constructor(
+    @Inject(DatabaseService) private readonly db: DatabaseService,
+    @Inject(RetentionSelectionService)
+    private readonly retention: RetentionSelectionService,
+  ) {}
+  retentionCatalog(query: { context: 'TEAM' | 'COMPANY' }) {
+    return this.retention.catalog(query);
+  }
   async detail(id: string, tx: Prisma.TransactionClient = this.db.client) {
     const [row] = await tx.$queryRaw<Workspace[]>(
       Prisma.sql`${projection} SELECT * FROM workspaces WHERE id=${id}::uuid`,

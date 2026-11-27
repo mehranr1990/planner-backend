@@ -1217,6 +1217,72 @@ export class MeetingsService {
       true,
     );
   }
+  private async recipientInvitation(s: Op, row: MeetingInvitation) {
+    if (
+      !['PENDING', 'ACCEPTED', 'TENTATIVE'].includes(row.state) ||
+      (row.state === 'PENDING' && row.expiresAt <= s.now)
+    )
+      throw new NotFoundException();
+    if (
+      (await this.op.authority.user(s.tx, s.spaceId, row.recipientActorId)) !==
+      s.actor.userId
+    )
+      throw new NotFoundException();
+    if (
+      row.recipientAccessId &&
+      (s.proof?.accessId !== row.recipientAccessId ||
+        s.proof.generation !== row.recipientGeneration)
+    )
+      throw new NotFoundException();
+    if (row.state !== 'PENDING') {
+      s.proof ??= await this.op.proof(s);
+      const member = await this.op.member(s);
+      if (
+        member.id !== row.acceptedMemberId ||
+        member.generation !== row.acceptedMemberGeneration
+      )
+        throw new NotFoundException();
+    }
+
+    return this.invitationView(s, row);
+  }
+  async unreadInvitationCount(actor: RequestActor) {
+    const actors = await this.op.authority.actors(actor);
+    const rows = await this.op.db.client.meetingInvitation.findMany({
+      where: {
+        recipientActorId: { in: actors },
+        state: 'PENDING',
+        expiresAt: { gt: new Date() },
+        notificationReadAt: null,
+      },
+      select: { id: true, meetingId: true },
+    });
+    let count = 0;
+    for (const row of rows) {
+      try {
+        count += await this.op.operation(
+          actor,
+          row.meetingId,
+          'meeting.invitation.read',
+          async (s) => {
+            const current = await s.tx.meetingInvitation.findUniqueOrThrow({
+              where: { id: row.id },
+            });
+            const view = await this.recipientInvitation(s, current);
+            return view.state === 'PENDING' &&
+              current.notificationReadAt === null
+              ? 1
+              : 0;
+          },
+          [actor.userId],
+          true,
+        );
+      } catch (error) {
+        if (!meetingUnavailable(error)) throw error;
+      }
+    }
+    return count;
+  }
   async invitations(actor: RequestActor, q: Page) {
     const actors = await this.op.authority.actors(actor),
       stamp = meetingHash(actors.sort()),
@@ -1246,35 +1312,7 @@ export class MeetingsService {
               const current = await s.tx.meetingInvitation.findUniqueOrThrow({
                 where: { id: row.id },
               });
-              if (
-                !['PENDING', 'ACCEPTED', 'TENTATIVE'].includes(current.state) ||
-                (current.state === 'PENDING' && current.expiresAt <= s.now)
-              )
-                throw new NotFoundException();
-              if (
-                (await this.op.authority.user(
-                  s.tx,
-                  s.spaceId,
-                  current.recipientActorId,
-                )) !== actor.userId
-              )
-                throw new NotFoundException();
-              if (
-                current.recipientAccessId &&
-                (s.proof?.accessId !== current.recipientAccessId ||
-                  s.proof.generation !== current.recipientGeneration)
-              )
-                throw new NotFoundException();
-              if (current.state !== 'PENDING') {
-                s.proof ??= await this.op.proof(s);
-                const member = await this.op.member(s);
-                if (
-                  member.id !== current.acceptedMemberId ||
-                  member.generation !== current.acceptedMemberGeneration
-                )
-                  throw new NotFoundException();
-              }
-              return this.invitationView(s, current);
+              return this.recipientInvitation(s, current);
             },
             [actor.userId],
             true,

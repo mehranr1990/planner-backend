@@ -125,6 +125,10 @@ export class ManagementService {
             : '',
           json({ route, id: id ?? null, input }),
         );
+      if (route === 'GET workspaces/retention-policies')
+        return this.spaces.retentionCatalog(
+          contracts.AdminWorkspaceRetentionQuerySchema.parse(input),
+        );
       if (route === 'POST workspaces') {
         const body = contracts.AdminWorkspaceCreateSchema.parse(input),
           cmd = command();

@@ -1,5 +1,12 @@
 # Phase 0/1 API module reference
 
+Current bundle note, 2026-11-27: this table remains the historical Phase 0/1
+index. The adjacent OpenAPI now contains the complete backend plus readiness
+contracts. Use the [current Admin reference](PLATFORM_ADMIN_API_REFERENCE.md),
+[22-module readiness matrix](../platform-admin-integration-readiness-matrix.md)
+and [consolidated handoff](../platform-admin-backend-handoff.md) for P0-P7 Admin
+integration; ordinary invitation counts are in the current Client contract.
+
 Snapshot: Phase 1 commit `6a9ccdb81e8c3b4842f1d7ea63c3531a6abbd2bb`; OpenAPI 3.1.0, **293 operations on 189 paths**. This is an index of implemented endpoints, not proposed future APIs. Screen names are suggested frontend mappings, not an implemented UI.
 
 [Machine-readable contract](./openapi.json) exports [the canonical generated specification](../api/openapi.json) with six recursive references rebased to their correct embedded definition locations. See the [packaging note](./FRONTEND_INTEGRATION_GUIDE.md#openapi-packaging-normalization). API shapes and validation meaning are unchanged. Source Zod refinements and owner rules also apply; generated JSON Schema cannot encode every cross-field rule.

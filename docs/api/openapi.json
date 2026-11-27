@@ -46213,6 +46213,287 @@
         }
       }
     },
+    "/api/v1/admin/workspaces/retention-policies": {
+      "get": {
+        "operationId": "platformAdminManagement_get_workspaces_retention_policies",
+        "tags": [
+          "platform-admin"
+        ],
+        "security": [
+          {
+            "adminCookie": []
+          }
+        ],
+        "description": "Requires admin.workspaces.create. Metadata only. Mutations require successful MFA in the past five minutes. UTC date intervals include from and exclude until.",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "context",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "TEAM",
+                "COMPANY"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Authorized administrative metadata; unavailable metrics carry an explicit availability reason",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "maxItems": 200,
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "version": {
+                            "type": "string"
+                          },
+                          "applicableContexts": {
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "enum": [
+                                "PROJECT",
+                                "TEAM",
+                                "COMPANY",
+                                "CONVERSATION",
+                                "MEETING",
+                                "SOCIAL_GROUP"
+                              ]
+                            }
+                          },
+                          "marketScope": {
+                            "type": "string"
+                          },
+                          "classRules": {
+                            "type": "object",
+                            "properties": {
+                              "workContent": {
+                                "type": "object",
+                                "properties": {
+                                  "retainAfterClosureSeconds": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "disposalAction": {
+                                    "type": "string",
+                                    "enum": [
+                                      "PURGE",
+                                      "PSEUDONYMIZE"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "retainAfterClosureSeconds",
+                                  "disposalAction"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "commentsHistory": {
+                                "type": "object",
+                                "properties": {
+                                  "retainAfterClosureSeconds": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "disposalAction": {
+                                    "type": "string",
+                                    "enum": [
+                                      "PURGE",
+                                      "PSEUDONYMIZE"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "retainAfterClosureSeconds",
+                                  "disposalAction"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "filesDerivatives": {
+                                "type": "object",
+                                "properties": {
+                                  "retainAfterClosureSeconds": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "disposalAction": {
+                                    "type": "string",
+                                    "enum": [
+                                      "PURGE",
+                                      "PSEUDONYMIZE"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "retainAfterClosureSeconds",
+                                  "disposalAction"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "exports": {
+                                "type": "object",
+                                "properties": {
+                                  "retainAfterClosureSeconds": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "disposalAction": {
+                                    "type": "string",
+                                    "enum": [
+                                      "PURGE",
+                                      "PSEUDONYMIZE"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "retainAfterClosureSeconds",
+                                  "disposalAction"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "accessAuditLifecycle": {
+                                "type": "object",
+                                "properties": {
+                                  "retainAfterClosureSeconds": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "disposalAction": {
+                                    "type": "string",
+                                    "enum": [
+                                      "PURGE",
+                                      "PSEUDONYMIZE"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "retainAfterClosureSeconds",
+                                  "disposalAction"
+                                ],
+                                "additionalProperties": false
+                              }
+                            },
+                            "required": [
+                              "workContent",
+                              "commentsHistory",
+                              "filesDerivatives",
+                              "exports",
+                              "accessAuditLifecycle"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "createdAt": {
+                            "type": "string",
+                            "format": "date-time",
+                            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                          }
+                        },
+                        "required": [
+                          "version",
+                          "applicableContexts",
+                          "marketScope",
+                          "classRules",
+                          "createdAt"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "items"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Safe API error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Safe API error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Safe API error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Safe API error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Safe API error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Safe API error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Safe API error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/admin/workspaces/{id}/suspend": {
       "post": {
         "operationId": "platformAdminManagement_post_workspaces__id_suspend",
@@ -243477,6 +243758,197 @@
                 "type": "object",
                 "properties": {},
                 "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/invitation-notifications/unread-count": {
+      "get": {
+        "operationId": "clientInvitationsgetinvitationnotificationsunreadcount",
+        "tags": [
+          "invitations"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Verified recipient invitation notifications; resolved offers leave the pending feed",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "type": "object",
+                  "properties": {
+                    "total": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "byKind": {
+                      "type": "object",
+                      "properties": {
+                        "PROJECT": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "TEAM": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "COMPANY": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "CONVERSATION": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "MEETING": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "SOCIAL_GROUP": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": [
+                        "PROJECT",
+                        "TEAM",
+                        "COMPANY",
+                        "CONVERSATION",
+                        "MEETING",
+                        "SOCIAL_GROUP"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "total",
+                    "byKind"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Safe error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Safe error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Safe error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Safe error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Safe error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Safe error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Safe error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Safe error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Safe error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Safe error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
               }
             }
           }

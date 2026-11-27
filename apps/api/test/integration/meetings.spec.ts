@@ -386,6 +386,37 @@ describe('P5-05 meetings decisions and announcements', () => {
     );
     return documents.finalize(owner.actor, id, v.id, v.revision, randomUUID());
   }
+  it('CB-INV-1 counts only pending unread authorized Meeting offers and accepted invitations stay excluded', async () => {
+    const m = await meeting();
+    const feed = app.get(ClientInvitationNotificationsController);
+    expect((await feed.unreadCount(alice.actor, {})).byKind.MEETING).toBe(1);
+    expect((await feed.unreadCount(bob.actor, {})).byKind.MEETING).toBe(0);
+    const offer = (await meetings.invitations(alice.actor, page)).items.find(
+      (v) => v.meetingId === m.id,
+    )!;
+    await feed.read(alice.actor, 'MEETING', offer.id, {}, {});
+    expect((await feed.unreadCount(alice.actor, {})).byKind.MEETING).toBe(0);
+    await db.meetingInvitation.update({
+      where: { id: offer.id },
+      data: {
+        notificationReadAt: null,
+        createdAt: new Date(Date.now() - 86400000),
+        expiresAt: new Date(Date.now() - 1000),
+      },
+    });
+    expect((await feed.unreadCount(alice.actor, {})).byKind.MEETING).toBe(0);
+    await db.meetingInvitation.update({
+      where: { id: offer.id },
+      data: { expiresAt: new Date(Date.now() + 86400000) },
+    });
+    await admit(m.id);
+    expect(
+      (await meetings.invitations(alice.actor, page)).items.some(
+        (v) => v.id === offer.id,
+      ),
+    ).toBe(true);
+    expect((await feed.unreadCount(alice.actor, {})).byKind.MEETING).toBe(0);
+  });
   it('Client: materializes verified Meeting offers privately and revokes the pending in-app offer', async () => {
     const m = await meeting([]);
     const offer = await meetings.inviteEmail(

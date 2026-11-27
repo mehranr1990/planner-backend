@@ -3,11 +3,18 @@ import { teamCompletionPaths } from './team-completion-openapi.js';
 import {
   InvitationNotificationQuerySchema,
   InvitationNotificationPageSchema,
+  InvitationNotificationUnreadCountSchema,
   InvitationFeedFields,
 } from './client-invitations.js';
 export function clientInvitationPaths() {
   const paths = teamCompletionPaths(
     [
+      {
+        path: '/invitation-notifications/unread-count',
+        method: 'get',
+        query: z.strictObject({}),
+        output: InvitationNotificationUnreadCountSchema,
+      },
       {
         path: '/invitation-notifications',
         method: 'get',

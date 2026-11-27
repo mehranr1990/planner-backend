@@ -1,5 +1,9 @@
 # 0079: Platform Admin P7 internal product analytics
 
+Publication update: owner accepted P7 locally and authorized its publication;
+commit `9b2d7768265fe6444be17cd4d2695fbaa798237c` is verified on origin/main.
+The authorization below describes the earlier implementation checkpoint.
+
 Status: engineering decisions within the owner's explicit P7 authorization,
 2026-11-26. Local verification is COMPLETE; final evidence is in the P7 work record. P7
 publication, deployment and frontend work are not authorized.

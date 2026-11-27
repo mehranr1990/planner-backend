@@ -1,5 +1,13 @@
 # Frontend integration guide — finished Phase 0/1
 
+Current integration note, 2026-11-27: the adjacent OpenAPI is the synchronized
+complete backend contract, including P0-P7 Admin and final readiness additions.
+The original Phase 0/1 guide below keeps its historical scope and counts.
+Use the [consolidated backend handoff](../platform-admin-backend-handoff.md),
+[22-module matrix](../platform-admin-integration-readiness-matrix.md) and
+[generated Admin API reference](PLATFORM_ADMIN_API_REFERENCE.md) for current
+Admin integration. Do not use the old 37-operation frontend snapshot.
+
 Backend release: `6a9ccdb81e8c3b4842f1d7ea63c3531a6abbd2bb` (P1-12).
 This handoff describes implemented behavior only. Suggested screens/state patterns
 are frontend guidance, not a UI or a new backend contract.

@@ -667,6 +667,145 @@ describe('P5-01 durable messaging, explicit participation and polling', () => {
       ),
     ).toMatchObject({ unreadCount: 0, lastMessage: null });
   });
+  it('CB-INV-1 counts all authorized unread offers beyond page limits and respects preferences', async () => {
+    const team = await work('TEAM');
+    const offer = await collaboration.createInvitation(
+      owner.actor,
+      team.id,
+      {
+        kind: 'MEMBERSHIP',
+        memberRole: 'MEMBER',
+        recipient: { email: alice.email },
+      },
+      randomUUID(),
+    );
+    const template = await db.contextInvitation.findUniqueOrThrow({
+      where: { id: offer.invitation.id },
+    });
+    await db.contextInvitation.createMany({
+      data: Array.from({ length: 105 }, () => ({
+        ...template,
+        id: randomUUID(),
+        encryptedDeliveryProof: null,
+        proofHash: createHash('sha256').update(randomUUID()).digest('hex'),
+        keyHash: createHash('sha256').update(randomUUID()).digest('hex'),
+      })),
+    });
+    const ids = (
+      await db.contextInvitation.findMany({
+        where: { scopeId: team.id },
+        select: { id: true },
+      })
+    ).map((r) => r.id);
+    const expiredAt = new Date(Date.now() - 1000);
+    await db.contextInvitation.update({
+      where: { id: ids[0]! },
+      data: {
+        createdAt: new Date(expiredAt.getTime() - 168 * 3600000),
+        expiresAt: expiredAt,
+      },
+    });
+    await db.contextInvitation.update({
+      where: { id: ids[1]! },
+      data: { notificationReadAt: new Date() },
+    });
+    await db.contextInvitation.update({
+      where: { id: ids[2]! },
+      data: {
+        state: 'REVOKED',
+        endedAt: new Date(),
+        recipientEmail: null,
+        recipientUserId: null,
+        proofHash: null,
+      },
+    });
+    const project = await work('PROJECT');
+    await collaboration.createInvitation(
+      owner.actor,
+      project.id,
+      {
+        kind: 'MEMBERSHIP',
+        memberRole: 'MEMBER',
+        recipient: { userId: alice.actor.userId },
+      },
+      randomUUID(),
+    );
+    const company = await work('COMPANY');
+    await companies.invite(
+      owner.actor,
+      company.id,
+      company.id,
+      {
+        memberRole: 'MEMBER',
+        recipient: { userId: alice.actor.userId },
+      },
+      randomUUID(),
+    );
+    await create('PRIVATE_GROUP', [alice]);
+    const feed = app.get(ClientInvitationNotificationsController);
+    const expected = {
+      total: 106,
+      byKind: {
+        PROJECT: 1,
+        TEAM: 103,
+        COMPANY: 1,
+        CONVERSATION: 1,
+        MEETING: 0,
+        SOCIAL_GROUP: 0,
+      },
+    };
+    expect(await feed.unreadCount(alice.actor, {})).toEqual(expected);
+    expect(
+      (await feed.list(alice.actor, { kind: 'TEAM', limit: 1 })).items.length,
+    ).toBeLessThanOrEqual(1);
+    expect(await feed.unreadCount(alice.actor, {})).toEqual(expected);
+    expect((await feed.unreadCount(bob.actor, {})).total).toBe(0);
+    const sessionCookie = await cookie(alice);
+    await request(app.getHttpServer())
+      .get('/api/v1/invitation-notifications/unread-count')
+      .set('Cookie', sessionCookie)
+      .expect(200, expected);
+    for (const query of [
+      'userId=' + bob.actor.userId,
+      'kind=TEAM',
+      'limit=1',
+      'after=invalid',
+    ])
+      await request(app.getHttpServer())
+        .get('/api/v1/invitation-notifications/unread-count?' + query)
+        .set('Cookie', sessionCookie)
+        .expect(400);
+    await request(app.getHttpServer())
+      .get('/api/v1/invitation-notifications/unread-count')
+      .expect(401);
+    const space = await db.space.findFirstOrThrow({
+      where: { kind: 'PERSONAL', ownerUserId: alice.actor.userId },
+    });
+    await db.notificationPreference.create({
+      data: {
+        spaceId: space.id,
+        ownerUserId: alice.actor.userId,
+        createdByUserId: alice.actor.userId,
+        moduleChannels: {
+          TEAMS: { IN_APP: false, EMAIL: false, WEB_PUSH: false },
+        },
+      },
+    });
+    expect(await feed.unreadCount(alice.actor, {})).toEqual({
+      ...expected,
+      total: 3,
+      byKind: { ...expected.byKind, TEAM: 0 },
+    });
+    await db.notificationPreference.updateMany({
+      where: { ownerUserId: alice.actor.userId },
+      data: { inApp: false },
+    });
+    expect((await feed.unreadCount(alice.actor, {})).total).toBe(0);
+    expect(
+      (await collaboration.pendingOffers(alice.actor, 'TEAM', { limit: 100 }))
+        .items.length,
+    ).toBeGreaterThan(0);
+  }, 60000);
   it('Client: context invitations use recipient preferences and a private, resolvable feed', async () => {
     const team = await work('TEAM'),
       mail = app.get(InvitationMailService),

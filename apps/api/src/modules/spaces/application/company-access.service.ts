@@ -1401,6 +1401,13 @@ export class CompanyAccess {
       display,
     );
   }
+  unreadInvitationCount(actor: RequestActor) {
+    return this.collaboration.unreadInvitationCount(
+      actor,
+      'COMPANY',
+      this.recipientCheck(actor),
+    );
+  }
   markInvitationRead(actor: RequestActor, id: string) {
     return this.collaboration.markInvitationRead(
       actor,
